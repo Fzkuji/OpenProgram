@@ -107,7 +107,7 @@ test("rich editor dirty notification requests an export and stages durable bytes
   const value=controller(async(_url,init)=>committed(b),records,"office.docx");
   await value.hydrate({bytes:"old",revision:a});
   const editor={getState:()=>({dirty:false}),setReadonly(){},flushPendingSaves:async()=>{},destroy:async()=>{},
-    save:async()=>{saves++;await value.stageOfficeExport(new Blob(["office draft"]));return new File(["office draft"],"office.docx");}};
+    save:async()=>{saves++;await value.stageRichExport(new Blob(["office draft"]));return new File(["office draft"],"office.docx");}};
   value.attachRichEditor(editor); value.markRichEditorDirty(true,editor);
   await value.flush();
   assert.equal(saves,1); assert.equal(await value.getState().snapshot.bytes.text(),"office draft");
@@ -119,8 +119,53 @@ test("rich close freezes input before final export and reopens it on failure",as
   value=controller(async()=>new Response("offline",{status:503}),records,"office.xlsx");
   await value.hydrate({bytes:"old",revision:a});
   const editor={setInputEnabled:(enabled)=>frozen.push(enabled),setReadonly(){},flushPendingSaves:async()=>{},destroy:async()=>{},
-    save:async()=>{await value.stageOfficeExport(new Blob(["draft"]));return new File(["draft"],"office.xlsx");}};
+    save:async()=>{await value.stageRichExport(new Blob(["draft"]));return new File(["draft"],"office.xlsx");}};
   value.attachRichEditor(editor); value.markRichEditorDirty(true,editor);
   await assert.rejects(value.close());
   assert.deepEqual(frozen,[false,true]); assert.equal(await value.currentDraft().text(),"draft");
+});
+
+test("close exports pending native input even before a dirty notification",async()=>{
+  const value=controller(async()=>committed(b),new Records(),"pending-cell.xlsx");
+  await value.hydrate({bytes:"old",revision:a});let exports=0;
+  value.attachRichEditor({getState:()=>({dirty:false,readonly:false}),setReadonly(){},flushPendingSaves:async()=>{},destroy(){},
+    save:async(_format,options)=>{assert.notEqual(options?.commitPendingInput,false);exports++;await value.stageRichExport("pending input");}});
+  await value.close();assert.equal(exports,1);assert.equal(await value.getState().snapshot.bytes.text(),"pending input");
+});
+
+test("restoring history first publishes native edits before replacing the engine", async()=>{
+  const published=[];let destroyed=false;
+  const value=controller(async(url,init)=>{
+    if(url.includes("history/content"))return new Response("history bytes");
+    published.push(init.method === "PUT" ? await init.body.text() : "restore");
+    return committed(init.method === "PUT" ? b : c);
+  },new Records(),"restore-native.docx");
+  await value.hydrate({bytes:"old",revision:a});
+  value.attachRichEditor({getState:()=>({readonly:false,dirty:false}),setReadonly(){},flushPendingSaves:async()=>{},
+    save:async()=>{await value.stageRichExport("native edit");},destroy(){destroyed=true;}});
+  await value.restore("version");
+  assert.deepEqual(published,["native edit","restore"]);assert.equal(destroyed,true);
+  assert.equal(await value.getState().snapshot.bytes.text(),"history bytes");await value.close();
+});
+
+test("failed native destruction leaves close retryable and input enabled",async()=>{
+  const value=controller(async()=>committed(b),new Records(),"destroy-retry.docx");
+  await value.hydrate({bytes:"old",revision:a});let failed=true;const enabled=[];
+  value.attachRichEditor({getState:()=>({readonly:true,dirty:false}),setReadonly(){},setInputEnabled:(v)=>enabled.push(v),
+    flushPendingSaves:async()=>{},destroy(){if(failed)throw new Error("destroy failed");}});
+  await assert.rejects(value.close(),/destroy failed/);assert.deepEqual(enabled,[false,true]);
+  assert.notEqual(value.getState().status,"closed");failed=false;await value.close();
+  assert.equal(value.getState().status,"closed");
+});
+
+test("conversion publishes a new path with absent CAS and preserves source state",async()=>{
+  const calls=[];const value=controller(async(url,init)=>{calls.push({url,init});return committed(b);},new Records(),"legacy.doc");
+  await value.hydrate({bytes:"legacy",revision:a});
+  await value.publishNewDocument("legacy.docx",new Blob(["converted"]),"conversion-id");
+  assert.match(calls[0].url,/path=legacy.docx/);
+  assert.equal(calls[0].init.headers["x-baseline-revision"],"absent");
+  assert.equal(calls[0].init.headers["idempotency-key"],"conversion-id");
+  assert.equal(await value.getState().snapshot.bytes.text(),"legacy");
+  await assert.rejects(value.publishNewDocument("legacy.doc",new Blob(),"id"),/different file/);
+  await value.close();
 });

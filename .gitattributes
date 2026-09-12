@@ -3,3 +3,5 @@
 *.sh text eol=lf
 # PowerShell scripts are Windows-only.
 *.ps1 text eol=crlf
+# Unified patches use a space prefix for empty context lines.
+scripts/release/office/adoption.patch whitespace=-blank-at-eol

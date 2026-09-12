@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 SOURCE = "d15d12b6945be4d8b0f3aa1806120e740d2950ee"
 PACKAGE_VERSION = "0.3.34"
 HOST_BUILD_ID = "office-host-0.3.34-r1"
-PATCH_SHA256 = "0abfb281c7f523d5d0b9dc2f0dc60f6af4751920754d0a54cb14755b9478b088"
+PATCH_SHA256 = "58e0ac5960764b148e5e4e855847407632a7497ca37356699c502690d78db6e5"
 BOOTSTRAP = {
     "office-host.html", "reset.html", "document_editor_service_worker.js", "sw.js",
     "plugins.json", "themes.json", "onlyoffice-runtime-assets.json",

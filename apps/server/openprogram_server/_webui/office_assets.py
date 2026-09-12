@@ -186,8 +186,10 @@ def office_host_availability(request, pack: OfficeAssetPack) -> dict:
     session = request.query_params.get("session_id", "")
     if not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", session):
         return {"available": False, "reason": "invalid_session_id"}
+    from openprogram.office_assets import OFFICE_PATCH_SHA256
     return {
         "available": True,
+        "moduleUrl": f"/api/documents/office-module/{OFFICE_PATCH_SHA256}.js",
         "hostUrl": f"http://host-{session}.office.localhost:{request.app.state.owner_auth.port}/office-host.html",
         "packageVersion": pack.manifest["packageVersion"],
         "hostBuildId": pack.manifest["hostBuildId"],

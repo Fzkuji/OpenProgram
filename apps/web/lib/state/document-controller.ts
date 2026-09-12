@@ -114,6 +114,9 @@ export class DocumentController {
     if (this.timer) clearTimeout(this.timer);
     if (this.maxTimer) clearTimeout(this.maxTimer);
     this.timer = this.maxTimer = null;
+    if (this.richExportTimer) clearTimeout(this.richExportTimer);
+    if (this.richExportMaxTimer) clearTimeout(this.richExportMaxTimer);
+    this.richExportTimer = this.richExportMaxTimer = null;
   }
 
   /** Queue current state rather than a stale captured draft. New input cannot
@@ -236,7 +239,10 @@ export class DocumentController {
   }
 
   /** Attach the one native engine owned by this document generation. */
-  attachRichEditor(editor: RichDocumentEditor, generation = this.state.generation): () => void {
+  attachRichEditor(editor: RichDocumentEditor, generation = this.state.editorRevision): () => void {
+    if (this.richEditor && this.richEditor !== editor) throw new Error("This document already owns an editor.");
+    if (generation !== this.state.editorRevision || this.state.status === "closed")
+      throw new Error("This document editor is no longer active.");
     this.richEditor = editor;
     this.richGeneration = generation;
     this.richDirty = Boolean(editor.getState?.().dirty);
@@ -247,9 +253,6 @@ export class DocumentController {
       this.release();
     };
   }
-  registerRichEditor(editor: RichDocumentEditor, generation = this.state.generation): () => void {
-    return this.attachRichEditor(editor, generation);
-  }
   markRichEditorDirty(dirty: boolean, editor?: RichDocumentEditor): void {
     if (editor && editor !== this.richEditor) return;
     this.richDirty = dirty;
@@ -259,12 +262,12 @@ export class DocumentController {
   private scheduleRichExport(): void {
     if (!this.richEditor || this.richExport) return;
     if (this.richExportTimer) clearTimeout(this.richExportTimer);
-    this.richExportTimer = setTimeout(() => { this.richExportTimer = null; void this.exportRichEditor(); }, this.debounceMs);
+    this.richExportTimer = setTimeout(() => { this.richExportTimer = null; void this.exportRichEditor().catch(() => undefined); }, this.debounceMs);
     if (!this.richExportMaxTimer) this.richExportMaxTimer = setTimeout(() => {
       this.richExportMaxTimer = null;
       if (this.richExportTimer) clearTimeout(this.richExportTimer);
       this.richExportTimer = null;
-      void this.exportRichEditor();
+      void this.exportRichEditor().catch(() => undefined);
     }, this.maxDebounceMs);
   }
   private async exportRichEditor(): Promise<void> {
@@ -272,11 +275,12 @@ export class DocumentController {
     const editor = this.richEditor;
     this.richExport = Promise.resolve().then(async () => {
       if (!editor.save) throw new Error("The Office editor cannot export the dirty document.");
-      await editor.save();
+      await editor.save(undefined, { commitPendingInput: false });
       await editor.flushPendingSaves();
+      this.richDirty = Boolean(editor.getState?.().dirty);
     }).catch((error) => { this.fail(error); throw error; }).finally(() => {
       this.richExport = null;
-      if (this.richDirty) this.scheduleRichExport();
+      if (this.richDirty && this.state.status !== "error" && this.state.status !== "conflict") this.scheduleRichExport();
     });
     await this.richExport;
   }
@@ -298,11 +302,7 @@ export class DocumentController {
     const draft = blobOf(bytes);
     this.setState({ draft, generation: this.state.generation + 1, status: "dirty", error: null });
     await this.persistCurrent();
-    this.richDirty = false;
     void this.drain(false).catch(() => undefined);
-  }
-  stageOfficeExport(bytes: Blob | Uint8Array | string, generation?: number): Promise<void> {
-    return this.stageRichExport(bytes, generation);
   }
 
   private drain(retry: boolean): Promise<void> {
@@ -346,9 +346,16 @@ export class DocumentController {
     return this.request;
   }
 
-  private async send(operation: DocumentDraftPending): Promise<{ revision: string; mtime?: number }> {
+  async publishNewDocument(path: string, bytes: Blob, idempotencyKey: string): Promise<void> {
     if (this.identity.kind !== "project") throw new Error("This attachment is read-only.");
-    const identity = this.identity;
+    const identity = identityFor({ projectId: this.identity.projectId, path });
+    if (identity.path === this.identity.path) throw new Error("Conversion requires a different file path.");
+    await this.send({ kind: "content", bytes, baseline: "absent", key: idempotencyKey,
+      editor: this.editorId, close: true, generation: 0 }, identity);
+  }
+
+  private async send(operation: DocumentDraftPending, identity: DocumentIdentity = this.identity): Promise<{ revision: string; mtime?: number }> {
+    if (identity.kind !== "project") throw new Error("This attachment is read-only.");
     const url = operation.kind === "restore" ? "/api/documents/history/restore"
       : `/api/documents/content?${new URLSearchParams({ project_id: identity.projectId, path: identity.path })}`;
     const init: RequestInit = operation.kind === "restore" ? {
@@ -370,9 +377,9 @@ export class DocumentController {
     }
     if (!response?.ok) {
       const error = new Error(response?.status === 409
-        ? "The file changed on disk. Your draft was retained."
+        ? identity === this.identity ? "The file changed on disk. Your draft was retained." : "The destination already exists. Choose a different file path."
         : `Document save could not be confirmed (${response?.status ?? "offline"}).`);
-      if (response?.status === 409) this.fail(error, true);
+      if (response?.status === 409 && identity === this.identity) this.fail(error, true);
       throw error;
     }
     const result = await response.json() as { ok?: boolean; status?: string; revision?: string; mtime?: number };
@@ -392,13 +399,18 @@ export class DocumentController {
     }
     if (this.restoreTask) await this.restoreTask;
     if (this.identity.kind === "attachment") return;
+    await this.flushRichEditor();
+    await this.drain(true);
+  }
+  private async flushRichEditor(): Promise<void> {
+    this.clearTimers();
     if (this.richExport) await this.richExport.catch(() => undefined);
-    if (this.richEditor && this.richDirty) {
+    if (this.richEditor && (this.richDirty || this.richEditor.getState?.().readonly === false)) {
       if (!this.richEditor.save) throw new Error("The Office editor cannot export the dirty document.");
       await this.richEditor.save();
       await this.richEditor.flushPendingSaves();
+      this.richDirty = Boolean(this.richEditor.getState?.().dirty);
     }
-    await this.drain(true);
   }
   async discard(): Promise<void> {
     this.clearTimers();
@@ -451,7 +463,9 @@ export class DocumentController {
     if (this.state.renaming) return Promise.reject(new Error("Wait for the document rename to finish."));
     if (this.restoreTask) return this.restoreTask;
     this.setState({ restoring: true });
+    this.richEditor?.setInputEnabled?.(false);
     const task = Promise.resolve().then(async () => {
+      await this.flushRichEditor();
       await this.drain(true);
       const bytes = await this.historyContent(version, side);
       this.pending = { kind: "restore", bytes, baseline: this.baselineRevision,
@@ -461,20 +475,28 @@ export class DocumentController {
       await this.drain(true);
       await this.resetRichEditor();
     }).catch((error) => { this.fail(error, this.state.status === "conflict"); throw error; });
-    this.restoreTask = task.finally(() => { this.restoreTask = null; this.setState({ restoring: false }); });
+    this.restoreTask = task.finally(() => { this.restoreTask = null; this.richEditor?.setInputEnabled?.(true); this.setState({ restoring: false }); });
     return this.restoreTask;
   }
   async prepareRename(): Promise<void> {
     this.setState({ renaming: true });
+    this.richEditor?.setInputEnabled?.(false);
+    await this.flushRichEditor();
     // Finish reads started before the rename barrier so preflight sees any
     // recovered draft. New controllers cannot begin reads through the barrier.
     if (this.loading) await this.loading.catch(() => undefined);
   }
-  finishRename(succeeded: boolean): void {
+  async finishRename(succeeded: boolean): Promise<void> {
+    this.richEditor?.setInputEnabled?.(true);
     if (succeeded && !this.state.draft && !this.pending) {
       this.clearTimers();
       this.setState({ status: "closed" });
-      this.evict();
+      const editor = this.richEditor;
+      try {
+        await editor?.destroy();
+        if (this.richEditor === editor) this.richEditor = null;
+        this.evict();
+      } catch (error) { this.setState({ error: errorMessage(error) }); }
     } else this.setState({ renaming: false });
   }
   async close(): Promise<void> {
@@ -483,12 +505,17 @@ export class DocumentController {
       this.closeRequested = true;
       const editor = this.richEditor;
       editor?.setInputEnabled?.(false);
-      try { await this.flush(); }
-      catch (error) { this.closeRequested = false; editor?.setInputEnabled?.(true); throw error; }
-      if (editor) {
-        await editor.flushPendingSaves();
-        await editor.destroy();
-        if (this.richEditor === editor) this.richEditor = null;
+      try {
+        await this.flush();
+        if (editor) {
+          await editor.destroy();
+          if (this.richEditor === editor) this.richEditor = null;
+        }
+      } catch (error) {
+        this.closeRequested = false;
+        editor?.setInputEnabled?.(true);
+        this.fail(error, this.state.status === "conflict");
+        throw error;
       }
       this.setState({ status: "closed" });
       this.evict();
@@ -499,15 +526,21 @@ export class DocumentController {
 }
 /** Freeze affected editors for the entire structured server rename. The
  * caller releases this barrier in finally, including compensation failures. */
-export async function beginDocumentRename(projectId: string, oldPath: string, newPath: string): Promise<(succeeded: boolean) => void> {
+export async function beginDocumentRename(projectId: string, oldPath: string, newPath: string): Promise<(succeeded: boolean) => Promise<void>> {
   const rename = { projectId, paths: [oldPath, newPath] };
   renames.add(rename);
-  await Promise.all([...controllers.values()].filter((controller) => matchesRename(controller.identity, rename))
-    .map((controller) => controller.prepareRename()));
-  return (succeeded) => {
+  const affected = [...controllers.values()].filter((controller) => matchesRename(controller.identity, rename));
+  const results = await Promise.allSettled(affected.map((controller) => controller.prepareRename()));
+  const failed = results.find((result) => result.status === "rejected");
+  if (failed?.status === "rejected") {
     renames.delete(rename);
-    for (const controller of [...controllers.values()])
-      if (matchesRename(controller.identity, rename)) controller.finishRename(succeeded);
+    await Promise.all(affected.map((controller) => controller.finishRename(false)));
+    throw failed.reason;
+  }
+  return async (succeeded) => {
+    renames.delete(rename);
+    await Promise.all([...controllers.values()].filter((controller) => matchesRename(controller.identity, rename))
+      .map((controller) => controller.finishRename(succeeded)));
   };
 }
 export function getOrCreateDocumentController(options: DocumentControllerOptions): DocumentController {

@@ -11,10 +11,10 @@ export interface DocumentControllerOptions { projectId?: string; path: string; s
  * renderer never publishes bytes directly; onSave is installed by the
  * controller owner and is awaited by the native editor. */
 export interface RichDocumentEditor {
-  save?(targetExt?: string): Promise<unknown>;
+  save?(targetExt?: string, options?: { commitPendingInput?: boolean }): Promise<unknown>;
   flushPendingSaves(): Promise<void>;
   setReadonly(readonly: boolean): void;
   setInputEnabled?(enabled: boolean): void;
   destroy(): Promise<void> | void;
-  getState?: () => { dirty?: boolean; destroyed?: boolean; status?: string };
+  getState?: () => { dirty?: boolean; readonly?: boolean; destroyed?: boolean; status?: string };
 }

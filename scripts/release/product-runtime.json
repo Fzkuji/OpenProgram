@@ -5,7 +5,7 @@
   "office": {
     "packageVersion": "0.3.34",
     "source": "d15d12b6945be4d8b0f3aa1806120e740d2950ee",
-    "adoptionPatchSha256": "0abfb281c7f523d5d0b9dc2f0dc60f6af4751920754d0a54cb14755b9478b088",
+    "adoptionPatchSha256": "58e0ac5960764b148e5e4e855847407632a7497ca37356699c502690d78db6e5",
     "reviewedNpmLockSha256": "7b71a099e703545a80d06454ae2af6f52e52f0c3f1fbe5ead31dfdf11faf2590"
   },
   "capabilities": [

@@ -660,7 +660,7 @@ export function runServerRenameWithDrafts(
       const message = "The file rename could not be completed; the local draft was retained.";
       reportDraftPersistenceError(projectId, message);
       return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
-    } finally { finishRename(renamed); }
+    } finally { await finishRename(renamed); }
   });
 }
 

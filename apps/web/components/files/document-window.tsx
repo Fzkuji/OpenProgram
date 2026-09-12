@@ -7,7 +7,10 @@ import type { DocumentHistoryEntry } from "@/lib/state/document-types";
 import styles from "./document-window.module.css";
 
 import { fileCapabilities } from "@/lib/documents/file-formats";
+import { rawFileUrl, absRawFileUrl } from "@/lib/state/files-shared";
 import { officeCapability } from "@/lib/documents/file-formats";
+import { convertOfficeDocument } from "@/lib/documents/office-editor";
+import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { OfficeSurface } from "./office-surface";
 
 interface VersionPreview { blob: Blob; content?: string; version?: string; side?: "before" | "after"; disk?: boolean; }
@@ -20,6 +23,10 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
     [projectId, path, sessionId, readOnly]);
   const [state, setState] = useState(controller.getState());
   const [mode, setMode] = useState<"preview" | "edit">("preview");
+  const [converting, setConverting] = useState(false);
+  const conversion = useRef<{ path: string; key: string; bytes: File } | null>(null);
+  const conversionAbort = useRef<AbortController | null>(null);
+  useEffect(() => () => conversionAbort.current?.abort(), []);
   const [editorOpened, setEditorOpened] = useState(false);
   const [content, setContent] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -66,7 +73,36 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
       if (request === selectionRequest.current) setSelected({ blob, content: value, version, side });
     });
   }
-  async function showCurrent() { selectionRequest.current++; setSelected(null); if (isOffice && !readOnly) await perform(() => controller.flush()); setMode("preview"); }
+  async function convert() {
+    if (converting || !office?.conversionRequired || !currentBytes || readOnly) return;
+    const target = window.prompt(text("New file path", "新文件路径"), path.replace(/\.[^.]+$/, `.${office.format}`));
+    if (target === null) return;
+    if (!target.toLowerCase().endsWith(`.${office.format}`)) {
+      setError(text(`The new file must use .${office.format}.`, `新文件必须使用 .${office.format} 扩展名。`)); return;
+    }
+    setConverting(true);
+    const abort = new AbortController(); conversionAbort.current = abort;
+    try {
+      if (!conversion.current || conversion.current.path !== target) {
+        const bytes = await convertOfficeDocument(controller, currentBytes, path.split("/").pop()!, office.format, abort.signal);
+        conversion.current = { path: target, bytes, key: crypto.randomUUID() };
+      }
+      abort.signal.throwIfAborted();
+      await controller.publishNewDocument(target, conversion.current.bytes, conversion.current.key);
+      if (!abort.signal.aborted) {
+        setError(null);
+        useCenterTabs.getState().openFileTab(projectId, target);
+      }
+    } catch (failure) {
+      if (!abort.signal.aborted) setError(failure instanceof Error ? failure.message : String(failure));
+    } finally { if (!abort.signal.aborted) setConverting(false); }
+  }
+  async function showCurrent() {
+    await perform(async () => {
+      if (isOffice && !readOnly) await controller.flush();
+      selectionRequest.current++; setSelected(null); setMode("preview");
+    });
+  }
   async function restore(version: string, side: "before" | "after" = "after") {
     if (!window.confirm(text("Restore this version?", "恢复此版本？"))) return;
     await perform(async () => { await controller.restore(version, side); showCurrent(); await openHistory(); });
@@ -106,6 +142,11 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
       {!readOnly && (isText || (isOffice && office?.editable)) && <button className={`${styles.button} ${mode === "edit" && !selected ? styles.active : ""}`}
         disabled={!state.snapshot || state.restoring || state.renaming} aria-pressed={mode === "edit" && !selected}
         onClick={() => { setSelected(null); setEditorOpened(true); setMode("edit"); }}>{text("Edit", "编辑")}</button>}
+      {!readOnly && office?.conversionRequired && !selected && <button className={styles.button}
+        disabled={!currentBytes || converting} onClick={() => void convert()}>
+        {text(`Convert to ${office.format.toUpperCase()}`, `转换为 ${office.format.toUpperCase()}`)}</button>}
+      {isOffice && <a className={styles.button} href={readOnly ? absRawFileUrl(path, sessionId) : rawFileUrl(projectId, path)}
+        download={path.split("/").pop()}>{text("Download disk file", "下载磁盘文件")}</a>}
       {!readOnly && <button className={styles.button} aria-expanded={historyOpen}
         onClick={() => historyOpen ? setHistoryOpen(false) : void openHistory()}>{text("History", "历史")}</button>}
     </div>
@@ -125,8 +166,7 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
         onClick={() => void restore(selected.version!, selected.side)}>{text("Restore this version", "恢复此版本")}</button>}
     </div>}
     <div className={styles.body}>
-      {isOffice && currentBytes ? <><div hidden={Boolean(selected)} style={{ height: "100%" }}><OfficeSurface key={state.editorRevision} controller={controller} bytes={currentBytes} path={path} readOnly={readOnly || !office?.editable} mode={mode} /></div>{selected && <FileViewer projectId={projectId} path={path} sourceBlob={selected.blob}
-        snapshot={{ project_id: projectId, path, content: selected.content, binary: !isText, size: selected.blob.size, mtime: 0 }} />}</> : selected ? <FileViewer projectId={projectId} path={path} sourceBlob={selected.blob}
+      {isOffice && currentBytes ? <><div hidden={Boolean(selected)} style={{ height: "100%" }}><OfficeSurface key={state.editorRevision} controller={controller} bytes={currentBytes} path={path} readOnly={readOnly || !office?.editable} mode={mode} /></div>{selected && <OfficeSurface key={`${selected.version ?? "disk"}:${selected.side ?? "after"}`} controller={controller} bytes={selected.blob} path={path} readOnly={true} mode="preview" />}</> : selected ? <FileViewer projectId={projectId} path={path} sourceBlob={selected.blob}
         snapshot={{ project_id: projectId, path, content: selected.content, binary: !isText, size: selected.blob.size, mtime: 0 }} /> : <>
       {editorOpened && <div hidden={mode !== "edit" || Boolean(selected)} style={{ height: "100%" }}>
         <fieldset disabled={state.restoring || state.renaming} style={{ border: 0, margin: 0, padding: 0, height: "100%" }}>

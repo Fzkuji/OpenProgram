@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
-from fastapi import Request
 from starlette.testclient import TestClient
 
 from openprogram.webui.owner_auth import OwnerAuthMiddleware, OwnerAuthState
@@ -25,6 +24,7 @@ def _pack(root: Path) -> None:
         "web-apps/apps/api/documents/api.js": b"window.DocsAPI = {};",
         "wasm/x2t/x2t.wasm": b"wasm",
         "fonts/example.woff2": b"font",
+        "npm/public-api.js": b"export const editor = true;",
     }
     for relative, content in assets.items():
         target = root / relative
@@ -54,9 +54,8 @@ def boundary_app(tmp_path: Path):
     pack = office_assets.OfficeAssetPack.from_root(root)
     app = FastAPI()
 
-    @app.get("/api/documents/office-host")
-    async def availability(request: Request):
-        return office_assets.office_host_availability(request, request.app.state.office_assets)
+    from openprogram.webui.routes.office_assets import register
+    register(app)
 
     @app.get("/api/x")
     async def api():
@@ -195,3 +194,19 @@ def test_availability_rejects_remote_allowed_origin_but_accepts_local_main_origi
         )
     assert remote_response.json() == {"available": False, "reason": "local_main_origin_required"}
     assert local_response.json()["available"] is True
+
+
+def test_parent_module_is_authenticated_and_uses_verified_pack(boundary_app):
+    from openprogram.office_assets import OFFICE_PATCH_SHA256
+    app, pack = boundary_app
+    url = f"/api/documents/office-module/{OFFICE_PATCH_SHA256}.js"
+    auth = {"authorization": "Bearer " + base64.urlsafe_b64encode(bytes(range(32))).decode().rstrip("=")}
+    with TestClient(app, base_url="http://127.0.0.1:18100", client=("127.0.0.1", 50000)) as client:
+        assert client.get(url).status_code == 401
+        response = client.get(url, headers=auth)
+        assert response.status_code == 200
+        assert response.content == b"export const editor = true;"
+        assert "javascript" in response.headers["content-type"]
+        (pack.root / "npm/public-api.js").write_bytes(b"tampered")
+        assert client.get(url, headers=auth).status_code == 503
+        assert client.get("/api/documents/office-module/unknown.js", headers=auth).status_code == 404
