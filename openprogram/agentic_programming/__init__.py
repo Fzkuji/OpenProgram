@@ -39,6 +39,7 @@ __all__ = [
     "auto_trace_module",
     "auto_trace_package",
     "Runtime",
+    "LLMError",
     "llm",
     "agent",
     "decision",
@@ -47,3 +48,11 @@ __all__ = [
     "route",
     "conditional",
 ]
+
+
+def __getattr__(name):
+    # Keep provider initialization out of the core module import cycle.
+    if name == "LLMError":
+        from openprogram.providers.utils.errors import LLMError
+        return LLMError
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
