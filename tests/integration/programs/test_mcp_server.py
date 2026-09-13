@@ -88,7 +88,7 @@ for name in ("memory_status", "memory_search", "read", "bash", "memory_update"):
 from openprogram.agent.session_config import PermissionRules
 import openprogram.programs.permission_rule as permission_module
 permission_module.load_merged_rules = lambda _session_id: PermissionRules(
-    deny=["memory_update"]
+    deny=["memory_update"], ask=["memory_search"]
 )
 
 from openprogram.agent import dispatcher
