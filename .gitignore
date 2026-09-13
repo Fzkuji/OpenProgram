@@ -124,3 +124,6 @@ openprogram/programs/workflow/group_weekly_report/
 
 # Pinned document decoder assets generated from package-lock before Web builds.
 apps/web/public/document-assets/
+
+# Independent report Workflow repositories
+openprogram/programs/workflow/reports/*/

@@ -104,3 +104,7 @@ The Tencent Workflow targets 80–120 non-whitespace characters, aiming for 100.
 Its intended reporting window is Friday afternoon in `Asia/Shanghai`. It does not
 create a recurring schedule or send to the leader. An exact execution time and
 material source must be configured separately before enabling a scheduled run.
+
+## Source organization
+
+The four independent report Workflow packages are grouped under `openprogram/programs/workflow/reports/`: `weekly_report` (personal), `group_weekly_report` (group), `tencent_weekly_report` (Tencent), and `report` (routing). Shared internal helpers live in `workflow/_reports/`. Public call names and configured output paths are unchanged. A category directory organizes sources; it is not an additional Workflow.

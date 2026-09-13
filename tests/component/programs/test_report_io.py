@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from openprogram.programs.workflow.report_io import decode_object, save_report
+from openprogram.programs.workflow._reports.io import decode_object, save_report
 
 
 def test_decode_requires_bounded_object():
@@ -14,7 +14,7 @@ def test_decode_requires_bounded_object():
 
 
 def test_drafts_never_overwrite_and_manifest_is_last(tmp_path, monkeypatch):
-    monkeypatch.setattr('openprogram.programs.workflow.report_io.write_file', lambda path, content: _write(path, content))
+    monkeypatch.setattr('openprogram.programs.workflow._reports.io.write_file', lambda path, content: _write(path, content))
     first = save_report('2026-W37', str(tmp_path), 'report', '', {}, [])
     second = save_report('2026-W37', str(tmp_path), 'revised', '', {}, [])
     assert first != second
@@ -30,7 +30,7 @@ def _write(path, content):
 
 
 def test_write_failure_does_not_claim_success(tmp_path, monkeypatch):
-    monkeypatch.setattr('openprogram.programs.workflow.report_io.write_file', lambda *args: 'Error: denied')
+    monkeypatch.setattr('openprogram.programs.workflow._reports.io.write_file', lambda *args: 'Error: denied')
     with pytest.raises(OSError, match='denied'):
         save_report('2026-W37', str(tmp_path), 'report', '', {}, [])
 
@@ -49,7 +49,7 @@ def test_default_directory_uses_real_file_tool(tmp_path, monkeypatch):
 
 
 def test_invalidated_checkpoint_cannot_resume_saved_progress(tmp_path):
-    from openprogram.programs.workflow.report_io import load_checkpoint
+    from openprogram.programs.workflow._reports.io import load_checkpoint
     import json
     import pytest
     path = tmp_path/'run.json'

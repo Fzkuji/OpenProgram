@@ -272,3 +272,54 @@ def test_bound_catalog_loads_real_packages_and_only_authorized_siblings(tmp_path
         for name in ("portable_a", "portable_b", "portable_unapproved"):
             if hasattr(parent, name):
                 delattr(parent, name)
+
+
+def test_grouped_workflow_keeps_public_identity_and_authorized_import(tmp_path, monkeypatch):
+    root = _isolate(tmp_path, monkeypatch)
+    _programs.mark_workflow_projects_migrated()
+    instance = tmp_path / "instance"
+    instance.mkdir()
+    repository._replace_snapshot(instance, _candidate())
+    name, revision = repository._publish_snapshot(instance, project_id="", action="create", metadata=_candidate()["project_metadata"])
+    group = root / "reports"
+    group.mkdir()
+    moved = group / name
+    (root / name).rename(moved)
+    imported = _capture_imports(monkeypatch)
+    _registry._load_workflow_projects()
+    assert imported == []
+    _programs.record_program_source(moved, source="test-move", kind="workflow-publish", base=str(group))
+    _registry._load_workflow_projects()
+    assert imported == [name]
+    assert repository._active_project(name)[2] == moved
+    assert catalog._search_projects(name)[0]["project_id"] == name
+    assert repository._copy_pinned_snapshot(tmp_path / "copy", name, revision)[0]["project_id"] == name
+    revised = _candidate()
+    revised["files"]["steps/work.py"] = "def work(task: str):\n    return task.upper()\n"
+    updated = tmp_path / "updated"
+    updated.mkdir()
+    repository._replace_snapshot(updated, revised)
+    repository._publish_snapshot(updated, project_id=name, action="revise", metadata=revised["project_metadata"])
+    assert repository._active_project(name)[2] == moved
+    assert not (root / name).exists()
+
+
+def test_grouped_discovery_rejects_symlinks_and_ambiguous_ids(tmp_path, monkeypatch):
+    from openprogram.programs.workflow.errors import InvalidWorkflow
+    root = _isolate(tmp_path, monkeypatch)
+    group = root / "reports"
+    group.mkdir()
+    original = _plant(group, "duplicate")
+    assert catalog._project_directory("duplicate") == original
+    (root / "linked").symlink_to(group, target_is_directory=True)
+    assert catalog._project_directory("duplicate") == original
+    _plant(root, "duplicate")
+    with pytest.raises(InvalidWorkflow, match="duplicate"):
+        catalog._project_directory("duplicate")
+    assert catalog._search_projects("duplicate") == []
+
+
+def test_legacy_report_imports_share_implementation():
+    import importlib
+    for name in ("io", "output", "sources", "wechat", "wechat_visual"):
+        assert importlib.import_module(f"openprogram.programs.workflow.report_{name}") is importlib.import_module(f"openprogram.programs.workflow._reports.{name}")

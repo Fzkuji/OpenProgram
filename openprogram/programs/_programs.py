@@ -168,7 +168,7 @@ def _portable_source_path(root: str) -> str | None:
         except ValueError:
             continue
         parts = relative.split("/")
-        if len(parts) == 2 and parts[0] in {"workflow", "packages", "applications"}:
+        if (len(parts) == 2 and parts[0] in {"workflow", "packages", "applications"}) or (len(parts) == 3 and parts[0] == "workflow"):
             return relative
     return None
 
@@ -181,9 +181,10 @@ def _recorded_root(row: dict) -> str | None:
     if scope is not None:
         parts = raw.split("/")
         if (
-            scope != "programs" or "\\" in raw or len(parts) != 2
+            scope != "programs" or "\\" in raw
+            or not (len(parts) == 2 or (len(parts) == 3 and parts[0] == "workflow"))
             or parts[0] not in {"workflow", "packages", "applications"}
-            or parts[1] in {"", ".", ".."}
+            or any(part in {"", ".", ".."} for part in parts[1:])
         ):
             return None
         matches = []
@@ -192,7 +193,7 @@ def _recorded_root(row: dict) -> str | None:
             # A portable location cannot silently become an external symlink.
             if candidate.is_symlink() or candidate.parent.is_symlink() or not candidate.is_dir():
                 continue
-            if candidate.resolve().parent != (catalog_root / parts[0]).resolve():
+            if (catalog_root / parts[0]).is_symlink() or candidate.resolve() != catalog_root.resolve().joinpath(*parts):
                 continue
             matches.append(str(candidate))
         if len(matches) > 1 and parts[0] == "workflow":

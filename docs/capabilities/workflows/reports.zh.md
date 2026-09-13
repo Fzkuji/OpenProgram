@@ -75,3 +75,7 @@ Asia/Shanghai 确定当前 ISO 周次，先复用当前工作目录 `reports` �
 
 腾讯稿件目标约 100 字，接受 80–120 个非空白字符。用途时间为 `Asia/Shanghai` 周五下午。
 Workflow 本身不创建定时任务，也不发送给 leader；启用定时运行前需另外配置精确时刻和材料来源。
+
+## 源码组织
+
+四个独立汇报 Workflow 包集中在 `openprogram/programs/workflow/reports/`：`weekly_report`（个人）、`group_weekly_report`（小组）、`tencent_weekly_report`（腾讯）和 `report`（总入口）。共享内部模块位于 `workflow/_reports/`。公开调用名称和配置的输出路径不变。分类目录用于组织源码，本身不是一个 Workflow。

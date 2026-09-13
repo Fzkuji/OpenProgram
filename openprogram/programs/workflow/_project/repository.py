@@ -185,7 +185,7 @@ def _resolve_workflow_dependencies(
                 ),
                 revision,
             )
-        dependency_dir = catalog._workflow_projects_root() / dependency
+        dependency_dir = catalog._project_directory(dependency)
         candidate, checked = _checkout_revision(dependency_dir, revision)
         if checked != revision:
             raise InvalidWorkflow(
@@ -400,7 +400,7 @@ def _checkout_head(project_dir: Path) -> tuple[dict, str]:
 
 def _active_project(project_id: str) -> tuple[dict, dict, Path]:
     project_id = catalog._safe_project_id(project_id)
-    project_dir = catalog._workflow_projects_root() / project_id
+    project_dir = catalog._project_directory(project_id)
     index = catalog._read_project_index(project_dir)
     candidate, revision = _checkout_head(project_dir)
     if revision != index["active_revision"]:
@@ -414,7 +414,7 @@ def _copy_pinned_snapshot(
     revision: str,
 ) -> tuple[dict, dict]:
     project_id = catalog._safe_project_id(project_id)
-    project_dir = catalog._workflow_projects_root() / project_id
+    project_dir = catalog._project_directory(project_id)
     index = catalog._read_project_index(project_dir)
     candidate, checked_revision = _checkout_revision(project_dir, revision)
     if checked_revision != revision:
@@ -432,7 +432,7 @@ def _copy_pinned_snapshot(
 
 
 def _copy_active_snapshot(instance: Path, project_id: str) -> tuple[dict, dict]:
-    index = catalog._read_project_index(catalog._workflow_projects_root() / project_id)
+    index = catalog._read_project_index(catalog._project_directory(project_id))
     return _copy_pinned_snapshot(instance, project_id, index["active_revision"])
 
 
@@ -464,11 +464,11 @@ def _publish_snapshot(
             if not project_id:
                 project_id = catalog._slugify_project_name(metadata["name"])
             project_id = catalog._safe_project_id(project_id)
-            if (root / project_id).exists():
+            if catalog._project_directory(project_id).exists():
                 raise InvalidWorkflow(f"workflow project already exists: {project_id}")
         else:
             project_id = catalog._safe_project_id(project_id)
-        project_dir = root / project_id
+        project_dir = catalog._project_directory(project_id)
         if project_dir.is_symlink():
             raise InvalidWorkflow("workflow project directory must not be a symlink")
         candidate = _read_candidate_directory(
@@ -553,7 +553,7 @@ def _publish_snapshot(
         project_dir,
         source=f"workflow:{project_id}",
         kind="workflow-publish",
-        base=str(root),
+        base=str(project_dir.parent),
     )
     return project_id, head
 
@@ -567,9 +567,7 @@ def _publish_candidate(candidate: dict, *, project_id: str, action: str) -> dict
         instance.mkdir()
         workflow_dependencies = _replace_snapshot(instance, candidate)
         if action == "revise":
-            project_dir = catalog._workflow_projects_root() / catalog._safe_project_id(
-                project_id
-            )
+            project_dir = catalog._project_directory(project_id)
             active_revision = catalog._read_project_index(project_dir)[
                 "active_revision"
             ]
