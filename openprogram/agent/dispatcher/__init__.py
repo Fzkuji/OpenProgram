@@ -280,6 +280,7 @@ def process_agent_continuation(
             continuation=continuation,
         )
     finally:
+        _on_event_persist.flush()
         _bindings.release()
     if context.get("safe_point_committed"):
         result = TurnResult(
@@ -298,7 +299,7 @@ def process_agent_continuation(
         final_text=final_text,
         history=history,
         tool_calls=tool_calls,
-        _ordered_blocks=_ordered_blocks,
+        _ordered_blocks=(_on_event_persist.blocks if cancel_event and cancel_event.is_set() else _ordered_blocks),
         _agentic_tool_names=_agentic_tool_names,
         _placeholder_inserted=True,
         cancel_event=cancel_event,
@@ -612,6 +613,8 @@ def _process_turn_once(
                     raise
             else:
                 raise
+        finally:
+            _on_event_persist.flush()
     except Exception as e:
         # Error fold / standalone error node / taxonomy / error
         # TurnResult — error_path.py. Head movement stays with the
@@ -667,7 +670,7 @@ def _process_turn_once(
         final_text=final_text,
         history=history,
         tool_calls=tool_calls,
-        _ordered_blocks=_ordered_blocks,
+        _ordered_blocks=(_on_event_persist.blocks if cancel_event and cancel_event.is_set() else _ordered_blocks),
         _agentic_tool_names=_agentic_tool_names,
         _placeholder_inserted=_placeholder_inserted,
         cancel_event=cancel_event,

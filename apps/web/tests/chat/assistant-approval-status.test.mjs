@@ -25,7 +25,7 @@ await build({
       a.path.includes('markdown-render') ? 'export const typesetMath=()=>{};' :
       a.path.includes('user-attachments') ? 'export const parseAttachments=text=>({attachments:[],text}), AttachmentChips=()=>null;' :
       a.path.includes('turn-files-presentation') ? 'export const shouldRenderTurnFiles=()=>false;' :
-      'export const Avatar=()=>null, AttachCard=()=>null, ExecutionStrip=()=>null, execStripLabel=()=>"", FunctionStep=()=>null, SPAWNING_TOOL_NAMES=new Set(), SubAgentStep=()=>null, ThinkingStep=()=>null, MessageActions=()=>null, MessageTimestamp=()=>null, RuntimeBlock=()=>null, TurnFilesChips=()=>null;'
+      'export const Avatar=()=>null, AttachCard=()=>null, ExecutionStrip=({children})=>children, execStripLabel=()=>"", FunctionStep=()=>null, SPAWNING_TOOL_NAMES=new Set(), SubAgentStep=()=>null, ThinkingStep=({text})=>text, MessageActions=()=>null, MessageTimestamp=()=>null, RuntimeBlock=()=>null, TurnFilesChips=()=>null;'
     }));
   }}],
 });
@@ -45,4 +45,15 @@ test('only the canonical approval owner shows a waiting status, removed on resol
   assert.doesNotMatch(render([decision],{e1:{...order,terminal:true}}), /Waiting for approval/);
   assert.doesNotMatch(render([{...decision,kind:'ask'}],{e1:order}), /Waiting for approval/);
   assert.doesNotMatch(render([decision],{}), /Waiting for approval/);
+});
+
+test('a failed assistant retains the streamed text alongside the error notice', () => {
+  globalThis.approvalState={currentSessionId:'s1',pendingDecisions:[],executionUpdateOrders:{}};
+  const html = renderToStaticMarkup(createElement(AssistantBubble,{msg:{
+    id:'failed', role:'assistant', status:'error', content:'provider disconnected',
+    blocks:[{type:'thinking',text:'Checking evidence'},{type:'text',text:'Partial response'}],
+  },sessionIdOverride:'s1'}));
+  assert.match(html, /Checking evidence/);
+  assert.match(html, /Partial response/);
+  assert.match(html, /provider disconnected/);
 });

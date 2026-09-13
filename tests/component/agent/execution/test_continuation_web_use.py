@@ -294,6 +294,9 @@ def test_continuation_reuses_turn_owner_and_preserves_live_cards(
     registry, adapters = web_use_host
     _seed_session(tmp_db)
     continuation = _continuation()
+    SessionNodeWriter(tmp_db, SESSION_ID).update(ASSISTANT_ID, metadata={
+        "extra": json.dumps({"blocks": [{"type": "thinking", "text": "Before approval"}]}),
+    })
     captured = {"owners": [], "events": []}
     rounds = []
 
@@ -314,6 +317,14 @@ def test_continuation_reuses_turn_owner_and_preserves_live_cards(
             on_event, tool_call_id=new_id, command="observe",
             result=result["session"],
         )
+        fresh = SessionDB(tmp_db.root_path)
+        try:
+            restored = next(m for m in fresh.get_messages(SESSION_ID) if m["id"] == ASSISTANT_ID)
+            restored_blocks = json.loads(restored["extra"])["blocks"]
+            assert restored_blocks[0] == {"type": "thinking", "text": "Before approval"}
+            assert any(b.get("tool_call_id") == new_id for b in restored_blocks)
+        finally:
+            fresh.close()
         if ordered_blocks_out is not None:
             if not ordered_blocks_out:
                 ordered_blocks_out.extend([
@@ -362,7 +373,7 @@ def test_continuation_reuses_turn_owner_and_preserves_live_cards(
     assert tmp_db.message_exists(SESSION_ID, f"{ASSISTANT_ID}_t_call-resume-1")
     assistant = next(row for row in tmp_db.get_messages(SESSION_ID) if row["id"] == ASSISTANT_ID)
     extra = assistant.get("extra") or (assistant.get("metadata") or {}).get("extra")
-    assert not extra or "call-resume-1" not in str(extra)
+    assert "call-resume-1" in str(extra)
     assert not any(
         event.get("type") == "chat_ack" for event in captured["events"]
     )

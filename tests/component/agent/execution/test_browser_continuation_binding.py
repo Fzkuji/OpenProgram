@@ -13,7 +13,7 @@ def test_public_continuation_binds_exact_turn_and_releases_on_error(monkeypatch,
 
     request = TurnRequest(session_id="resume-session", agent_id="main", user_text="resume", source="component")
     db = SimpleNamespace(get_session=lambda _: {}, message_exists=lambda *_: True,
-                         get_branch=lambda *_: [])
+                         get_branch=lambda *_: [], get_nodes=lambda *_: [])
     monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
     monkeypatch.setattr("openprogram.context.persistence.rendered_history", lambda *_a, **_k: [])
     # Keep the real binding implementation; unrelated persistence/provider setup is inert.

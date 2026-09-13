@@ -289,7 +289,8 @@ export function AssistantBubble({ msg, verdict, sessionIdOverride }: {
             );
           })()}
         </div>
-      ) : (
+      ) : null}
+      {(
         <div className="chat-stream-body">
           {effBlocks ? (
             (() => {
@@ -411,7 +412,7 @@ export function AssistantBubble({ msg, verdict, sessionIdOverride }: {
                   </ExecutionStrip>,
                 );
               });
-              if (!hasTextBlock && hasContent) {
+              if (!hasTextBlock && hasContent && msg.status !== "error") {
                 rendered.push(
                   <MarkdownText key="legacy_content" text={contentText} />,
                 );
@@ -494,7 +495,7 @@ export function AssistantBubble({ msg, verdict, sessionIdOverride }: {
                   ))}
                 </div>
               ) : null}
-              {hasContent ? <MarkdownText text={contentText} /> : null}
+              {hasContent && msg.status !== "error" ? <MarkdownText text={contentText} /> : null}
               {streaming && !hasContent && !waitingApproval ? <TypingIndicator /> : null}
             </>
           )}

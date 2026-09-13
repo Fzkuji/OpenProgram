@@ -418,3 +418,65 @@ def test_ordinary_approval_cannot_authorize_sandbox_escalation(tmp_path, monkeyp
         reset_preapproved_wait_id(token)
     assert allowed is False
     assert reason == "approval does not authorize this operation"
+
+
+def test_stream_progress_survives_reload_and_failure(tmp_db, monkeypatch):
+    import json
+
+    expected = [
+        {"type": "thinking", "text": "Checking evidence"},
+        {"type": "text", "text": "Partial response"},
+    ]
+
+    def loop(*, req, on_event, assistant_msg_id, **kwargs):
+        for block in expected:
+            on_event({"type": "chat_response", "data": {
+                "type": "stream_event", "session_id": req.session_id,
+                "msg_id": "progress-user", "event": block,
+            }})
+        on_event({"type": "chat_response", "data": {
+            "type": "stream_event", "session_id": req.session_id,
+            "msg_id": "child-runtime", "event": {"type": "text", "text": "Child only"},
+        }})
+        # Read a fresh store, as a reload must not depend on browser memory.
+        fresh = SessionDB(tmp_db.root_path)
+        try:
+            msg = next(m for m in fresh.get_messages(req.session_id) if m["id"] == assistant_msg_id)
+            assert json.loads(msg["extra"])["blocks"] == expected
+        finally:
+            fresh.close()
+        raise RuntimeError("provider disconnected")
+
+    monkeypatch.setattr(D, "_run_loop_blocking", loop)
+    result = D.process_user_turn(D.TurnRequest(
+        session_id="progress", user_text="hi", user_msg_id="progress-user",
+        agent_id="main", source="tui",
+    ), on_event=lambda _: None)
+    assert result.failed
+    msg = next(m for m in tmp_db.get_messages("progress") if m["role"] == "assistant")
+    assert json.loads(msg["extra"])["blocks"] == expected
+    assert "provider disconnected" in msg["content"]
+
+
+
+def test_cancel_keeps_incomplete_iteration_progress(tmp_db, monkeypatch):
+    import json
+    stopped = threading.Event()
+
+    def loop(*, on_event, ordered_blocks_out, cancel_event, **kwargs):
+        ordered_blocks_out.append({"type": "text", "text": "Earlier iteration"})
+        for event in [
+            {"type": "text", "text": "Earlier iteration"},
+            {"type": "thinking", "text": "Unfinished reasoning"},
+        ]:
+            on_event({"type": "chat_response", "data": {"type": "stream_event", "event": event}})
+        cancel_event.set()
+        return "Earlier iteration", {}, []
+
+    monkeypatch.setattr(D, "_run_loop_blocking", loop)
+    result = D.process_user_turn(D.TurnRequest(
+        session_id="stopped",user_text="hi",agent_id="main",source="tui",
+    ), cancel_event=stopped)
+    assert not result.failed
+    msg=next(m for m in tmp_db.get_messages("stopped") if m["role"]=="assistant")
+    assert json.loads(msg["extra"])["blocks"][-1] == {"type":"thinking","text":"Unfinished reasoning"}

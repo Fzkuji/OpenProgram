@@ -1,0 +1,34 @@
+✔ only the canonical approval owner shows a waiting status, removed on resolution (3.910417ms)
+✖ a failed assistant retains the streamed text alongside the error notice (1.025167ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 1
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 153.316791
+
+✖ failing tests:
+
+test at apps/web/tests/chat/assistant-approval-status.test.mjs:50:1
+✖ a failed assistant retains the streamed text alongside the error notice (1.025167ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /Checking evidence/. Input:
+  
+  '<div class="message assistant" data-msg-id="failed" role="article" aria-label="Agent"><div class="message-header" style="top:0"><div class="message-sender">Agent</div></div><div class="error-content">provider disconnected</div><div class="message-actions-footer"></div></div>'
+  
+      at TestContext.<anonymous> (file:///Users/fzkuji/Projects/OpenProgram-chat-progress-recovery/apps/web/tests/chat/assistant-approval-status.test.mjs:56:10)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:385:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '<div class="message assistant" data-msg-id="failed" role="article" aria-label="Agent"><div class="message-header" style="top:0"><div class="message-sender">Agent</div></div><div class="error-content">provider disconnected</div><div class="message-actions-footer"></div></div>',
+    expected: /Checking evidence/,
+    operator: 'match',
+    diff: 'simple'
+  }

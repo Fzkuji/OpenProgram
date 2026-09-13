@@ -943,7 +943,7 @@ function finalize(sid: string, rid: string, d: ChatResponseData): void {
   // built `content` delta-by-delta; only fall back to the result's
   // text when nothing streamed (e.g. a non-streaming run).
   const finalText = d.content ?? d.text;
-  if (finalText && !cur.content) patch.content = finalText;
+  if (finalText && (!cur.content || status === "error")) patch.content = finalText;
 
   // Converge the live turn to the reloaded shape. Streaming built
   // `blocks` incrementally in event-arrival order; the final envelope

@@ -278,3 +278,20 @@ test("ACK rekey deduplicates when hydration already contains the server user id"
   const order = useSessionStore.getState().messageOrder[sid];
   assert.deepEqual(order, ["server_duplicate", "server_duplicate_reply"]);
 });
+
+
+test("failure flushes pending progress and keeps the provider error separate", () => {
+  const sid = "failed-progress", uid = "failed-user";
+  send({type:"thinking",text:"Checking evidence"}, sid, uid);
+  send({type:"text",text:"Partial response"}, sid, uid);
+  applyChatWsMessage({type:"chat_response",data:{
+    type:"error",session_id:sid,msg_id:uid,content:"provider disconnected",
+  }});
+  const msg=useSessionStore.getState().messagesById[uid+"_reply"];
+  assert.equal(msg.status,"error");
+  assert.equal(msg.content,"provider disconnected");
+  assert.deepEqual(msg.blocks,[
+    {type:"thinking",text:"Checking evidence"},
+    {type:"text",text:"Partial response"},
+  ]);
+});
