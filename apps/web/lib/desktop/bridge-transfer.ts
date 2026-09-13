@@ -288,8 +288,10 @@ export function buildTransferPayload(
         chats.push(chat);
       }
     }
-    if (tab.kind === "file" && tab.projectId && tab.path) {
-      const key = fileDraftKey(tab.projectId, tab.path);
+    for (const page of pageHistory(tab).entries) {
+      if (page.kind !== "file" || !page.projectId || !page.path) continue;
+      const key = fileDraftKey(page.projectId, page.path);
+      if (payloadFileDrafts.some(draft => draft.key === key)) continue;
       const value = fileDrafts.get(key);
       if (value) payloadFileDrafts.push({ key, value: structuredClone(value) });
     }
@@ -462,6 +464,9 @@ export async function handleRemoveSource(
   replaceCenterTabsPayload(removal.before, { persist: false });
   const afterSession = sourceSessionAfter(beforeSession, payload, removal.after);
   const draftKeys = payload.fileDrafts.map((draft) => draft.key);
+  const retainedFileKeys = new Set(removal.after.tabs.flatMap(tab => pageHistory(tab).entries.flatMap(page =>
+    page.kind === "file" && page.projectId && page.path ? [fileDraftKey(page.projectId, page.path)] : [])));
+  const beforeFileDrafts = snapshotFileDrafts(draftKeys);
   const entry: TransferJournalEntry = {
     version: 1,
     token,
@@ -472,8 +477,9 @@ export async function handleRemoveSource(
     afterCenterTabs: removal.after,
     beforeSession,
     afterSession,
-    beforeFileDrafts: snapshotFileDrafts(draftKeys),
-    afterFileDrafts: draftKeys.map((key) => ({ key, existed: false })),
+    beforeFileDrafts,
+    afterFileDrafts: beforeFileDrafts.map(snapshot => retainedFileKeys.has(snapshot.key)
+      ? snapshot : { key: snapshot.key, existed: false }),
     beforeBridge,
     afterBridge: {
       liveIds: beforeBridge.liveIds.filter((id) => !webIds.includes(id)),

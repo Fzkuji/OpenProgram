@@ -220,8 +220,11 @@ function validateTransferPayload(ctx, value) {
   }
 
   const rawFileDrafts = value.fileDrafts ?? [];
-  if (!Array.isArray(rawFileDrafts) || rawFileDrafts.length > FILE_DRAFT_MAX_COUNT) {
-    throw new TypeError("fileDrafts must contain at most three entries");
+  const historicalFileCount = new Set(tabs.flatMap(tab => (tab.pageHistory?.entries ?? [tab])
+    .filter(page => page.kind === "file" && page.projectId && page.path)
+    .map(page => JSON.stringify([page.projectId, page.path])))).size;
+  if (!Array.isArray(rawFileDrafts) || rawFileDrafts.length > Math.max(FILE_DRAFT_MAX_COUNT, historicalFileCount)) {
+    throw new TypeError("fileDrafts exceed the transferred file history");
   }
   const fileDrafts = [];
   const fileDraftKeys = new Set();

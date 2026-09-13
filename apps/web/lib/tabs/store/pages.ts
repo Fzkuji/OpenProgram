@@ -106,7 +106,7 @@ export function pagesActions(set: StoreApi<CenterTabsState>["setState"], get: St
             ...(matchingView ? {
               fileNavigationSnapshot: {
                 ...snapshot!, projectId: newProjectId, path: newPath,
-                scroll: snapshot!.scroll?.path === tab.path ? { ...snapshot!.scroll, path: newPath } : snapshot!.scroll
+                scroll: snapshot!.scroll?.path === tab.path ? { offset: snapshot!.scroll!.offset, path: newPath } : snapshot!.scroll
               }
             } : {}),
           };

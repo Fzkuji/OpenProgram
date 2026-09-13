@@ -396,3 +396,36 @@ test("renaming a file preserves its launcher history and another same-target tab
   state().navigateHistory(1); state().navigateHistory(1);
   assert.equal(active().path, "b.ts");
 });
+
+test("transfers include historical file drafts and preserve keys still used by another tab", async () => {
+  window.location = { pathname: "/chat" };
+  const { buildTransferPayload, handleRemoveSource } = await import("../../lib/desktop/bridge-transfer.ts");
+  const { fileDrafts, fileDraftKey } = await import("../../lib/files/files-shared.ts");
+  const { createRequire } = await import("node:module");
+  const { validateTransferPayload } = createRequire(import.meta.url)("../../../desktop/tab-transfer-validation.js");
+  reset(); state().openNewTabPage();
+  const keys = [];
+  for (const path of ["a.ts", "b.ts", "c.ts", "d.ts"]) {
+    state().openFileTab("p", path);
+    const key = fileDraftKey("p", path); keys.push(key);
+    fileDrafts.set(key, {draft: `unsaved ${path}`, baselineContent: "before", baselineMtime: 1});
+  }
+  const moving = active().id;
+  state().openNewTabPage(); state().openFileTab("p", "a.ts");
+  const remaining = structuredClone(active());
+  const payload = buildTransferPayload({kind: "tab", tabIds:[moving]}, "source");
+  assert.deepEqual(payload.fileDrafts.map(draft => draft.key), keys);
+  const normalized = validateTransferPayload({id:"source"}, payload).payload;
+  assert.deepEqual(normalized.fileDrafts, payload.fileDrafts);
+  const receipts = [];
+  await handleRemoveSource({webTabs:{syncVisible:async () => true}, tabTransfer:{
+    journalOpened: async () => true,
+    sourceRemoved: async (...args) => { receipts.push(args); return true; },
+    journalFinalized: async () => true,
+  }}, {token:"historical-file-drafts", payload});
+  assert.ok(receipts.some(([, ok]) => ok));
+  assert.deepEqual(active(), remaining);
+  assert.equal(fileDrafts.get(keys[0]).draft, "unsaved a.ts");
+  for (const key of keys.slice(1)) assert.equal(fileDrafts.has(key), false);
+  for (const key of keys) fileDrafts.delete(key);
+});
