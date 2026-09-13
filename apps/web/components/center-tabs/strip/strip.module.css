@@ -1,0 +1,172 @@
+/* Center tab container — Chrome-style tab strip + file/new-tab panes.
+   Strip is a 40px band; the session tab has NO second toolbar under it
+   (chat chrome = the strip alone), and the file/web toolbars below are
+   40px too, so their second line lands at y=80.
+   设计细节（几何/颜色）见下方 .strip 前的说明块。Token 词汇沿用全站。 */
+
+/* ---- Tab strip ---------------------------------------------------- */
+
+/* 布局对齐用户 Chrome 参照（图83/84），全部整数算术，无桥接 hack：
+
+   ── 几何 ────────────────────────────────────────────────────────────
+   strip 40px 高、无纵向 padding。非活动 tab 28px 垂直居中 → 上下各 6px
+   （矮按钮、多留白，Chrome 观感）。活动 tab 高 34px = 28 + 6、
+   align-self:flex-end → 它的底边【就是】strip 底边(y=40)，元素本体直接
+   贴到内容区，无需 box-shadow 桥接、不存在细缝。padding-bottom:6px 把
+   活动 tab 的内容压回上方 28px 区，图标/文字和邻居完全同一水平线。
+
+   ── 溢出 ────────────────────────────────────────────────────────────
+   tab 多时先压缩到 min-width，标题省略号；超过可容纳数量后只滚动 tab
+   流，＋ 号仍是独立 flex 项并保持可见。
+
+   ── 颜色 ────────────────────────────────────────────────────────────
+   strip 满铺实色灰（--bg-secondary），四边直抵边缘，底边与内容区直接相接
+   （Chrome 同款的干净区域边界，不加线、不加渐变、不加阴影）。活动 tab 用
+   --bg-primary(=内容区色) + 底部两侧 fillet，从灰底里"长"进内容区，衔接
+   处全部同色。切 tab 不做任何过渡动画，瞬时切换。 */
+.strip {
+  --tab-active-bg: var(--bg-primary);
+  height: 40px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center; /* 非活动 tab 垂直居中：(40-28)/2 = 上下各 6px */
+  gap: 8px; /* tab 之间的间距 */
+  padding: 0 8px;
+  background: var(--tabrow-bg); /* 实色灰底（桌面模式比侧栏深一档，见 base.css） */
+  flex-shrink: 0;
+  /* 标题是拖拽把手，不是可选文本：拖动时选中会留下高亮残影。 */
+  user-select: none;
+}
+
+/* 桌面（Electron）：tab 条空白处可拖拽窗口（Chrome 同款）；tab、＋号
+   与主菜单钮仍要接收点击，标回 no-drag。 */
+:global(html.is-desktop) .strip {
+  height: 40px;
+  align-items: center;
+  --tab-active-bg: var(--bg-primary);
+  -webkit-app-region: drag;
+  /* 10px 右缘留白：主菜单钮（28px）中心距窗口右缘 10+14=24px，正好落在
+     右侧收起轨的图标轴上——最右那一列现在属于菜单钮，不再属于 ＋号。 */
+  padding-right: 10px;
+}
+/* tab 流容器：浏览器模式不参与布局（display:contents，行为与从前
+   完全一致）。 */
+/* Desktop dark tabs need a lighter selection than the content surface. */
+:global(html.is-desktop[data-theme-mode="dark"]) .strip {
+  --tab-active-bg: color-mix(in srgb, var(--bg-primary) 88%, white 12%);
+}
+/* "New window" 提示条：跟随光标的浮动胶囊。由组件 portal 进 .center-body，
+   position:fixed 定位在指针右下方——不能画在被拖 tab 上，因为标签栏容器
+   .tabsFlow 有 overflow:hidden/auto，会把上下溢出裁掉导致提示看不见。
+   pointer-events:none 且不属于被拖元素，pointer capture 不受影响。 */
+.detachCue {
+  position: fixed;
+  /* 偏到指针右下方，不压在手指/光标下面。 */
+  transform: translate(14px, 16px);
+  z-index: 1000;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  padding: 8px 15px;
+  border-radius: 999px;
+  background: var(--accent-blue);
+  color: var(--primary-foreground);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.12);
+  pointer-events: none;
+}
+/* 目标窗口的"在此打开"提示：另一窗口的 tab 悬停到本窗口时，只在顶部标签栏
+   显示——整条 .strip 一层淡强调底 + 下缘强调线，外加一枚小胶囊挂在 strip
+   下沿。绝不画在页面内容区（否则像分屏）。pointer-events:none，不挡释放。
+   与源窗口的 detachCue 由光标位置互斥。 */
+.strip[data-transfer-hover] {
+  position: relative;
+  background:
+    color-mix(in oklch, var(--accent-orange) 16%, var(--tabrow-bg));
+  box-shadow: inset 0 -2px 0 var(--accent-orange);
+}
+/* Desktop: the leftmost 88px (traffic-light inset) belong to the parent
+   .desktop-tab-row, NOT .strip — tint it too so the whole top bar reads as one
+   continuous highlighted band, edge to edge. :has() so the parent reacts to the
+   child's data-transfer-hover without threading a prop up. */
+:global(.desktop-tab-row):has(.strip[data-transfer-hover]) {
+  background: color-mix(in oklch, var(--accent-orange) 16%, var(--tabrow-bg));
+  /* 底边强调线要连到最左端（红绿灯占位区属于本行、不属于 .strip），
+     否则线会在左端断开。与 .strip 的 inset 底边同色同高，拼成整条。 */
+  box-shadow: inset 0 -2px 0 var(--accent-orange);
+}
+.transferHoverPill {
+  position: absolute;
+  left: 50%;
+  top: calc(100% - 2px);
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  padding: 6px 13px;
+  border-radius: 999px;
+  background: var(--accent-orange);
+  color: var(--primary-foreground);
+  font-size: 12px;
+  font-weight: 650;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  animation: transferHoverIn 120ms ease-out;
+}
+@keyframes transferHoverIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .transferHoverPill {
+    animation: none;
+  }
+}
+
+.dragAnnouncement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.sessionNavigation {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 8px;
+  padding: 0;
+  -webkit-app-region: no-drag;
+}
+.sessionNavigation button {
+  padding: 0;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.sessionNavigation button:hover:not(:disabled) { background: var(--muted); }
+.sessionNavigation button:disabled { opacity: .35; cursor: default; }
+.sessionNavigation button:focus-visible { outline: 2px solid currentColor; outline-offset: -2px; }

@@ -1,3 +1,4 @@
+import { readCenterTabCss } from "../tabs/center-tab-css-source.mjs";
 import { readDesktopBridgeSource, readDesktopMainSource } from "../testing/feature-source.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -22,7 +23,7 @@ const contextMenu = read("../../app/menu-overlay/context-menu/page.tsx");
 const browserSettings = read("../../components/settings/browser-settings.tsx");
 const settingsLayout = read("../../components/settings/settings-tabs-layout.tsx");
 const browserSettingsRoute = read("../../app/(shell)/settings/browser/page.tsx");
-const centerTabsCss = read("../../components/center-tabs/center-tabs.module.css");
+const centerTabsCss = readCenterTabCss();
 const cssRoot = postcss.parse(centerTabsCss);
 const historyCss = read("../../app/styles/right-dock/web-history.css");
 const dropdownMenu = read("../../components/ui/dropdown-menu.tsx");
@@ -60,7 +61,7 @@ assert.match(browserHome, /readShortcuts/);
 assert.doesNotMatch(ntpShortcuts, /google\.com\/s2\/favicons|function faviconUrl/);
 assert.doesNotMatch(browserHome, /faviconUrl|<img/);
 assert.match(browserHome, /styles\.ntpTileInitial/);
-assert.match(browserHome, /className=\{styles\.webToolbar\}/);
+assert.match(browserHome, /className=\{browserChromeStyles\.webToolbar\}/);
 assert.match(browserHome, /<BookmarkBar ownerId=\{menuOwnerId\} onNavigate=\{go\}/);
 assert.match(browserHome, /<BrowserMenu[\s\S]*ownerId=\{menuOwnerId\}/);
 assert.match(browserHome, /canGoHome=\{false\}/);
@@ -79,7 +80,7 @@ assert.doesNotMatch(browserHome, /browserHomeToolbar|text\("Open", "打开"\)/);
 assert.match(browserGlyph, /BrowserGlyph/);
 assert.match(browserHome, /<BrowserGlyph/);
 assert.equal(
-  launcher.split("{applications.filter", 1)[0].match(/className=\{styles\.ntpGlyph\}/g)?.length,
+  launcher.split("{applications.filter", 1)[0].match(/className=\{browserGlyphStyles\.ntpGlyph\}/g)?.length,
   3,
   "the three non-browser launchers must use the same icon container as Browser",
 );

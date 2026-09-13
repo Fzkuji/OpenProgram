@@ -1,0 +1,576 @@
+.tabsFlow {
+  display: contents;
+}
+/* 桌面模式：真 flex 容器 + 限宽。＋号始终按 8px gap 紧跟最后一个 tab
+   （自然流，不再定位到右缘）；末端固定留 72px = ＋号 36（8 gap + 28）
+   ＋ 主菜单钮 36，菜单钮右缘落在 10px padding 上，中心距窗口右缘 24px，
+   与右栏收起轨图标同轴。 */
+:global(html.is-desktop) .tabsFlow {
+  display: flex;
+  align-items: center;
+  gap: 8px; /* 与 .strip 的 tab 间距一致（真容器后不再继承 strip 的 gap） */
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: calc(100% - 72px);
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+:global(html.is-desktop) .tabsFlow:empty {
+  display: none;
+}
+:global(html.is-desktop) .tabsFlow::-webkit-scrollbar {
+  display: none;
+}
+/* tabsFlow 本身是 shrink-to-fit flex item；width 参与其 intrinsic size，
+   让少量 tab 真正达到 240px。空间不足时仍按同一基准等比收缩。 */
+:global(html.is-desktop) .tabsFlow > .tab {
+  width: 240px;
+  flex: 0 1 240px;
+  max-width: 240px;
+}
+:global(html.is-desktop) .tab,
+:global(html.is-desktop) .compoundTab,
+:global(html.is-desktop) .plusBtn,
+:global(html.is-desktop) .menuBtn {
+  -webkit-app-region: no-drag;
+}
+
+/* 单个 tab —— 默认（非活动）：透明、四角全圆，悬浮在灰底上（Chrome 式：
+   灰底属于栏，非活动 tab 本身无底色，靠竖分隔条分组、hover 才亮块）。 */
+.tab {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  height: 28px; /* 矮按钮：上下各留 6px（Chrome 观感） */
+  box-sizing: border-box;
+  border-radius: 8px; /* 四角全圆 */
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  /* 等宽（Chrome 逻辑）：所有 tab 同一基准宽 200px，与标题长短无关；空间
+     不足时等基准 → 等比收缩到 min-width，标题省略号，不横向滚动。 */
+  flex: 0 1 200px;
+  min-width: 48px;
+  white-space: nowrap;
+  /* 不做 background 过渡：切换 tab 必须瞬时（Chrome 同款）。之前 120ms 的
+     淡入让活动白底在灰底上"闪一下亮"。transform 过渡只服务拖动让位。 */
+  transition: transform 160ms ease;
+}
+
+/* 新建 tab 入场动画：宽度从 0 长到基准宽，flex 布局逐帧回流，邻居被平滑
+   挤开（Chrome 式）。只在【新增】的 tab 上挂 .tabEnter（初始加载的不播），
+   动画结束由 onAnimationEnd 摘掉 class —— overflow:hidden 只在入场期间
+   裁一下内容，摘掉后不会裁活动 tab 的 fillet。 */
+@keyframes tabEnter {
+  from {
+    flex-basis: 0;
+    min-width: 0;
+    padding-left: 0;
+    padding-right: 0;
+  }
+}
+.tabEnter {
+  animation: tabEnter 180ms ease-out;
+  overflow: hidden;
+}
+/* 关闭 tab 退场动画：入场的镜像 —— 宽度收缩到 0，邻居平滑回填。真正从
+   store 移除发生在 animationend 之后（strip 组件里延迟 closeTab），
+   forwards 保住收缩完的终态、避免移除前闪回原宽。 */
+@keyframes tabExit {
+  to {
+    flex-basis: 0;
+    min-width: 0;
+    padding-left: 0;
+    padding-right: 0;
+    opacity: 0;
+  }
+}
+.tabExit {
+  animation: tabExit 160ms ease-in forwards;
+  overflow: hidden;
+  pointer-events: none; /* 退场中不可再点 */
+}
+/* 非活动 tab 之间的竖分隔条（2px 宽、圆角、竖直居中，用户 Chrome 同款）。
+   画在非活动 tab 左侧 gap 里（gap 8px → 条心在 -4px，条宽 2px → left:-5px）。
+   首个 tab、紧贴活动 tab 右侧、以及分隔条两侧任一 tab 悬停时淡出。 */
+.tab:not(.tabActive)::before {
+  content: "";
+  position: absolute;
+  left: -5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 16px;
+  border-radius: 1px;
+  background: var(--border);
+  pointer-events: none;
+}
+.tab:first-child::before,
+.tabActive + .tab::before,
+.tab:not(.tabActive):hover::before,
+.tab:hover + .tab:not(.tabActive)::before {
+  background: transparent;
+}
+
+/* 悬停：非活动 tab 浮起一层四角圆浅色块 + 文字提亮。 */
+.tab:not(.tabActive):hover {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
+.tab:has(.tabTarget:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+  z-index: 2;
+}
+
+/* 活动 tab —— 顶圆底方、内容区同色，自身延伸到 strip 底边（见文件头几何
+   说明），底部两侧 fillet 平滑弯进内容区。z-index:1 盖过邻居的分隔条。 */
+.tabActive,
+.tab.tabActive:hover {
+  height: 34px; /* 28 + 底部 6px 延伸段 */
+  align-self: flex-end; /* 底边贴 strip 底边（y=40），与内容区零距离 */
+  padding-bottom: 6px; /* 内容压回上方 28px 区，与邻居文字同线 */
+  border-radius: 8px 8px 0 0;
+  background: var(--tab-active-bg);
+  color: var(--text-bright);
+  z-index: 1;
+}
+/* 右下 fillet：贴活动 tab 右下角外侧的 8px 方块，抠掉上外角 1/4 圆。
+   bottom:0 就是 strip 底边，弧线直接落在内容区顶线上。 */
+.tab.tabActive::after {
+  content: "";
+  position: absolute;
+  right: -8px;
+  bottom: 0;
+  width: 8px;
+  height: 8px;
+  background: radial-gradient(
+    circle 8px at 100% 0,
+    transparent 7.5px,
+    var(--tab-active-bg) 8px
+  );
+}
+/* 左下 fillet（活动 tab 不画分隔条，::before 空闲；全属性自包含，覆盖掉
+   分隔条规则里的 top/transform）。 */
+.tab.tabActive::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: auto;
+  bottom: 0;
+  transform: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 0;
+  background: radial-gradient(
+    circle 8px at 0 0,
+    transparent 7.5px,
+    var(--tab-active-bg) 8px
+  );
+}
+
+/* ── 桌面（Electron）全宽栏 ──────────────────────────────────────────
+   桌面 tab 固定 28px 高，在 40px strip 内上下各留 6px。8px 圆角保持
+   紧凑矩形轮廓；不得使用半高圆角或悬浮阴影形成胶囊。 */
+:global(html.is-desktop) .tab {
+  height: 28px;
+  padding-right: 5px;
+  border-radius: 8px;
+}
+:global(html.is-desktop) .tab.tabActive,
+:global(html.is-desktop) .tab.tabActive:hover {
+  height: 28px;
+  align-self: center;
+  padding-bottom: 0;
+  border-radius: 8px;
+  box-shadow: none;
+}
+:global(html.is-desktop) .tab.tabActive::before,
+:global(html.is-desktop) .tab.tabActive::after {
+  content: none;
+}
+
+/* A split group is one top-level strip item with two equal identity cells.
+   The cells never receive separate selected surfaces or drag subjects. */
+.compoundTab {
+  --compound-collapse-width: 200px;
+  position: relative;
+  isolation: isolate;
+  display: block;
+  height: 28px;
+  min-width: 136px;
+  width: 280px;
+  flex: 0 1 280px;
+  max-width: 280px;
+  padding: 0;
+  box-sizing: border-box;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+  transition: transform 160ms ease;
+}
+.compoundTabActive {
+  height: 34px;
+  align-self: flex-end;
+  padding-bottom: 6px;
+  border-radius: 8px 8px 0 0;
+  background: var(--tab-active-bg);
+  color: var(--text-bright);
+  z-index: 1;
+}
+.compoundTab:not(.compoundTabActive):hover {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
+.compoundTab:has(.compoundTarget:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+  z-index: 2;
+}
+
+.compoundTarget {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  outline: none;
+  cursor: pointer;
+}
+
+.compoundMembers {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.compoundMember {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 5px 0 10px;
+  box-sizing: border-box;
+}
+.compoundMember + .compoundMember {
+  border-left: 1px solid var(--border);
+}
+.compoundMemberName {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes compoundMemberExit {
+  to { opacity: 0; }
+}
+.compoundMemberExit {
+  animation: compoundMemberExit 160ms ease-in forwards;
+}
+@keyframes compoundMemberCollapse {
+  to {
+    width: var(--compound-collapse-width);
+    flex-basis: var(--compound-collapse-width);
+    max-width: var(--compound-collapse-width);
+  }
+}
+.compoundMemberClosing {
+  animation: compoundMemberCollapse 160ms ease-in forwards;
+  overflow: hidden;
+}
+
+.compoundMemberClose {
+  position: relative;
+  z-index: 2;
+  pointer-events: auto;
+}
+.compoundMemberClose[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.55;
+}
+
+/* The outer edge follows the same separator and active-fillet rules as an
+   ordinary tab. */
+.compoundTab:not(.compoundTabActive)::before {
+  content: "";
+  position: absolute;
+  left: -5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 16px;
+  border-radius: 1px;
+  background: var(--border);
+  pointer-events: none;
+}
+.compoundTab:first-child::before,
+.tabActive + .compoundTab::before,
+.compoundTabActive + .tab::before,
+.compoundTabActive + .compoundTab::before,
+.compoundTab:not(.compoundTabActive):hover::before,
+.tab:hover + .compoundTab::before,
+.compoundTab:hover + .tab:not(.tabActive)::before,
+.compoundTab:hover + .compoundTab:not(.compoundTabActive)::before {
+  background: transparent;
+}
+.compoundTabActive::before,
+.compoundTabActive::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  width: 8px;
+  height: 8px;
+  pointer-events: none;
+}
+.compoundTabActive::before {
+  left: -8px;
+  background: radial-gradient(
+    circle 8px at 0 0,
+    transparent 7.5px,
+    var(--tab-active-bg) 8px
+  );
+}
+.compoundTabActive::after {
+  right: -8px;
+  background: radial-gradient(
+    circle 8px at 100% 0,
+    transparent 7.5px,
+    var(--tab-active-bg) 8px
+  );
+}
+
+/* 指针驱动拖动（Chrome 式）：tab 本体跟手 —— transform 由 JS 直写，
+   transition 必须关掉才不追手；抬 z-index 盖过让位中的邻居。
+   跟手态必须【完全不透明】且有实心底色 —— .tab 默认 background:transparent，
+   不铺底就会透出下面的 tab，看起来"重叠成一团"。 */
+.tab[data-pointer-drag="true"],
+.compoundTab[data-pointer-drag="true"] {
+  /* transform 绝不能进 transition —— 它由 JS 每帧直写来跟手。
+     只让 detach 态的视觉属性（缩放/透明度/阴影）平滑过渡，
+     缩放走 scale，与 translateX 各自独立，互不打架。 */
+  transition: scale 140ms ease-out, opacity 140ms ease-out,
+    box-shadow 140ms ease-out;
+  position: relative;
+  z-index: 30;
+  opacity: 1;
+  background: var(--bg-primary);
+  color: var(--text-bright);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  transform-origin: center;
+}
+/* 拖动中的 tab 不画左侧分隔条（它已脱离栏内节奏）。 */
+.tab[data-pointer-drag="true"]::before {
+  background: transparent;
+}
+/* 纵向拖离 strip 进入 detach 态：拎起来的缩略图 + "松手拆成新窗口" 的明确提示。
+   此时抬到最上层，且不参与栏内让位，不会和邻居内容糊在一起。 */
+.tab[data-detach-intent="true"],
+.compoundTab[data-detach-intent="true"] {
+  opacity: 0.7;
+  z-index: 40;
+  /* 越过 detach 阈值时轻微缩小，像被"拎起来"的缩略图。用 scale 属性而不是
+     transform，跟手的 translateX 才不会被覆盖。 */
+  scale: 0.92;
+  /* accent 描边 + 抬升：明确表示"松手会拆成独立窗口"。 */
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 1px;
+  border-radius: 8px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.42);
+}
+/* Chrome 式"关闭时宽度冻结"：鼠标点 × 连关时，幸存 tab 被 inline width
+   钉在关闭前的像素宽（见 freezeStripWidths），下一个 × 正落在同一位置，
+   可以原地连点；鼠标离开 strip 才解冻。解冻是把 inline 宽度摘掉，这条
+   过渡让它平滑长回基准宽，而不是瞬移。只挂在被冻结的元素上，.tab 的基
+   础 transition（纯 transform，服务拖动让位）原样不动。上面的
+   prefers-reduced-motion 块已把 .tab / .compoundTab 的 transition-duration
+   归零，这条同样被覆盖。 */
+/* 只在【释放】那一拍挂宽度过渡（marker 降级为 "released" 再清 inline，
+   宽度平滑长回基准）。钉住那一拍（"true"）绝不能有这条过渡——过渡会把
+   flex-basis/max-width 从样式表的 240px 动画到钉住值，第一帧整排 tab
+   先弹大再缩回（实测 141→240→141），就是关闭时的闪烁。 */
+.tab[data-width-frozen="released"],
+.compoundTab[data-width-frozen="released"] {
+  transition:
+    width 160ms ease,
+    flex-basis 160ms ease,
+    max-width 160ms ease,
+    transform 160ms ease;
+}
+
+/* Chrome 式实时让位：before/after 不画插入线，被越过的 tab 用 transform
+   平滑滑开（见 computeLiveShifts）。拖动只重排，没有合并高亮。 */
+@media (prefers-reduced-motion: reduce) {
+  .tab,
+  .compoundTab {
+    transition-duration: 0ms;
+  }
+  .tab[data-detach-intent="true"],
+  .compoundTab[data-detach-intent="true"] {
+    scale: 1;
+  }
+}
+
+:global(html.is-desktop) .compoundTab,
+:global(html.is-desktop) .compoundTabActive {
+  height: 28px;
+  align-self: center;
+  padding-bottom: 0;
+  border-radius: 8px;
+}
+:global(html.is-desktop) .compoundTabActive {
+  box-shadow: none;
+}
+:global(html.is-desktop) .compoundTab {
+  --compound-collapse-width: 240px;
+  transition-duration: 120ms;
+}
+:global(html.is-desktop) .compoundTabActive::before,
+:global(html.is-desktop) .compoundTabActive::after {
+  content: none;
+}
+
+.tabTarget {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+  outline: none;
+  cursor: pointer;
+}
+
+.tabIcon {
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+.tabActive .tabIcon,
+.compoundTabActive .tabIcon { color: var(--text-bright); }
+
+.tabFavicon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+.tabName {
+  /* 撑满图标和 ✕ 之间的全部空间：短标题够不到右缘 → 渐隐不生效、✕ 紧随
+     其位；长标题溢出 → 正好在 ✕ 前渐隐消失（Chrome 式），中间无死留白。
+     不撑满的话容器贴文字宽，右缘 mask 会把每个标题的尾巴都淡掉。 */
+  flex: 1 1 auto;
+  overflow: hidden;
+  min-width: 0;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    black calc(100% - 12px),
+    transparent
+  );
+  mask-image: linear-gradient(to right, black calc(100% - 12px), transparent);
+}
+
+/* Close ✕ — 常驻显示（等宽 tab 右侧本就留有它的位置，Chrome 同款）。 */
+.tabClose {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  margin-left: auto;
+  flex-shrink: 0;
+  border-radius: 50%;
+  color: var(--text-dim);
+  background: transparent;
+  cursor: pointer;
+}
+.tabClose:hover {
+  color: var(--text-bright);
+  background: var(--bg-hover);
+}
+/* Dirty marker ● — shown instead of ✕ until hover swaps them back. */
+.tabDirtyDot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 8px;
+  color: var(--text-secondary);
+}
+.tab:hover .tabDirtyDot,
+.compoundTab:hover .tabDirtyDot { display: none; }
+.tabDirtyDot + .tabClose { display: none; }
+.tab:hover .tabDirtyDot + .tabClose,
+.compoundTab:hover .tabDirtyDot + .tabClose { display: flex; }
+.tab:focus-within .tabDirtyDot,
+.compoundTab:focus-within .tabDirtyDot { display: none; }
+.tab:focus-within .tabDirtyDot + .tabClose,
+.compoundTab:focus-within .tabDirtyDot + .tabClose { display: flex; }
+
+/* ＋ 新建：紧跟最后一个标签、比标签矮的安静圆角钮，悬停才有底色。
+   align-self:center 让它在 40px 栏里垂直居中（栏本身 align-items 是
+   flex-end，标签贴底，＋ 钮居中不受影响）。 */
+/* New tab uses the same button width and gap as session navigation. */
+.plusBtn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: 15px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 50%; /* 圆形（Chrome 的 ＋ 是正圆） */
+  cursor: pointer;
+  flex-shrink: 0; /* tab 压缩时 ＋ 不缩、永远可见 */
+}
+.plusBtn:hover {
+  color: var(--text-bright);
+  background: var(--bg-hover);
+}
+/* 主菜单 ⋮ —— Chrome 右端那颗。占据 strip 最右预留列：margin-left:auto
+   把它推到右缘（＋号因此回到紧跟末位 tab 的自然位置），几何与 ＋号同款
+   （28px 圆钮、居中、悬停才有底色）。 */
+.menuBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  flex-shrink: 0; /* tab 压缩时菜单钮不缩、永远可见 */
+}
+.menuBtn:hover,
+.menuBtn[data-state="open"] {
+  color: var(--text-bright);
+  background: var(--bg-hover);
+}

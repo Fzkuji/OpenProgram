@@ -1,3 +1,4 @@
+import { readCenterTabCss } from "../../tabs/center-tab-css-source.mjs";
 // navigation: original sequential assertions and shared fixtures.
 export async function run(testContext) {
 
@@ -25,10 +26,7 @@ testContext.assert.match(
   /case "collapse-to-pip":/,
 );
 
-(testContext.pipCss = await testContext.readFile(
-  new URL("../../components/center-tabs/center-tabs.module.css", testContext.sourceUrl),
-  "utf8",
-));
+(testContext.pipCss = readCenterTabCss());
 
 testContext.assert.match(testContext.pipCss, /\.webPipResize/);
 

@@ -8,7 +8,8 @@ import { AppWindow, FileText, MessageCirclePlus, TerminalSquare } from "lucide-r
 import { useTranslation } from "@/lib/i18n";
 import { newSession } from "@/lib/runtime-bridge/conversations";
 import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
-import styles from "../center-tabs.module.css";
+import styles from "./new-tab.module.css";
+import browserGlyphStyles from "../browser/browser-glyph.module.css";
 import { BrowserGlyph } from "../browser/browser-glyph";
 
 export function NewTabPage() {
@@ -37,13 +38,13 @@ export function NewTabPage() {
     <div className={styles.ntp}>
       <div className={styles.ntpLauncher}>
         <button type="button" className={styles.ntpCard} onClick={() => openBuiltinTab("files")}>
-          <span className={styles.ntpGlyph} data-tone="files" aria-hidden="true">
+          <span className={browserGlyphStyles.ntpGlyph} data-tone="files" aria-hidden="true">
             <FileText size={11} strokeWidth={2.1} />
           </span>
           {text("Files", "文件")}
         </button>
         <button type="button" className={styles.ntpCard} onClick={openNewChat}>
-          <span className={styles.ntpGlyph} data-tone="chat" aria-hidden="true">
+          <span className={browserGlyphStyles.ntpGlyph} data-tone="chat" aria-hidden="true">
             <MessageCirclePlus size={11} strokeWidth={2.1} />
           </span>
           {text("New chat", "新建对话")}
@@ -53,14 +54,14 @@ export function NewTabPage() {
           {text("Browser", "浏览器")}
         </button>
         <button type="button" className={styles.ntpCard} onClick={() => openBuiltinTab("terminal")}>
-          <span className={styles.ntpGlyph} data-tone="terminal" aria-hidden="true">
+          <span className={browserGlyphStyles.ntpGlyph} data-tone="terminal" aria-hidden="true">
             <TerminalSquare size={11} strokeWidth={2.1} />
           </span>
           {text("Terminal", "终端")}
         </button>
         {applications.filter(application => application.enabled && !application.hidden).map(application => (
           <button key={application.id} type="button" className={styles.ntpCard} onClick={() => void launch(application)}>
-            <span className={styles.ntpGlyph} data-tone="files" aria-hidden="true"><AppWindow size={11} /></span>
+            <span className={browserGlyphStyles.ntpGlyph} data-tone="files" aria-hidden="true"><AppWindow size={11} /></span>
             {application.display_title || application.title}
           </button>
         ))}

@@ -159,7 +159,7 @@ Window-state persistence (normal bounds vs maximize/fullscreen, display fallback
 - Rest of app uses Radix/shadcn
 - Tailwind v3 config (`tailwind.config.ts`) and v4 `@theme` both exist
 - Effort color logic (`effort-color.ts`) uses independent HSL, not theme accent
-- Browser glyphs (`center-tabs.module.css`) hardcode `#8b5cf6`
+- Browser glyphs (`browser/browser-glyph.module.css`) hardcode `#8b5cf6`
 
 **Action:** Converge on one component library (Radix) and one Tailwind version (v4).
 

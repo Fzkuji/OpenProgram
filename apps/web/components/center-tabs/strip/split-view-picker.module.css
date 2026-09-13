@@ -1,0 +1,110 @@
+/* 分屏选择面板（Chrome 的 "Choose a tab to add to split view"）：
+   浮在中心区右半边，沿用 tabMenu 的浮层语言（同边框/圆角/阴影）。 */
+.splitPicker {
+  position: absolute;
+  z-index: 60;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  width: min(360px, calc(50% - 18px));
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-primary);
+  box-shadow: var(--shadow-popover);
+  overflow-y: auto;
+  -webkit-app-region: no-drag;
+}
+.splitPickerHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 2px 10px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.splitPickerTitle {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-bright);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.splitPickerClose {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.splitPickerClose:hover,
+.splitPickerClose:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+  outline: none;
+}
+.splitPickerOption {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.splitPickerOption:hover,
+.splitPickerOption:focus-visible {
+  background: var(--bg-hover);
+  outline: none;
+}
+.splitPickerIcon {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+.splitPickerText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.splitPickerName {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--text-bright);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.splitPickerMeta {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.splitPickerEmpty {
+  margin: 0;
+  padding: 8px 9px;
+  color: var(--text-muted);
+  font-size: 13px;
+}

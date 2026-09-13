@@ -1,3 +1,4 @@
+import { readCenterTabCss } from "./center-tab-css-source.mjs";
 import { readDesktopBridgeSource, readDesktopMainSource, readFileTreeSource } from "../testing/feature-source.mjs";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
@@ -6,10 +7,7 @@ import postcss from "postcss";
 import { readCenterTabStripSource } from "./center-tab-strip-source.mjs";
 import { readChatCss } from "../runtime/_chat-css.mjs";
 
-const css = readFileSync(
-  new URL("../../components/center-tabs/center-tabs.module.css", import.meta.url),
-  "utf8",
-);
+const css = readCenterTabCss();
 const cssRoot = postcss.parse(css);
 function finalDeclaration(selector, property) {
   let value;
@@ -962,7 +960,7 @@ assert.doesNotMatch(
 );
 assert.match(strip, /<MainMenu \/>/, "the strip must host the main menu button");
 assert.ok(
-  strip.indexOf("styles.plusBtn") < strip.indexOf("<MainMenu />"),
+  strip.indexOf("tabItemsStyles.plusBtn") < strip.indexOf("<MainMenu />"),
   "the main menu button must follow the + button",
 );
 assert.equal(finalDeclaration(".plusBtn", "width"), "28px");

@@ -32,7 +32,8 @@ import { desktopBridge } from "@/lib/desktop/desktop-bridge";
 import { MainMenu } from "./main-menu";
 import { SplitViewPicker } from "./split-view-picker";
 import { useTranslation } from "@/lib/i18n";
-import styles from "../center-tabs.module.css";
+import styles from "./strip.module.css";
+import tabItemsStyles from "./tab-items.module.css";
 import {
   computeLiveShifts,
   freezeStripWidths,
@@ -345,7 +346,7 @@ export function CenterTabStrip() {
          让＋号既跟随 tab、又最深只顶到右栏图标轴线（见 module css）。 */}
       <div
         ref={tabsFlowRef}
-        className={styles.tabsFlow}
+        className={tabItemsStyles.tabsFlow}
         role="tablist"
         aria-label={text("Open tabs", "打开的标签")}
         onKeyDown={onTabListKeyDown}
@@ -397,7 +398,7 @@ export function CenterTabStrip() {
       </div>
       <button
         type="button"
-        className={styles.plusBtn}
+        className={tabItemsStyles.plusBtn}
         title={text("New tab", "新标签页")}
         aria-label={text("New tab", "新标签页")}
         onClick={onOpenNewTab}

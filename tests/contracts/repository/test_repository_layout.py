@@ -401,3 +401,15 @@ def test_center_tab_components_are_grouped_by_responsibility():
     assert not list(directory.glob('*.tsx'))
     for feature in ('strip', 'browser', 'review', 'panes'):
         assert (directory / feature).is_dir()
+
+
+def test_center_tab_styles_have_feature_owners():
+    directory = ROOT / 'apps/web/components/center-tabs'
+    assert not (directory / 'center-tabs.module.css').exists()
+    expected = {
+        'strip/strip', 'strip/tab-items', 'strip/tab-context-menu',
+        'strip/split-view-picker', 'browser/browser-chrome', 'browser/web-pane',
+        'browser/browser-controls', 'browser/browser-home', 'browser/browser-glyph',
+        'panes/builtin-page', 'panes/files-page', 'panes/new-tab', 'panes/terminal',
+    }
+    assert all((directory / f'{owner}.module.css').is_file() for owner in expected)

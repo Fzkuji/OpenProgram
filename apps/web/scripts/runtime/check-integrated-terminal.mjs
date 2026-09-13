@@ -1,3 +1,4 @@
+import { readCenterTabCss } from "../tabs/center-tab-css-source.mjs";
 import { readDesktopBridgeSource } from "../testing/feature-source.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -14,7 +15,7 @@ const bridge = readDesktopBridgeSource();
 const bridgeTypes = read("lib/desktop/desktop-bridge-types.ts");
 const preload = read("../desktop/preload.js");
 const layout = read("app/layout.tsx");
-const css = read("components/center-tabs/center-tabs.module.css");
+const css = readCenterTabCss();
 const base = read("app/styles/base.css");
 const pkg = JSON.parse(read("package.json"));
 

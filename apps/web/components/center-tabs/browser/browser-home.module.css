@@ -1,0 +1,112 @@
+/* Browser chrome and browser data appear only after the Browser entry opens. */
+.browserHome {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+}
+.browserImportAction {
+  height: 32px;
+  padding: 0 13px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.browserImportAction:hover:not(:disabled) {
+  color: var(--text-bright);
+  background: var(--bg-hover);
+}
+.browserImportAction:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.browserHomeBody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+  padding: 24px;
+}
+.browserImport {
+  width: min(720px, 100%);
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto 28px;
+  align-items: start;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+.browserImportBody {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+.browserImportBody strong {
+  color: var(--text-bright);
+  font-size: 14px;
+}
+.browserImportOptions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 10px;
+}
+.browserImportOptions select {
+  max-width: 190px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-primary);
+  color: var(--text-bright);
+}
+.browserImportOptions label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.browserImportOptions [role="status"] {
+  flex-basis: 100%;
+  color: var(--text-muted);
+}
+.browserImportDismiss {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.browserImportDismiss:hover {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
+@media (max-width: 620px) {
+  .browserHomeBody {
+    padding: 16px;
+  }
+  .browserImport {
+    grid-template-columns: 28px minmax(0, 1fr) 28px;
+  }
+  .browserImportAction {
+    grid-column: 2;
+    justify-self: start;
+  }
+}

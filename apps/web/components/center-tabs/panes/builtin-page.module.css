@@ -1,0 +1,338 @@
+/* ---- Built-in library pages (bookmarks / history) ------------------ */
+/* Chrome-style bookmark manager: fixed search header, folder rail, and
+   the selected folder's direct children. The accent comes from the active
+   theme rather than copying Chrome's blue. */
+.bookmarkManager {
+  --bookmark-manager-header-h: 52px;
+  --bookmark-manager-row-h: 36px;
+  --bookmark-manager-action-size: 28px;
+  container: bookmark-manager / inline-size;
+  display: grid;
+  grid-template-rows: var(--bookmark-manager-header-h) minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+.bookmarkManagerHeader {
+  display: grid;
+  grid-template-columns: 216px minmax(220px, 720px) 28px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 16px 0 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-primary);
+}
+.bookmarkManagerBrand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  color: var(--text-bright);
+}
+.bookmarkManagerBrand h1 {
+  margin: 0;
+  overflow: hidden;
+  font-size: 18px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bookmarkManagerSearch {
+  width: 100%;
+  max-width: 720px;
+  justify-self: center;
+  background: var(--bg-secondary);
+}
+.bookmarkManagerMenuButton,
+.bookmarkContentEditActions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--bookmark-manager-action-size);
+  height: var(--bookmark-manager-action-size);
+  flex: 0 0 var(--bookmark-manager-action-size);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.bookmarkManagerMenuButton:hover,
+.bookmarkContentEditActions button:hover {
+  color: var(--text-bright);
+  background: var(--bg-hover);
+}
+.bookmarkManagerBody {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+.bookmarkFolderTree {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 8px 16px 0;
+  border-right: 1px solid var(--border);
+  background: var(--bg-primary);
+}
+.bookmarkFolderRow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: var(--bookmark-manager-row-h);
+  min-width: 0;
+  padding-right: 10px;
+  border-radius: 0 18px 18px 0;
+  color: var(--text-secondary);
+}
+.bookmarkFolderRow:hover {
+  color: var(--text-bright);
+  background: var(--bg-hover);
+}
+.bookmarkFolderRow[data-drop-target="true"] {
+  outline: 1px solid var(--accent-blue);
+  outline-offset: -1px;
+  background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
+}
+.bookmarkFolderSelected {
+  color: var(--text-bright);
+  background: color-mix(in srgb, var(--accent-blue) 18%, var(--bg-primary));
+}
+.bookmarkFolderSelected:hover {
+  background: color-mix(in srgb, var(--accent-blue) 22%, var(--bg-primary));
+}
+.bookmarkFolderTwisty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.bookmarkFolderTitle {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.bookmarkManagerContent {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px clamp(12px, 3vw, 36px) 28px;
+  background: var(--bg-primary);
+}
+.bookmarkContentPanel {
+  width: min(100%, 920px);
+  min-height: var(--bookmark-manager-row-h);
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+.bookmarkContentList {
+  display: flex;
+  flex-direction: column;
+}
+.bookmarkContentRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  height: var(--bookmark-manager-row-h);
+  padding: 0 8px 0 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
+}
+.bookmarkContentList > .bookmarkContentRow:last-child,
+.bookmarkContentList > .bookmarkContentRow:nth-last-child(2) {
+  border-bottom: 0;
+}
+.bookmarkContentRow:hover {
+  background: var(--bg-hover);
+}
+.bookmarkContentRow[data-drop-target="true"] {
+  outline: 1px solid var(--accent-blue);
+  outline-offset: -1px;
+  background: color-mix(in srgb, var(--accent-blue) 13%, transparent);
+}
+.bookmarkContentIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  color: var(--text-muted);
+}
+.bookmarkContentIcon img {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  object-fit: contain;
+}
+.bookmarkContentTitle,
+.bookmarkContentTitleInput {
+  min-width: 0;
+  flex: 1;
+  font: inherit;
+  font-size: 13px;
+}
+.bookmarkContentTitle {
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.bookmarkContentTitle:hover {
+  color: var(--text-bright);
+}
+.bookmarkContentTitleInput {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--accent-blue);
+  border-radius: 6px;
+  outline: none;
+  background: var(--bg-primary);
+  color: var(--text-bright);
+}
+.bookmarkContentTitleInput:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+.bookmarkContentEditActions {
+  display: flex;
+  gap: 2px;
+}
+.bookmarkContentEmpty {
+  display: grid;
+  min-height: 120px;
+  place-items: center;
+  padding: 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+.bookmarkManagerDropZone {
+  position: relative;
+  z-index: 1;
+  height: 2px;
+  margin: -1px 12px;
+  border-radius: 1px;
+}
+.bookmarkManagerDropZone[data-drop-target="true"] {
+  background: var(--accent-blue);
+}
+
+@container bookmark-manager (max-width: 700px) {
+  .bookmarkManagerHeader {
+    grid-template-columns: minmax(0, 1fr) 28px;
+    gap: 10px;
+    padding: 0 12px;
+  }
+  .bookmarkManagerBrand {
+    display: none;
+  }
+  .bookmarkManagerSearch {
+    max-width: none;
+  }
+  .bookmarkManagerBody {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(108px, 30%) minmax(0, 1fr);
+  }
+  .bookmarkFolderTree {
+    padding: 6px 8px 8px 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .bookmarkManagerContent {
+    padding: 10px 8px 20px;
+  }
+}
+
+/* Wide form of the panels that used to sit in the right sidebar: a
+   scrolling page with a centred, max-width column. The rows themselves
+   reuse the global .bookmark-* vocabulary from right-dock.css — only
+   this page chrome is new. */
+.builtinPane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--bg-primary);
+}
+.builtinInner {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 28px 24px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.builtinHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+  color: var(--text-bright);
+}
+.builtinTitle {
+  font-size: 18px;
+  font-weight: 650;
+  color: var(--text-bright);
+  margin: 0;
+}
+/* Right-aligned page action (Clear all) — quiet until hovered. */
+.builtinClear {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.builtinClear:hover {
+  color: var(--accent-red);
+  border-color: var(--accent-red);
+}
+.builtinHeaderActions {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}

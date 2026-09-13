@@ -1,7 +1,7 @@
 /* File tree (right sidebar) + file viewer (center file tab) styles.
    Same token vocabulary as skills-page.module.css: var(--border),
    var(--bg-*), var(--text-*). The v1 files-panel shell is gone; the
-   tab strip / toolbar styles live in center-tabs.module.css. */
+   tab strip / toolbar styles live in center-tabs/strip/strip.module.css and center-tabs/browser/browser-chrome.module.css. */
 
 .viewerScroll {
   flex: 1;

@@ -580,7 +580,7 @@ textarea:focus-visible {
    Window Controls Overlay at its right end. AppShell renders CenterTabStrip inside
    .desktop-tab-row when the preload bridge exists; the three columns
    (.app) sit below it. The strip's own height/background come from
-   center-tabs.module.css — the row only reserves the traffic-light
+   center-tabs/strip/strip.module.css and center-tabs/browser/browser-chrome.module.css — the row only reserves the traffic-light
    zone and repeats the strip's background so the 76px gap isn't
    transparent. */
 /* Tab-row surface colour. Browser mode: identical to --bg-secondary (no
@@ -609,7 +609,7 @@ html.is-desktop {
   padding-left: 88px;
   /* 右缘不留 padding：最右 49px（= 右栏收起轨全宽）由 .strip 的
      padding-right 整列预留，主菜单 ⋮ 钮占据这一列（＋号已解放，回到
-     紧跟末位 tab 的自然流）—— 见 center-tabs.module.css。 */
+     紧跟末位 tab 的自然流）—— 见 center-tabs/strip/strip.module.css and center-tabs/browser/browser-chrome.module.css。 */
   background: var(--tabrow-bg); /* same as .strip — covers the 76px gap */
   -webkit-app-region: drag;
 }

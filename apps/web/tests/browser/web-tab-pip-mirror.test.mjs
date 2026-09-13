@@ -1,3 +1,4 @@
+import { readCenterTabCss } from "../../scripts/tabs/center-tab-css-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -33,7 +34,7 @@ test("live tab stays usable and is not replaced by a bound mask", () => {
 });
 
 test("PiP screenshot maps pixel points onto a letterboxed contain fit", () => {
-  const css = readFileSync(new URL("../../components/center-tabs/center-tabs.module.css", import.meta.url), "utf8");
+  const css = readCenterTabCss();
   assert.match(css, /\.webPipShot \{[\s\S]*?object-fit: contain/);
   assert.match(css, /\.webPip\[data-state="active"\]/);
   assert.match(css, /\.webPane\[data-state="yielding"\]/);

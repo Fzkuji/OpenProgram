@@ -1,3 +1,4 @@
+import { readCenterTabCss } from "../../tabs/center-tab-css-source.mjs";
 // layout contracts: original sequential assertions and shared fixtures.
 export async function run(testContext) {
 
@@ -5,10 +6,7 @@ export async function run(testContext) {
 // readCenterTabStripSource concatenates them in source order.
 (testContext.tabStripSource = testContext.readCenterTabStripSource());
 
-(testContext.tabsCssSource = await testContext.readFile(
-  new URL("../../components/center-tabs/center-tabs.module.css", testContext.sourceUrl),
-  "utf8",
-));
+(testContext.tabsCssSource = readCenterTabCss());
 
 (testContext.baseCssSource = await testContext.readFile(
   new URL("../../app/styles/base.css", testContext.sourceUrl),

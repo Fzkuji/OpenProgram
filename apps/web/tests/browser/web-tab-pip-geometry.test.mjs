@@ -1,3 +1,4 @@
+import { readCenterTabCss } from "../../scripts/tabs/center-tab-css-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -101,7 +102,7 @@ test("store clamp forwards the shared min constants into geometry", () => {
 });
 
 test("css uses eight transparent handles and keeps 28px chrome", () => {
-  const css = readFileSync(new URL("../../components/center-tabs/center-tabs.module.css", import.meta.url), "utf8");
+  const css = readCenterTabCss();
   assert.match(css, /\.webPipChrome \{[\s\S]*?height: 28px/);
   assert.match(css, /\.webPip \{[\s\S]*?border-radius: 10px/);
   assert.doesNotMatch(css, /linear-gradient\(135deg/);

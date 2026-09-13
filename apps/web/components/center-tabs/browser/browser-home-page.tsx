@@ -36,7 +36,10 @@ import { LANE_COLORS } from "@/lib/format-utils/lane-colors";
 import { normalizeWebUrl, useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import { BrowserGlyph } from "./browser-glyph";
 import { BookmarkBar, BookmarksLibraryButton, BrowserMenu } from "./browser-controls";
-import styles from "../center-tabs.module.css";
+import styles from "../panes/new-tab.module.css";
+import browserChromeStyles from "./browser-chrome.module.css";
+import browserHomeStyles from "./browser-home.module.css";
+import webPaneStyles from "./web-pane.module.css";
 
 function hostColor(host: string): string {
   let hash = 0;
@@ -150,13 +153,13 @@ export function BrowserImportDialog({
   }
 
   return (
-    <section className={styles.browserImport} aria-label={text("Import browser data", "导入浏览器资料")}>
+    <section className={browserHomeStyles.browserImport} aria-label={text("Import browser data", "导入浏览器资料")}>
       <BrowserGlyph size={30} />
-      <div className={styles.browserImportBody}>
+      <div className={browserHomeStyles.browserImportBody}>
         <strong>{text("Import data from your browser", "从浏览器导入资料")}</strong>
         <span>{text("Bring over history, bookmarks, and signed-in cookies", "导入历史、书签和登录 Cookie")}</span>
         {expanded && (
-          <div className={styles.browserImportOptions}>
+          <div className={browserHomeStyles.browserImportOptions}>
             {sources.length === 0 ? (
               <span>{text("No supported browser profiles found", "未发现支持的浏览器 profile")}</span>
             ) : (
@@ -202,7 +205,7 @@ export function BrowserImportDialog({
       </div>
       <button
         type="button"
-        className={styles.browserImportAction}
+        className={browserHomeStyles.browserImportAction}
         disabled={cancelling || (busy && typeof api.cancel !== "function") || (!busy && expanded && sources.length === 0)}
         onClick={() => busy ? void cancelImport() : expanded ? void runImport() : setExpanded(true)}
       >
@@ -214,7 +217,7 @@ export function BrowserImportDialog({
               ? text("Importing…", "正在导入…")
               : text("Import", "导入")}
       </button>
-      <button type="button" className={styles.browserImportDismiss} disabled={busy} onClick={onDismiss} aria-label={text("Dismiss", "关闭")}>
+      <button type="button" className={browserHomeStyles.browserImportDismiss} disabled={busy} onClick={onDismiss} aria-label={text("Dismiss", "关闭")}>
         <X size={16} aria-hidden="true" />
       </button>
     </section>
@@ -255,23 +258,23 @@ export function BrowserHomePage() {
   }
 
   return (
-    <div className={`${styles.browserHome} ${styles.webPane}`}>
-      <div className={styles.webChrome}>
-      <div className={styles.webToolbar}>
-        <button type="button" className={styles.webToolbarBtn} disabled title={text("Back", "后退")} aria-label={text("Back", "后退")}>
+    <div className={`${browserHomeStyles.browserHome} ${webPaneStyles.webPane}`}>
+      <div className={browserChromeStyles.webChrome}>
+      <div className={browserChromeStyles.webToolbar}>
+        <button type="button" className={browserChromeStyles.webToolbarBtn} disabled title={text("Back", "后退")} aria-label={text("Back", "后退")}>
           <ArrowLeft size={14} aria-hidden="true" />
         </button>
-        <button type="button" className={`${styles.webToolbarBtn} ${styles.webToolbarForward}`} disabled title={text("Forward", "前进")} aria-label={text("Forward", "前进")}>
+        <button type="button" className={`${browserChromeStyles.webToolbarBtn} ${browserChromeStyles.webToolbarForward}`} disabled title={text("Forward", "前进")} aria-label={text("Forward", "前进")}>
           <ArrowRight size={14} aria-hidden="true" />
         </button>
-        <button type="button" className={styles.webToolbarBtn} disabled title={text("Reload", "重新加载")} aria-label={text("Reload", "重新加载")}>
+        <button type="button" className={browserChromeStyles.webToolbarBtn} disabled title={text("Reload", "重新加载")} aria-label={text("Reload", "重新加载")}>
           <RotateCw size={14} aria-hidden="true" />
         </button>
-        <button type="button" className={`${styles.webToolbarBtn} ${styles.webToolbarMedium}`} disabled title={text("Home", "主页")} aria-label={text("Home", "主页")}>
+        <button type="button" className={`${browserChromeStyles.webToolbarBtn} ${browserChromeStyles.webToolbarMedium}`} disabled title={text("Home", "主页")} aria-label={text("Home", "主页")}>
           <House size={14} aria-hidden="true" />
         </button>
         <input
-          className={styles.webAddress}
+          className={browserChromeStyles.webAddress}
           value={url}
           onChange={(event) => setUrl(event.target.value)}
           onKeyDown={(event) => { if (event.key === "Enter") go(); }}
@@ -279,14 +282,14 @@ export function BrowserHomePage() {
           aria-label={text("Address", "地址")}
           autoFocus
         />
-        <button type="button" className={styles.webToolbarBtn} disabled title={text("Bookmark", "添加书签")} aria-label={text("Bookmark", "添加书签")}>
+        <button type="button" className={browserChromeStyles.webToolbarBtn} disabled title={text("Bookmark", "添加书签")} aria-label={text("Bookmark", "添加书签")}>
           <Star size={14} aria-hidden="true" />
         </button>
         <BookmarksLibraryButton />
         {canImport ? (
           <button
             type="button"
-            className={`${styles.webToolbarBtn} ${styles.webToolbarMedium}`}
+            className={`${browserChromeStyles.webToolbarBtn} ${browserChromeStyles.webToolbarMedium}`}
             onClick={() => setShowImport(true)}
             title={text("Import browser data", "导入浏览器资料")}
             aria-label={text("Import browser data", "导入浏览器资料")}
@@ -294,7 +297,7 @@ export function BrowserHomePage() {
             <Download size={15} aria-hidden="true" />
           </button>
         ) : null}
-        <button type="button" className={`${styles.webToolbarBtn} ${styles.webToolbarMedium}`} disabled title={text("Open in browser", "在浏览器中打开")} aria-label={text("Open in browser", "在浏览器中打开")}>
+        <button type="button" className={`${browserChromeStyles.webToolbarBtn} ${browserChromeStyles.webToolbarMedium}`} disabled title={text("Open in browser", "在浏览器中打开")} aria-label={text("Open in browser", "在浏览器中打开")}>
           <ExternalLink size={14} aria-hidden="true" />
         </button>
         <BrowserMenu
@@ -307,7 +310,7 @@ export function BrowserHomePage() {
       </div>
       <BookmarkBar ownerId={menuOwnerId} onNavigate={go} />
       </div>
-      <div className={styles.browserHomeBody}>
+      <div className={browserHomeStyles.browserHomeBody}>
         {canImport && showImport && (
           <BrowserImportDialog onDismiss={() => {
             markBrowserImportPromptFinished();

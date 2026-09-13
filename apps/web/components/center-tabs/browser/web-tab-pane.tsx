@@ -62,7 +62,9 @@ import {
   useBrowserResourceStore,
 } from "@/lib/chat/session-resources";
 import { isWebTabOccluded, measureWebTabBounds } from "@/lib/browser/web-tab-bounds";
-import styles from "../center-tabs.module.css";
+import styles from "./browser-chrome.module.css";
+import webPaneStyles from "./web-pane.module.css";
+import browserControlsStyles from "./browser-controls.module.css";
 import { BookmarkBar, BookmarksLibraryButton, BrowserMenu } from "./browser-controls";
 import { ActionCueTravel, BrowserControlBar } from "./browser-control-bar";
 import {
@@ -158,7 +160,7 @@ function WebPaneStage({
 }: {
   children: ReactNode;
 }) {
-  return <div className={styles.webStage}>{children}</div>;
+  return <div className={webPaneStyles.webStage}>{children}</div>;
 }
 
 function IframeAgentLayer({
@@ -178,7 +180,7 @@ function IframeAgentLayer({
   const state = resource ? displayedControlState(resource) : undefined;
   if (!controlSurfaceVisible(state) && !point) return null;
   return (
-    <div ref={stageRef} className={styles.browserFloatLayer} data-tab={tabId}>
+    <div ref={stageRef} className={browserControlsStyles.browserFloatLayer} data-tab={tabId}>
       <ActionCueTravel
         point={point}
         resourceKey={resource?.resourceId || tabId}
@@ -520,7 +522,7 @@ function DesktopWebTabPane({
 
   return (
     <div
-      className={styles.webPane}
+      className={webPaneStyles.webPane}
       data-state={control ? displayedControlState(control) : undefined}
       onKeyDownCapture={handleRendererShortcut}
     >
@@ -642,7 +644,7 @@ function DesktopWebTabPane({
       <WebPaneStage>
       <div
         ref={bodyRef}
-        className={styles.webFrame}
+        className={webPaneStyles.webFrame}
       />
       </WebPaneStage>
     </div>
@@ -693,7 +695,7 @@ function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: str
 
   return (
     <div
-      className={styles.webPane}
+      className={webPaneStyles.webPane}
       data-state={control ? displayedControlState(control) : undefined}
     >
       <div className={styles.webChrome}>
@@ -749,7 +751,7 @@ function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: str
            showing a blank frame. */
         <WebPaneStage>
         <div
-          className={styles.webFrame}
+          className={webPaneStyles.webFrame}
           style={{
             display: "flex",
             alignItems: "center",
@@ -768,14 +770,14 @@ function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: str
         </WebPaneStage>
       ) : (
         <>
-          <div className={styles.webHint}>
+          <div className={webPaneStyles.webHint}>
             <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
               {text(
                 "If the page stays blank, the site refuses embedding — open it externally.",
                 "页面空白说明该站点拒绝内嵌，请点右上角外部打开。",
               )}
             </span>
-            <button type="button" className={styles.webHintLink} onClick={openExternal}>
+            <button type="button" className={webPaneStyles.webHintLink} onClick={openExternal}>
               <ExternalLink size={11} />
               {text("Open externally", "外部打开")}
             </button>
@@ -783,7 +785,7 @@ function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: str
           <WebPaneStage>
           <iframe
             key={frameEpoch}
-            className={styles.webFrame}
+            className={webPaneStyles.webFrame}
             src={url}
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
             referrerPolicy="no-referrer"

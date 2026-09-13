@@ -1,0 +1,205 @@
+/* ---- Web tab pane -------------------------------------------------- */
+
+.webPane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+  container-type: inline-size;
+}
+
+/* Persistent slim hint — many sites refuse framing and the failure is
+   not detectable from here, so the escape hatch is always visible. */
+.webHint {
+  height: 24px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.webHintLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.webHintLink:hover {
+  color: var(--text-bright);
+  background: var(--bg-hover);
+}
+
+.webStage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.webFrame {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--bg-primary);
+}
+
+.webPip {
+  position: absolute;
+  top: 78px;
+  right: 12px;
+  z-index: 8;
+  box-sizing: border-box;
+  width: 300px;
+  height: 198.75px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-primary);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.webPipDragging {
+  will-change: transform;
+  transition: none;
+}
+.webPipTitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-bright);
+}
+.webPipMode {
+  flex: 0 0 auto;
+  max-width: 5.5em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.webPipMode[data-resume-error="true"] {
+  color: var(--danger-soft);
+}
+.webPipActions {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  flex-shrink: 0;
+}
+.webPipStage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.webPipBody {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  background: var(--bg-primary);
+}
+.webPipShot {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  display: none;
+}
+.webPipExpanded {
+  width: min(720px, calc(100% - 24px));
+  height: min(435px, calc(100% - 24px));
+}
+.webPip[data-state="active"],
+.webPane[data-state="active"] {
+  outline: 1px solid color-mix(in srgb, #5b8cff 70%, transparent);
+  outline-offset: 0;
+}
+.webPip[data-state="yielding"],
+.webPane[data-state="yielding"] {
+  outline: 1px solid color-mix(in srgb, #d4a017 55%, transparent);
+  outline-offset: 0;
+}
+.webPipResize {
+  position: absolute;
+  z-index: 6;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  touch-action: none;
+}
+.webPipResize[data-dir="n"],
+.webPipResize[data-dir="s"] {
+  left: 10px;
+  right: 10px;
+  height: 5px;
+  cursor: ns-resize;
+}
+.webPipResize[data-dir="n"] { top: 0; }
+.webPipResize[data-dir="s"] { bottom: 0; }
+.webPipResize[data-dir="e"],
+.webPipResize[data-dir="w"] {
+  top: 10px;
+  bottom: 10px;
+  width: 5px;
+  cursor: ew-resize;
+}
+.webPipResize[data-dir="e"] { right: 0; }
+.webPipResize[data-dir="w"] { left: 0; }
+.webPipResize[data-dir="ne"],
+.webPipResize[data-dir="nw"],
+.webPipResize[data-dir="se"],
+.webPipResize[data-dir="sw"] {
+  width: 10px;
+  height: 10px;
+  z-index: 7;
+}
+.webPipResize[data-dir="nw"] { top: 0; left: 0; cursor: nwse-resize; }
+.webPipResize[data-dir="se"] { right: 0; bottom: 0; cursor: nwse-resize; }
+.webPipResize[data-dir="ne"] { top: 0; right: 0; cursor: nesw-resize; }
+.webPipResize[data-dir="sw"] { left: 0; bottom: 0; cursor: nesw-resize; }
+.webPipFallback {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-dim);
+}

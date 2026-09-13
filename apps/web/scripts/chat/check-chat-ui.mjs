@@ -1,3 +1,4 @@
+import { readCenterTabCss } from "../tabs/center-tab-css-source.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { parseHTML } from "linkedom";
@@ -17,7 +18,7 @@ const messageActions = source("components/chat/messages/message-actions.tsx");
 // The strip is split across center-tab-strip.tsx and its submodules;
 // read them as one text so the assertions below are unchanged.
 const tabs = readCenterTabStripSource();
-const tabsCss = source("components/center-tabs/center-tabs.module.css");
+const tabsCss = readCenterTabCss();
 const conversations = source("lib/runtime-bridge/conversations.ts");
 const chatHandlers = source("lib/runtime-bridge/chat-handlers.ts");
 const sessionStore = source("lib/session-store/index.ts");

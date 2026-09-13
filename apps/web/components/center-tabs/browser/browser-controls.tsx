@@ -65,7 +65,8 @@ import {
 } from "@/lib/browser/browser-layout";
 import { useTranslation } from "@/lib/i18n";
 import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
-import styles from "../center-tabs.module.css";
+import styles from "./browser-chrome.module.css";
+import webPaneStyles from "./web-pane.module.css";
 
 function useBookmarksBarPreference() {
   const [visible, setVisible] = useState(showBookmarksBar);
@@ -177,7 +178,7 @@ export function BrowserMenu({
   const actionPrefix = browserActionPrefix(ownerId);
 
   useEffect(() => {
-    const pane = triggerRef.current?.closest(`.${styles.webPane}`);
+    const pane = triggerRef.current?.closest(`.${webPaneStyles.webPane}`);
     if (!pane) return;
     const update = () => setPaneWidth(pane.getBoundingClientRect().width);
     update();

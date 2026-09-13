@@ -33,7 +33,7 @@
 - Modify `apps/web/lib/state/center-tabs-store.ts`.
 - Modify `apps/web/components/app-shell.tsx`.
 - Modify `apps/web/components/center-tabs/strip/center-tab-strip.tsx`.
-- Modify `apps/web/components/center-tabs/center-tabs.module.css`.
+- Modify `apps/web/components/center-tabs/strip/tab-items.module.css`.
 - Modify `apps/web/app/styles/base.css`.
 - Modify `apps/web/scripts/check-center-tabs.mjs`.
 - Modify `apps/web/scripts/check-web-split.mjs`.
@@ -209,7 +209,7 @@ The helper may read `window.openprogramDesktop?.windowId`; until the multi-windo
 **Files:**
 
 - Modify `apps/web/components/center-tabs/strip/center-tab-strip.tsx`
-- Modify `apps/web/components/center-tabs/center-tabs.module.css`
+- Modify `apps/web/components/center-tabs/strip/tab-items.module.css`
 - Modify `apps/web/scripts/check-center-tabs.mjs`
 - Modify `apps/web/scripts/check-chat-ui.mjs`
 
@@ -257,7 +257,7 @@ Also assert each `group.memberIds.map` renders a `role="tab"` target and a sibli
 
 - Create `apps/web/lib/tab-drag-coordinator.ts`
 - Modify `apps/web/components/center-tabs/strip/center-tab-strip.tsx`
-- Modify `apps/web/components/center-tabs/center-tabs.module.css`
+- Modify `apps/web/components/center-tabs/strip/tab-items.module.css`
 - Modify `apps/web/scripts/check-compound-tabs.mjs`
 - Modify `apps/web/scripts/check-center-tabs.mjs`
 
@@ -310,7 +310,7 @@ export function resolveTabDropIntent(rect: Pick<DOMRect, "left" | "width">, clie
 **Files:**
 
 - Modify `apps/web/components/center-tabs/strip/center-tab-strip.tsx`
-- Modify `apps/web/components/center-tabs/center-tabs.module.css`
+- Modify `apps/web/components/center-tabs/strip/tab-items.module.css`
 - Modify `apps/web/scripts/check-chat-ui.mjs`
 - Modify `apps/web/scripts/check-center-tabs.mjs`
 

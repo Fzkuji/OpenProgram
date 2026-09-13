@@ -36,7 +36,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useSidebarMenu, type SidebarMenuItem } from "@/components/sidebar/use-sidebar-menu";
 import { CursorClickIcon } from "@/components/animated-icons";
-import styles from "../center-tabs.module.css";
+import styles from "./browser-controls.module.css";
+import browserChromeStyles from "./browser-chrome.module.css";
 
 function statusLabel(
   state: ReturnType<typeof displayedControlState>,
@@ -208,7 +209,7 @@ export function BrowserControlBar({
           {noticeText}
           <button
             type="button"
-            className={styles.webToolbarBtn}
+            className={browserChromeStyles.webToolbarBtn}
             aria-label={text("Dismiss", "关闭")}
             onClick={(event) => {
               event.stopPropagation();
@@ -221,7 +222,7 @@ export function BrowserControlBar({
       ) : null}
       <button
         type="button"
-        className={styles.webToolbarBtn}
+        className={browserChromeStyles.webToolbarBtn}
         aria-pressed={showActionsEnabled()}
         aria-label={showLabel}
         title={showLabel}
@@ -235,7 +236,7 @@ export function BrowserControlBar({
       {nativeHistory ? (
         <button
           type="button"
-          className={styles.webToolbarBtn}
+          className={browserChromeStyles.webToolbarBtn}
           title={historyLabel}
           aria-label={historyLabel}
           aria-haspopup="menu"
@@ -251,7 +252,7 @@ export function BrowserControlBar({
       ) : (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button type="button" className={styles.webToolbarBtn} title={historyLabel} aria-label={historyLabel}>
+            <button type="button" className={browserChromeStyles.webToolbarBtn} title={historyLabel} aria-label={historyLabel}>
               <Clock3 size={14} aria-hidden="true" />
             </button>
           </DropdownMenuTrigger>
@@ -269,7 +270,7 @@ export function BrowserControlBar({
       {showTakeover ? (
         <button
           type="button"
-          className={styles.webToolbarBtn}
+          className={browserChromeStyles.webToolbarBtn}
           disabled={resumeDisabled}
           title={pauseLabel}
           aria-label={pauseLabel}

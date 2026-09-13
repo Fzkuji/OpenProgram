@@ -8,7 +8,7 @@ import { findCenterTabGroup, type CenterTabGroup } from "@/lib/tabs/center-tab-g
 import type { CenterTab } from "@/lib/tabs/center-tabs-store";
 import { useTranslation } from "@/lib/i18n";
 import type { TabMenuState } from "./use-tab-menu";
-import styles from "../center-tabs.module.css";
+import styles from "./tab-context-menu.module.css";
 
 export interface TabContextMenuProps {
   tabMenu: TabMenuState;

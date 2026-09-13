@@ -62,7 +62,9 @@ import {
 } from "@/lib/browser/web-tab-pip-store";
 import type { WebTabCaptureLoop } from "@/lib/browser/web-tab-capture-loop";
 
-import styles from "../center-tabs.module.css";
+import styles from "./web-pane.module.css";
+import browserChromeStyles from "./browser-chrome.module.css";
+import browserControlsStyles from "./browser-controls.module.css";
 
 type PipDrag = {
   kind: "move" | "resize";
@@ -201,7 +203,7 @@ function PipMoreMenu({
     return (
       <button
         type="button"
-        className={styles.webToolbarBtn}
+        className={browserChromeStyles.webToolbarBtn}
         title={moreLabel}
         aria-label={moreLabel}
         aria-haspopup="menu"
@@ -220,7 +222,7 @@ function PipMoreMenu({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className={styles.webToolbarBtn}
+          className={browserChromeStyles.webToolbarBtn}
           title={moreLabel}
           aria-label={moreLabel}
         >
@@ -652,7 +654,7 @@ export function WebTabPip() {
       style={pipStyle}
     >
       <div
-        className={styles.webPipChrome}
+        className={browserChromeStyles.webPipChrome}
         onPointerDown={(event) => onDragPointerDown("move", event)}
         onPointerMove={onDragPointerMove}
         onPointerUp={onDragPointerUp}
@@ -672,7 +674,7 @@ export function WebTabPip() {
         <div className={styles.webPipActions} onPointerDown={(event) => event.stopPropagation()}>
           <button
             type="button"
-            className={styles.webToolbarBtn}
+            className={browserChromeStyles.webToolbarBtn}
             onClick={() => revealExistingWebTab(tabId, useCenterTabs.getState())}
             title={openPage}
             aria-label={openPage}
@@ -680,14 +682,14 @@ export function WebTabPip() {
             <ExternalLink size={14} aria-hidden="true" />
           </button>
           {takeoverKind === "reveal" && control ? (
-            <button type="button" className={styles.webToolbarBtn} title={text("Review request", "查看请求")}
+            <button type="button" className={browserChromeStyles.webToolbarBtn} title={text("Review request", "查看请求")}
               aria-label={text("Review request", "查看请求")} onClick={() => revealPendingApproval(control)}>
               <CircleHelp size={14} aria-hidden="true" />
             </button>
           ) : null}
           <button
             type="button"
-            className={styles.webToolbarBtn}
+            className={browserChromeStyles.webToolbarBtn}
             aria-pressed={pinned}
             aria-label={pinLabel}
             title={pinHint}
@@ -698,7 +700,7 @@ export function WebTabPip() {
           </button>
           <button
             type="button"
-            className={styles.webToolbarBtn}
+            className={browserChromeStyles.webToolbarBtn}
             onClick={() => {
               if (sessionId) togglePreviewExpanded(sessionId, branchId);
               render(value => value + 1);
@@ -715,7 +717,7 @@ export function WebTabPip() {
           />
           <button
             type="button"
-            className={styles.webToolbarBtn}
+            className={browserChromeStyles.webToolbarBtn}
             onClick={() => {
               if (sessionId) hideResourcePreview(sessionId, branchId);
               hide();
@@ -729,7 +731,7 @@ export function WebTabPip() {
       </div>
       {resumeError ? (
         <span
-          className={styles.browserControlNotice}
+          className={browserControlsStyles.browserControlNotice}
           data-resume-error="true"
           role="status"
           aria-live="polite"

@@ -1,3 +1,4 @@
+import { readCenterTabCss } from "./center-tab-css-source.mjs";
 import { readDesktopBridgeSource, readDesktopMainSource } from "../testing/feature-source.mjs";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
@@ -62,9 +63,7 @@ const webTab = normalizedText(webTabPath);
 const browserHome = normalizedText(browserHomePath);
 const manager = normalizedText(managerPath);
 const detailPanel = normalizedText(detailPanelPath);
-const centerTabsCss = normalizedText(
-  new URL("../../components/center-tabs/center-tabs.module.css", import.meta.url),
-);
+const centerTabsCss = readCenterTabCss().replace(/\r\n/g, "\n");
 const mainMenu = normalizedText(mainMenuPath);
 const browserControls = normalizedText(browserControlsPath);
 const contextMenuOverlay = normalizedText(contextMenuOverlayPath);
@@ -252,7 +251,7 @@ assert.match(mainMenu, /MENU_PANEL/);
 assert.match(mainMenu, /itemCls\(false\)/);
 assert.match(mainMenu, /MENU_SEPARATOR/);
 // The menu button sits AFTER the + in the strip (Chrome's ⋮ position).
-const plusIndex = strip.indexOf("styles.plusBtn");
+const plusIndex = strip.indexOf("tabItemsStyles.plusBtn");
 const menuIndex = strip.indexOf("<MainMenu />");
 assert.ok(plusIndex >= 0, "new-tab + button missing from the strip");
 assert.ok(menuIndex >= 0, "main menu button missing from the strip");

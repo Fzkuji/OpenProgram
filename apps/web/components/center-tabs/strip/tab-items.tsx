@@ -24,7 +24,7 @@ import type { TabDragSubject } from "@/lib/tabs/tab-drag-coordinator";
 import { useTranslation } from "@/lib/i18n";
 import { builtinPageLabel } from "../panes/builtin-page-label";
 import { shiftStyle } from "./tab-strip-geometry";
-import styles from "../center-tabs.module.css";
+import styles from "./tab-items.module.css";
 
 export function labelOf(
   tab: CenterTab,

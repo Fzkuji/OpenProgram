@@ -25,7 +25,7 @@ import {
   splitCandidates,
 } from "@/lib/tabs/center-tab-groups";
 import { useCenterTabs, type CenterTab } from "@/lib/tabs/center-tabs-store";
-import styles from "../center-tabs.module.css";
+import styles from "./split-view-picker.module.css";
 
 /** Secondary line under a candidate's title: origin for web tabs, path
  *  for files, kind for the rest. */
