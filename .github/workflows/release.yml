@@ -136,7 +136,7 @@ jobs:
         run: python3 scripts/release/verify-release-version.py --tag "${RELEASE_TAG}"
       - name: Verify version on Windows
         if: matrix.platform == 'windows'
-        run: python scripts/release/verify-release-version.py --tag "${RELEASE_TAG}"
+        run: python scripts/release/verify-release-version.py --tag "$env:RELEASE_TAG"
       - name: Install Linux runtime test dependencies
         if: matrix.platform == 'linux'
         run: |
