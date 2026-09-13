@@ -139,7 +139,7 @@ def read_document_operation(recovery_root: Path | None, operation_id: str) -> di
     path = _manual_operation_path(recovery_root, operation_id) / "intent.json"
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, OSError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         if isinstance(exc, FileNotFoundError):
             return {"status": "not_found", "operation_id": operation_id}
         return {"status": "recovery_required", "operation_id": operation_id,
@@ -148,7 +148,10 @@ def read_document_operation(recovery_root: Path | None, operation_id: str) -> di
         return {"status": "recovery_required", "operation_id": operation_id,
                 "error_code": "RECOVERY_REQUIRED", "error": "invalid document intent"}
     def valid_descriptor(descriptor: object) -> bool:
-        if not isinstance(descriptor, dict) or descriptor.get("kind") not in {"absent", "regular"}:
+        if not isinstance(descriptor, dict):
+            return False
+        kind = descriptor.get("kind")
+        if not isinstance(kind, str) or kind not in {"absent", "regular"}:
             return False
         if descriptor["kind"] == "absent":
             return descriptor.get("size") == 0
@@ -164,12 +167,15 @@ def read_document_operation(recovery_root: Path | None, operation_id: str) -> di
             and isinstance(descriptor.get("size"), int)
             and descriptor["size"] >= 0
         )
+    status = value.get("status")
     invalid = (
-        value.get("operation_id") != operation_id
+        not isinstance(status, str)
+        or status not in {"prepared", "applying", "committed", "rolled_back", "aborted", "recovery_required"}
+        or value.get("operation_id") != operation_id
         or not valid_descriptor(value.get("before"))
         or not valid_descriptor(value.get("after"))
     )
-    if invalid or value.get("status") in {"prepared", "applying"}:
+    if invalid or status in {"prepared", "applying"}:
         value = {**value, "status": "recovery_required", "error_code": "RECOVERY_REQUIRED",
                  "error": "invalid or incomplete document operation requires recovery"}
     after = value.get("after")
