@@ -35,3 +35,25 @@ def test_export_redacts_all_public_fields(tmp_path, fmt, field):
             assert store.get_session('export')['title'] == secret
     finally:
         store.close()
+
+
+@pytest.mark.parametrize('fmt', ['md', 'html'])
+@pytest.mark.parametrize('depth', [1100, 10000])
+def test_export_omits_arguments_when_nesting_prevents_safe_redaction(tmp_path, fmt, depth):
+    secret = 'SYNTHETIC_DEPTH_PASSWORD'
+    arguments = '[' * depth + json.dumps({'password': secret}) + ']' * depth
+    store = SessionStore(tmp_path / 'sessions')
+    try:
+        store.create_session('export', 'main')
+        store.append_message('export', {'id': 'user', 'role': 'user', 'content': 'Safe content'})
+        store.append_message('export', {
+            'id': 'tool', 'role': 'tool', 'content': 'Safe result', 'caller': 'user',
+            'function': 'safe_tool', 'extra': {'tool_use': {'arguments': arguments}},
+        })
+        output = export_session('export', fmt, store=store)
+        assert secret not in output
+        assert 'arguments omitted: nesting too deep' in output
+        assert 'Safe content' in output
+        assert 'Safe result' in output
+    finally:
+        store.close()

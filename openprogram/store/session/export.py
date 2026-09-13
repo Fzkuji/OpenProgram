@@ -78,15 +78,18 @@ def _tool_use(msg: dict[str, Any]) -> dict[str, Any]:
 def _call_summary(msg: dict[str, Any]) -> dict[str, str]:
     """One tool call flattened to the fields both renderers print."""
     args = _tool_use(msg).get("arguments")
-    if isinstance(args, str):
-        try:
-            parsed = json.loads(args)
-        except (ValueError, TypeError):
-            pass
-        else:
-            if isinstance(parsed, (dict, list)) and remove_secret_values(parsed) != parsed:
-                args = parsed
-    args = remove_secret_values(args)
+    try:
+        if isinstance(args, str):
+            try:
+                parsed = json.loads(args)
+            except (ValueError, TypeError):
+                pass
+            else:
+                if isinstance(parsed, (dict, list)) and remove_secret_values(parsed) != parsed:
+                    args = parsed
+        args = remove_secret_values(args)
+    except RecursionError:
+        args = "[arguments omitted: nesting too deep]"
     if args not in (None, "", {}) and not isinstance(args, str):
         try:
             args = json.dumps(args, ensure_ascii=False, default=str)
