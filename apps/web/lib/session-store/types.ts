@@ -110,6 +110,7 @@ export interface ComposerSettings {
   webSearch: boolean;
   toolsProfile?: string;
   fast: boolean;
+  fastByModel?: Record<string, boolean>;
   /** What Enter does while this session already has a running turn. */
   runningMessageMode: "queue" | "steer";
   /** Permission mode for this session's tool calls: ask/acceptEdits/
@@ -398,6 +399,7 @@ export interface AgentBadgeInfo {
   /** 当前模型有无 Fast（service_tier）档；false/缺省 → composer 隐藏
    *  "高速"开关（与 thinking_levels 为空隐藏思考菜单同一模式）。 */
   fast?: boolean;
+  fast_capability?: { status: string; source: string };
 }
 export interface AgentSettingsState {
   chat?: AgentBadgeInfo;

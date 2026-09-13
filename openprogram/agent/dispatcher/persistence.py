@@ -86,6 +86,7 @@ def persist_assistant_message(
             )
             if counted and counted.get("input_tokens"):
                 usage = {
+                    **usage,
                     "input_tokens": int(counted["input_tokens"]),
                     "output_tokens": 0,
                     "cache_read_tokens": 0,
@@ -119,6 +120,8 @@ def persist_assistant_message(
             usage.get("agent_iteration_count") or 0
         ),
     }
+    if usage.get("service_tiers"):
+        assistant_msg["usage"] = dict(usage)
     if hasattr(req, "_loaded_deferred_tools"):
         assistant_msg["loaded_deferred_tools"] = list(req._loaded_deferred_tools)
     if req.structured_output_mode is not None:

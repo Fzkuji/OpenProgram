@@ -16,6 +16,7 @@ import { CornerDownRight, Paperclip, Settings } from "lucide-react";
 import {
   type AnimatedNavIconHandle,
   BicepsFlexedIcon,
+  GaugeIcon,
 } from "@/components/animated-icons";
 import { HoverTip } from "@/components/ui/tooltip";
 import { useTranslation } from "@/lib/i18n";
@@ -24,7 +25,6 @@ import { GROUP_LABEL } from "../../top-bar/menu-styles";
 import { AgentBadge, PermissionBadge } from "../../top-bar";
 import { ContextBadge } from "../../context-badge";
 import {
-  FastIcon,
   OptionsIcon,
   ToolsIcon,
   SandboxIcon,
@@ -68,6 +68,7 @@ export interface ControlsClusterProps {
   toggleWebSearch(): void;
   fastEnabled: boolean;
   fastSupported: boolean;
+  fastHint: string;
   toggleFast(): void;
   runningMessageMode: "queue" | "steer";
   toggleRunningMessageMode(): void;
@@ -105,6 +106,7 @@ export function ControlsCluster({
   toggleWebSearch,
   fastEnabled,
   fastSupported,
+  fastHint,
   toggleFast,
   runningMessageMode,
   toggleRunningMessageMode,
@@ -133,7 +135,7 @@ export function ControlsCluster({
   const effortIconRef = useRef<AnimatedNavIconHandle>(null);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const anyToolActive =
-    toolsEnabled || webSearchEnabled || (fastEnabled && fastSupported) || unattended
+    toolsEnabled || webSearchEnabled || unattended
     || (sandboxEnabled && sandboxAvailable);
   const effortColor = effortLevelColor(thinkingOptions, thinking);
 
@@ -298,20 +300,7 @@ export function ControlsCluster({
                         label={text("Web Search", "网页搜索")}
                       />
                     </Menu.Item>
-                    {fastSupported ? (
-                      <Menu.Item
-                        className={styles.plusMenuRow}
-                        closeOnClick={false}
-                        onClick={() => toggleFast()}
-                      >
-                        <PlusMenuItem
-                          active={fastEnabled}
-                          onClick={noop}
-                          icon={<FastIcon size={16} />}
-                          label={text("Fast", "高速")}
-                        />
-                      </Menu.Item>
-                    ) : null}
+
 
                     <Menu.Item
                       className={styles.plusMenuRow}
@@ -395,16 +384,6 @@ export function ControlsCluster({
                   />
                 </HoverTip>
               )}
-              {fastEnabled && fastSupported && (
-                <HoverTip label={text("Fast", "高速")}>
-                  <ToolChip
-                    icon={<FastIcon size={16} />}
-                    label={text("Fast", "高速")}
-                    on
-                    onToggle={toggleFast}
-                  />
-                </HoverTip>
-              )}
               {sandboxEnabled && sandboxAvailable && (
                 <HoverTip label={text("Sandbox", "沙箱")}>
                   <ToolChip
@@ -469,22 +448,15 @@ export function ControlsCluster({
                   className={styles.effortControl}
                   aria-expanded={thinkingMenuOpen}
                 >
-                  {thinkingOptions.length > 1 && (
+                  {(
                     <button
                       type="button"
                       className={styles.effortText}
                       onMouseEnter={() => effortIconRef.current?.startAnimation?.()}
                       onMouseLeave={() => effortIconRef.current?.stopAnimation?.()}
-                      // ponytail: the pill ignores its expanded/onToggle
-                      // props (internal useState) — a programmatic click
-                      // on its own (hidden) collapsed chip is the only
-                      // public "open". Lift the state into the pill if a
-                      // second caller ever needs it.
                       onClick={() => {
                         setPlusMenuOpen(false);
-                        thinkingTriggerRef.current
-                          ?.querySelector<HTMLElement>(".effort-pill-collapsed")
-                          ?.click();
+                        setThinkingMenuOpen((v) => !v);
                       }}
                       // 常规宽度保持原有文字配色；最高档仍用紫色标识。
                       style={thinking === "max" ? { color: "#8E6BD9" } : undefined}
@@ -497,8 +469,9 @@ export function ControlsCluster({
                         style={{ color: thinking === "max" ? "#8E6BD9" : effortColor }}
                         aria-hidden="true"
                       />
+                      {fastEnabled && fastSupported && <GaugeIcon size={14} active aria-hidden="true" />}
                       <span className={styles.effortValue}>
-                        {thinking ? thinking[0].toUpperCase() + thinking.slice(1) : ""}
+                        {thinking ? thinking[0].toUpperCase() + thinking.slice(1) : text("Model settings", "模型设置")}
                       </span>
                     </button>
                   )}
@@ -511,6 +484,10 @@ export function ControlsCluster({
                     options={thinkingOptions}
                     value={thinking}
                     onChange={setThinking}
+                    fastEnabled={fastEnabled && fastSupported}
+                    fastSupported={fastSupported}
+                    fastHint={fastHint}
+                    toggleFast={toggleFast}
                   />
                 </div>
               </HoverTip>

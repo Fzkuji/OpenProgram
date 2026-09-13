@@ -1,29 +1,16 @@
-# Fast tier
+# Fast mode
 
-Some vendors offer a paid high-speed tier for some models. OpenProgram surfaces it as a "fast" toggle in the chat UI: when enabled, requests carry the vendor's fast-tier parameter.
+Open the thinking-effort picker next to the model and click the gauge icon at the top right. Fast uses an advanced needle position without adding a border or background. Hovering animates the needle; an active gauge remains advanced after the pointer leaves. Fast does not change the thinking-effort slider.
 
-## Which models have it
+The preference is saved per session and provider/model. A newly selected model starts at Standard. Standard explicitly overrides an agent's priority default. Changes apply to the next submitted turn, not a request already running.
 
-Only two families have a fast tier:
+## Supported connections
 
-| Family | Request shape |
-|---|---|
-| GPT 5.4 / 5.5 / 5.6 series (OpenAI priority processing) | `service_tier: "priority"` in the request body |
-| Claude Opus 4.6 / 4.7 / 4.8 | `speed: "fast"` in the request body + the fast-mode beta header |
+- Codex uses the account model catalogue.
+- Claude retains its supported Fast models and native speed parameter.
+- Official xAI API supports Grok 4.6 Priority Processing. It sends `service_tier: "priority"`; Standard sends `"default"`.
+- Grok subscription and unknown gateways remain unverified unless their route configuration explicitly declares support. The gauge remains visible with an explanation.
 
-Other models (Gemini, DeepSeek, Qwen, etc.) have no fast concept, and the toggle does not appear for them.
+Fast can increase usage or cost. xAI priority processing has a 2× token-price premium; see [xAI pricing](https://docs.x.ai/developers/pricing). The gauge represents the requested mode, not a speed guarantee. Completions and Responses retain the actual returned tier in response usage; absent metadata remains unconfirmed. xAI's reported request cost is retained separately when available.
 
-Detection is per model, via the `Model.fast` field in the runtime registry. A model entry that carries an explicit `fast` value in config wins — for `openai-codex` that value is persisted from the official models endpoint's `service_tiers` data (updated by Fetch after a subscription login, no hand-written list). Entries without one are backfilled from a built-in declaration covering exactly the two families above, matched by model id regardless of provider — the same model resold through a gateway keeps its fast tier.
-
-## How to enable it
-
-- The "fast" menu item / chip in the chat input box: applies per request to the current model. Switching to an unsupported model hides the toggle and the parameter is never sent.
-- `service_tier` in the agent configuration: stores a default tier for an agent, overridable on any turn.
-
-## Which providers it applies to
-
-On the request-building side, only these paths pass the fast-tier parameter through: `openai_responses`, `openai_completions`, and `openai_codex` (`service_tier` in the request body), plus `anthropic` (switching to `speed: "fast"` + the beta header only when the model declares fast support). Other providers do not pass it through, and the parameter never leaves the machine.
-
-Billing note: the fast tier is pay-as-you-go. On a Claude subscription account with no usage credits topped up, Anthropic returns 429 "Usage credits are required for fast mode" — an account issue, not a lack of model support; the UI shows the error as is.
-
-For the full record of implementation details and detection rules, see the [design notes](../reference/design/providers/models/fast-tier.md).
+Model configuration may explicitly set `fast: false` to disable Fast or `fast: true` to declare route support. Do not infer subscription or gateway support from a model's name. Calls are validated against their own selected route.

@@ -1,29 +1,16 @@
-# fast tier
+# 高速模式
 
-部分厂商给部分模型提供付费高速档。OpenProgram 把它做成聊天界面的"高速"开关：打开后请求按厂商协议带上高速档参数。
+点击模型旁的思考强度控件，再点击弹窗右上角的仪表图标。开启后指针保持转动后的状态，不增加边框或底色；悬停时有指针动画。高速模式不改变思考强度滑块。
 
-## 哪些模型有
+设置按会话和 provider/model 保存，新选择的模型默认使用标准档。标准档显式覆盖 agent 的高速默认值。修改只影响下一次提交，不改变正在执行的请求。
 
-只有两个家族存在 fast 档：
+## 支持的线路
 
-| 家族 | 请求形态 |
-|---|---|
-| GPT 5.4 / 5.5 / 5.6 系（OpenAI priority processing） | 请求体 `service_tier: "priority"` |
-| Claude Opus 4.6 / 4.7 / 4.8 | 请求体 `speed: "fast"` + fast-mode beta 头 |
+- Codex 根据账号模型目录判断。
+- Claude 保留已有的高速模型及原生 speed 参数。
+- 官方 xAI API 的 Grok 4.6 支持 Priority Processing，开启发送 `service_tier: "priority"`，标准档发送 `"default"`。
+- Grok 订阅及未知网关保持“尚未确认”，除非线路配置显式声明支持。图标保持可见，并提示原因。
 
-其他模型（Gemini、DeepSeek、Qwen 等）没有 fast 概念，开关不会出现。
+高速可能增加用量或费用。xAI 优先处理的 token 单价为标准档的 2 倍，见 [xAI 定价](https://docs.x.ai/developers/pricing)。图标表示请求偏好，不保证实际速度。Completions 和 Responses 在响应 usage 中保留实际返回的档位；缺少元数据时不推定成功提速。xAI 返回的请求费用也单独保留。
 
-判定按模型，看运行时注册表里的 `Model.fast` 字段。配置里模型行显式写了 `fast` 就听它的——`openai-codex` 的值来自官方模型端点的 `service_tiers` 数据（登录订阅后 Fetch 即更新，不靠手写清单）；没写的按内置声明回填，声明只覆盖上述两个家族，按模型 id 匹配、与 provider 无关——同一个模型经网关转售照样保留高速档。
-
-## 怎么开
-
-- 聊天输入框的"高速"菜单项 / chip：对当前模型逐次生效，切到不支持的模型后开关自动隐藏、参数不会发出。
-- agent 配置里的 `service_tier`：给某个 agent 存一个默认档，每轮请求可再覆盖。
-
-## 对哪些 provider 生效
-
-请求构建侧只有这些线路透传高速参数：`openai_responses`、`openai_completions`、`openai_codex`（请求体 `service_tier`），以及 `anthropic`（仅当模型声明了 fast 时切换到 `speed: "fast"` + beta 头）。其他 provider 不透传，参数不出网。
-
-计费提醒：fast 档按量计费。Claude 订阅账户没有充值 usage credits 时，Anthropic 会返回 429 "Usage credits are required for fast mode"——这是账户问题，不代表模型不支持，界面会原样展示该报错。
-
-实现细节与判定规则的完整记录见[设计笔记](../reference/design/providers/models/fast-tier.md)。
+模型配置可用 `fast: false` 显式禁用，或用 `fast: true` 声明线路支持。不根据模型名称推定订阅或网关支持；每次调用按实际选择的线路验证。

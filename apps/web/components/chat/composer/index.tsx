@@ -251,12 +251,21 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // per-session (this scope's settings.fast, persisted + isolated per
   // chat like the other toggles). The backend forwards it to the provider
   // request body and no-ops for providers that don't read service_tier.
-  const fastEnabled = useSessionScope((s) => s.settings.fast);
+  const fastByModel = useSessionScope((s) => s.settings.fastByModel);
+  const fastModelKey = `${chatAgent.provider ?? ""}:${chatAgent.model ?? ""}`;
+  const fastEnabled = fastByModel?.[fastModelKey] ?? false;
   // 有的模型没有 Fast 档（service_tier）——后端 agent_settings 按当前
   // 模型下发 chat.fast；不支持就整个隐藏开关/chip，也不随消息发送。
   const fastSupported = useSessionStore((s) => !!s.agentSettings?.chat?.fast);
   const setComposerSettings = useSessionScope((s) => s.patchSettings);
-  const toggleFast = () => setComposerSettings({ fast: !fastEnabled });
+  const toggleFast = () => setComposerSettings({ fast: !fastEnabled, fastByModel: { ...fastByModel, [fastModelKey]: !fastEnabled } });
+  const fastHint = chatAgent.fast_capability?.status === "unsupported"
+    ? text("Fast is disabled for this connection.", "当前线路已禁用高速模式。")
+    : !fastSupported
+    ? text("Fast has not been verified for this connection.", "当前线路尚未确认支持高速模式。")
+    : chatAgent.fast_capability?.source === "xai-api"
+      ? text("Fast · Priority processing, 2× token price. Thinking effort is unchanged.", "高速 · 优先处理，token 单价为标准档的 2 倍。思考强度不变。")
+      : text("Fast · Increased usage may apply. Thinking effort is unchanged.", "高速 · 可能增加用量。思考强度不变。");
   const runningMessageMode = useSessionScope(
     (s) => s.settings.runningMessageMode ?? "queue",
   );
@@ -574,6 +583,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
       toggleWebSearch={toggleWebSearch}
       fastEnabled={fastEnabled}
       fastSupported={fastSupported}
+      fastHint={fastHint}
       toggleFast={toggleFast}
       runningMessageMode={runningMessageMode}
       toggleRunningMessageMode={toggleRunningMessageMode}

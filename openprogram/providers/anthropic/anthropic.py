@@ -634,7 +634,7 @@ async def stream_simple(
     _merged_headers = {**(getattr(opts, "headers", None) or {}), **(_conn.headers if _conn else {})}
     # 高速档：composer 的 fast 开关随消息带 service_tier；模型声明了
     # fast 才透传（Claude 线上形态 = speed:"fast" + fast-mode beta 头）。
-    _fast = bool(getattr(opts, "service_tier", None)) and bool(getattr(model, "fast", False))
+    _fast = getattr(opts, "service_tier", None) in ("priority", "fast") and bool(getattr(model, "fast", False))
     client, is_oauth = _build_client(
         model, api_key,
         interleaved_thinking=True,
@@ -975,6 +975,7 @@ async def stream_simple(
             if _cancelled():
                 stop_reason = "aborted"
 
+            usage.requested_service_tier = "priority" if _fast else None
             final = AssistantMessage(
                 role="assistant",
                 content=content_blocks,

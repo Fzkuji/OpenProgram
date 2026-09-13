@@ -126,7 +126,7 @@ export function useChatSubmit({
         toolsEnabled,
         toolsProfile,
         webSearchEnabled,
-        serviceTier: fastEnabled && fastSupported ? "priority" : undefined,
+        serviceTier: fastEnabled && fastSupported ? "priority" : "default",
         background: bound !== null,
         injecting: false,
       }, pendingImages.length + pendingDocs.length);
@@ -225,7 +225,7 @@ export function useChatSubmit({
       toolsEnabled,
       toolsProfile,
       webSearchEnabled,
-      serviceTier: fastEnabled && fastSupported ? "priority" : undefined,
+      serviceTier: fastEnabled && fastSupported ? "priority" : "default",
       // Native path-only docs have no inline WS attachment payload, but they
       // still belong to this attachment turn for run_active handling.
       hasAttachments: pendingImages.length + pendingDocs.length > 0,

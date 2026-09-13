@@ -35,7 +35,7 @@ import {
   type AnimatedNavIconHandle,
   BicepsFlexedIcon,
   ChevronRightIcon,
-  CircleHelpIcon,
+  GaugeIcon,
 } from "@/components/animated-icons";
 
 const capEffort = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
@@ -50,6 +50,10 @@ interface ThinkingEffortPillProps
   options: { value: string; desc?: string }[];
   value: string;
   onChange: (v: string) => void;
+  fastEnabled: boolean;
+  fastSupported: boolean;
+  fastHint: string;
+  toggleFast: () => void;
 }
 
 export const ThinkingEffortPill = React.forwardRef<
@@ -59,35 +63,6 @@ export const ThinkingEffortPill = React.forwardRef<
   { expanded, onToggle, options, value, onChange, ...rest },
   ref,
 ) {
-  // No options → provider/model exposes no thinking knob (e.g. gpt-4o,
-  // or a model whose picker is hidden): render nothing at all.
-  if (options.length === 0) return null;
-
-  // Exactly one option → the effort is fixed (e.g. claude-code, where
-  // the proxy ignores reasoning_effort and the value is always
-  // "auto"). Show the bare icon chip — no caret, no expand, no slider,
-  // not clickable. A dropdown with a single choice is not useful.
-  if (options.length === 1) {
-    return (
-      <div
-        ref={ref}
-        {...rest}
-        className="effort-pill-fixed inline-flex h-[32px] w-[32px] items-center justify-center rounded-full text-text-primary select-none"
-        style={{ backgroundColor: "var(--effort-off-bg)" }}
-      >
-        <BicepsFlexedIcon
-          size={18}
-          className="effort-pill-compact-icon text-text-primary"
-          aria-hidden="true"
-        />
-      </div>
-    );
-  }
-
-  // Two or more options → the interactive slider pill. Split into its
-  // own component so the hooks below never sit behind the conditional
-  // returns above (rules of hooks: the hook count must not change when
-  // ``options.length`` flips as the user switches agents).
   return (
     <ThinkingEffortSliderPill
       ref={ref}
@@ -113,6 +88,10 @@ const ThinkingEffortSliderPill = React.forwardRef<
     onMouseLeave,
     expanded,
     onToggle,
+    fastEnabled,
+    fastSupported,
+    fastHint,
+    toggleFast,
     ...rest
   },
   ref,
@@ -238,17 +217,18 @@ const ThinkingEffortSliderPill = React.forwardRef<
               >
                 {capEffort(value)}
               </span>
-              <HoverTip
-                label={text(
-                  "Higher effort lets the model think longer before answering.",
-                  "力度越高，模型回答前思考越久。",
-                )}
-              >
-                <span className="ml-auto inline-flex cursor-default text-text-muted">
-                  <CircleHelpIcon size={16} aria-hidden="true" />
-                </span>
+              <HoverTip label={fastHint}>
+                <button type="button" className="ml-auto inline-flex items-center justify-center rounded-sm p-1 focus-visible:outline focus-visible:outline-2"
+                  style={{ background: "transparent", border: "none", color: fastEnabled ? "var(--text-primary)" : "var(--text-muted)" }}
+                  aria-label={text("Fast mode", "高速模式")}
+                  title={fastHint} aria-description={fastHint}
+                  aria-pressed={fastEnabled} aria-disabled={!fastSupported}
+                  onClick={(e) => { e.stopPropagation(); if (fastSupported) toggleFast(); }}>
+                  <GaugeIcon size={18} active={fastEnabled} />
+                </button>
               </HoverTip>
             </div>
+            {options.length > 1 && <>
             <div className="mt-[16px] flex items-center justify-between text-[12px] leading-[15px] text-text-muted">
               <span>{text("Faster", "更快")}</span>
               <span>{text("Smarter", "更强")}</span>
@@ -279,6 +259,7 @@ const ThinkingEffortSliderPill = React.forwardRef<
                 }
               />
             </div>
+            </>}
           </div>
         )}
       </div>

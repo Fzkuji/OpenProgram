@@ -81,6 +81,9 @@ def _usage_from_chunk(u: Any) -> Usage:
         reasoning_tokens = getattr(details, "reasoning_tokens", 0) or 0
         if reasoning_tokens:
             usage.output = (getattr(u, "completion_tokens", 0) or 0) - reasoning_tokens
+    ticks = getattr(u, "cost_in_usd_ticks", None)
+    if isinstance(ticks, (int, float)) and ticks >= 0:
+        usage.provider_cost_usd = ticks / 10_000_000_000
     return usage
 
 
@@ -446,6 +449,7 @@ async def stream_simple(
     tool_indices: dict[str, int] = {}
     tool_arg_buffers: dict[str, str] = {}
     usage = Usage()
+    actual_tier = None
     finish_reason = None
     # After finish_reason, Grok/xAI often keep SSE open for a usage
     # chunk or [DONE] that never arrives. Hang here = text done, UI
@@ -473,6 +477,7 @@ async def stream_simple(
                 async with await client.chat.completions.create(**params) as stream:
                     # <=250ms cancel poll — do not wait for the next token.
                     async for chunk in iter_until_cancelled(stream, _stop):
+                        actual_tier = getattr(chunk, "service_tier", None) or actual_tier
                         # Process usage from chunks
                         if chunk.usage:
                             usage = _usage_from_chunk(chunk.usage)
@@ -640,6 +645,7 @@ async def stream_simple(
                 tool_indices = {}
                 tool_arg_buffers = {}
                 usage = Usage()
+                actual_tier = None
                 finish_reason = None
                 finished_at = None
                 partial = _make_empty_assistant(model)
@@ -662,6 +668,8 @@ async def stream_simple(
         if _user_cancelled():
             stop_reason = "aborted"
 
+        usage.requested_service_tier = opts.get("service_tier")
+        usage.service_tier = actual_tier
         final = AssistantMessage(
             role="assistant",
             content=content_blocks,

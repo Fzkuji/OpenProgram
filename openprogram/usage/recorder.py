@@ -33,6 +33,19 @@ def _cost_from_model(model, usage) -> tuple[dict, str]:
     """Return (cost dict, cost_source). Uses the catalog's per-MTok pricing
     via providers.models.calculate_cost. Falls back to a provider-reported
     cost if the model carries one and the catalog can't price it."""
+    reported = getattr(usage, "provider_cost_usd", None)
+    if isinstance(reported, (int, float)) and reported >= 0:
+        return ({
+            "cost_input": 0.0, "cost_output": 0.0, "cost_cache_read": 0.0,
+            "cost_cache_write": 0.0, "cost_total": float(reported),
+        }, "provider_reported")
+    if (getattr(usage, "service_tier", None) in ("priority", "fast")
+            or (getattr(usage, "requested_service_tier", None) in ("priority", "fast")
+                and getattr(usage, "service_tier", None) is None)):
+        return ({
+            "cost_input": 0.0, "cost_output": 0.0, "cost_cache_read": 0.0,
+            "cost_cache_write": 0.0, "cost_total": 0.0,
+        }, "unknown")
     cost = getattr(model, "cost", None)
     if cost is None or not getattr(cost, "is_known", lambda: False)():
         return ({

@@ -174,12 +174,18 @@ def extract_usage(msg) -> dict:
         return False
     if _has("prompt_tokens") and cache_read and input_tokens >= cache_read:
         input_tokens -= cache_read
-    return {
+    result = {
         "input_tokens":  input_tokens,
         "output_tokens": output_tokens,
         "cache_read_tokens":  cache_read,
         "cache_write_tokens": cache_write,
     }
+    requested = usage.get("requested_service_tier") if isinstance(usage, dict) else getattr(usage, "requested_service_tier", None)
+    actual = usage.get("service_tier") if isinstance(usage, dict) else getattr(usage, "service_tier", None)
+    if requested in ("priority", "fast") or actual in ("priority", "fast"):
+        result["service_tiers"] = [actual if actual in ("priority", "fast", "default") else "unreported"]
+    return result
+
 
 
 def shorten(value, limit: int = 4000) -> str:

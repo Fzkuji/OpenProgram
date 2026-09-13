@@ -277,6 +277,8 @@ def register(app):
         if not _rm._default_is_enabled(exec_provider, exec_model):
             exec_provider, exec_model = None, None
 
+        from openprogram.providers.fast import fast_capability
+
         return JSONResponse(content={
             "chat": {
                 "provider": chat_provider,
@@ -287,6 +289,7 @@ def register(app):
                 # 当前模型有无 Fast（service_tier）档——composer 据此
                 # 显隐"高速"开关，与 thinking 显隐同一模式。
                 "fast": _supports_fast(chat_provider, chat_model),
+                "fast_capability": fast_capability(chat_provider, chat_model),
             },
             "exec": {
                 "provider": exec_provider,
@@ -394,6 +397,8 @@ def register(app):
                              "model": _s._runtime_management._exec_model},
                 },
             })
+
+        from openprogram.providers.fast import fast_capability
 
         return JSONResponse(content={
             "chat": {"provider": _s._runtime_management._chat_provider,

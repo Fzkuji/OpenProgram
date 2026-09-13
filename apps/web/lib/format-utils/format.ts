@@ -122,6 +122,7 @@ export function formatProgramResultContent(output: unknown): string {
 // ===== Usage badge / footer =====
 
 export interface Usage {
+  service_tiers?: string[];
   input_tokens?: number;
   output_tokens?: number;
   cache_read?: number;
@@ -208,6 +209,13 @@ export function formatUsageFooterLabel(
 ): string {
   const result = buildUsageText(usage, provider);
   if (!result) return "";
+  const tiers = usage?.service_tiers || [];
+  const counts = [
+    ["Fast served", tiers.filter((t) => t === "priority" || t === "fast").length],
+    ["Standard served", tiers.filter((t) => t === "default").length],
+    ["Speed unconfirmed", tiers.filter((t) => t === "unreported").length],
+  ].filter(([, count]) => Number(count) > 0).map(([label, count]) => `${label}: ${count}`);
+  if (counts.length) result.text += " · " + counts.join(" · ");
   const tip = ' title="' + escAttr(result.tooltip) + '"';
   return (
     '<span class="usage-footer-label"' +

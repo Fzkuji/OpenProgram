@@ -7,7 +7,7 @@ is deliberately aligned).
 
 ## 1. What Fast is
 
-The "Fast" toggle in the composer's + menu. When on, the request carries the
+The "Fast" toggle in the composer's More options menu (the sliders icon). When on, the request carries the
 vendor's high-speed knob:
 
 | Family | Wire shape | Billing reality |
@@ -15,30 +15,26 @@ vendor's high-speed knob:
 | GPT 5.4 / 5.5 / 5.6 | body `service_tier: "priority"` (OpenAI's priority processing) | On the Codex subscription the endpoint advertises it as a per-model tier ("1.5x speed, increased usage"); which models expose it comes straight from `service_tiers` (§2.1), not a guess |
 | Claude Opus 4.6 / 4.7 / 4.8 | body `speed: "fast"` + header `anthropic-beta: fast-mode-2026-02-01` | Also pay-as-you-go; a subscription account without usage credits gets Anthropic's 429 "Usage credits are required for fast mode", surfaced **as-is** — an account problem, not lack of support |
 
-No other model family (Gemini / DeepSeek / Qwen / Llama / MiniMax…) has a
-fast tier at all.
+Absence from this table does not prove that a provider lacks a fast tier.
+xAI documents Priority Processing for its official API; the Grok subscription
+route is a separate, unverified endpoint. The proposed UI and route-aware
+extension are specified in [Composer speed control](../../ui/composer-fast-control.html).
+Implementation verification is tracked in the linked design status.
 
-## 2. Detection: `supports_fast(provider, model)` — three branches
+## 2. Route capability
 
-Entry point: `apps/server/openprogram_server/_webui/_model_listing/listing.py`. Strips the
-wire-format `"provider:"` prefix first (the runtime records the current
-model as `openai-codex:gpt-5.5`).
+`providers.fast.fast_capability` is shared by the agent-settings projection and
+turn dispatch. `supports_fast` is its boolean compatibility projection. Explicit
+configuration false disables support. Codex uses the account catalogue; explicit
+route true can declare support; Claude retains its existing declaration. Official
+xAI API Grok 4.6 has a provider-and-endpoint-scoped declaration. The separate
+Grok subscription endpoint remains unknown. Other routes retain catalogue lookup.
 
-1. **openai-codex → reads the persisted `Model.fast`**. This field is not
-   hand-written: it comes from the official codex models endpoint (§2.1),
-   written into config alongside the spec at Fetch time, so detection is just
-   `get_model("openai-codex", id).fast`. Tiers with no fast mode (such as
-   `gpt-5.4-mini`) resolve False exactly, which an id-prefix guess cannot do.
-2. **claude-code → hand-written table** `enabled_models.default_fast`: id
-   contains `opus-4-6/4-7/4-8` (hyphen or dot) → True. Its subscription
-   endpoint is unverified, so this stays hand-written until an endpoint-backed
-   source like codex's is confirmed to exist.
-3. **Everything else → models.dev, automatic**: a mode with `service_tier ==
-   "priority"` or `id == "fast"` → True; none, or unknown provider → False.
-
-Private gateways (such as frontier-intelligence) are not special-cased —
-unknown to the catalogue means no fast button. The config override (§3) covers
-them.
+The thinking panel replaces its help icon with the supplied GaugeIcon. Activation
+adds no border or background; the needle remains advanced. The preference is
+stored per session and provider/model. Standard explicitly overrides agent defaults.
+The user-facing contract and prototype live in
+[Composer speed control](../../ui/composer-fast-control.html).
 
 ### 2.1 Codex's official source
 
@@ -84,12 +80,13 @@ connect / session switch / model switch / every turn ack+settle
       → GET /api/agent_settings       (apps/server/openprogram_server/_webui/routes/execution/runtime.py)
       chat.fast = supports_fast(session's provider, model)   ← recomputed
   → zustand agentSettings.chat.fast
-  → composer re-renders: shows/hides the Fast menu item and chip
+  → composer re-renders: enables or explains the gauge control
 ```
 
 Send-side double gate: the composer only attaches
-`service_tier: "priority"` when `fastEnabled && fastSupported` — a stale
-per-session fast setting never leaks to an unsupported model.
+`service_tier: "priority"` when `fastEnabled && fastSupported`; otherwise it
+sends `default`. Dispatch revalidates the actual model. A stale preference never
+enables priority on an unsupported route.
 
 ## 5. Wire side (request builders)
 
@@ -119,3 +116,11 @@ Change guide: codex fast/thinking is fully automatic — add/remove a model
 needs nothing but a Fetch; change detection logic → touch only
 `listing.py::supports_fast`; claude-code add/remove fast → the Opus part of
 `default_fast`; another provider wanting fast → works once models.dev knows it.
+
+## Response evidence
+
+Completions and Responses retain requested and actual tier separately in Usage.
+Per-call tier evidence is accumulated as a list, saved with the assistant message,
+and rendered in the existing usage footer, including after reload. Missing tier
+metadata is unconfirmed. xAI reported cost takes precedence over catalogue cost;
+no speed ratio is inferred from a requested tier.

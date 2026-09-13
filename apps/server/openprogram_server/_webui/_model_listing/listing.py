@@ -152,40 +152,10 @@ def _browse_models_with_error(
 
 
 def supports_fast(provider_id: str | None, model_id: str | None) -> bool:
-    """当前模型有没有 Fast（高速）档。全自动、事件驱动——agent_settings
-    在每次连接/会话切换/模型切换/轮次结束时重算并推给前端，composer 据
-    此显隐高速开关。判定两层：
+    """Compatibility projection of the shared route capability."""
+    from openprogram.providers.fast import fast_capability
+    return fast_capability(provider_id, model_id)["status"] == "supported"
 
-      1. openai-codex → 读注册表里落盘的 ``Model.fast``。这个字段来自官方
-         codex models 端点（``service_tiers`` 里有 priority 档就是 True），
-         Fetch 时随 spec 一起写进 config，用时直接读文件，不再手写家族表。
-      2. claude-code → 手写声明表 ``enabled_models.default_fast``（Opus
-         4.6/4.7/4.8）；订阅端还没验证有没有 models 端点可拉，暂留手写。
-      3. 其他 provider → models.dev：该模型有 fast 档（service_tier
-         =="priority" 或 id=="fast"）就显示，没有或目录不认识就不显示。
-    """
-    if not provider_id or not model_id:
-        return False
-    # 运行时把当前模型记成 "provider:id" 线格式（如 openai-codex:gpt-5.5）
-    # ——先剥前缀再查。
-    if model_id.startswith(f"{provider_id}:"):
-        model_id = model_id[len(provider_id) + 1:]
-    if provider_id == "openai-codex":
-        from openprogram.providers.models import get_model
-        m = get_model(provider_id, model_id)
-        return bool(getattr(m, "fast", False)) if m else False
-    if provider_id == "claude-code":
-        from openprogram.providers.enabled_models import default_fast
-        return default_fast(model_id)
-    from openprogram.providers.sources import models_dev
-    try:
-        row = models_dev.lookup(provider_id, model_id) or {}
-    except Exception:
-        return False
-    return any(
-        sm.get("service_tier") == "priority" or sm.get("id") == "fast"
-        for sm in row.get("speed_modes") or []
-    )
 
 
 def _model_to_dict(model: Any, enabled: bool) -> dict[str, Any]:

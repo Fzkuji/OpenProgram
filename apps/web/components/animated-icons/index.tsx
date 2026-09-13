@@ -33,3 +33,5 @@ export * from "./icons-4";
 export * from "./icons-5";
 export * from "./icons-6";
 export { CursorClickIcon } from "./cursor-click-icon";
+
+export { GaugeIcon } from "./gauge-icon";

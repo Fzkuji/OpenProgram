@@ -235,6 +235,9 @@ class UsageCost(BaseModel):
 
 
 class Usage(BaseModel):
+    requested_service_tier: str | None = None
+    service_tier: str | None = None
+    provider_cost_usd: float | None = None
     input: int = 0
     output: int = 0
     cache_read: int = 0

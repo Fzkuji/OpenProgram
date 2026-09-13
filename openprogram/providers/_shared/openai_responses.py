@@ -324,12 +324,17 @@ async def process_responses_stream(
             details_dict = details if isinstance(details, dict) else details.__dict__
             cached = details_dict.get("cached_tokens", 0) or 0
 
+            ticks = usage_dict.get("cost_in_usd_ticks")
+            if isinstance(ticks, (int, float)) and ticks >= 0:
+                output.usage.provider_cost_usd = ticks / 10_000_000_000
             output.usage.input = input_tokens - cached
             output.usage.output = output_tokens
             output.usage.cache_read = cached
             output.usage.cache_write = 0
             output.usage.total_tokens = total_tokens
 
+        output.usage.requested_service_tier = service_tier
+        output.usage.service_tier = resp_dict.get("service_tier")
         calculate_cost(model, output.usage)
 
         if apply_service_tier_pricing:

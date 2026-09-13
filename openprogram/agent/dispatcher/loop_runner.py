@@ -715,6 +715,8 @@ def run_loop_blocking(
             ))], timestamp=0,
         )]
 
+    from openprogram.providers.fast import resolve_service_tier
+
     config = AgentLoopConfig(
         model=model,
         convert_to_llm=_default_convert_to_llm,
@@ -734,11 +736,11 @@ def run_loop_blocking(
         # Per-turn speed tier → SimpleStreamOptions.service_tier →
         # provider request body. Per-turn value wins; else the agent
         # profile's stored default; else None (provider default).
-        service_tier=(
+        service_tier=resolve_service_tier(model, (
             req.service_tier
             if req.service_tier is not None
             else agent_profile.get("service_tier")
-        ),
+        )),
         response_format=req.response_format,
         get_steering_messages=_get_steering_messages,
         safe_point_hook=_safe_point_hook if safe_point_callback is not None else None,
@@ -818,7 +820,7 @@ def run_loop_blocking(
             )
 
         final_text_parts: list[str] = []
-        usage_total: dict[str, int] = {
+        usage_total: dict = {
             "input_tokens": 0, "output_tokens": 0,
             "cache_read_tokens": 0, "cache_write_tokens": 0,
             "provider_request_count": 0, "agent_iteration_count": 0,
@@ -833,6 +835,9 @@ def run_loop_blocking(
                 final_text_parts=final_text_parts,
             )
             prior_usage = continuation.assistant_message.usage
+            prior_tiers = _extract_usage(continuation.assistant_message).get("service_tiers")
+            if prior_tiers:
+                usage_total["service_tiers"] = list(prior_tiers)
             usage_total.update({
                 "input_tokens": int(getattr(prior_usage, "input", 0) or 0),
                 "output_tokens": int(getattr(prior_usage, "output", 0) or 0),
@@ -924,6 +929,8 @@ def run_loop_blocking(
                         if text:
                             final_text_parts.append(text)
                         usage = _extract_usage(msg)
+                        if usage.get("service_tiers"):
+                            usage_total.setdefault("service_tiers", []).extend(usage["service_tiers"])
                         for k in ("input_tokens", "output_tokens",
                                   "cache_read_tokens", "cache_write_tokens"):
                             usage_total[k] += usage.get(k, 0)

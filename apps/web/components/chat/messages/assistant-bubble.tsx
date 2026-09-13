@@ -9,6 +9,7 @@
  * nothing rendered yet, a typing indicator stands in.
  */
 import { memo, useLayoutEffect, useRef } from "react";
+import { formatUsageFooterLabel, type Usage } from "@/lib/format-utils/format";
 
 import {
   useSessionStore,
@@ -528,6 +529,9 @@ export function AssistantBubble({ msg, verdict, sessionIdOverride }: {
       {/* Action row at the BOTTOM-RIGHT of the message — you finish
           reading, then reach for copy/retry/branch right where your
           eyes land, instead of back up at the header. */}
+      {!streaming && (msg.usage as Usage | undefined)?.service_tiers?.length ? (
+        <div className="runtime-usage-footer" dangerouslySetInnerHTML={{ __html: formatUsageFooterLabel(msg.usage as Usage) }} />
+      ) : null}
       <div className="message-actions-footer">
         {streaming ? (
           <div className="message-actions">

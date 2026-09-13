@@ -6,32 +6,25 @@
 
 ## 1. Fast 是什么
 
-聊天输入框 + 菜单里的"高速"开关。开了之后，请求按厂商协议带上高速档参数：
+聊天输入框“更多选项”（滑杆图标）菜单里的"高速"开关。开了之后，请求按厂商协议带上高速档参数：
 
 | 家族 | 线上形态 | 计费事实 |
 |---|---|---|
 | GPT 5.4 / 5.5 / 5.6 系 | 请求体 `service_tier: "priority"`（OpenAI 叫 priority processing） | Codex 订阅端把它列成每模型的档（"1.5x 速度、增加用量"）；哪些模型有这个档直接来自 `service_tiers`（§2.1），不靠猜 |
 | Claude Opus 4.6 / 4.7 / 4.8 | 请求体 `speed: "fast"` + 头 `anthropic-beta: fast-mode-2026-02-01` | 同样按量计费；订阅账户没充 usage credits 时 Anthropic 返回 429 "Usage credits are required for fast mode"，**如实透传给界面** —— 报错是账户问题，不代表模型不支持 |
 
-其他所有模型（Gemini / DeepSeek / Qwen / Llama / MiniMax …）没有 fast 概念。
+未列入表格不代表厂商没有高速档。xAI 官方 API 已有 Priority Processing；Grok 订阅线路是另一条尚未验证的接口。界面及按线路判定的扩展见 [Composer 速度控件设计](../../ui/composer-fast-control.html)，实现验证状态见设计页。
 
-## 2. 判定：`supports_fast(provider, model)` 三支
+## 2. 按线路判定
 
-入口：`apps/server/openprogram_server/_webui/_model_listing/listing.py`。判定前先剥
-`"provider:"` 线格式前缀（运行时把当前模型记成 `openai-codex:gpt-5.5`）。
+`providers.fast.fast_capability` 由 agent settings 与请求分发共同使用，
+`supports_fast` 保留为布尔兼容投影。配置显式 false 禁用；Codex 使用账号目录；
+线路显式 true 可声明支持；Claude 保留已有声明。官方 xAI API 的 Grok 4.6
+按 provider 和 endpoint 确认支持，独立的 Grok 订阅接口保持未知，其他线路保留目录查询。
 
-1. **openai-codex → 读注册表落盘的 `Model.fast`**。这个字段不是手写的，
-   来自官方 codex models 端点（见 §2.1），Fetch 时随 spec 一起写进 config，
-   判定时 `get_model("openai-codex", id).fast` 直接读文件。`gpt-5.4-mini`
-   这类没有 fast 档的会精确判 False，这是按 id 前缀猜做不到的。
-2. **claude-code → 手写声明表** `enabled_models.default_fast(model_id)`：
-   id 含 `opus-4-6/4-7/4-8`（连字符或点号写法）→ True。订阅端是否有可拉的
-   models 端点尚未验证，因此保持手写；确认有端点后按 codex 的方式改为端点落盘。
-3. **其余 provider → models.dev 全自动**：该模型有 `service_tier ==
-   "priority"` 或 `id == "fast"` 的档 → True；没有、或目录不认识 → False。
-
-私有网关（如 frontier-intelligence）不特判 —— 目录不认识就没有 fast 按钮。
-需要例外时用 config 显式覆盖（§3）。
+思考弹窗里的帮助图标改为用户提供的 GaugeIcon。开启不加边框或背景，指针保持
+转动后的状态。设置按会话及 provider/model 保存，标准档覆盖 agent 默认值。
+详细交互见 [Composer 速度控件设计](../../ui/composer-fast-control.html)。
 
 ### 2.1 codex 的官方数据源
 
