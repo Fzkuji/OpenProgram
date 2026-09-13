@@ -34,6 +34,11 @@ from openprogram.agent.dispatcher.titles import (
 _log = logging.getLogger(__name__)
 
 
+def _turn_summary(user_text: str | None) -> str:
+    lines = (user_text or "").strip().splitlines()
+    return (lines[0][:60] if lines else "") or "turn"
+
+
 def persist_turn_file_summary(
     session_id: str, assistant_msg_id: str,
 ) -> Optional[dict]:
@@ -239,10 +244,9 @@ def commit_turn_to_shadow_git(
             _log.debug("shadow baseline not seeded for session %s turn %s",
                        session_id, assistant_msg_id, exc_info=True)
         before = shadow.head_sha()
-        first_line = (user_text or "").strip().splitlines()
         after = shadow.commit_turn(
             assistant_msg_id, list(paths),
-            (first_line[0][:60] if first_line else "") or "turn",
+            _turn_summary(user_text),
         )
         if not after:
             _log.debug("shadow repo %s produced no commit for session %s "
@@ -484,7 +488,7 @@ def finalize_turn(
         from openprogram.store import default_store
         _store = default_store()
         if _store is db or hasattr(db, "commit_turn"):
-            _msg = (req.user_text or "").strip().splitlines()[0][:60] or "turn"
+            _msg = _turn_summary(req.user_text)
             db.commit_turn(req.session_id, f"turn: {_msg}")
             turn_committed = True
     except Exception:
@@ -598,8 +602,7 @@ def finalize_error_turn(
     eviction — all run. A retry then forks from this node's predecessor and
     the failed line stays visible without entering the retry's context.
     """
-    _msg_src = (req.user_text or "").strip().splitlines()
-    _msg = (_msg_src[0][:60] if _msg_src else "") or "turn"
+    _msg = _turn_summary(req.user_text)
 
     # Git commit the failed turn — the hole in the timeline this closes is
     # the entire point of finalizing on the error path.
