@@ -416,8 +416,11 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
         };
       });
       if (typeof window !== "undefined" && window.location) {
+        const pathname = window.location.pathname;
         const path = target.visit.route ?? (target.page.kind === "session" && target.page.sessionId && !target.page.draft
-          ? `/s/${encodeURIComponent(target.page.sessionId)}` : "/chat");
+          ? `/s/${encodeURIComponent(target.page.sessionId)}`
+          : target.page.kind === "ntp" || target.page.kind === "session" || (pathname !== "/chat" && !pathname.startsWith("/s/"))
+            ? "/chat" : pathname);
         pushPath(path);
       }
     },
