@@ -203,3 +203,20 @@ def test_intent_removal_flushes_directory_before_return(stores, monkeypatch, his
     else:
         append(first, 'message', 'first')
     assert flushed == [git.path / '.git']
+
+
+@pytest.mark.parametrize('method', ['message', 'writer'])
+def test_cancellation_after_intent_removal_invalidates_cache(stores, monkeypatch, method):
+    import asyncio
+    from openprogram.store.session.session_store import append as appends
+
+    first, _, new = stores
+    def cancel(_directory):
+        raise asyncio.CancelledError()
+    with monkeypatch.context() as patch:
+        patch.setattr(appends, '_fsync_directory', cancel)
+        with pytest.raises(asyncio.CancelledError):
+            append(first, method, 'first')
+    for reader in (first, new()):
+        assert reader.get_session('append')['head_id'] == 'first'
+        assert [n.id for n in reader.get_nodes('append')] == ['root', 'first']

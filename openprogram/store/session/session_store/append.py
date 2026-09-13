@@ -32,20 +32,22 @@ def recover(store, git):
         raise ValueError("invalid append intent")
     node = shared.Call(**receipt["node"])
     target = history_path(git, node)
-    if not target.exists():
-        git.write_history(node.seq, node.role, node.id, node.to_dict())
-    git.write_meta(receipt["meta"])
-    fields = {"updated_at": receipt["meta"]["updated_at"]}
-    if node.role == shared.ROLE_USER and node.output:
-        text = str(node.output).strip().replace("\n", " ")
-        fields["preview"] = (text[:77] + "…") if len(text) > 80 else text
-    store._update_index_entry(git.path.name, **fields)
-    store._schedule_index_flush()
-    path.unlink()
-    _fsync_directory(path.parent)
-    # The writes above sync the GitSession fingerprint, but its caller's
-    # index still precedes recovery and must be rebuilt before use.
-    git._synced_fingerprint = None
+    try:
+        if not target.exists():
+            git.write_history(node.seq, node.role, node.id, node.to_dict())
+        git.write_meta(receipt["meta"])
+        fields = {"updated_at": receipt["meta"]["updated_at"]}
+        if node.role == shared.ROLE_USER and node.output:
+            text = str(node.output).strip().replace("\n", " ")
+            fields["preview"] = (text[:77] + "…") if len(text) > 80 else text
+        store._update_index_entry(git.path.name, **fields)
+        store._schedule_index_flush()
+        path.unlink()
+        _fsync_directory(path.parent)
+    finally:
+        # Writes can finish before cancellation prevents index publication.
+        # Every exit must invalidate the caller's pre-recovery cache.
+        git._synced_fingerprint = None
     return True
 
 
