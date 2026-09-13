@@ -13,6 +13,7 @@ from pathlib import Path
 from openprogram._compat import is_link_metadata
 
 from . import manifest
+from .recovery_records import invalid_rewind_result, read_rewind_record
 from .paths import (
     path_basename,
     session_backup_root,
@@ -1078,16 +1079,14 @@ class CheckpointStore:
         get_head,
         compare_and_set_head,
     ) -> dict:
-        try:
-            initial = json.loads(intent_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return {"status": "error", "error": "invalid rewind intent"}
-        paths = [action["path"] for action in initial.get("actions", [])]
+        initial = read_rewind_record(intent_path)
+        if initial is None:
+            return invalid_rewind_result(intent_path)
+        paths = [action["path"] for action in initial["actions"]]
         with self._workspace_lock(paths):
-            try:
-                intent = json.loads(intent_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                return {"status": "error", "error": "invalid rewind intent"}
+            intent = read_rewind_record(intent_path)
+            if intent is None:
+                return invalid_rewind_result(intent_path)
             if intent.get("status") in {
                 "committed", "rolled_back", "recovery_required", "aborted",
             }:
@@ -1169,11 +1168,11 @@ class CheckpointStore:
             return []
         results = []
         for path in sorted(root.glob("*.json")):
-            try:
-                value = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
+            value = read_rewind_record(path)
+            if value is None:
+                results.append(invalid_rewind_result(path))
                 continue
-            if value.get("status") in {"prepared", "applying"}:
+            if value["status"] in {"prepared", "applying"}:
                 results.append(self._recover_rewind_intent(
                     path,
                     get_head=get_head,
