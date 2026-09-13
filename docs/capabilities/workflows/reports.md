@@ -8,10 +8,10 @@ unavailable controls return a recoverable state instead of a completed report.
 
 | Entry | Purpose | External writes |
 | --- | --- | --- |
-| `personal_weekly_report(task)` | Personal report drafts and explicit Feishu inspection or record updates | Only explicit standalone submission/update requests may write to Feishu |
+| `personal_weekly_report(task)` | Personal report drafts and explicit Feishu inspection or record updates | Only explicit submission/update requests may write to Feishu |
 | `group_weekly_report(task)` | Collect group reports, track missing members, and prepare a local summary | Never sends WeChat messages |
 | `tencent_weekly_report(task)` | Approximately 100 Chinese characters of Tencent progress for a leader, intended for Friday afternoon | Local draft only |
-| `weekly_report(task)` | Route one or several report requests and retain separate results | Prepares drafts; does not inherit permission to submit a personal report |
+| `weekly_report(task)` | An agent selects the requested report Workflows and forwards the complete request | Preserves the requested operation; child write restrictions apply |
 
 ## Prepare a Tencent report from existing records
 
@@ -29,8 +29,7 @@ directories.
 Successful Tencent and `weekly_report` calls return the report body directly. Sources,
 character count and model-call information remain in local draft files. For
 programmatic composition, pass `"result_format": "structured"` in the JSON task;
-this returns the status, artifact paths and recovery object. The coordinator
-uses this mode internally. Generation and verification use low reasoning effort,
+this returns the status, artifact paths and recovery object. The router forwards explicitly supplied child options unchanged. Generation and verification use low reasoning effort,
 a 180-second per-call limit and preserved retry budgets. Model failures do not
 produce a success draft.
 
@@ -68,31 +67,21 @@ unverified. If native search focus cannot be proved, open the requested group
 and resume; the Workflow still performs collection and summarization. A window
 that does not permit capture returns `WINDOW_CAPTURE_UNAVAILABLE`. No screen or
 WeChat settings are changed.
-The coordinator requests noninteractive waiting, allowing other reports to finish.
+Each child retains its own interaction and recovery behavior.
 
-Natural language can select a report type. Clearly identified single-audience
-requests use code routing; mixed supplied content uses bounded model extraction
-with verbatim source validation. Ambiguous requests ask for the intended audience.
+Natural-language requests are interpreted by a routing agent. It selects one,
+two, or all three destinations according to meaning and negation, then code
+passes the entire original request unchanged to each selected Workflow. It does
+not split on punctuation, extract materials, force drafts, or assign a common
+week. Unclear destinations require clarification. Single results are returned
+verbatim; multiple results are labeled by audience.
 
 ## Continue incomplete work
 
-In structured mode, the coordinator returns a status for every child and a `resume_task` object. Pass
-that object back as the next `task`, optionally adding audience-specific updates:
-
-```json
-{
-  "resume": "/absolute/path/to/checkpoint.json",
-  "updates": {
-    "tencent": {
-      "materials": [{"id": "t2", "week": "2026-W37", "text": "Additional verified Tencent progress."}]
-    }
-  }
-}
-```
-
-Completed children are not rerun. Updates cannot silently replace completed or
-uncertain results. A crashed child marked `IN_PROGRESS` is not automatically
-repeated; inspect its outcome before starting another request.
+The router owns no shared checkpoint. Continue through the relevant child using
+that child's recovery instructions. Old coordinator resume payloads are rejected
+with guidance to use the child entry. Explicit `requests` JSON addresses children
+directly and preserves their options without routing-model inference.
 
 Local delivery failures retain prepared content for retry. Tencent model failures
 retain generation and verification budgets across resumes. Checkpoints and retry

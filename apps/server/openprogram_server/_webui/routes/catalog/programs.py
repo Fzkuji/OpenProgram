@@ -742,6 +742,15 @@ def _direct_calls(
         key=lambda item: len(item[0]),
         reverse=True,
     )
+    # Published workflows have import identities independent of catalog folders.
+    for path, rows in _registered_agentic_callables().items():
+        if path in entities:
+            for row in rows:
+                prefixes.extend((
+                    (f"workflows.{row['name']}", path),
+                    (f"openprogram.programs.workflow.{row['name']}", path),
+                ))
+    prefixes.sort(key=lambda item: len(item[0]), reverse=True)
     if symbols is None:
         symbols = _package_symbol_index(entities)
     if entry_name is _UNSET:

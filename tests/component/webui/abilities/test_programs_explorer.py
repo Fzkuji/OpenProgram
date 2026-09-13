@@ -471,10 +471,17 @@ def test_owned_weekly_folder_exposes_four_callable_children(tmp_path, monkeypatc
     for name in names:
         directory = external / "workflow" / "weekly_report" / name
         source = directory / "workflow.py"
-        _write(source, f"def {name}(task):\n    return task\n")
+        code = f"def {name}(task):\n    return task\n"
+        if name == "weekly_report":
+            code = ("from workflows.personal_weekly_report import personal_weekly_report\n"
+                    "from workflows.group_weekly_report import group_weekly_report\n"
+                    "from workflows.tencent_weekly_report import tencent_weekly_report\n"
+                    "def invoke(task):\n    personal_weekly_report(task)\n    group_weekly_report(task)\n    tencent_weekly_report(task)\n"
+                    "def weekly_report(task):\n    invoke(task)\n")
+        _write(source, code)
         (directory / ".git").mkdir()
         namespace = {"__name__":f"openprogram.programs.workflow.{name}"}
-        exec(compile(source.read_text(), str(source), "exec"), namespace)
+        exec(compile(f"def {name}(task):\n    return task\n", str(source), "exec"), namespace)
         registered[name] = types.SimpleNamespace(_fn=namespace[name], description=name)
     root = client.get("/api/programs/explorer", params={"path":"workflow"}).json()
     folder = next(row for row in root["entries"] if row["name"] == "weekly_report")
@@ -484,3 +491,8 @@ def test_owned_weekly_folder_exposes_four_callable_children(tmp_path, monkeypatc
     entries = result.json()["entries"]
     assert {row["callable_name"] for row in entries} == set(names)
     assert all(row["program_kind"] == "workflow" and not row["has_children"] for row in entries)
+
+    logic = client.get("/api/programs/logic", params={"path":"workflow/weekly_report/weekly_report"}).json()
+    assert {edge["target"] for edge in logic["edges"] if edge["source"] == logic["root"]} == {
+        "workflow/weekly_report/" + name for name in names if name != "weekly_report"
+    }
