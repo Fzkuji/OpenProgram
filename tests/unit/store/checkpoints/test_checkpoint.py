@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.store.snapshot.checkpoint import CheckpointStore
+from openprogram.store.snapshot.checkpoint import CheckpointStore, journal
 from openprogram.store.snapshot.checkpoint import file_state as checkpoint_store
 from openprogram.store.snapshot.checkpoint.manifest import entries, load
 from openprogram.store.snapshot.checkpoint.paths import turn_manifest_path
@@ -183,11 +183,11 @@ def test_mutation_sequence_allocates_durable_increasing_values():
     directory descriptor to sync; a hard failure there used to be
     possible).
     """
-    first = CheckpointStore._next_mutation_sequence()
-    second = CheckpointStore._next_mutation_sequence()
+    first = journal._next_mutation_sequence()
+    second = journal._next_mutation_sequence()
     assert second == first + 1
 
-    third = CheckpointStore._next_mutation_sequence()
+    third = journal._next_mutation_sequence()
     assert third == second + 1
 
 

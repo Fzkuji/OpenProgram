@@ -3,23 +3,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from . import file_state, manifest
-from .paths import turn_backup_dir, turn_manifest_path
-
-
-def list_mutations(session_dir: Path, turn_id: str) -> list[dict]:
-    rows: list[dict] = []
-    for _backup_name, entry in manifest.entries(
-        turn_manifest_path(session_dir, turn_id),
-    ):
-        if entry.get("status") == "committed":
-            row = dict(entry)
-            if row.get("pending"):
-                row.update(recoverability="unavailable", unavailable_reason="mutation_incomplete",
-                           diff_state="unavailable")
-            rows.append(row)
-    return rows
-
+from . import file_state, journal
+from .paths import turn_backup_dir
 
 
 def state_with_blob(session_dir: Path, turn_id: str, state: dict) -> dict:
@@ -32,11 +17,10 @@ def state_with_blob(session_dir: Path, turn_id: str, state: dict) -> dict:
     return value
 
 
-
 def plan_history_operation(session_dir: Path, turn_id: str, direction: str) -> dict:
     if direction not in {"revert", "reapply"}:
         return {"status": "error", "error": f"unknown direction {direction!r}"}
-    mutations = list_mutations(session_dir, turn_id)
+    mutations = journal.list_mutations(session_dir, turn_id)
     if not mutations:
         return {"status": "error", "error": "no committed mutations"}
     backup_dir = turn_backup_dir(session_dir, turn_id)
@@ -111,7 +95,6 @@ def plan_history_operation(session_dir: Path, turn_id: str, direction: str) -> d
     }
 
 
-
 def plan_rewind_operation(
     session_dir: Path,
     turn_ids: list[str],
@@ -127,7 +110,7 @@ def plan_rewind_operation(
     records = [
         (turn_id, mutation)
         for turn_id in reversed(ordered_turn_ids)
-        for mutation in list_mutations(session_dir, turn_id)
+        for mutation in journal.list_mutations(session_dir, turn_id)
     ]
     if records and all(
         isinstance(mutation.get("mutation_sequence"), int)

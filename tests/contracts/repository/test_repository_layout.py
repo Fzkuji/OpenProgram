@@ -443,7 +443,7 @@ def test_checkpoint_planning_has_an_explicit_session_owner():
     path = root / "planning.py"
     assert path.exists(), "checkpoint planning must have its own implementation module"
     module = ast.parse(path.read_text())
-    names = {"list_mutations", "state_with_blob", "plan_history_operation", "plan_rewind_operation"}
+    names = {"state_with_blob", "plan_history_operation", "plan_rewind_operation"}
     functions = {node.name: node for node in module.body if isinstance(node, ast.FunctionDef)}
     assert names <= functions.keys()
     for name in names:
@@ -474,3 +474,19 @@ def test_checkpoint_transactions_and_documents_have_direct_owners():
     store = next(node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "CheckpointStore")
     methods = {node.name for node in store.body if isinstance(node, ast.FunctionDef)}
     assert not {"_workspace_lock", "_execute_history_intent", "_manual_operation_path", "_publish_document_locked"} & methods
+
+
+def test_checkpoint_journal_owns_mutation_lifecycle():
+    import ast
+
+    root = ROOT / "openprogram/store/snapshot/checkpoint"
+    path = root / "journal.py"
+    assert path.exists(), "mutation lifecycle requires a journal implementation owner"
+    module = ast.parse(path.read_text())
+    names = {node.name for node in module.body if isinstance(node, ast.FunctionDef)}
+    assert {"backup_before_edit", "commit_after_edit", "abort_edit", "list_mutations", "list_file_history", "restore_turn", "list_backed_paths", "_next_mutation_sequence"} <= names
+    planning = ast.parse((root / "planning.py").read_text())
+    assert "list_mutations" not in {node.name for node in planning.body if isinstance(node, ast.FunctionDef)}
+    store = ast.parse((root / "store.py").read_text())
+    coordinator = next(node for node in store.body if isinstance(node, ast.ClassDef) and node.name == "CheckpointStore")
+    assert "_next_mutation_sequence" not in {node.name for node in coordinator.body if isinstance(node, ast.FunctionDef)}

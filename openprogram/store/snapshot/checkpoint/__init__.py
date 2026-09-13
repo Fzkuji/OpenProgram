@@ -11,7 +11,8 @@ Modules:
 * ``file_state`` — file inspection, parent identities and digest comparison.
 * ``file_apply`` — guarded publication and rollback.
 * ``capture`` — immutable snapshots and bounded content statistics.
-* ``planning`` — committed mutations, blob resolution and history plans.
+* ``journal`` — mutation lifecycle, sequence allocation, queries and legacy restore.
+* ``planning`` — blob resolution and history plans.
 * ``transactions`` — shared workspace locks and guarded transaction execution.
 * ``documents`` — document preparation, publication and operation receipts.
 * ``store.CheckpointStore`` — mutation receipts, history transactions and recovery.
