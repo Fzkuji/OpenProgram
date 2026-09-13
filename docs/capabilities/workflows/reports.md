@@ -115,3 +115,5 @@ The four independent report Workflow packages are grouped under `openprogram/pro
 Personal field generation uses a read-only Agent to retrieve the requested week from memory and local notes. A JSON Schema validates complete fields or sparse edits, with prompt fallback and the existing format-repair attempt before any write. An unresolved model failure retains the original request; an uncertain remote write is not retried.
 
 Structured Agents count normal tool rounds against `max_iterations`, not the failed-request allowance. A completed tool round preserves the remaining retry allowance; format repairs and failed requests still share it. Reaching the iteration limit stops execution without replaying completed tools.
+
+Read-only memory search, grep, get and browse use the normal safe-tool policy; explicit deny/ask rules and `memory.read` authority still apply. Personal operation selection and evidence verification, plus every Tencent JSON-producing stage, declare output schemas and reuse Runtime format repair. A format failure returns model-recovery state rather than requesting missing user input. Tencent request interpretation inherits the deployment timeout.

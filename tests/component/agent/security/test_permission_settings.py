@@ -118,3 +118,21 @@ def test_reading_inherited_mode_does_not_pin_project_default(permissions, monkey
     assert permission_state("inherited")["mode"] == "ask"
     update_permission("inherited", "bypass", 0, actor)
     assert permission_state("inherited")["mode"] == "bypass"
+
+
+@pytest.mark.parametrize("name", ["memory_search", "memory_grep", "memory_get", "memory_browse"])
+@pytest.mark.parametrize("denied", [False, True])
+def test_inner_memory_reads_need_no_interactive_approval(permissions, name, denied):
+    from openprogram.agent.session_config import PermissionRules
+    calls = []
+    async def execute(*args):
+        calls.append(name)
+        return AgentToolResult(content=[], details={})
+    actor = {**permissions[1], "interaction": "non-interactive", "speaker_kind": "runtime"}
+    req = TurnRequest(session_id="one", user_text="read weekly memory", agent_id="main",
+                      source="web", permission_mode="ask", **actor)
+    req.permission_rules = PermissionRules(deny=[name] if denied else [])
+    tool = wrap_with_approval(AgentTool(name=name, label=name, description="Read memory",
+        parameters={"type":"object"}, execute=execute), req, lambda event: None, _live=False)
+    result = asyncio.run(tool.execute("read-memory", {}, None, None))
+    assert calls == ([] if denied else [name]), result
