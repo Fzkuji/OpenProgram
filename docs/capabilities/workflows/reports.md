@@ -57,7 +57,13 @@ matching ISO weeks and unique source IDs. Insufficient evidence returns a reques
 for input or review instead of inventing progress. Model-assisted semantic checks
 can detect unsupported claims but are not a guarantee of factual correctness.
 
-For a group request, provide `source` (`wechat` or explicitly `supplied`), `group`,
+For a natural-language group request, a read-only agent first looks for missing
+source-group identity and ordered members in memory and saved local meeting
+records. It preserves explicit user scope and asks for clarification when sources
+do not establish one group and roster. This step cannot send messages, write
+files, operate WeChat, or call another report.
+
+For a structured group request, provide `source` (`wechat` or explicitly `supplied`), `group`,
 `week`, and the ordered `members` array. Supplied material additionally identifies
 its `member`. WeChat collection requires an accessible, verified group interface;
 versions without accessible message rows can use bounded window OCR. Captured
