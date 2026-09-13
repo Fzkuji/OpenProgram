@@ -322,3 +322,22 @@ def test_pdf_thumbnail_bounds_extreme_page_aspect_ratio(pdf_page):
     assert 0 < dimensions['height'] <= 160
     assert dimensions['width'] * dimensions['height'] <= 19200
     assert errors == []
+
+
+
+def test_pdf_styles_do_not_change_application_sidebar(pdf_page):
+    from playwright.sync_api import expect
+
+    page, errors = pdf_page
+    before = page.evaluate("""() => {
+      const sidebar = document.createElement('aside'); sidebar.className = 'sidebar'; sidebar.id = 'shell-sidebar';
+      document.body.append(sidebar);
+      const s = getComputedStyle(sidebar); return {background:s.backgroundColor, radius:s.borderRadius, padding:s.padding};
+    }""")
+    page.evaluate("body => showFile('fixture.pdf', body)", PDF_FIXTURE)
+    expect(page.locator('.textLayer span').first).to_be_visible()
+    after = page.locator('#shell-sidebar').evaluate("""element => {
+      const s = getComputedStyle(element); return {background:s.backgroundColor, radius:s.borderRadius, padding:s.padding};
+    }""")
+    assert after == before
+    assert errors == []

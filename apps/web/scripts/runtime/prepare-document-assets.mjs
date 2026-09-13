@@ -17,6 +17,10 @@ const distribution = "legacy/build";
 for (const name of ["pdf.mjs", "pdf.worker.mjs"]) cpSync(join(source, distribution, name), join(target, name));
 for (const name of ["cmaps", "standard_fonts", "wasm", "LICENSE"]) cpSync(join(source, name), join(target, name), { recursive: true });
 for (const name of ["pdf_viewer.mjs", "pdf_viewer.css", "images"]) cpSync(join(source, "legacy/web", name), join(target, name), { recursive: true });
+// Upstream generic viewer styles include names shared by the application shell.
+// Scope both selectors and root variables to the mounted PDF reader.
+const viewerCss = readFileSync(join(target, "pdf_viewer.css"), "utf8");
+writeFileSync(join(target, "pdf_viewer.css"), `@scope ([data-pdf-reader]) {\n${viewerCss.replaceAll(":root", ":scope")}\n}\n`);
 function inventory(dir, prefix = "") {
   return readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)).flatMap((entry) => {
     const name = prefix + entry.name;
