@@ -2,6 +2,7 @@
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import json
 import subprocess
 import threading
 
@@ -26,8 +27,8 @@ import {useCenterTabs} from "./lib/tabs/center-tabs-store";
 import {setNavigate} from "./lib/navigate";
 setNavigate(path=>window.history.pushState(null,"",path));
 useCenterTabs.getState().openNewTabPage();
-function App(){const tab=useCenterTabs(s=>s.tabs.find(t=>t.id===s.activeId));
-return <><PageNavigation/>{tab?.kind==="ntp"?<NewTabPage/>:<output data-destination>{tab?.page||tab?.kind}</output>}</>}
+function App(){const tabs=useCenterTabs(s=>s.tabs); const tab=useCenterTabs(s=>s.tabs.find(t=>t.id===s.activeId));
+return <><button onClick={()=>useCenterTabs.getState().openNewTabPage()}>New tab</button>{tabs.map((item,index)=><button key={item.id} onClick={()=>useCenterTabs.getState().setActive(item.id)}>Tab {index+1}</button>)}<output data-tabs>{JSON.stringify(tabs)}</output><PageNavigation/>{tab?.kind==="ntp"?<NewTabPage/>:<output data-destination>{tab?.page||tab?.kind}</output>}</>}
 createRoot(document.getElementById("root")).render(<App/>);`,resolveDir:process.argv[1],loader:"tsx"},
 bundle:true,format:"iife",platform:"browser",jsx:"automatic",loader:{".css":"empty"},outfile:process.argv[2],tsconfig:process.argv[1]+"/tsconfig.json"});
 ''', str(ROOT / "apps/web"), str(bundle)], cwd=ROOT, check=True, capture_output=True)
@@ -52,7 +53,19 @@ bundle:true,format:"iife",platform:"browser",jsx:"automatic",loader:{".css":"emp
                     expect(page.get_by_role("button", name="Back", exact=True)).to_be_disabled()
                     page.get_by_role("button", name=name, exact=True).click()
                     expect(page.locator("[data-destination]")).to_have_text(destination)
+                    first = json.loads(page.locator("[data-tabs]").inner_text())[0]
+                    page.get_by_role("button", name="New tab", exact=True).click()
+                    expect(page.get_by_role("button", name="Back", exact=True)).to_be_disabled()
+                    page.get_by_role("button", name=name, exact=True).click()
+                    expect(page.locator("[data-destination]")).to_have_text(destination)
+                    assert json.loads(page.locator("[data-tabs]").inner_text())[0] == first
                     page.get_by_role("button", name="Back", exact=True).click()
+                    expect(page.get_by_role("button", name="Back", exact=True)).to_be_disabled()
+                    assert json.loads(page.locator("[data-tabs]").inner_text())[0] == first
+                    second = json.loads(page.locator("[data-tabs]").inner_text())[1]
+                    page.get_by_role("button", name="Tab 1", exact=True).click()
+                    page.get_by_role("button", name="Back", exact=True).click()
+                    assert json.loads(page.locator("[data-tabs]").inner_text())[1] == second
                     expect(page.get_by_role("button", name="Files", exact=True)).to_be_visible()
                     expect(page.get_by_role("button", name="Back", exact=True)).to_be_disabled()
                     page.get_by_role("button", name="Forward", exact=True).click()

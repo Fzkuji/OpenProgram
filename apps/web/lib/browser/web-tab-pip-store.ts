@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import { sessionHistory } from "../tabs/session-tab-history";
+import { sessionHistory } from "../tabs/navigation/session-history";
 import { webTabId } from "@/lib/tabs/center-tab-ids";
 import { findCenterTabGroup } from "@/lib/tabs/center-tab-groups";
 import { useCenterTabs } from "@/lib/tabs/center-tabs-store";

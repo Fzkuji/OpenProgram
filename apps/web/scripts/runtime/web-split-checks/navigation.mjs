@@ -75,7 +75,7 @@ testContext.assert.match(
 
 testContext.assert.match(
   await testContext.readFile(
-    new URL("../../lib/tabs/center-tabs-store.ts", testContext.sourceUrl),
+    new URL("../../lib/tabs/store/split.ts", testContext.sourceUrl),
     "utf8",
   ),
   /if \(active\?\.kind === "session" && group && !group\.memberIds.includes\(tabId\)\)/,

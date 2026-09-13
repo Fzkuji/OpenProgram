@@ -448,10 +448,14 @@ useCenterTabs.setState({
 });
 useCenterTabs.getState().openWebTab(bookmarkedUrl);
 const reopenedBookmark = useCenterTabs.getState();
-assert.equal(reopenedBookmark.activeId, bookmarkedTabId);
-assert.equal(reopenedBookmark.tabs.length, 1, "the active NTP is consumed");
-assert.equal(reopenedBookmark.tabs[0].url, bookmarkedUrl);
-assert.equal(reopenedBookmark.tabs[0].title, "example.com");
+assert.notEqual(reopenedBookmark.activeId, bookmarkedTabId);
+assert.equal(reopenedBookmark.tabs.length, 2, "launcher navigation preserves the other browser tab");
+assert.equal(reopenedBookmark.tabs[0].url, driftedUrl);
+assert.equal(reopenedBookmark.tabs[1].url, bookmarkedUrl);
+assert.equal(reopenedBookmark.tabs[1].title, "example.com");
+useCenterTabs.getState().navigateHistory(-1);
+assert.equal(useCenterTabs.getState().activeId, "ntp:bookmark-test");
+assert.equal(useCenterTabs.getState().tabs[0].url, driftedUrl);
 
 // ---- Builtin pages are singletons ----------------------------------
 // Opening bookmarks/history twice must focus the existing tab, never

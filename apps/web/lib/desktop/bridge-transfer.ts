@@ -1,5 +1,5 @@
 // Desktop bridge transfer responsibilities.
-import { sessionHistory } from "../tabs/session-tab-history";
+import { pageHistory } from "../tabs/navigation/page-history";
 /**
  * Desktop bridge — typed accessor for the Electron preload API
  * (`window.openprogramDesktop`) plus the renderer-side bookkeeping the
@@ -147,8 +147,7 @@ export function sourceSessionAfter(
   const moved = new Set<string>();
   for (const chat of payload.chats) {
     moved.add(chat.chatKey);
-    if (afterCenter.tabs.some(tab => tab.kind === "session"
-      && sessionHistory(tab).entries.some(entry => entry.sessionId === chat.chatKey))) continue;
+    if (afterCenter.tabs.some(tab => pageHistory(tab).entries.some(entry => entry.kind === "session" && entry.sessionId === chat.chatKey))) continue;
     delete after.composerDrafts[chat.chatKey];
     delete after.composerSettingsBySession[chat.chatKey];
     delete after.pendingProjectsByChat[chat.chatKey];
@@ -267,8 +266,8 @@ export function buildTransferPayload(
   const chats: ChatTransferState[] = [];
   const payloadFileDrafts: DesktopTransferPayload["fileDrafts"] = [];
   for (const tab of tabs) {
-    if (tab.kind === "session" && tab.sessionId) {
-      for (const entry of sessionHistory(tab).entries) {
+    {
+      for (const entry of pageHistory(tab).entries.filter(page => page.kind === "session")) {
         const chatKey = entry.sessionId;
         if (!chatKey || chats.some(chat => chat.chatKey === chatKey)) continue;
         const wasActive = tab.sessionId === chatKey && session.activeChatKey === chatKey;
@@ -288,7 +287,8 @@ export function buildTransferPayload(
         if (choice) chat.draftChannelChoice = structuredClone(choice);
         chats.push(chat);
       }
-    } else if (tab.kind === "file" && tab.projectId && tab.path) {
+    }
+    if (tab.kind === "file" && tab.projectId && tab.path) {
       const key = fileDraftKey(tab.projectId, tab.path);
       const value = fileDrafts.get(key);
       if (value) payloadFileDrafts.push({ key, value: structuredClone(value) });
