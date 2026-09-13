@@ -382,3 +382,15 @@ def test_storage_tests_are_grouped_by_feature():
         directory = ROOT / 'tests' / layer / 'store'
         assert not list(directory.glob('test_*.py')), f'ungrouped storage tests: {directory}'
         assert list(directory.glob('*/test_*.py')), f'missing storage feature tests: {directory}'
+
+
+def test_backup_tests_separate_archive_and_restore_responsibilities():
+    directory = ROOT / 'tests/integration/store/backup'
+    assert not (directory / 'test_backup_command.py').exists()
+    assert not (directory / 'test_backup_staged_restore.py').exists()
+    expected = {
+        'test_archive_scope.py', 'test_credential_restore.py', 'test_backup_cli.py',
+        'test_restore_validation.py', 'test_restore_concurrency.py',
+        'test_restore_transaction.py', 'test_restore_recovery.py',
+    }
+    assert expected <= {path.name for path in directory.glob('test_*.py')}

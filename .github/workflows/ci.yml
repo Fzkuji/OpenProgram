@@ -261,8 +261,7 @@ jobs:
           tests/component/webui/files/test_project_files.py
           tests/component/webui/files/test_turn_files_ws.py
           tests/component/config/test_upgrade_cmd.py
-          tests/integration/store/backup/test_backup_command.py
-          tests/integration/store/backup/test_backup_staged_restore.py
+          tests/integration/store/backup
       - name: Complete Windows unit regression
         timeout-minutes: 15
         run: >-
