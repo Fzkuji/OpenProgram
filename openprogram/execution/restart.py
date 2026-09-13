@@ -64,7 +64,9 @@ def crash_checkpoint(service, connection, execution):
         return None
     # A later committed action makes an older checkpoint unsafe to replay.
     if connection.execute(
-        "SELECT 1 FROM effects WHERE execution_id = ? AND status = 'committed' AND updated_at > ? LIMIT 1",
+        "SELECT 1 FROM effects WHERE execution_id = ? AND status = 'committed' AND updated_at > ? "
+        "AND json_extract(metadata_json, '$.function_step') IS NULL "
+        "AND COALESCE(json_extract(receipt_json, '$.function_suspended'), 0) != 1 LIMIT 1",
         (execution.execution_id, checkpoint.created_at),
     ).fetchone():
         return None

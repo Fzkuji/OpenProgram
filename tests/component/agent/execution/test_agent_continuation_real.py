@@ -1148,3 +1148,60 @@ def test_decline_preserves_checkpoint_trace_and_notifies_chat(real_agent_chat, m
     assert h.tools.calls == ["second"]
     assert any(b.get("tool_call_id") == "call-finished" and b.get("result") == "second:ok" for b in blocks)
     assert any(b.get("text") == "Earlier progress." for b in blocks)
+
+
+@pytest.mark.parametrize("policy,suffix", [("keep_original", "A"), ("use_latest", "B")])
+def test_chat_function_continues_original_tool_call_with_selected_code(real_agent_chat, tmp_path, monkeypatch, policy, suffix):
+    from openprogram.agentic_programming.function import agentic_function
+    from openprogram.agentic_programming.continuation import default_policy, function_execution
+    from openprogram.agent.run_control import get_current_execution_id
+    from openprogram.agent.types import AgentToolResult
+    from openprogram.providers.types import TextContent
+    from tests.component.providers.scripted_provider import ScriptedText, ScriptedToolCall
+    from tests.integration.execution.test_function_version_resume import _version_a, _version_b
+    from openprogram.webui.ws_actions import runtime
+
+    import importlib
+    function_module = importlib.import_module("openprogram.agentic_programming.function")
+    monkeypatch.setattr(function_module, "_registry", dict(function_module._registry))
+    latest = {"function": agentic_function(_version_a, name="first", resumable=True, as_tool=False)}
+    original_factory = real_agent_chat.tools.tool
+
+    async def execute(call_id, args, cancel, update):
+        execution = real_agent_chat.store.get_execution(get_current_execution_id())
+        with function_execution(real_agent_chat.store, attempt_id=execution.current_attempt_id, generation=execution.owner_lease["generation"], call_key=call_id, policy=default_policy(real_agent_chat.store, execution.execution_id), publish_pause=False, checkpoint_root=False):
+            result = latest["function"](str(tmp_path))
+        return AgentToolResult(content=[TextContent(text=result)])
+
+    def factory(name):
+        tool = original_factory(name)
+        if name == "first":
+            tool.execute = execute
+        return tool
+
+    monkeypatch.setattr(real_agent_chat.tools, "tool", factory)
+    real_agent_chat.provider.add_response(ScriptedToolCall("first", {}, "original-function-call"))
+    real_agent_chat.provider.add_response(ScriptedText("final answer"))
+    execution = _chat(real_agent_chat)
+    try:
+        _wait(lambda: (tmp_path / "entered").exists(), detail=lambda: real_agent_chat.store.get_execution(execution.execution_id).to_dict())
+        execution = real_agent_chat.store.get_execution(execution.execution_id)
+        _command(real_agent_chat, "execution.pause", execution, "pause-function")
+    finally:
+        (tmp_path / "release").touch()
+    paused = _wait(lambda: item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status is ExecutionStatus.PAUSED else None)
+    assert real_agent_chat.provider.call_count == 1
+    latest["function"] = agentic_function(_version_b, name="first", resumable=True, as_tool=False)
+    ws = _WebSocket()
+    asyncio.run(runtime.ACTIONS["execution.continue"](ws, {
+        "type": "execution.command", "action": "execution.continue", "command_id": "continue-function",
+        "execution_id": paused.execution_id, "expected_version": paused.status_version,
+        "payload": {"code_change_policy": policy},
+    }))
+    completed = _wait(lambda: item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status in {ExecutionStatus.COMPLETED, ExecutionStatus.FAILED, ExecutionStatus.PAUSED} else None,
+                      detail=lambda: real_agent_chat.activation_errors)
+    assert completed.status is ExecutionStatus.COMPLETED, (completed.to_dict(), real_agent_chat.activation_errors, ws.frames)
+    assert real_agent_chat.provider.call_count == 2
+    assert (tmp_path / "effects").read_text().splitlines() == ["first", "saved-" + suffix]
+    function_nodes = [node for node in real_agent_chat.sessions.get_nodes(real_agent_chat.session_id) if node.is_code() and node.name in {"_version_a", "_version_b"}]
+    assert len(function_nodes) == 1

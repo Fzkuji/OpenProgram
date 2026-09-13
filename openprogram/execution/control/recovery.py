@@ -89,6 +89,19 @@ class RecoveryOperations:
             ):
                 return RecoveryCompletion(execution=execution)
 
+            from openprogram.agentic_programming.continuation import suspension_evidence
+            aggregate_rows = connection.execute(
+                "SELECT * FROM effects WHERE execution_id = ? AND status IN ('dispatched', 'uncertain') "
+                "AND json_extract(metadata_json, '$.kind') = 'tool.before'", (execution_id,),
+            ).fetchall()
+            for aggregate in aggregate_rows:
+                metadata = json.loads(aggregate["metadata_json"])
+                call_key = metadata.get("payload", {}).get("tool_call_id")
+                if isinstance(call_key, str) and suspension_evidence(self.executions, connection, execution_id, call_key):
+                    now = time.time()
+                    receipt = {"function_suspended": True, "tool_call_id": call_key, "reason": "owner_lost_at_durable_boundary"}
+                    connection.execute("UPDATE effects SET status = 'committed', receipt_json = ?, updated_at = ?, resolved_at = ? WHERE effect_id = ?", (_json(receipt), now, now, aggregate["effect_id"]))
+                    self.effects._append_event(connection, execution.status_version, self.effects._require(connection, aggregate["effect_id"]), now)
             restart_pending = False
             agent_input = self.executions.get_agent_turn_input(execution_id)
             if (

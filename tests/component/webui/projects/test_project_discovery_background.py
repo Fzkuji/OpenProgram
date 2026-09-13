@@ -6,7 +6,19 @@ from openprogram.store.project import project_store as projects
 from openprogram.store.project.discovery import run_discovery
 
 
+def _bookmark_locations(monkeypatch):
+    # Native bookmark availability is platform-specific; this suite tests
+    # observer notification and registry locking after a resolved move.
+    locations = {}
+    monkeypatch.setattr('openprogram.store.project.native.create_bookmark',
+                        lambda path: str(path))
+    monkeypatch.setattr('openprogram.store.project.native.resolve_bookmark',
+                        lambda bookmark: locations.get(bookmark))
+    return locations
+
+
 def test_background_move_updates_registry_and_notifies(tmp_path, monkeypatch):
+    locations = _bookmark_locations(monkeypatch)
     monkeypatch.setattr('openprogram.paths.get_state_dir', lambda: str(tmp_path / 'state'))
     monkeypatch.setattr('pathlib.Path.home', lambda: tmp_path)
     monkeypatch.setattr(
@@ -15,6 +27,7 @@ def test_background_move_updates_registry_and_notifies(tmp_path, monkeypatch):
     old = tmp_path / 'old'; old.mkdir()
     project = projects.resolve_project(old)
     old.rename(tmp_path / 'new')
+    locations[str(old)] = str(tmp_path / 'new')
     async def exercise():
         stop = asyncio.Event()
         notices = []
@@ -27,12 +40,14 @@ def test_background_move_updates_registry_and_notifies(tmp_path, monkeypatch):
 
 
 def test_registry_is_available_while_session_locations_update(tmp_path, monkeypatch):
+    locations = _bookmark_locations(monkeypatch)
     from concurrent.futures import ThreadPoolExecutor
     from openprogram.store.project.discovery import discover_moved_projects
     monkeypatch.setattr('openprogram.paths.get_state_dir', lambda: str(tmp_path / 'state'))
     old = tmp_path / 'old'; old.mkdir()
     project = projects.resolve_project(old)
     old.rename(tmp_path / 'new')
+    locations[str(old)] = str(tmp_path / 'new')
     acquired_results = []
     def relocate_sessions(*args, **kwargs):
         def acquire_registry():

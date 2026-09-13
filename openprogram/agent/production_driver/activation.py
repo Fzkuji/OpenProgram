@@ -43,7 +43,7 @@ class ActivationOperations:
                 "forced-tool activations do not support steering",
             )
         if activation is not None and activation.checkpoint is not None:
-            marker = activation.checkpoint.state_refs.get("forced_tool")
+            marker = activation.checkpoint.state_refs.get("forced_tool") or activation.checkpoint.state_refs.get("function")
             if not isinstance(marker, shared.Mapping) or marker.get("version") != 1:
                 raise shared.AgentDriverError(
                     "unsupported_activation_state",
@@ -113,6 +113,10 @@ class ActivationOperations:
                 and not (not surface and tool_input.get("backend"))
             )
             if not desktop_wait:
+                from openprogram.programs._runtime import get
+                tool = get(tool_name)
+                if tool is not None and getattr(tool, "_resumable", False):
+                    return shared.CapabilitySet(pause=True, safe_point_kinds=("function.step.after",), state_schema_version=1)
                 return shared.CapabilitySet()
             return shared.CapabilitySet(
                 pause=True,
@@ -259,7 +263,8 @@ class ActivationOperations:
                     )
                 finally:
                     reset_worktree(_workdir_token)
-                shared.validate_runtime_contract(continuation.resolved_snapshot, _contract)
+                from openprogram.agentic_programming.continuation import retained_function_names
+                shared.validate_runtime_contract(continuation.resolved_snapshot, _contract, durable_function_names=retained_function_names(self.executions, execution.execution_id))
             except shared.AgentCheckpointError as exc:
                 shared._log.warning("Agent continuation %s rejected: %s", execution.execution_id, exc)
                 raise shared.AgentDriverError(exc.code, str(exc)) from exc

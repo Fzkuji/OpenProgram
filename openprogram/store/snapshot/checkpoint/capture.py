@@ -75,7 +75,9 @@ def _capture_regular(source: Path, destination: Path) -> dict:
             current = os.lstat(source)
             identity = lambda info: (info.st_dev, info.st_ino, info.st_size,
                                      info.st_mtime_ns, info.st_ctime_ns, info.st_mode)
-            if identity(before) != identity(after) or identity(after) != identity(current):
+            # Compare each stat API against its own earlier observation.
+            # The open check binds descriptor and path device/inode identity.
+            if identity(before) != identity(after) or identity(observed) != identity(current):
                 raise OSError("snapshot source changed while reading")
             if size != after.st_size:
                 raise OSError("snapshot size changed while reading")
@@ -88,7 +90,7 @@ def _capture_regular(source: Path, destination: Path) -> dict:
         return {
             "kind": "regular", "digest": f"sha256:{digest.hexdigest()}",
             "blob_ref": destination.name,
-            "mode": f"{stat.S_IMODE(after.st_mode):04o}", "size": size,
+            "mode": f"{stat.S_IMODE(current.st_mode):04o}", "size": size,
         }
     except OSError as exc:
         destination.unlink(missing_ok=True)

@@ -395,6 +395,11 @@ class WaitsOperations:
                 effect = self.effects._require(connection, effect_id)
                 if effect.execution_id != execution_id or effect.attempt_id != attempt_id or effect.status is not EffectStatus.DISPATCHED:
                     raise AgentSafePointConflict("effect_state_invalid", "Agent effect is not dispatched by this owner")
+                if terminal_receipt.get("function_suspended") is True:
+                    from openprogram.agentic_programming.continuation import suspension_evidence
+                    call_key = terminal_receipt.get("tool_call_id")
+                    if not isinstance(call_key, str) or not suspension_evidence(self.executions, connection, execution_id, call_key):
+                        raise AgentSafePointConflict("function_state_invalid", "Function suspension has no settled durable continuation")
                 try:
                     receipt_json = _json(dict(terminal_receipt))
                 except (TypeError, ValueError) as exc:

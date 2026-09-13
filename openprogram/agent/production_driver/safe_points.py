@@ -120,7 +120,7 @@ class SafePointsOperations:
             input_hash: str | None = None,
             terminal_receipt: shared.Mapping[str, shared.Any] | None = None,
         ) -> shared.AgentCheckpointV1:
-            phase = "after_provider" if kind in {"provider.after", "wait.before_tool"} else "after_tool"
+            phase = "after_provider" if kind in {"provider.after", "wait.before_tool", "tool.suspended"} else "after_tool"
             point_kind = (
                 "agent.wait.before_tool" if kind == "wait.before_tool" else
                 "agent.provider.decision.after" if phase == "after_provider"
@@ -430,6 +430,10 @@ class SafePointsOperations:
                 else:
                     raise shared.AgentDriverError("invalid_safe_point", "unsupported Agent effect boundary")
                 effect_id = f"effect_{action_id[:32]}"
+                previous = service.effects.get(effect_id)
+                if kind == "tool.before" and previous is not None and previous.receipt.get("function_suspended") is True:
+                    action_id = digest(action_id, str(attempt.generation))
+                    effect_id = f"effect_{action_id[:32]}"
                 supports_idempotency_key = (
                     kind == "provider.before"
                     and payload.get("supports_idempotency_key") is True
@@ -537,6 +541,8 @@ class SafePointsOperations:
                             "tool_call_id": item.get("id"),
                             "input": shared.json.dumps(item.get("arguments") or {}, default=str),
                         })
+            elif kind == "tool.suspended":
+                terminal_receipt = {"function_suspended": True, "tool_call_id": payload.get("tool_call_id")}
             elif kind == "tool.after":
                 result = payload.get("result")
                 if not isinstance(result, shared.Mapping):
@@ -615,7 +621,8 @@ class SafePointsOperations:
                 command_id=command.command_id if command is not None else None, managed_action_id=action_id,
                 consumed_steer_command_ids=tuple(sorted(steer_consumed_ids or ())),
             )
-            remember_completed_action()
+            if kind != "tool.suspended":
+                remember_completed_action()
             if command is not None and command.kind is CommandKind.STEER and steer_queue is not None:
                 consumed = steer_consumed_ids or set()
                 for applied in completion.applied_commands:

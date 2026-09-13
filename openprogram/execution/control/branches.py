@@ -9,6 +9,7 @@ from ..checkpoints import CheckpointManifest
 from ..model import CommandKind, CommandStatus, ControlCommand, ExecutionRecord, ExecutionStatus
 from ..store import ExecutionConflict, _json
 from ..safe_points import AgentSafePointConflict
+from ..state_machine import InvalidCommand
 
 from .shared import (
     Activator,
@@ -29,8 +30,11 @@ class BranchesOperations:
         ttl_seconds: float | None = None,
         activator: Activator | None = None,
         driver: Any | None = None,
+        code_change_policy: str | None = None,
     ) -> ControlDispatch:
         """Resume a paused execution without changing its revision or identity."""
+        if code_change_policy is not None and (not isinstance(code_change_policy, str) or code_change_policy not in {"keep_original", "use_latest"}):
+            raise InvalidCommand("invalid_payload", "invalid function code policy")
         current = self.executions.get_execution(execution_id)
         input_record = self.executions.get_execution_input(execution_id) if current is not None else None
         if (
@@ -52,6 +56,7 @@ class BranchesOperations:
             expected_version=expected_version,
             actor=actor,
             kind=CommandKind.CONTINUE,
+            payload={"code_change_policy": code_change_policy} if code_change_policy is not None else {},
             owner_id=owner_id or self.owner_id,
             ttl_seconds=ttl_seconds or self.lease_ttl_seconds,
         )
@@ -422,6 +427,7 @@ class BranchesOperations:
         ttl_seconds: float,
         activate_existing_accepted: bool = False,
         allow_queued_initial_step: bool = False,
+        payload: Mapping[str, Any] | None = None,
     ) -> tuple[
         ControlCommand,
         ExecutionRecord,
@@ -439,7 +445,7 @@ class BranchesOperations:
                 execution_id=execution_id,
                 expected_version=expected_version,
                 kind=kind,
-                payload={},
+                payload=dict(payload or {}),
                 actor=actor,
             )
             execution = self.executions._require_execution(connection, execution_id)

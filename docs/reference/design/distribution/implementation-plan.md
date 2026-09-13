@@ -198,9 +198,9 @@ duplicated in this historical distribution ledger.
 - Release acceptance used CI package/runtime smoke and read-only release metadata checks. It did not install, replace, activate, or restart the user's current `/Applications/OpenProgram.app`, so foreground updater UI, long-running scheduling, and sleep/resume behavior remain explicitly unverified.
 - The browser release scope includes the built-in Browser, profile import, bookmarks/history, and Agent-bound WebTab control. Chrome/Edge extension installation is intentionally excluded and documented in the authoritative built-in browser design and product FAQ.
 
-### Current v0.8.4 release acceptance
+### Current v0.9.0 release acceptance
 
-- The release candidate integrates persistent local macOS signing and bounded native report collection with the existing long-session fixes.
+- The release candidate integrates durable function code selection and restart recovery with module organization and recoverable file operations. Existing local signing, permission, cancellation and uncertain-effect boundaries remain authoritative.
 - Source, lockfile, Desktop and installer versions agree. Release acceptance requires the combined Python regression manifest, Desktop checks, documentation checks and independent specification and quality reviews.
 - Publication requires successful native runtime, Desktop and CLI installer jobs, followed by release manifest and asset verification.
 - Public macOS packages remain unsigned. Local refresh and self-update reuse the local development certificate; this does not guarantee consent retention when replacing the App with an unsigned public download.

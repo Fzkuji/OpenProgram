@@ -121,6 +121,7 @@ function formatUnknown(value: unknown): string {
 function eventSummary(event: PersistedExecutionEvent): string {
   const payload = event.payload || {};
   const values: string[] = [];
+  if (event.kind === "function.incompatible" && typeof payload.reason === "string") values.push(payload.reason);
   for (const key of ["record", "attempt", "command"]) {
     const value = payload[key];
     if (!value || typeof value !== "object") continue;
@@ -267,6 +268,7 @@ export function DebuggerPanel({
 }: DebuggerPanelProps) {
   const { text } = useTranslation();
   const [localSelectedId, setLocalSelectedId] = useState<string | null>(selectedExecutionId || executions[0]?.execution_id || null);
+  const [codePolicies, setCodePolicies] = useState<Record<string, string>>({});
   const [commandResults, setCommandResults] = useState<Record<string, CommandResult>>({});
   const [pendingActions, setPendingActions] = useState<Set<string>>(new Set());
   const [waitValues, setWaitValues] = useState<Record<string, string>>({});
@@ -444,9 +446,17 @@ export function DebuggerPanel({
               {unresolvedEffects.filter((effect) => effect.tool_name).map((effect) => <div key={effect.effect_id}>{effect.tool_name}</div>)}
             </div> : executionGuidance(snapshot, text) && <p className={styles.muted}>{executionGuidance(snapshot, text)}</p>}
 
+            {snapshot.status === "paused" && <label>
+              {text("Function code after restart", "重启后函数代码")}
+              <select aria-label={text("Function code after restart", "重启后函数代码")} value={codePolicies[snapshot.execution_id] || ""} onChange={(event) => setCodePolicies((previous) => ({ ...previous, [snapshot.execution_id]: event.target.value }))}>
+                <option value="">{text("Keep task policy", "沿用任务设置")}</option>
+                <option value="keep_original">{text("Continue original code", "继续原代码")}</option>
+                <option value="use_latest">{text("Use new code with saved results", "保留已有结果，使用新代码")}</option>
+              </select>
+            </label>}
             <div className={styles.actions}>
               {(["pause", "continue", "step", "retry", "cancel"] as ExecutionCommandAction[]).filter((action) => availableExecutionActions(snapshot).includes(action)).map((action) => (
-                <ActionButton key={action} action={action} snapshot={snapshot} pending={pendingActions.has(`execution.${action}`)} payload={actionPayloads[action]} onCommand={onCommand && connection.state === "connected" ? submitAction : undefined} />
+                <ActionButton key={action} action={action} snapshot={snapshot} pending={pendingActions.has(`execution.${action}`)} payload={action === "continue" && codePolicies[snapshot.execution_id] ? { code_change_policy: codePolicies[snapshot.execution_id] } : actionPayloads[action]} onCommand={onCommand && connection.state === "connected" ? submitAction : undefined} />
               ))}
               {availableExecutionActions(snapshot).includes("steer") && <Button variant="ghost" onClick={() => openEditor("steer")}>{text("Add instruction", "补充指令")}</Button>}
               {(selectedDraft || (snapshot.capabilities.fork && snapshot.checkpoint_head_id)) && <Button variant="ghost" onClick={() => openEditor("branch")}>{text("Create branch", "创建分支")}</Button>}

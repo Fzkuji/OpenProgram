@@ -361,3 +361,32 @@ def test_resource_view_reports_live_runtime_and_idle_usage(tmp_path, monkeypatch
     assert view.budget["runtime_seconds"] == {"used": 12.5, "limit": 50}
     assert view.budget["idle_seconds"] == {"used": 3.5, "limit": 20}
 
+
+
+def test_resource_view_does_not_use_connection_after_read_lease(tmp_path, monkeypatch):
+    from contextlib import contextmanager
+
+    ledger = UsageLedger(tmp_path / "usage.db")
+    resolved = resolve_resource_limits(
+        ResourceLimits(max_total_tokens=100), scheduler_capacity=4,
+    )
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _job: resolved)
+    job = Job(id="closing", parent_session_id="s1", prompt="p", agent_id="a")
+    assert governor.admit_job(job, persist=lambda _job: None).accepted
+    original_read = ledger.read
+
+    @contextmanager
+    def close_after_read():
+        with original_read() as conn:
+            yield conn
+        # Legal shutdown immediately after releasing a read lease.
+        ledger.close()
+
+    monkeypatch.setattr(ledger, "read", close_after_read)
+    try:
+        view = build_job_resource_view(job, ledger=ledger, resolved=resolved)
+        assert view.budget["shared_remaining"] == {
+            "tokens": 100, "cost_usd": None, "cost_unknown_events": 0,
+        }
+    finally:
+        ledger.close()

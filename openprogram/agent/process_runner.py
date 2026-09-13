@@ -706,6 +706,8 @@ def _child_entry(
     provider: Optional[str] = None,
     model: Optional[str] = None,
     execution_id: Optional[str] = None,
+    attempt_id: Optional[str] = None,
+    generation: Optional[int] = None,
 ) -> None:
     # Detach into our own process group so ``killpg`` from the parent
     # takes down every grandchild (browser, subprocess providers, ...).
@@ -986,9 +988,22 @@ def _child_entry(
             else:
                 import uuid as _uuid
                 call_id = f"forced_{_uuid.uuid4().hex[:8]}"
-            result = loop.run_until_complete(
-                wrapped.execute(call_id, dict(kwargs or {}), None, None)
+            from contextlib import nullcontext
+            from openprogram.agentic_programming.continuation import function_execution, default_policy
+            from openprogram.execution import default_store
+            binding = (
+                function_execution(
+                    default_store(), attempt_id=attempt_id, generation=generation,
+                    call_key=parent_call_id or anchor_msg_id, policy=default_policy(default_store(), execution_id),
+                    publish_pause=False, checkpoint_root=parent_call_id is None,
+                )
+                if attempt_id is not None and getattr(tool, "_resumable", False)
+                else nullcontext()
             )
+            with binding:
+                result = loop.run_until_complete(
+                    wrapped.execute(call_id, dict(kwargs or {}), None, None)
+                )
         finally:
             _render_range_override.reset(render_range_token)
             try:
@@ -1032,11 +1047,39 @@ def _child_entry(
                 f,
             )
     except BaseException as e:  # noqa: BLE001
+        from openprogram.agentic_programming.continuation import FunctionSuspended
+        # A recoverable invocation can fail before its wrapper is entered (for
+        # example, an unavailable retained dependency or runtime credential).
+        # Preserve its completed steps and pending result destination.
+        if isinstance(e, Exception) and attempt_id is not None:
+            from contextlib import closing
+            from openprogram.agentic_programming.continuation import (
+                FunctionCompatibilityError, default_policy, function_execution,
+                suspension_evidence,
+            )
+            from openprogram.execution import default_store
+            recovery_store = default_store()
+            recovery_key = parent_call_id or anchor_msg_id
+            with closing(recovery_store._connect()) as connection:
+                recoverable = suspension_evidence(recovery_store, connection, execution_id, recovery_key)
+            if recoverable:
+                try:
+                    with function_execution(
+                        recovery_store, attempt_id=attempt_id, generation=generation,
+                        call_key=recovery_key, policy=default_policy(recovery_store, execution_id),
+                        publish_pause=False, checkpoint_root=parent_call_id is None,
+                    ):
+                        raise FunctionCompatibilityError(f"{type(e).__name__}: {e}")
+                except FunctionSuspended as suspended:
+                    e = suspended
+        outcome = (
+            {"function_suspended": True, "call_key": parent_call_id or anchor_msg_id}
+            if isinstance(e, FunctionSuspended)
+            else {"error": f"{type(e).__name__}: {e}"}
+        )
         try:
             with open(result_path, "wb") as f:
-                pickle.dump(
-                    {"error": f"{type(e).__name__}: {e}"}, f,
-                )
+                pickle.dump(outcome, f)
         except Exception:
             pass
 
@@ -1201,7 +1244,7 @@ def run_agentic_in_subprocess(
               answer_queue, stop_queue, response_format_snapshot,
               render_range, usage_ctx_snapshot, sandbox_policy_snapshot,
               authority, permission_rules_snapshot, surface_context_snapshot,
-              provider, model, eid),
+              provider, model, eid, attempt_id, generation),
         daemon=False,
     )
     p.start()

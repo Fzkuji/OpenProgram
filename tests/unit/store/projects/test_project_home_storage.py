@@ -60,7 +60,8 @@ def test_metadata_edit_does_not_restamp_replaced_folder_identity(
     proj = projects.resolve_project(folder)
     original = proj.directory_identity
     assert original
-    shutil.rmtree(folder)
+    # Retain the original inode so Linux cannot recycle it for the replacement.
+    folder.rename(tmp_path / "original-paper")
     folder.mkdir()
     projects.update_project(proj.id, {"name": "Paper notes"})
     saved = projects.get_project(proj.id)
@@ -133,4 +134,4 @@ def test_default_discovery_does_not_scan_home(tmp_path, monkeypatch):
     shutil.rmtree(old)
     relocated = discovery_mod.discover_moved_projects(roots=[fake_home])
     assert relocated == []
-    assert projects.get_project(proj.id).path.endswith("/old")
+    assert Path(projects.get_project(proj.id).path) == old

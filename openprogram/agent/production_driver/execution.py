@@ -247,6 +247,25 @@ class ExecutionOperations:
                         if request.surface_context_snapshot is not None else None
                     ),
                 )
+                if isinstance(result, shared.Mapping) and result.get("function_suspended"):
+                    from openprogram.execution.checkpoints import CheckpointFragment
+                    from openprogram.agentic_programming.continuation import default_policy
+                    from openprogram.execution.restart import window_seconds
+                    service = self._control_service()
+                    current = self.executions.get_execution(attempt.execution_id)
+                    commands = self.executions.list_commands(attempt.execution_id, kinds=(shared.CommandKind.PAUSE,), statuses=(shared.CommandStatus.APPLYING,))
+                    if not commands:
+                        raise shared.AgentDriverError("pause_command_missing", "Function suspension has no pending pause")
+                    service.arrive_safe_point(
+                        attempt_id=attempt.attempt_id, generation=attempt.generation,
+                        command_id=commands[0].command_id, expected_execution_version=current.status_version,
+                        fragment=CheckpointFragment(
+                            safe_point_kind="function.step.after",
+                            frontier=({"kind": "function.step.after", "call_key": result["call_key"]},),
+                            state_refs={"function": {"version": 1, "call_key": result["call_key"], "policy": default_policy(self.executions, attempt.execution_id)}, "restart_window_seconds": window_seconds()},
+                        ),
+                    )
+                    return shared._SafePointHandoff()
             else:
                 runner_kwargs = {
                     "request": request,

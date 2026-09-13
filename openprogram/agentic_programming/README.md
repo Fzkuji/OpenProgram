@@ -26,6 +26,7 @@ agentic_programming, never the other way around.
 ## Files in this directory
 
 - **`agent.py`** — Agent: tool loop = repeatedly call llm + execute tools until done
+- **`continuation.py`** — Durable, explicitly delimited function steps on the canonical execution store
 - **`decision.py`** — decision
 - **`function.py`** — agentic_function
 - **`llm.py`** — One model request using the ambient agentic-programming Runtime

@@ -543,7 +543,9 @@ def run_loop_blocking(
         )
 
     if continuation is not None:
-        validate_runtime_contract(continuation.resolved_snapshot, runtime_contract)
+        from openprogram.agentic_programming.continuation import retained_function_names
+        from openprogram.execution import default_store
+        validate_runtime_contract(continuation.resolved_snapshot, runtime_contract, durable_function_names=retained_function_names(default_store(), continuation.checkpoint.execution_id))
         from openprogram.programs._runtime import mark_deferred_loaded
         mark_deferred_loaded(list(continuation.state.payload.get("loaded_deferred_tools", [])))
 
