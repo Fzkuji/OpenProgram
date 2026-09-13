@@ -35,7 +35,7 @@ const { useCenterTabs, sessionAckIsActive } = await import("../../lib/tabs/cente
 const { normalizeCenterTabsPayload, readCenterTabsPayload } = await import("../../lib/tabs/center-tabs-persistence.ts");
 const state = () => useCenterTabs.getState();
 const active = () => state().tabs.find(t => t.id === state().activeId);
-function reset() { useCenterTabs.setState({ tabs: [], activeId: null, groups: [], splitWebTabId: null, windowNavigationHistory: { entries: [], index: -1 }, fileNavigationHistory: { entries: [], index: -1 }, fileNavigationRestore: null }); }
+function reset() { useCenterTabs.setState({ tabs: [], activeId: null, groups: [], splitWebTabId: null, navigationRoute: undefined, windowNavigationHistory: { entries: [], index: -1 }, fileNavigationHistory: { entries: [], index: -1 }, fileNavigationRestore: null }); }
 test("shared session opener reuses active session tab", () => {
   reset(); state().openSessionTab("A", "Alpha"); const id = active().id;
   state().openSessionTab("B", "Beta");
@@ -270,7 +270,7 @@ test("window navigation restores split focus and ignores background web creation
   state().navigateHistory(1); assert.equal(active().page, "files");
 });
 
-test("local session and file history remain ahead of cross-tab fallback", () => {
+test("session and file visits return in their actual order", () => {
   reset(); state().openSessionTab("local-A", "A"); state().openSessionTab("local-B", "B");
   const chat = active().id;
   state().openBuiltinTab("files");
@@ -318,4 +318,46 @@ test("choosing an existing page from New tab after Back discards forward visits"
   assert.equal(active().id, files);
   assert.equal(state().canNavigateHistory(1), false);
   assert.equal(state().tabs.length, 2);
+});
+
+
+test("default launcher remains the origin when opening an existing destination", () => {
+  reset(); state().openBuiltinTab("files");
+  state().openNewTabPage(); const home = active().id;
+  state().openBuiltinTab("files");
+  state().navigateHistory(-1); assert.equal(active().id, home);
+  state().navigateHistory(1); assert.equal(active().page, "files");
+});
+
+test("mixed page and session jumps return chronologically to the launcher", () => {
+  reset(); state().openNewTabPage(); const home = active().id;
+  state().openSessionTab("ordered-A", "A");
+  state().openSessionTab("ordered-B", "B");
+  state().openBuiltinTab("files");
+  state().openSessionTab("ordered-B", "B");
+  state().navigateHistory(-1); assert.equal(active().page, "files");
+  state().navigateHistory(-1); assert.equal(active().sessionId, "ordered-B");
+  state().navigateHistory(-1); assert.equal(active().sessionId, "ordered-A");
+  state().navigateHistory(-1); assert.equal(active().id, home);
+});
+
+
+test("revisiting Files from a second launcher keeps the original launcher reachable", () => {
+  reset(); state().openNewTabPage(); const first = active().id;
+  state().openBuiltinTab("files"); state().openNewTabPage(); const second = active().id;
+  state().openBuiltinTab("files");
+  state().navigateHistory(-1); assert.equal(active().id, second);
+  state().navigateHistory(-1); assert.equal(active().page, "files");
+  state().navigateHistory(-1); assert.equal(active().id, first);
+});
+
+
+test("sidebar routes also return to the launcher in visit order", () => {
+  reset(); state().openNewTabPage(); const home = active().id;
+  state().recordRouteNavigation("/skills"); state().recordRouteNavigation("/settings/general");
+  state().navigateHistory(-1); assert.equal(state().navigationRoute, "/skills");
+  state().navigateHistory(-1); assert.equal(active().id, home); assert.equal(state().navigationRoute, undefined);
+  state().navigateHistory(1); assert.equal(state().navigationRoute, "/skills");
+  state().openBuiltinTab("files"); assert.equal(state().canNavigateHistory(1), false);
+  state().navigateHistory(-1); assert.equal(state().navigationRoute, "/skills");
 });

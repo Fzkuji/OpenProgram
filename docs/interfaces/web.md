@@ -1,6 +1,6 @@
 # Web UI
 
-When the current page has no session, page, or file navigation step in the requested direction, the tab-strip Back and Forward buttons revisit previously active tabs in this window. Closed tabs are skipped. Opening another destination after Back discards forward visits. Cross-tab visits last for the current window lifetime.
+The default launcher is part of navigation history. Tab-strip Back and Forward follow the actual visit order through the launcher, built-in pages, applications, sessions, and file locations in this window. Opening an existing destination also preserves a return to the launcher. Choosing a new destination after Back discards forward visits. Closed or deleted destinations are skipped. Window visits last for the current window lifetime; browser controls continue to own navigation between webpage URLs.
 
 Selecting a conversation reuses the active session tab, including when another tab already shows that conversation. If a webpage is active, a new session tab opens. Back and Forward at the far left of the tab strip navigate each session tab’s own history. Opening a different conversation after going back replaces the forward history. History survives reloads; drafts retain their input when revisited, and deleted conversations are removed from history. Webpage navigation remains in the webpage controls.
 

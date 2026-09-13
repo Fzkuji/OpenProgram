@@ -818,7 +818,7 @@
     </section>
     <section id="session-navigation">
       <h2>8 · 会话标签前进与后退</h2>
-      <p>标签栏最左侧显示后退、前进；优先导航当前标签的页面、会话和文件历史，没有对应内部记录时导航当前窗口已访问的标签。网页仍使用网页自己的导航控件。</p>
+      <p>标签栏最左侧显示后退、前进；按当前窗口的实际访问顺序导航，默认入口页也属于历史。网页仍使用网页自己的导航控件。</p>
       <div class="card"><p aria-label="标签栏布局">←　→　［会话 B ×］　［网页 ×］　＋</p><p>当前标签历史：会话 A → 会话 B。后退恢复 A，前进恢复 B；后退后选择 C 则移除 B 的前进记录。</p></div>
       <table><thead><tr><th>公共入口</th><th>可观察结果</th></tr></thead><tbody>
       <tr><td>侧栏、历史页、深链接打开会话</td><td>先按 sessionId 查找已有会话标签并激活；不存在时，当前会话标签原位导航，当前是网页则新建会话标签，新标签页原位替换。</td></tr>
@@ -971,8 +971,9 @@
 })();
 </script>
 <section id="window-navigation"><h2>Window navigation</h2>
-<p>Opening or activating another visible tab records a window-local visit. Back and Forward first use the current page, session, or file history, then revisit an open tab in the corresponding direction. Returning to an existing tab preserves its content, draft, and group focus. A new visit after Back discards forward visits; duplicate activation and background metadata updates do not add visits.</p>
-<p>The existing Zustand commit boundary records visits after layout normalization. A shared selector chooses the same destination for button availability and execution. Internal history replay updates the current visit without appending another visit. Closed, transferred, or hidden tabs cannot be navigation targets. Window visits contain only tab IDs, are bounded to 100 entries, and are neither persisted nor transferred. Existing per-tab persistence and browser-native navigation stay in place.</p>
-<p>Acceptance: session → Files → Settings supports Back and Forward without duplicate tabs; existing-tab selection is recorded; closing a destination skips it; split-pane focus follows the target; local session and file history still works; background title updates do not enable navigation. No server, permission, browser URL history, or draft-storage changes.</p>
-<h3>Implementation status</h3><p data-window-navigation-status="complete">Implemented and independently reviewed. Public store navigation tests cover cross-tab return, forward branching, closing targets, grouped focus, and local-history precedence. Web tests, type checking, source checks, production build, repository contracts, browser regression selection and documentation links pass.</p></section></body>
+<p>The default New tab launcher is the first visit. Every visible application, built-in page, sidebar route, session, tab activation and file location navigation records a chronological window visit. Back restores the immediately preceding visit; Forward restores the following visit. Page-local history is used only for restored windows without a current-window timeline. New navigation after Back discards forward visits.</p>
+<p>Visits reference a tab/page identity, an optional session identity, a sidebar pathname and an optional file location snapshot. Page replacement retains the launcher in the destination page history, including when the destination was already open. Resolution uses live visible tabs and their retained page/session histories; closed or deleted destinations cannot be resurrected. Background updates do not record visits. Metadata and drafts remain owned by existing stores.</p>
+<p>The timeline is bounded to 100 visits and lasts for the current window lifetime. The shared destination selector drives both enabled state and execution. Replay uses existing layout normalization, group focus, session routing and file restoration. Browser-native URL history remains owned by browser controls; external websites and operating-system windows are outside this application-page history.</p>
+<p>Acceptance starts with the rendered default launcher and covers Files, New chat, Browser, Terminal and application launch, including existing destinations. Mixed sequences return through their actual visit order to the launcher and forward to the destination. Session/file branches, closing, deletion, reload compatibility, group focus and background updates remain covered.</p>
+<h3>Implementation status</h3><p data-window-navigation-status="pending">Chronological launcher-origin navigation is under implementation.</p></section></body>
 </html>

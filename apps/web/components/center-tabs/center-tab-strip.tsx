@@ -21,11 +21,11 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, ArrowRight, CirclePlus, Plus, SquareArrowOutUpRight } from "lucide-react";
+import { CirclePlus, Plus, SquareArrowOutUpRight } from "lucide-react";
 
 import { useCenterTabs, type CenterTab } from "@/lib/tabs/center-tabs-store";
 import { topLevelTabs } from "@/lib/browser/web-page-management";
-import { navigationTarget } from "@/lib/tabs/tab-navigation";
+import { PageNavigation } from "./page-navigation";
 import { centerTabStripEntries } from "@/lib/tabs/center-tab-groups";
 import { dragCoordinator } from "@/lib/tabs/tab-drag-coordinator";
 import { desktopBridge } from "@/lib/desktop/desktop-bridge";
@@ -59,9 +59,6 @@ const UNFREEZE_GRACE_MS = 400;
 export function CenterTabStrip() {
   const { t, text } = useTranslation();
 
-  const navigateHistory = useCenterTabs(s => s.navigateHistory);
-  const canGoBack = useCenterTabs(s => navigationTarget(s, -1) !== null);
-  const canGoForward = useCenterTabs(s => navigationTarget(s, 1) !== null);
   const groups = useCenterTabs((s) => s.groups);
   const activeId = useCenterTabs((s) => s.activeId);
 
@@ -327,12 +324,7 @@ export function CenterTabStrip() {
         unfreezeTimerRef.current = null;
       }}
     >
-      <div className={styles.sessionNavigation} role="group" aria-label={text("Page navigation", "页面导航")}>
-        <button type="button" disabled={!canGoBack} title={text("Back", "后退")}
-          aria-label={text("Back", "后退")} onClick={() => navigateHistory(-1)}><ArrowLeft size={15} /></button>
-        <button type="button" disabled={!canGoForward} title={text("Forward", "前进")}
-          aria-label={text("Forward", "前进")} onClick={() => navigateHistory(1)}><ArrowRight size={15} /></button>
-      </div>
+      <PageNavigation />
       {/* tab 流容器：浏览器模式 display:contents 零影响；桌面模式限宽，
          让＋号既跟随 tab、又最深只顶到右栏图标轴线（见 module css）。 */}
       <div

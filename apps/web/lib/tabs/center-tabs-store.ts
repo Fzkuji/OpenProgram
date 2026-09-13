@@ -20,7 +20,8 @@
  * session store's currentSessionId / titles into this store.
  */
 import { create } from "zustand";
-import { navigationTarget, recordWindowNavigation, type WindowNavigationHistory } from "./tab-navigation";
+import { pushPath } from "../shallow-nav";
+import { activeVisit, navigationTarget, recordFileVisit, recordWindowNavigation, restoreVisitPage, type WindowNavigationHistory } from "./tab-navigation";
 import { topLevelTabs } from "../browser/web-page-management";
 import { recordTabPage, tabPage, type TabPageHistory } from "./tab-page-history";
 import { sessionHistory, withSessionHistory, type SessionTabHistory } from "./session-tab-history";
@@ -188,6 +189,8 @@ const closedSessionAckTombstones = new Set<string>();
 
 export interface CenterTabsState {
   windowNavigationHistory: WindowNavigationHistory;
+  navigationRoute?: string;
+  recordRouteNavigation: (pathname: string) => void;
   canNavigateHistory: (direction: -1 | 1) => boolean;
   navigateHistory: (direction: -1 | 1) => void;
   tabs: CenterTab[];
@@ -291,7 +294,7 @@ function commitCenterTabsState(
   state: CenterTabsState,
   patch: Partial<CenterTabsPersistedState>,
   recordVisit = true,
-): CenterTabsPersistedState & { windowNavigationHistory: WindowNavigationHistory } {
+): CenterTabsPersistedState & { windowNavigationHistory: WindowNavigationHistory; navigationRoute?: string } {
   const payload = normalizeCenterTabsPayload({
     tabs: patch.tabs ?? state.tabs,
     activeId: patch.activeId === undefined ? state.activeId : patch.activeId,
@@ -302,7 +305,12 @@ function commitCenterTabsState(
     splitRatio: patch.splitRatio ?? state.splitRatio,
   });
   persistCenterTabsPayload(payload);
-  return { ...persistedState(payload), windowNavigationHistory: recordWindowNavigation(state, payload, recordVisit) };
+  const before = state.tabs.find(tab => tab.id === state.activeId);
+  const after = payload.tabs.find(tab => tab.id === payload.activeId);
+  const navigationRoute = before?.id === after?.id && before?.sessionId === after?.sessionId
+    ? state.navigationRoute : undefined;
+  return { ...persistedState(payload), navigationRoute,
+    windowNavigationHistory: recordWindowNavigation(state, { ...payload, navigationRoute }, recordVisit) };
 }
 
 function tabsForLayout(
@@ -343,15 +351,14 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
         active && active.kind === "ntp" && active.id !== id
           ? s.tabs.filter((t) => t.id !== active.id)
           : s.tabs;
-      const tabs = updateExisting
-        ? retained.map((tab) => tab.id === id ? updateExisting(tab) : tab)
-        : retained;
-      const navigationState = active?.kind === "ntp" && active.id !== id
-        ? { ...s, windowNavigationHistory: { ...s.windowNavigationHistory,
-            entries: s.windowNavigationHistory.entries.slice(0, s.windowNavigationHistory.index + 1) } }
-        : s;
-      return commitCenterTabsState(navigationState, { tabs, activeId: id });
+      const tabs = retained.map(tab => {
+        if (tab.id !== id) return tab;
+        const next = updateExisting ? updateExisting(tab) : tab;
+        return active?.kind === "ntp" && active.id !== id ? recordTabPage(active, next) : next;
+      });
+      return commitCenterTabsState(s, { tabs, activeId: id });
     }
+
     const activeIdx = s.tabs.findIndex((t) => t.id === s.activeId);
     let tabs: CenterTab[];
     if (
@@ -377,7 +384,13 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
   }
 
   return {
-    windowNavigationHistory: { entries: initial.activeId ? [initial.activeId] : [], index: initial.activeId ? 0 : -1 },
+    windowNavigationHistory: { entries: activeVisit(initial) ? [activeVisit(initial)!] : [], index: initial.activeId ? 0 : -1 },
+    navigationRoute: undefined,
+    recordRouteNavigation: pathname => set(s => {
+      const navigationRoute = pathname === "/chat" || pathname.startsWith("/s/") ? undefined : pathname;
+      if (s.navigationRoute === navigationRoute) return {};
+      return { navigationRoute, windowNavigationHistory: recordWindowNavigation(s, { ...s, navigationRoute }) };
+    }),
     canNavigateHistory: (direction): boolean => navigationTarget(useCenterTabs.getState(), direction) !== null,
     navigateHistory: (direction): void => {
       const target = navigationTarget(useCenterTabs.getState(), direction);
@@ -386,13 +399,27 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
       if (target.kind === "file") { useCenterTabs.getState().navigateFileHistory(direction); return; }
       if (target.kind !== "window") return;
       set(s => {
-        const group = findCenterTabGroup(s.groups, target.tabId);
-        const layout = group ? focusCenterTabGroupMember({ tabIds: s.tabs.map(tab => tab.id), groups: s.groups }, group.id, target.tabId) : null;
+        const next = restoreVisitPage(target.owner, target.page);
+        const tabs = s.tabs.map(tab => tab.id === target.owner.id ? next : tab);
+        const groups = replaceGroupTabId(s.groups, target.owner.id, next.id);
+        const group = findCenterTabGroup(groups, next.id);
+        const layout = group ? focusCenterTabGroupMember({ tabIds: tabs.map(tab => tab.id), groups }, group.id, next.id) : null;
+        const file = target.visit.file;
+        const fileIndex = file ? s.fileNavigationHistory.entries.findIndex(entry => entry.projectId === file.projectId
+          && entry.path === file.path && entry.selectedType === file.selectedType) : -1;
         return {
-          ...commitCenterTabsState(s, { activeId: target.tabId, groups: layout?.groups ?? s.groups }, false),
+          ...commitCenterTabsState(s, { tabs, activeId: next.id, groups: layout?.groups ?? groups }, false),
           windowNavigationHistory: { ...s.windowNavigationHistory, index: target.index },
+          navigationRoute: target.visit.route,
+          ...(file ? { fileNavigationRestore: file, fileNavigationHistory: fileIndex >= 0
+            ? { ...s.fileNavigationHistory, index: fileIndex } : { entries: [file], index: 0 } } : {}),
         };
       });
+      if (typeof window !== "undefined" && window.location) {
+        const path = target.visit.route ?? (target.page.kind === "session" && target.page.sessionId && !target.page.draft
+          ? `/s/${encodeURIComponent(target.page.sessionId)}` : "/chat");
+        pushPath(path);
+      }
     },
     tabs: initial.tabs,
     activeId: initial.activeId,
@@ -558,9 +585,10 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
           const index = history.index;
           const entries = history.entries.map((entry, entryIndex) => entryIndex === index
             ? { ...entry, title } : entry);
-          const next = { ...existing, title, sessionHistory: { entries, index } };
+          const updated = { ...existing, title, sessionHistory: { entries, index } };
+          const next = active?.kind === "ntp" ? recordTabPage(active, updated) : updated;
           return commitCenterTabsState(s, {
-            tabs: s.tabs.map(tab => tab.id === existing.id ? next : tab),
+            tabs: s.tabs.filter(tab => active?.kind !== "ntp" || tab.id !== active.id).map(tab => tab.id === existing.id ? next : tab),
             activeId: existing.id,
           });
         }
@@ -682,7 +710,13 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
       if (history.index < 0) return {};
       const entries = [...history.entries];
       entries[history.index] = { ...entries[history.index], expanded: [...view.expanded], scroll: view.scroll && { ...view.scroll } };
-      return { fileNavigationHistory: { ...history, entries } };
+      const visits = s.windowNavigationHistory;
+      const current = visits.entries[visits.index];
+      const snapshot = entries[history.index];
+      const matches = current?.file?.projectId === snapshot.projectId && current.file.path === snapshot.path;
+      return { fileNavigationHistory: { ...history, entries },
+        ...(matches ? { windowNavigationHistory: { ...visits,
+          entries: visits.entries.map((entry, index) => index === visits.index ? { ...entry, file: snapshot } : entry) } } : {}) };
     }),
 
     recordFileNavigation: (snapshot) => set((s) => {
@@ -697,8 +731,7 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
       const bounded = [...entries, snapshot].slice(-100);
       return {
         fileNavigationHistory: { entries: bounded, index: bounded.length - 1 }, fileNavigationRestore: null,
-        windowNavigationHistory: { ...s.windowNavigationHistory,
-          entries: s.windowNavigationHistory.entries.slice(0, s.windowNavigationHistory.index + 1) },
+        windowNavigationHistory: recordFileVisit(s, snapshot),
       };
     }),
 

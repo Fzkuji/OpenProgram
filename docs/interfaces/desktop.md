@@ -1,6 +1,6 @@
 # Desktop App and built-in browser
 
-When the current page has no session, page, or file navigation step in the requested direction, the tab-strip Back and Forward buttons revisit previously active tabs in this window. Closed tabs are skipped. Opening another destination after Back discards forward visits. Cross-tab visits last for the current window lifetime.
+The default launcher is part of navigation history. Tab-strip Back and Forward follow the actual visit order through the launcher, built-in pages, applications, sessions, and file locations in this window. Opening an existing destination also preserves a return to the launcher. Choosing a new destination after Back discards forward visits. Closed or deleted destinations are skipped. Window visits last for the current window lifetime; browser controls continue to own navigation between webpage URLs.
 
 The macOS and Windows Desktop Apps present OpenProgram as a multi-pane workspace. Each pane can hold Files, a chat, the built-in Browser, or a Terminal, and panes can be split or moved between app windows without changing the underlying session or browser tab.
 

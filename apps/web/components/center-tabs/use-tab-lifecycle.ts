@@ -185,12 +185,15 @@ export function useTabLifecycle({
       // as before.
       if (!isChatRoute(pathname) || pathname.startsWith("/s/")) return;
     }
+    if (useCenterTabs.getState().navigationRoute) return;
     const tab = useCenterTabs.getState().tabs.find(
       (candidate) => candidate.id === activeId,
     );
     if (tab?.kind === "session") activateSession(tab);
     else if (tab?.kind === "ntp") {
       useSessionStore.getState().setCurrentConv(null);
+      pushPath("/chat");
+    } else if (tab && !isChatRoute(pathname)) {
       pushPath("/chat");
     }
     // Route changes are results of activation, not new activation requests.

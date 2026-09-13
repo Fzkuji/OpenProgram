@@ -354,3 +354,25 @@ test("Back on /chat clears an acknowledged session and survives remount", async 
     assert.equal(useCenterTabs.getState().tabs[0].sessionId, "acknowledged");
   });
 });
+
+test("returning from Files restores a sidebar route without launcher activation overriding it", async () => {
+  const home = { id: "ntp:route-origin", kind: "ntp", title: "" };
+  await setup([home], home.id, "detached");
+  useCenterTabs.setState({ navigationRoute: undefined, windowNavigationHistory: {entries: [], index: -1} });
+  await mounted(async () => {
+    await act(async () => {
+      useCenterTabs.getState().recordRouteNavigation("/skills");
+      navigate("/skills");
+    });
+    await act(async () => useCenterTabs.getState().openBuiltinTab("files"));
+    assert.equal(window.location.pathname, "/chat");
+    await act(async () => useCenterTabs.getState().navigateHistory(-1));
+    assert.equal(window.location.pathname, "/skills");
+    assert.equal(useCenterTabs.getState().navigationRoute, "/skills");
+    await act(async () => useCenterTabs.getState().navigateHistory(-1));
+    assert.equal(window.location.pathname, "/chat");
+    assert.equal(useCenterTabs.getState().activeId, home.id);
+    await act(async () => useCenterTabs.getState().navigateHistory(1));
+    assert.equal(window.location.pathname, "/skills");
+  });
+});

@@ -12,8 +12,13 @@ export function tabPage(tab: CenterTab): TabPage {
 /** Record replacement in the same visible tab, not a newly opened tab. */
 export function recordTabPage(from: CenterTab, to: CenterTab): CenterTab {
   const history = from.pageHistory ?? { entries: [tabPage(from)], index: 0 };
-  const entries = history.entries.slice(0, history.index + 1);
-  entries[history.index] = tabPage(from);
+  const source = history.entries.slice(0, history.index + 1);
+  source[history.index] = tabPage(from);
+  // An existing destination can own earlier launcher visits. Keep those
+  // identities reachable when another launcher navigates to the same page.
+  const sourceIds = new Set(source.map(page => page.id));
+  const retained = (to.pageHistory?.entries ?? []).filter(page => page.id !== to.id && !sourceIds.has(page.id));
+  const entries = [...retained, ...source];
   return { ...to, pageHistory: { entries: [...entries, tabPage(to)], index: entries.length } };
 }
 
