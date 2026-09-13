@@ -5,12 +5,25 @@ from openprogram.store.project import project_store as projects
 from openprogram.store.project.discovery import discover_moved_projects
 
 
+def _bookmark_locations(monkeypatch):
+    # Unit tests exercise reconciliation with a native resolver contract.
+    # Real macOS bookmark behavior belongs to test_project_native_macos.
+    locations = {}
+    monkeypatch.setattr('openprogram.store.project.native.create_bookmark',
+                        lambda path: str(path))
+    monkeypatch.setattr('openprogram.store.project.native.resolve_bookmark',
+                        lambda bookmark: locations.get(bookmark))
+    return locations
+
+
 def test_discovers_renamed_folder_preserving_project(tmp_path, monkeypatch):
+    locations = _bookmark_locations(monkeypatch)
     monkeypatch.setattr('openprogram.paths.get_state_dir', lambda: str(tmp_path / 'state'))
     monkeypatch.setattr('openprogram.store.session.session_store.default_store', lambda: type('Store', (), {'relocate_project_sessions': lambda *args, **kwargs: 0})())
     old = tmp_path / 'old'; old.mkdir()
     project = projects.resolve_project(old)
     new = tmp_path / 'renamed'; old.rename(new)
+    locations[str(old)] = str(new)
     assert discover_moved_projects() == [project.id]
     assert projects.get_project(project.id).path == str(new)
     assert projects.resolve_project(new).id == project.id
@@ -22,6 +35,7 @@ def test_discovers_renamed_folder_preserving_project(tmp_path, monkeypatch):
 
 
 def test_ambiguous_session_copies_are_not_claimed(tmp_path, monkeypatch):
+    locations = _bookmark_locations(monkeypatch)
     monkeypatch.setattr('openprogram.paths.get_state_dir', lambda: str(tmp_path / 'state'))
     old = tmp_path / 'old'; old.mkdir()
     project = projects.resolve_project(old)
@@ -29,6 +43,7 @@ def test_ambiguous_session_copies_are_not_claimed(tmp_path, monkeypatch):
     (old / '.openprogram/sessions/s1').mkdir(parents=True)
     shutil.copytree(old, tmp_path / 'copy')
     old.rename(tmp_path / 'moved')
+    locations[str(old)] = str(tmp_path / 'moved')
     relocated = discover_moved_projects()
     assert relocated == [project.id]
     assert Path(projects.get_project(project.id).path) == (tmp_path / 'moved')
@@ -37,11 +52,13 @@ def test_ambiguous_session_copies_are_not_claimed(tmp_path, monkeypatch):
 
 
 def test_incomplete_search_and_existing_original_do_not_relocate(tmp_path, monkeypatch):
+    locations = _bookmark_locations(monkeypatch)
     monkeypatch.setattr('openprogram.paths.get_state_dir', lambda: str(tmp_path / 'state'))
     old = tmp_path / 'old'; old.mkdir()
     project = projects.resolve_project(old)
     assert discover_moved_projects() == []
     old.rename(tmp_path / 'new')
+    locations[str(old)] = str(tmp_path / 'new')
     assert discover_moved_projects(max_directories=1) == [project.id]
 
 

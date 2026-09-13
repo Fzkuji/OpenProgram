@@ -60,7 +60,8 @@ def test_metadata_edit_does_not_restamp_replaced_folder_identity(
     proj = projects.resolve_project(folder)
     original = proj.directory_identity
     assert original
-    shutil.rmtree(folder)
+    # Retain the original inode so Linux cannot recycle it for the replacement.
+    folder.rename(tmp_path / "original-paper")
     folder.mkdir()
     projects.update_project(proj.id, {"name": "Paper notes"})
     saved = projects.get_project(proj.id)

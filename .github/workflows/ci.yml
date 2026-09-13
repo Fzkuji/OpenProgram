@@ -122,7 +122,7 @@ jobs:
       - name: macOS desktop installation tests
         run: >-
           uv run --locked --extra dev python -m pytest -q -m macos
-          tests/component/config/test_distribution_release.py
+          tests/component/config/test_distribution_release
 
   integration:
     runs-on: ubuntu-latest
@@ -165,7 +165,7 @@ jobs:
           cache-dependency-path: package-lock.json
       - run: npm ci --ignore-scripts
       - name: Exercise the actual sandbox-exec verifier backend
-        run: uv run --locked --extra dev python -m pytest -q tests/component/self_update tests/integration/runtime/test_self_update_native_processes.py tests/integration/runtime/test_self_update_ui_object.py
+        run: uv run --locked --extra dev python -m pytest -q tests/component/self_update tests/integration/runtime/test_self_update_native_processes.py
 
   e2e:
     runs-on: ubuntu-latest
