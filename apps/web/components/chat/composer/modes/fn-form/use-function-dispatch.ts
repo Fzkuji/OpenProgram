@@ -2,7 +2,7 @@
 
 import { useCallback } from "react";
 
-import { desktopBridge, surfaceOriginForChat } from "@/lib/desktop-bridge";
+import { desktopBridge, surfaceOriginForChat } from "@/lib/desktop/desktop-bridge";
 import { showToast } from "@/lib/format-utils/toast";
 import { useTranslation } from "@/lib/i18n";
 import { runtimeState } from "@/lib/runtime-bridge/state";
@@ -15,7 +15,7 @@ import { setWelcomeVisible } from "@/lib/runtime-bridge/helpers";
 import { setRunning } from "@/lib/runtime-bridge/ui";
 import type { AgenticFunction } from "@/lib/session-store";
 import { useSessionStore } from "@/lib/session-store";
-import { sessionAckIsActive, useCenterTabs } from "@/lib/state/center-tabs-store";
+import { sessionAckIsActive, useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import { pushPath } from "@/lib/shallow-nav";
 
 import { resolveFnFormSessionId, shouldClearLegacyRunning } from "./session-target";

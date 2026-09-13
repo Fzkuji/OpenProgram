@@ -18,7 +18,7 @@ import pytest
 from openprogram.context import aging
 from openprogram.context.nodes import Call, ROLE_USER, ROLE_LLM, ROLE_CODE
 from openprogram.store import SessionNodeWriter, SessionStore
-from openprogram.webui.routes.tree import _coverage_nodes
+from openprogram.webui.routes.files.tree import _coverage_nodes
 
 
 @pytest.fixture(autouse=True)

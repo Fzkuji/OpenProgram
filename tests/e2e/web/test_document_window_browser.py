@@ -17,7 +17,7 @@ def bundles(tmp_path_factory):
     for name, entry in (("window", "./document-window-browser-entry.tsx"),
                         ("controller", "./document-controller-browser-entry.ts")):
         path = root / f"{name}.js"
-        subprocess.run(["node", "apps/web/tests/build-document-window-browser.mjs", str(path), entry], check=True)
+        subprocess.run(["node", "apps/web/tests/files/build-document-window-browser.mjs", str(path), entry], check=True)
         result[name] = path.read_text()
     return result
 

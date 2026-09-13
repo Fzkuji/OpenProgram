@@ -456,7 +456,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
       <tr><td><code>apps/server/.../ws_actions/files.py</code></td><td>项目根授权、目录 listing、project search、read 与写入类文件操作；统一校验 project/path、request_id、idempotency key 和目录/search snapshot。</td><td>不计算 turn/branch Review，不保存浏览器缓存或草稿。</td></tr>
       <tr><td><code>apps/server/.../ws_actions/turn_files.py</code></td><td>从 mutation journal 与 Git 生成 Review scope、过滤后的分页结果和绑定 snapshot 的单文件 diff；统一回显 request_id。</td><td>不提供项目文件树搜索，不让 turn diff 绕过 Review snapshot。</td></tr>
       <tr><td><code>apps/web/lib/net/ws-request.ts</code></td><td>创建 request_id、维护按 id 的 pending registry、超时/取消和严格响应验证。</td><td>不以 response type 匹配第一个响应，不维护文件请求的全局串行队列。</td></tr>
-      <tr><td><code>apps/web/lib/state/files-shared.ts</code></td><td>以 project-scoped key 管理有界 read cache、持久 dirty draft store 与显式失效事件。</td><td>不作为组件间的无界内容仓库，不保存 Review page 或 socket listener。</td></tr>
+      <tr><td><code>apps/web/lib/files/files-shared.ts</code></td><td>以 project-scoped key 管理有界 read cache、持久 dirty draft store 与显式失效事件。</td><td>不作为组件间的无界内容仓库，不保存 Review page 或 socket listener。</td></tr>
       <tr><td><code>FileTree</code> / <code>FilesPage</code></td><td>渲染目录、搜索和文件操作意图；仅消费服务端分页与 project search 结果。</td><td>不扫描本地已加载节点来代表项目搜索，不自行重排跨页结果。</td></tr>
       <tr><td><code>ReviewTabPane</code></td><td>保存当前 scope/filter/snapshot/cursor/selection，渲染服务器确认的单页与单文件 diff。</td><td>不对当前页二次过滤来实现 category/search，不复用另一 scope 的 diff。</td></tr>
       <tr><td><code>FileTabPane</code></td><td>编辑器 buffer、保存冲突提示和 dirty-draft 生命周期；从项目文件读取 canonical 内容。</td><td>不直接调用旧 turn diff 入口；历史文件比较统一由 Review tab 打开。</td></tr>

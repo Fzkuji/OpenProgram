@@ -47,24 +47,24 @@ import {
   subscribeBookmarks,
   type BookmarkFolder,
   type BookmarkNode,
-} from "@/lib/bookmarks";
+} from "@/lib/tabs/bookmarks";
 import { activeThemeId } from "@/lib/prefs/theme-pref";
 import {
   requestBrowserImport,
   setShowBookmarksBar,
   showBookmarksBar,
   subscribeBrowserPrefs,
-} from "@/lib/browser-prefs";
-import { desktopBridge } from "@/lib/desktop-bridge";
-import type { DesktopContextMenuItem } from "@/lib/desktop-bridge-types";
+} from "@/lib/browser/browser-prefs";
+import { desktopBridge } from "@/lib/desktop/desktop-bridge";
+import type { DesktopContextMenuItem } from "@/lib/desktop/desktop-bridge-types";
 import {
   bookmarkFolderActionPrefix,
   browserActionPrefix,
   browserResponsiveMenuItems,
   ownedActionId,
-} from "@/lib/browser-layout";
+} from "@/lib/browser/browser-layout";
 import { useTranslation } from "@/lib/i18n";
-import { useCenterTabs } from "@/lib/state/center-tabs-store";
+import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import styles from "./center-tabs.module.css";
 
 function useBookmarksBarPreference() {

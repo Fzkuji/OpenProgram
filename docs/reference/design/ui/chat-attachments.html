@@ -358,7 +358,7 @@
 </div>
 <div class="legend">
   <b>不去扩 <code>/files/raw</code>。</b>它"绝对路径一律拒绝"是值得保留的不变量，两条路由各守各的契约。查看器一份不动：<code>FileViewer</code> 多一个 <code>abs</code> 入参，把两个出口切到绝对路径路由，图片、pdf、markdown、带行号代码、下载卡五种渲染判断仍然只有一处实现。
-  <span class="src">openprogram/attachments.py:readable_roots · apps/server/openprogram_server/_webui/routes/file_search.py · apps/server/openprogram_server/server.py · apps/web/components/files/file-viewer.tsx</span>
+  <span class="src">openprogram/attachments.py:readable_roots · apps/server/openprogram_server/_webui/routes/files/file_search.py · apps/server/openprogram_server/server.py · apps/web/components/files/file-viewer.tsx</span>
 </div>
 
 <h3 id="now-verdict">1.5 三件需求，现在各自到哪</h3>
@@ -726,7 +726,7 @@
 <tr><td>网页图片落盘并写标记，同时保留 ImageContent</td><td class="y">已实现</td><td class="src">apps/server/openprogram_server/_webui/ws_actions/chat.py:_persist_attachments</td></tr>
 <tr><td>无文件名的粘贴图按 media type 补扩展名</td><td class="y">已实现</td><td class="src">apps/server/openprogram_server/_webui/ws_actions/chat.py:_attachment_name</td></tr>
 <tr><td>渠道附件改用网页词法（原来 chip 正则不认，标记当正文露出）</td><td class="y">已实现</td><td class="src">channels/_attachments.py:attachment_notes</td></tr>
-<tr><td>字节出口 /api/file-raw，以及绝对路径版 /api/file-read</td><td class="y">已实现</td><td class="src">apps/server/openprogram_server/_webui/routes/file_search.py</td></tr>
+<tr><td>字节出口 /api/file-raw，以及绝对路径版 /api/file-read</td><td class="y">已实现</td><td class="src">apps/server/openprogram_server/_webui/routes/files/file_search.py</td></tr>
 <tr><td>chip 捕获路径、图片缩略图、点开浮层</td><td class="y">已实现</td><td class="src">apps/web/components/chat/messages/user-attachments.tsx · attachment-preview.tsx</td></tr>
 <tr><td>chat_ack 回显存储后正文，刚发出去的附件当轮可点</td><td class="y">已实现</td><td class="src">apps/server/openprogram_server/_webui/ws_actions/chat.py · apps/web/lib/net/chat-stream.ts</td></tr>
 <tr><td>send_file 工具与 dispatcher 折入 final_text</td><td class="y">已实现</td><td class="src">programs/tools/send_file/ · agent/dispatcher/__init__.py</td></tr>

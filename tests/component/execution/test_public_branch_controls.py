@@ -209,7 +209,7 @@ def test_public_branch_commands_use_control_service_and_exact_session_scope(tmp_
 def test_rest_branch_command_returns_the_canonical_snapshot_and_cursor(tmp_path, monkeypatch) -> None:
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from openprogram.webui.routes.lifecycle import register
+    from openprogram.webui.routes.execution.lifecycle import register
 
     store, service, source, checkpoint = _paused_source(tmp_path)
     monkeypatch.setattr("openprogram.execution.default_store", lambda: store)

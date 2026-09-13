@@ -4,11 +4,11 @@ import { PictureInPicture2 } from "lucide-react";
 
 import { HoverTip } from "@/components/ui/tooltip";
 import { useTranslation } from "@/lib/i18n";
-import { useCenterTabs } from "@/lib/state/center-tabs-store";
+import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import {
   pipCoversCenter,
   useWebTabPip,
-} from "@/lib/state/web-tab-pip-store";
+} from "@/lib/browser/web-tab-pip-store";
 import styles from "../environment-row.module.css";
 
 /** Re-open the agent preview after the user closed the floating pane.

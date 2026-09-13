@@ -2,13 +2,13 @@ import {
   dragCoordinator,
   type TabDragSubject,
   type TabDropIntent,
-} from "@/lib/tab-drag-coordinator";
-import { desktopBridge } from "@/lib/desktop-bridge";
+} from "@/lib/tabs/tab-drag-coordinator";
+import { desktopBridge } from "@/lib/desktop/desktop-bridge";
 import {
   findCenterTabGroup,
   MAX_CENTER_TAB_GROUP_MEMBERS,
-} from "@/lib/state/center-tab-groups";
-import { useCenterTabs } from "@/lib/state/center-tabs-store";
+} from "@/lib/tabs/center-tab-groups";
+import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
 
 let removePreparedReleaseListener: (() => void) | null = null;
 

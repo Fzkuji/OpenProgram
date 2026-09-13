@@ -129,7 +129,7 @@ def test_release_wheel_probe_runs_outside_the_checkout():
 
 def test_system_version_reports_managed_release(monkeypatch):
     from openprogram.updater.detect import InstallMethod
-    from openprogram.webui.routes.config import register
+    from openprogram.webui.routes.settings.config import register
 
     monkeypatch.setattr(
         "openprogram.updater.detect.detect_install_method",

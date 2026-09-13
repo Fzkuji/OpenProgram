@@ -764,7 +764,7 @@
       <table>
         <thead><tr><th>规则 / 概念</th><th>落点</th></tr></thead>
         <tbody>
-          <tr><td>配对表、活跃绑定、background、<code>show/hide/end</code></td><td><code>apps/web/lib/state/web-tab-pip-store.ts</code> · <code>pairedOwnerByTabId</code> / <code>pipPairedOwnerFor</code> / <code>useWebTabPip</code></td></tr>
+          <tr><td>配对表、活跃绑定、background、<code>show/hide/end</code></td><td><code>apps/web/lib/browser/web-tab-pip-store.ts</code> · <code>pairedOwnerByTabId</code> / <code>pipPairedOwnerFor</code> / <code>useWebTabPip</code></td></tr>
           <tr><td>R1 切走消失 / 切回重现</td><td>同上 · <code>pipCoverBase</code> / <code>pipCoversCenter</code> / <code>peekLiveWebTabPipId</code></td></tr>
           <tr><td>R3 fork</td><td>同上 · <code>pipOpenMustFork</code>；创建叶子在 <code>center-tabs-store.ts</code> 的 <code>ensureWebTab</code> / <code>ensureExclusiveWebTab</code>；id 在 <code>center-tab-ids.ts</code> 的 <code>webTabId</code> / <code>nextPopupWebTabId</code></td></tr>
           <tr><td>R5 收起目标</td><td><code>pipCollapseTargetFor</code>（同组会话 → 配对表 → null）/ <code>collapseWebTabToPip</code>；无目标时 <code>CollapseToPipButton</code> 返回 null，BrowserMenu 不传 <code>collapseToPip</code></td></tr>
@@ -773,12 +773,12 @@
           <tr><td>小窗：live、拖拽、bounds、截图、展开 / 全屏 / ✕</td><td><code>apps/web/components/center-tabs/web-tab-pip.tsx</code> · <code>WebTabPip</code>；挂在 <code>app-shell.tsx</code> 的 <code>.center-body</code> 内，默认 <code>.webPip</code> 右上、<code>top:78px</code>（头部按钮下方）</td></tr>
           <tr><td>R2 打开页面隐藏预览</td><td><code>web-tab-pip-store.ts</code> 的 <code>pipCoversCenter</code> 仅在 owner 会话为真；<code>web-tab-pane.tsx</code> 的 <code>.webFrame</code> 占满内容区，无停靠门户</td></tr>
           <tr><td>截图缓存</td><td><code>usePipSnapshots</code> / <code>getSnapshot</code> / <code>setSnapshot</code>；PiP 卸载与拖动时 <code>bridge.webTab.capture</code></td></tr>
-          <tr><td>agent open / close / 回执</td><td><code>apps/web/lib/desktop-bridge.ts</code> · <code>installDesktopMenuHandlers</code> 内 WS 分支；<code>closeAgentWebTabResult</code>；<code>restorePriorActiveTabAfterFailedWebOpen</code></td></tr>
+          <tr><td>agent open / close / 回执</td><td><code>apps/web/lib/desktop/desktop-bridge.ts</code> · <code>installDesktopMenuHandlers</code> 内 WS 分支；<code>closeAgentWebTabResult</code>；<code>restorePriorActiveTabAfterFailedWebOpen</code></td></tr>
           <tr><td>会话↔网页配对、可见性</td><td>同上 · <code>surfaceRefForChat</code>（PiP 回退读 <code>peekWebTabPipId</code> / <code>peekWebTabPipOwnerId</code>）/ <code>visibleWebTab</code> / <code>visibleWebTabById</code>（用 <code>peekLiveWebTabPipId</code>）/ <code>browserPageInventory</code></td></tr>
           <tr><td>桌面分屏是否可用</td><td><code>app-shell.tsx</code> 调 <code>setDesktopSplitLayoutAvailable(isDesktop && activeKind==="session" && isSplitLayoutAvailable(width))</code>；阈值在 <code>split-layout.ts</code>（360+480+6）</td></tr>
           <tr><td>✕ 后的恢复入口</td><td><code>apps/web/components/chat/composer/environment-row/chips/web-preview-chip.tsx</code> · <code>WebPreviewChip</code></td></tr>
           <tr><td>split / group 本体</td><td><code>center-tabs-store.ts</code>（<code>groupTab</code> / <code>ungroupTab</code> / <code>setSplitWebTab</code> / <code>openWebTabInSplit</code>）；<code>center-tab-groups.ts</code>（<code>MAX_CENTER_TAB_GROUP_MEMBERS = 2</code>）；<code>center-tabs-persistence.ts</code> 规范化</td></tr>
-          <tr><td>钉住行为的检查</td><td><code>apps/web/scripts/check-web-split.mjs</code>（覆盖、收起、fork、close、surface）</td></tr>
+          <tr><td>钉住行为的检查</td><td><code>apps/web/scripts/runtime/check-web-split.mjs</code>（覆盖、收起、fork、close、surface）</td></tr>
         </tbody>
       </table>
     </section>

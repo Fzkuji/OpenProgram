@@ -32,7 +32,7 @@ def project(tmp_path, monkeypatch):
 
 @pytest.fixture
 def client(project):
-    from openprogram.webui.routes import file_search
+    from openprogram.webui.routes.files import file_search
     app = FastAPI()
     file_search.register(app)
     return TestClient(app)
@@ -196,7 +196,7 @@ def test_raw_rebases_legacy_session_attachment_after_real_migration(
     old_attachment.write_bytes(b"stale-source")
 
     app = FastAPI()
-    from openprogram.webui.routes import file_search
+    from openprogram.webui.routes.files import file_search
     file_search.register(app)
     client = TestClient(app)
     response = client.get("/api/file-raw", params={

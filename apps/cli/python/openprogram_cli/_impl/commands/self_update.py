@@ -7,9 +7,9 @@ import time
 
 
 def _cmd_self_update(args) -> int:
-    from openprogram.self_update import owner_repair as repair
-    from openprogram.self_update.launcher import launch_supervisor
-    from openprogram.self_update.verification_channel import _digest
+    from openprogram.self_update.repair import owner_repair as repair
+    from openprogram.self_update.delivery.launcher import launch_supervisor
+    from openprogram.self_update.verification.verification_channel import _digest
     try:
         if args.self_update_verb == "status":
             value = repair.status(args.update_id)

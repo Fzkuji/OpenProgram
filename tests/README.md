@@ -75,7 +75,7 @@ monkeypatch.
 
 ## JavaScript and interface tests
 
-- Web pure helper behavior: `apps/web/tests/*.test.mjs`, executed by `npm test`.
+- Web pure helper behavior: `apps/web/tests/**/*.test.mjs`, executed by `npm test`.
 - Web source structure: `apps/web/scripts/check-*.mjs`, only when structure itself is
   the contract.
 - Built-Web interaction: `tests/e2e/web/` with the `browser` marker.
@@ -83,8 +83,9 @@ monkeypatch.
 - Desktop: existing VM/fake-Electron component checks; CI runs
   `npm run check`.
 
-Keep Web Node test files directly under `apps/web/tests/`; the current test command
-does not recursively collect nested directories.
+Group Web Node tests by feature under `apps/web/tests/`. The test runner recursively
+collects every `*.test.mjs` file in deterministic order; helper and browser-entry files
+are not collected as tests.
 
 ## Required checks
 

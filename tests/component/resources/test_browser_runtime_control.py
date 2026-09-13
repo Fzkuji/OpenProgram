@@ -69,7 +69,7 @@ def _running_execution(tmp_path):
 
 def test_page_pause_is_rejected_without_pausing_canonical_execution(tmp_path, monkeypatch):
     from openprogram.browser_resources import BrowserResourceStore
-    from openprogram.webui.routes import processes
+    from openprogram.webui.routes.execution import processes
 
     monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
     db = SessionStore(tmp_path / "sessions")
@@ -152,7 +152,7 @@ def test_page_resume_is_rejected_without_resuming_canonical_execution(
     tmp_path, monkeypatch,
 ):
     from openprogram.browser_resources import BrowserResourceStore, writes_fenced
-    from openprogram.webui.routes import processes
+    from openprogram.webui.routes.execution import processes
 
     monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
     db = SessionStore(tmp_path / "sessions")

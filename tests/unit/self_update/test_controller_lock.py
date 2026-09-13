@@ -1,5 +1,5 @@
 """Controller locking works with native file APIs on each host."""
-from openprogram.self_update.supervisor import _controller_lock
+from openprogram.self_update.control.supervisor import _controller_lock
 
 
 def test_controller_lock_excludes_a_second_owner_and_releases(tmp_path):

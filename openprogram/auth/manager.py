@@ -247,7 +247,7 @@ class AuthManager:
         :meth:`report_failure`.
         """
         if profile_id is None:
-            from .active import get_active_profile
+            from .account.active import get_active_profile
             profile_id = get_active_profile(provider_id)
         return await self._acquire_recursive(provider_id, profile_id, visited=set())
 

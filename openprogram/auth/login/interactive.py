@@ -1,0 +1,502 @@
+"""Interactive auth wizard — arrow-key menus, multi-select, back-nav.
+
+OpenClaw uses `@clack/prompts`. The closest Python equivalent is
+`questionary` (prompt_toolkit-based); same three primitives:
+
+  * ``select(choices)``       — one of N, arrow keys
+  * ``checkbox(choices)``     — multi-select, space to toggle
+  * ``confirm(message)``      — y/n
+
+If questionary isn't installed (for example in a minimal development
+environment), every primitive falls back to plain
+``input()`` — same behaviour as before, just less ergonomic. No hard
+dependency at import time so ``openprogram providers list`` keeps
+working in environments that don't have questionary.
+
+Ctrl-C in questionary returns ``None`` from the prompt; treat that as
+"go back / cancel". The top-level :func:`run_interactive_setup` loops
+until the user picks Quit or sends EOF.
+
+All real work (scanning, adopting, login, account CRUD) is delegated to
+the same helpers that the non-interactive CLI uses — this module only
+handles presentation.
+"""
+from __future__ import annotations
+
+import sys
+from typing import Any, Callable, Optional
+
+try:  # optional dependency — see module docstring
+    import questionary
+    from questionary import Choice
+    _HAS_QUESTIONARY = True
+except ImportError:  # pragma: no cover — graceful degradation
+    questionary = None  # type: ignore[assignment]
+    Choice = None        # type: ignore[assignment]
+    _HAS_QUESTIONARY = False
+
+
+def _questionary_usable() -> bool:
+    """Combined "is questionary actually usable here?" check.
+
+    Wraps both the import test and the prompt_toolkit terminal probe
+    so call sites can replace ``_HAS_QUESTIONARY and sys.stdin.isatty()``
+    with one call that also catches Git Bash / MinTTY / non-native
+    Windows consoles where ``questionary.select(...).ask()`` would
+    raise ``NoConsoleScreenBufferError`` on first prompt.
+    """
+    if not _HAS_QUESTIONARY:
+        return False
+    if not sys.stdin.isatty():
+        return False
+    from openprogram._compat import prompt_toolkit_usable
+    return prompt_toolkit_usable()
+
+
+# ---------------------------------------------------------------------------
+# Public entry points
+# ---------------------------------------------------------------------------
+
+def run_interactive_setup() -> int:
+    """Top-level interactive menu, looping until the user picks
+    "Continue".
+
+    Shown by ``openprogram providers setup`` and by ``openprogram
+    setup``'s providers section. On every iteration we show what's
+    already imported so the user can judge whether to continue or add
+    more. Menu labels lead with what they DO ("Continue", "Add a
+    provider login") — never the ambiguous "Quit".
+
+    Returns 0 on clean exit.
+    """
+    if not _questionary_usable():
+        # Non-TTY stdin (test harness, CI, piped input) can't drive
+        # questionary's prompt_toolkit UI — it would raise reading from
+        # a closed fd. Fall back to the plain-input wizard, which still
+        # works under input()-style redirection.
+        from ..cli.setup import _run_setup as _plain
+        return _plain()
+
+    _banner()
+    while True:
+        has_any = _show_provider_status()
+
+        # Menu order + wording so the first-highlighted option is the
+        # expected default. If there's nothing imported yet, the most
+        # useful next action is importing — start there. Otherwise
+        # surface "Continue" first so users know they can move on.
+        choices: list[Any]
+        if has_any:
+            choices = [
+                Choice("Continue — use these credentials",    value="done"),
+                Choice("Scan & import discoverable",           value="scan"),
+                Choice("Add a provider login",                 value="login"),
+                Choice("Diagnose current pools",               value="doctor"),
+                Choice("Manage accounts",                      value="accounts"),
+            ]
+        else:
+            choices = [
+                Choice("Scan & import discoverable",           value="scan"),
+                Choice("Add a provider login",                 value="login"),
+                Choice("Skip (set up providers later)",        value="done"),
+                Choice("Manage accounts",                      value="accounts"),
+            ]
+        # unsafe_ask lets KeyboardInterrupt propagate. When called from
+        # `openprogram setup`'s providers section, the outer
+        # run_full_setup catches it and cancels the whole wizard —
+        # which is what users expect from Ctrl-C. When called standalone
+        # via `openprogram providers setup`, _cmd_setup catches it and
+        # prints the "Setup interrupted" message. Either way we never
+        # swallow Ctrl-C and silently bounce back to a menu.
+        pick = questionary.select(
+            "Providers — what now?",
+            choices=choices,
+            qmark="›",
+        ).unsafe_ask()
+
+        if pick is None or pick == "done":
+            return 0
+
+        if pick == "scan":
+            _action_scan_and_import()
+        elif pick == "login":
+            _action_pick_provider_and_login()
+        elif pick == "doctor":
+            _action_run_doctor()
+        elif pick == "accounts":
+            _action_accounts_menu()
+
+
+def _show_provider_status() -> bool:
+    """Print imported + detected-unimported credentials. Returns True
+    iff at least one pool has at least one credential.
+
+    Imported list comes from the store (authoritative). "Detected"
+    list runs the scan sources and filters out anything already
+    imported — so it only shows what would actually be added by
+    picking "Scan".
+    """
+    from ..store import get_store
+    try:
+        from ..sources import CodexCliSource
+        from ..sources import EnvApiKeySource
+        from ..sources import GhCliSource
+        from ..sources import QwenCliSource
+        from ..account.accounts import DEFAULT_ACCOUNT_NAME
+        from ..account.accounts import get_account_manager
+        from openprogram.providers.env_api_keys import PROVIDER_ENV_VARS
+    except Exception:
+        return False
+
+    store = get_store()
+    pools = store.list_pools()
+    imported_rows: list[str] = []
+    for p in pools:
+        if not p.credentials:
+            continue
+        sources = sorted({c.source for c in p.credentials})
+        imported_rows.append(f"  ✓ {p.provider_id}  ({', '.join(sources)})")
+
+    # Scan for unimported credentials. Cheap — the sources only read
+    # files in well-known paths.
+    pm = get_account_manager()
+    account = DEFAULT_ACCOUNT_NAME
+    account_obj = pm.get_account(account)
+    sources_list: list[Any] = [
+        CodexCliSource(account_id=account),
+        QwenCliSource(account_id=account),
+        GhCliSource(),
+    ]
+    for p_id, env_var in PROVIDER_ENV_VARS.items():
+        sources_list.append(EnvApiKeySource(
+            provider_id=p_id, env_var=env_var, account_id=account,
+        ))
+
+    available_rows: list[str] = []
+    for src in sources_list:
+        try:
+            for cred in src.try_import(account_obj.root):
+                existing = store.find_pool(cred.provider_id, account)
+                if existing and any(c.source == cred.source
+                                    for c in existing.credentials):
+                    continue
+                available_rows.append(
+                    f"  · {cred.provider_id}  (via {src.source_id})"
+                )
+        except Exception:
+            continue
+
+    if imported_rows:
+        _say("\nImported:")
+        for row in imported_rows:
+            _say(row)
+    if available_rows:
+        _say("\nAvailable to import:")
+        for row in available_rows:
+            _say(row)
+    if not imported_rows and not available_rows:
+        _say("\nNo providers imported yet, nothing auto-detected.\n"
+             "You can add one via `Scan` (re-tries detection) or "
+             "`Add a provider login`.")
+    _say("")
+    return bool(imported_rows)
+
+
+def pick_login_method_interactive(
+    provider: str, choices: list[tuple[str, str]],
+) -> Optional[str]:
+    """Arrow-key picker for ``openprogram providers login <prov>`` method.
+
+    Returns the chosen method id, or ``None`` if the user cancelled
+    (Ctrl-C / EOF). Caller treats None as "abort login".
+
+    Falls back to the numeric picker the CLI used before when
+    questionary isn't available.
+    """
+    if not _questionary_usable():
+        return None  # signal to caller: fall through to numeric prompt
+
+    return questionary.select(
+        f"How do you want to log into {provider}?",
+        choices=[Choice(label, value=mid) for mid, label in choices],
+        qmark="›",
+    ).unsafe_ask()
+
+
+# ---------------------------------------------------------------------------
+# Top-menu actions
+# ---------------------------------------------------------------------------
+
+def _action_scan_and_import() -> None:
+    from ..cli.formatting import _payload_summary
+    from ..sources import CodexCliSource
+    from ..sources import EnvApiKeySource
+    from ..sources import GhCliSource
+    from ..sources import QwenCliSource
+    from ..account.accounts import DEFAULT_ACCOUNT_NAME
+    from ..account.accounts import get_account_manager
+    from ..store import get_store
+
+    store = get_store()
+    pm = get_account_manager()
+    account = _pick_account(pm, default=DEFAULT_ACCOUNT_NAME) or DEFAULT_ACCOUNT_NAME
+    account_obj = pm.get_account(account)
+
+    sources: list[Any] = [
+        CodexCliSource(account_id=account),
+        QwenCliSource(account_id=account),
+        GhCliSource(),
+    ]
+    from openprogram.providers.env_api_keys import PROVIDER_ENV_VARS
+    for p_id, env_var in PROVIDER_ENV_VARS.items():
+        sources.append(
+            EnvApiKeySource(provider_id=p_id, env_var=env_var, account_id=account),
+        )
+
+    candidates: list[tuple[Any, Any]] = []
+    for src in sources:
+        try:
+            for cred in src.try_import(account_obj.root):
+                candidates.append((src, cred))
+        except Exception:
+            continue
+
+    if not candidates:
+        _say("  Nothing discoverable.")
+        return
+
+    # Pre-check items whose (provider, source) isn't already in the pool
+    # so re-runs default to "nothing new" rather than "import everything".
+    choices = []
+    for i, (src, cred) in enumerate(candidates):
+        cred.account_id = account
+        existing = store.find_pool(cred.provider_id, cred.account_id)
+        already = existing is not None and any(
+            c.source == cred.source for c in existing.credentials
+        )
+        label = (f"{src.source_id:24s} → {cred.provider_id}  "
+                 f"{_payload_summary(cred)}"
+                 + ("  (already imported)" if already else ""))
+        choices.append(Choice(
+            label, value=i, checked=not already, disabled=None,
+        ))
+
+    picks = questionary.checkbox(
+        "Select credentials to import (space to toggle):",
+        choices=choices,
+        qmark="›",
+    ).unsafe_ask()
+    if not picks:
+        _say("  No selection.")
+        return
+
+    from ..cli.formatting import _payload_summary as _preview
+    adopted = 0
+    for i in picks:
+        src, cred = candidates[i]
+        existing = store.find_pool(cred.provider_id, cred.account_id)
+        if existing and any(c.source == cred.source for c in existing.credentials):
+            continue  # user left it checked but it's already in — skip
+        store.add_credential(cred)
+        adopted += 1
+        _say(f"  + {cred.provider_id}/{cred.account_id}: {_preview(cred)}")
+    _say(f"  Imported {adopted}.")
+    # First-run convenience: subscription providers have no list-models API, so
+    # adopting their credentials should also enable their default model set
+    # into config (no-op if the provider already has spec rows).
+    if adopted:
+        from .login_enable import seed_default_models_if_logged_in
+        for pid in ("claude-code", "openai-codex"):
+            written = seed_default_models_if_logged_in(pid)
+            if written:
+                _say(f"  enabled default {pid} models: {', '.join(written)}")
+
+
+def _action_pick_provider_and_login() -> None:
+    from ..cli.login import _cmd_login
+    from ..cli.login import _available_login_methods
+    from ..account.aliases import known_aliases
+    from ..account.accounts import DEFAULT_ACCOUNT_NAME
+    from ..account.accounts import get_account_manager
+    from ..store import get_store
+
+    # Popular canonical providers, plus anything we already have a pool
+    # for (so the user can re-login / add a second credential).
+    popular = [
+        ("openai-codex",      "OpenAI via Codex CLI (ChatGPT account)"),
+        ("anthropic",         "Anthropic (Claude)"),
+        ("gemini-subscription", "Google Gemini via CLI"),
+        ("github-copilot",    "GitHub Copilot"),
+        ("openai",            "OpenAI (raw API key)"),
+        ("openrouter",        "OpenRouter"),
+        ("google",            "Google Gemini (direct)"),
+        ("groq",              "Groq"),
+        ("xai",               "xAI (Grok)"),
+        ("mistral",           "Mistral"),
+    ]
+    store = get_store()
+    pm = get_account_manager()
+    account = _pick_account(pm, default=DEFAULT_ACCOUNT_NAME) or DEFAULT_ACCOUNT_NAME
+
+    existing = {p.provider_id for p in store.list_pools() if p.account_id == account}
+    popular_ids = {pid for pid, _ in popular}
+    choices = []
+    for prov_id, label in popular:
+        tag = "✓ " if prov_id in existing else "  "
+        choices.append(Choice(f"{tag}{prov_id:22s} — {label}", value=prov_id))
+    # Surface any already-configured provider that isn't in the popular
+    # list (e.g. a community provider added earlier) so it's re-selectable.
+    for prov_id in sorted(existing - popular_ids):
+        choices.append(Choice(f"✓ {prov_id:22s} — (configured)", value=prov_id))
+    # Escape hatch: configure ANY provider by id — the popular list is a
+    # shortcut, not the full set. Matches the web UI, which lists every
+    # provider (incl. community ones like minimax-cn / deepseek / kimi).
+    choices.append(Choice("  Other — enter a provider id…", value="__other__"))
+    choices.append(Choice("← Back", value="__back__"))
+
+    provider = questionary.select(
+        f"Pick a provider to log into  (account: {account})",
+        choices=choices,
+        qmark="›",
+    ).unsafe_ask()
+    # questionary.Choice replaces `value=None` with the title, so our
+    # "← Back" entries come back as the literal string, never None.
+    # Use a sentinel value and match on it here.
+    if provider is None or provider == "__back__":
+        return
+    if provider == "__other__":
+        typed = questionary.text(
+            "Provider id (see the web UI's LLM Providers list, "
+            "e.g. minimax-cn, deepseek):",
+            qmark="›",
+        ).unsafe_ask()
+        if not typed or not typed.strip():
+            return
+        from ..account.aliases import resolve as _canonical
+        provider = _canonical(typed.strip())
+
+    methods = _available_login_methods(provider)
+    if not methods:
+        _say(f"  No login method implemented for {provider!r}.")
+        return
+    method = pick_login_method_interactive(provider, methods)
+    if method is None:
+        return
+
+    # Hand off to the shared login implementation — it does the
+    # paste/import work and writes to the store.
+    _cmd_login(provider, account, method)
+
+
+def _action_run_doctor() -> None:
+    from ..cli.doctor import run_doctor
+    from ..cli.doctor import _print_doctor_report
+    report = run_doctor()
+    _print_doctor_report(
+        report["pools_checked"], report["accounts_checked"], report["findings"],
+    )
+
+
+def _action_list_pools() -> None:
+    from ..cli.catalog import _cmd_list
+    _cmd_list(profile_filter=None, as_json=False)
+
+
+def _action_accounts_menu() -> None:
+    from ..account.accounts import get_account_manager
+    from ..account.accounts import AuthConfigError
+    pm = get_account_manager()
+
+    while True:
+        accounts = pm.list_accounts()
+        labels = [Choice(f"{p.name:16s}  {p.display_name or '-'}", value=p.name)
+                  for p in accounts]
+        labels.append(Choice("+ Create new account", value="__create__"))
+        labels.append(Choice("← Back",               value="__back__"))
+
+        pick = questionary.select(
+            "Accounts", choices=labels, qmark="›",
+        ).unsafe_ask()
+        if pick is None or pick == "__back__":
+            return
+
+        if pick == "__create__":
+            name = questionary.text("Account name:").unsafe_ask()
+            if not name:
+                continue
+            display = questionary.text(
+                "Display name (optional):", default="",
+            ).unsafe_ask() or ""
+            try:
+                pm.create_account(name.strip(), display_name=display)
+                _say(f"  Created account {name}.")
+            except AuthConfigError as e:
+                _say(f"  Failed: {e}")
+            continue
+
+        # Existing account selected — offer delete or back.
+        sub = questionary.select(
+            f"Account {pick!r}",
+            choices=[
+                Choice("Delete",  value="delete"),
+                Choice("← Back",  value="__back__"),
+            ],
+            qmark="›",
+        ).unsafe_ask()
+        if sub == "delete":
+            ok = questionary.confirm(
+                f"Delete account {pick!r} and all its credentials?",
+                default=False,
+            ).unsafe_ask()
+            if ok:
+                try:
+                    pm.delete_account(pick)
+                    _say(f"  Deleted {pick}.")
+                except AuthConfigError as e:
+                    _say(f"  Failed: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Small helpers
+# ---------------------------------------------------------------------------
+
+def _pick_account(pm, *, default: str) -> Optional[str]:
+    """Ask which account to act on. Returns None on cancel.
+
+    Never pass default= to questionary.select — questionary flags the
+    default-matching choice permanently and the cursor-row highlight
+    breaks for that row (see setup._qstyle docstring). We
+    reorder instead so the default sits at index 0 where the initial
+    cursor lands.
+    """
+    accounts = pm.list_accounts()
+    if len(accounts) == 1:
+        return accounts[0].name
+    ordered = ([p for p in accounts if p.name == default]
+               + [p for p in accounts if p.name != default])
+    choices = [Choice(p.name, value=p.name) for p in ordered]
+    return questionary.select(
+        "Which account?",
+        choices=choices,
+        qmark="›",
+    ).unsafe_ask()
+
+
+def _banner() -> None:
+    print()
+    print("═" * 60)
+    print("  OpenProgram — provider setup")
+    print("═" * 60)
+    print("  Arrow keys to navigate, Space to toggle, Enter to confirm,")
+    print("  Ctrl-C to cancel / go back.")
+    print()
+
+
+def _say(msg: str) -> None:
+    print(msg, file=sys.stdout, flush=True)
+
+
+__all__ = [
+    "run_interactive_setup",
+    "pick_login_method_interactive",
+]

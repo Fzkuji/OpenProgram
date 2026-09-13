@@ -276,7 +276,7 @@ def test_owner_loss_does_not_replay_tool_without_continuation_record(tmp_path):
 
 
 def test_owner_loss_preserves_unknown_tool_result_despite_checkpoint(tmp_path, monkeypatch):
-    from tests.component.agent.test_agent_durable_safe_point import _real_provider_safe_point
+    from tests.component.agent.execution.test_agent_durable_safe_point import _real_provider_safe_point
 
     store, service, active, running, checkpoint, _ = _real_provider_safe_point(tmp_path, pause=False)
     effects = EffectStore(store)
@@ -322,7 +322,7 @@ def test_owner_loss_preserves_unknown_tool_result_despite_checkpoint(tmp_path, m
 
 def test_startup_does_not_replay_unknown_tool_result(tmp_path, monkeypatch):
     from openprogram.execution.startup import recover_execution_startup
-    from tests.component.agent.test_agent_durable_safe_point import _real_provider_safe_point
+    from tests.component.agent.execution.test_agent_durable_safe_point import _real_provider_safe_point
 
     store, service, active, running, checkpoint, _ = _real_provider_safe_point(tmp_path, pause=False)
     from openprogram.agent.dispatcher.types import TurnRequest
@@ -377,7 +377,7 @@ def test_legacy_completed_tool_without_checkpoint_is_not_replayed(tmp_path):
 
 
 def test_legacy_checkpoint_before_completed_tool_does_not_replay_tool(tmp_path):
-    from tests.component.agent.test_agent_durable_safe_point import _real_provider_safe_point
+    from tests.component.agent.execution.test_agent_durable_safe_point import _real_provider_safe_point
     store, service, active, running, checkpoint, _ = _real_provider_safe_point(tmp_path, pause=False)
     effects = EffectStore(store)
     effects.register(
@@ -399,7 +399,7 @@ def test_legacy_checkpoint_before_completed_tool_does_not_replay_tool(tmp_path):
 
 def test_completed_tool_cursor_resumes_when_next_provider_is_interrupted(tmp_path):
     import threading
-    from tests.component.agent.test_agent_durable_safe_point import _real_provider_safe_point
+    from tests.component.agent.execution.test_agent_durable_safe_point import _real_provider_safe_point
     from openprogram.agent.continuation import AgentContinuation
     from openprogram.agent.dispatcher.types import TurnRequest
     from openprogram.agent.production_driver import AgentProductionDriver

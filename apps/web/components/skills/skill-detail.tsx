@@ -1,6 +1,6 @@
 "use client";
 
-import { useSkills } from "@/lib/state/skills-store";
+import { useSkills } from "@/lib/abilities/skills-store";
 import { Markdown } from "@/lib/format-utils/markdown";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/lib/i18n";

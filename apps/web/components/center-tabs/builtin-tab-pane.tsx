@@ -50,15 +50,15 @@ import {
   subscribeBookmarks,
   type BookmarkFolder,
   type BookmarkNode,
-} from "@/lib/bookmarks";
+} from "@/lib/tabs/bookmarks";
 import {
   desktopBridge,
   type DesktopDownloadEntry,
   type DesktopHistoryEntry,
-} from "@/lib/desktop-bridge";
-import { useCenterTabs, type BuiltinPage } from "@/lib/state/center-tabs-store";
+} from "@/lib/desktop/desktop-bridge";
+import { useCenterTabs, type BuiltinPage } from "@/lib/tabs/center-tabs-store";
 import { useTranslation } from "@/lib/i18n";
-import { groupHistoryByLocalDate } from "@/lib/history-groups";
+import { groupHistoryByLocalDate } from "@/lib/chat/history-groups";
 import { SearchInput } from "@/components/ui/search-input";
 import styles from "./center-tabs.module.css";
 

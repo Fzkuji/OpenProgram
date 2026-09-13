@@ -10,12 +10,12 @@
  */
 import {
   findCenterTabGroup,
-} from "@/lib/state/center-tab-groups";
-import { useCenterTabs } from "@/lib/state/center-tabs-store";
+} from "@/lib/tabs/center-tab-groups";
+import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import type {
   dragCoordinator,
   TabDropIntent,
-} from "@/lib/tab-drag-coordinator";
+} from "@/lib/tabs/tab-drag-coordinator";
 
 export function useTabDropActions() {
   const moveTab = useCenterTabs((s) => s.moveTab);

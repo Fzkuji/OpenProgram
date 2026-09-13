@@ -12,7 +12,7 @@
 import { useEffect } from "react";
 import { createHistoryFragmentDecoder } from "./history-fragments";
 import { executionMessageIds, pendingExecutionReplayRequests } from "./execution-message-recovery";
-import { useFunctions } from "@/lib/state/functions-store";
+import { useFunctions } from "@/lib/abilities/functions-store";
 
 import { permissionSnapshotPatch } from "@/lib/session-store/permission-state";
 import { consumeCommandErrorFrame } from "@/lib/net/action-error";
@@ -46,7 +46,7 @@ import { mirrorUpsertConv } from "@/lib/runtime-bridge/conv-store-mirror";
 import { runtimeState, setSocket } from "@/lib/runtime-bridge/state";
 import { applyChatWsMessage, clearSessionByMsgId } from "@/lib/net/chat-stream";
 import { waitForOwnerAuthBootstrap } from "@/lib/net/owner-auth-bootstrap";
-import { notifyDesktopSessionLoaded } from "@/lib/self-update-reopen";
+import { notifyDesktopSessionLoaded } from "@/lib/desktop/self-update-reopen";
 import { translateText } from "@/lib/i18n";
 import { getQueryClient } from "@/lib/query-client";
 import {
@@ -63,17 +63,17 @@ import {
 import { refreshStatusSource, setRunning, updateStatus } from "@/lib/runtime-bridge/ui";
 import { refreshChannelBadge } from "@/lib/runtime-bridge/conversations";
 import { loadExecutionCursors, recordExecutionCursor } from "@/lib/net/execution-cursor";
-import { pushStatusBadge } from "@/lib/top-bar-sync";
+import { pushStatusBadge } from "@/lib/tabs/top-bar-sync";
 import {
   forgetSystemAccessWait,
   rememberSystemAccessWait,
-} from "@/lib/system-access-wait-state";
+} from "@/lib/access/system-access-wait-state";
 import {
   clearPendingFirstAck,
   clearPendingUserText,
   hasPendingFirstAck,
   hasPendingUserText,
-} from "@/lib/pending-user-text";
+} from "@/lib/chat/pending-user-text";
 
 /** Release only a chat turn rejected before chat_ack. The composer owns the
  * draft and attachments, so this intentionally never invokes ACK cleanup. */
@@ -288,7 +288,7 @@ export function useWS(): void {
           // File-system watcher fired — refresh the skills list so the
           // /skills page, Discovery counts, and slash menu reflect the
           // change without any user action.
-          import("@/lib/state/skills-store").then(({ useSkills }) => {
+          import("@/lib/abilities/skills-store").then(({ useSkills }) => {
             useSkills.getState().fetchSkills();
           });
           return true;
@@ -298,7 +298,7 @@ export function useWS(): void {
           // Both mean "the plugins list is stale" — update_available is
           // broadcast by the server's update poll (server.py) and rides
           // the same refresh so the upgrade hint can surface.
-          import("@/lib/state/plugins-store").then(({ usePluginsStore }) => {
+          import("@/lib/abilities/plugins-store").then(({ usePluginsStore }) => {
             usePluginsStore.getState().refresh();
           });
           return true;
@@ -307,7 +307,7 @@ export function useWS(): void {
           // `programs install`) and the backend re-scanned — refresh the
           // function catalogue so its new functions show up live, no
           // reload needed. Same shape as skills/plugins above.
-          import("@/lib/state/functions-actions").then(({ refreshFunctionsList }) => {
+          import("@/lib/abilities/functions-actions").then(({ refreshFunctionsList }) => {
             refreshFunctionsList();
           });
           return true;
@@ -711,7 +711,7 @@ export function useWS(): void {
                 dd.id,
                 head?.status,
               );
-              void import("@/lib/state/send-queue").then((m) =>
+              void import("@/lib/chat/send-queue").then((m) =>
                 m.reconcileAfterSessionLoad(dd.id as string, dd.run_active === true),
               );
             }
@@ -820,7 +820,7 @@ export function useWS(): void {
             | { session_id?: unknown; run_active?: unknown }
             | undefined;
           if (typeof dd?.session_id === "string" && dd.session_id) {
-            void import("@/lib/state/send-queue").then((m) =>
+            void import("@/lib/chat/send-queue").then((m) =>
               m.reconcileAfterSessionLoad(
                 dd.session_id as string,
                 dd.run_active === true,
@@ -948,7 +948,7 @@ export function useWS(): void {
         // A queue item whose socket write failed is retained in renderer
         // memory. Query background sessions without load_session: loading a
         // transcript also changes this socket's focused-session marker.
-        void import("@/lib/state/send-queue").then((m) => {
+        void import("@/lib/chat/send-queue").then((m) => {
           const queued = Object.keys(m.useSendQueue.getState().queues);
           const focused = runtimeState.currentSessionId;
           for (const sid of new Set(queued.filter((id) => id !== focused))) {

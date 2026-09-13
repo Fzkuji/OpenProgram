@@ -23,8 +23,8 @@ import { builtinPageLabel } from "./builtin-page-label";
 import {
   findCenterTabGroup,
   splitCandidates,
-} from "@/lib/state/center-tab-groups";
-import { useCenterTabs, type CenterTab } from "@/lib/state/center-tabs-store";
+} from "@/lib/tabs/center-tab-groups";
+import { useCenterTabs, type CenterTab } from "@/lib/tabs/center-tabs-store";
 import styles from "./center-tabs.module.css";
 
 /** Secondary line under a candidate's title: origin for web tabs, path

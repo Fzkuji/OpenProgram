@@ -3,7 +3,7 @@
 import { useCallback } from "react";
 
 import { showToast } from "@/lib/format-utils/toast";
-import { normalizeFunctionArguments } from "@/lib/function-invocation";
+import { normalizeFunctionArguments } from "@/lib/execution/function-invocation";
 import { useTranslation } from "@/lib/i18n";
 import { useSessionStore } from "@/lib/session-store";
 

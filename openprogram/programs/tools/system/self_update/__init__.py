@@ -61,7 +61,7 @@ def _require_update_backend() -> None:
 
 
 def _launch_supervisor(update_id: str) -> None:
-    from openprogram.self_update.launcher import launch_supervisor
+    from openprogram.self_update.delivery.launcher import launch_supervisor
 
     launch_supervisor(update_id)
 
@@ -326,15 +326,20 @@ def _prepare_update(
         iteration_policy=policy,
     )
     try:
-        from openprogram.self_update.verifier_config import freeze_verifier_config, config_evidence
-        from openprogram.self_update.diagnosis import freeze_config, config_evidence as diagnosis_evidence
-        from openprogram.self_update.continuation import freeze_config as freeze_continuation, config_evidence as continuation_evidence
+        from openprogram.self_update.verification.verifier_config import freeze_verifier_config
+        from openprogram.self_update.verification.verifier_config import config_evidence
+        from openprogram.self_update.repair.diagnosis import freeze_config
+        from openprogram.self_update.repair.diagnosis import config_evidence as diagnosis_evidence
+        from openprogram.self_update.control.continuation import freeze_config as freeze_continuation
+        from openprogram.self_update.control.continuation import config_evidence as continuation_evidence
         continuation_config = freeze_continuation(request, req)
         verifier_config = freeze_verifier_config(request, req, verification_plan=verification_plan)
         diagnosis_config = freeze_config(request, verifier_config)
-        from openprogram.self_update.source_repair import freeze_config as freeze_repair, config_evidence as repair_evidence
+        from openprogram.self_update.repair.source_repair import freeze_config as freeze_repair
+        from openprogram.self_update.repair.source_repair import config_evidence as repair_evidence
         repair_config = freeze_repair(request, verifier_config, candidate_path=str(candidate), branch_name=worktree.branch_name)
-        from openprogram.self_update.next_candidate import root_config, config_evidence as iteration_evidence
+        from openprogram.self_update.repair.next_candidate import root_config
+        from openprogram.self_update.repair.next_candidate import config_evidence as iteration_evidence
         iteration_config = root_config(request)
         if policy.mode is IterationMode.BOUNDED_AUTO and (policy.deadline is None or policy.deadline <= time.time()
                                                         or not policy.required_tests):
@@ -406,7 +411,8 @@ def _status_update(
     *, update_id: str | None, req: Any, store: SelfUpdateStore
 ) -> dict[str, Any]:
     _require_local_owner(req)
-    from openprogram.self_update.projection import ProjectionAccessError, read_status
+    from openprogram.self_update.control.projection import ProjectionAccessError
+    from openprogram.self_update.control.projection import read_status
     from openprogram.self_update.types import UpdateNotFoundError
     try:
         return read_status(store, session_id=req.session_id, update_id=update_id)
@@ -536,7 +542,8 @@ def self_update_cancel(
     toolset=["core"], path_params={},
 )
 def self_update_repair_cancel(update_id: str) -> dict[str, Any]:
-    from openprogram.self_update.source_repair import _finish, read_result
+    from openprogram.self_update.repair.source_repair import _finish
+    from openprogram.self_update.repair.source_repair import read_result
     req, _assistant_id = _turn_context()
     _require_local_owner(req)
     store = SelfUpdateStore()
@@ -560,7 +567,7 @@ def self_update_repair_cancel(update_id: str) -> dict[str, Any]:
     path_params={},
 )
 def self_update_observe(entry: str = "", check_id: str | None = None) -> dict[str, Any]:
-    from openprogram.self_update.verification_channel import observe
+    from openprogram.self_update.verification.verification_channel import observe
     result = observe(entry, check_id=check_id)
     if result["entry"] == "ui:main":
         from openprogram.agent.types import AgentToolResult
@@ -579,7 +586,7 @@ def self_update_observe(entry: str = "", check_id: str | None = None) -> dict[st
 )
 def self_update_retry(update_id: str, candidate_sha: str) -> dict[str, Any]:
     _require_update_backend()
-    from openprogram.self_update.next_candidate import submit
+    from openprogram.self_update.repair.next_candidate import submit
     req, assistant_id = _turn_context()
     return submit(update_id, candidate_sha, req=req, assistant_id=assistant_id)
 
@@ -589,7 +596,7 @@ def self_update_retry(update_id: str, candidate_sha: str) -> dict[str, Any]:
     description="Stop this owner session's entire self-update iteration, including diagnosis, repair, tests and pending submission. An activated transaction still completes verification or safe rollback.",
 )
 def self_update_iteration_cancel(update_id: str) -> dict[str, Any]:
-    from openprogram.self_update.next_candidate import cancel
+    from openprogram.self_update.repair.next_candidate import cancel
     req, _ = _turn_context()
     return cancel(update_id, req)
 

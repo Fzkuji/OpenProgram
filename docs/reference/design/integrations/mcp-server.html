@@ -330,7 +330,7 @@
     </div>
   </div>
 
-  <div class="note"><b>已有契约测试</b>：<code>tests/component/webui/test_diagnostic_mcp_route_contracts.py</code> 钉住
+  <div class="note"><b>已有契约测试</b>：<code>tests/component/webui/runtime/test_diagnostic_mcp_route_contracts.py</code> 钉住
     <code>/api/doctor</code> 的 <code>{"results", "all_ok"}</code>、<code>/api/mcp/servers</code> 的 15 键 status 字典、
     以及缺失 server 的 404 形状。三个测试都新建裸 <code>FastAPI()</code> 再 <code>register(app)</code>，所以 <code>OwnerAuthMiddleware</code> 不在路径上；断言用精确相等，加字段就挂。</div>
 

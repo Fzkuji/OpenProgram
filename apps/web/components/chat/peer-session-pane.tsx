@@ -22,15 +22,15 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { useMessageIds, useSessionStore } from "@/lib/session-store";
-import { useCenterTabs } from "@/lib/state/center-tabs-store";
-import { isChatAtBottom, readBottomPadding, readComposerHeight, readChatScroll, writeChatScroll } from "@/lib/state/chat-scroll";
+import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
+import { isChatAtBottom, readBottomPadding, readComposerHeight, readChatScroll, writeChatScroll } from "@/lib/chat/chat-scroll";
 import {
   RECYCLE_MIN_ROWS,
   collectAlwaysLive,
   decideLiveRows,
   heightsFor,
   noteChatWidth,
-} from "@/lib/state/message-window";
+} from "@/lib/chat/message-window";
 import { getSocket } from "@/lib/runtime-bridge/state";
 import { wsSend } from "@/components/sidebar/sessions-list/helpers";
 import { Composer } from "./composer";

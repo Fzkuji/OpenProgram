@@ -6,7 +6,7 @@
  */
 
 import { useSessionStore } from "@/lib/session-store";
-import { isChatAtBottom, readBottomPadding, readComposerHeight } from "@/lib/state/chat-scroll";
+import { isChatAtBottom, readBottomPadding, readComposerHeight } from "@/lib/chat/chat-scroll";
 import { escHtml, renderMathInChat } from "./markdown-render";
 
 export { escHtml, renderMathInChat, renderMd, sanitizeHtml } from "./markdown-render";

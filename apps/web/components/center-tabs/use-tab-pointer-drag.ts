@@ -22,9 +22,9 @@ import {
   SWAP_OVERLAP_RATIO,
   type TabDragSubject,
   type TabDropIntent,
-} from "@/lib/tab-drag-coordinator";
-import { buildTransferPayload, desktopBridge } from "@/lib/desktop-bridge";
-import { useCenterTabs, type CenterTab } from "@/lib/state/center-tabs-store";
+} from "@/lib/tabs/tab-drag-coordinator";
+import { buildTransferPayload, desktopBridge } from "@/lib/desktop/desktop-bridge";
+import { useCenterTabs, type CenterTab } from "@/lib/tabs/center-tabs-store";
 import { useTranslation } from "@/lib/i18n";
 import {
   cancelCoordinator,

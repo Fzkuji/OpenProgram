@@ -5,7 +5,7 @@ package exposes the durable request/state contract and the dispatcher handoff
 that releases a prepared request only after its origin turn is durable.
 """
 
-from .handoff import release_prepared_update
+from .control.handoff import release_prepared_update
 from .store import SelfUpdateStore
 from .types import (
     SCHEMA_VERSION,

@@ -15,7 +15,7 @@ from openprogram.store.snapshot.checkpoint import manifest
 def store(tmp_path: Path, monkeypatch):
     value = SessionStore(tmp_path / "sessions")
     monkeypatch.setattr(
-        "openprogram.store.session.session_store._default_store", value,
+        'openprogram.store.session.session_store.shared._default_store', value,
         raising=False,
     )
     monkeypatch.setattr(

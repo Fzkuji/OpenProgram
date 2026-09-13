@@ -81,7 +81,7 @@ adding configured models as if they were fresh.
 ```
 connect / session switch / model switch / every turn ack+settle
   → frontend loadAgentSettings()  (lib/runtime-bridge/providers.ts)
-      → GET /api/agent_settings       (apps/server/openprogram_server/_webui/routes/runtime.py)
+      → GET /api/agent_settings       (apps/server/openprogram_server/_webui/routes/execution/runtime.py)
       chat.fast = supports_fast(session's provider, model)   ← recomputed
   → zustand agentSettings.chat.fast
   → composer re-renders: shows/hides the Fast menu item and chip
@@ -110,7 +110,7 @@ openprogram/providers/anthropic/{anthropic,_claude_code_direct_runtime}.py  Clau
 openprogram/providers/openai_codex/list_models.py                    official endpoint fetch + normalise (fast/thinking/context source)
 apps/server/openprogram_server/_webui/_model_listing/fetchers/__init__.py  orchestration: passes through fetcher fast/thinking, enrich can't overwrite
 apps/server/openprogram_server/_webui/_model_listing/listing.py        supports_fast entry; list_models_for_provider prefers fetcher thinking
-apps/server/openprogram_server/_webui/routes/runtime.py                /api/agent_settings emits chat.fast
+apps/server/openprogram_server/_webui/routes/execution/runtime.py                /api/agent_settings emits chat.fast
 apps/web/lib/session-store/types.ts                     AgentBadgeInfo.fast type
 apps/web/components/chat/composer/index.tsx             toggle visibility + send gate
 ```

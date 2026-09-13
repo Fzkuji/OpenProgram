@@ -16,7 +16,7 @@ web 端不只是"带项目 chip 的聊天"，而是一个工作区：项目文�
 | 右侧栏骨架（history/detail/context 视图） | `apps/web/components/right-sidebar/` | 聊天概览面板 |
 | Memory 页编辑器（edit/preview 模式、保存） | `apps/web/components/memory/` | 文件编辑（第 5 档） |
 | `wsRequest` + ws action 注册机制 | `apps/web/lib/net/ws-request.ts`、`apps/server/openprogram_server/server.py` | 全部新 API |
-| `/api/pick-folder` 原生目录选择 | `apps/server/openprogram_server/_webui/routes/workdir.py` | 添加项目 |
+| `/api/pick-folder` 原生目录选择 | `apps/server/openprogram_server/_webui/routes/files/workdir.py` | 添加项目 |
 
 项目文件 WS API、文件树、文件查看器和中心文件 Tab 已经实现。剩余工作是：(a) 组合
 这些能力的 `/projects/[id]` 路由；(b) 聊天视图改成**按 sessionId 可挂载**；(c) 会话
@@ -24,7 +24,7 @@ Overview 面板。
 
 ## 2. 后端：项目文件 API
 
-已实现的模块 `apps/server/openprogram_server/_webui/ws_actions/files.py` 和 `files_ws.py`
+已实现的模块 `apps/server/openprogram_server/_webui/ws_actions/files/__init__.py` 和 `files_ws.py`
 按既有方式注册。
 
 | Action | 请求 | 应答 |

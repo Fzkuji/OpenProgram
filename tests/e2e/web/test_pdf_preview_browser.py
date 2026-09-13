@@ -15,9 +15,9 @@ PDF_FIXTURE = (
 
 @pytest.fixture(scope="module")
 def pdf_bundle(tmp_path_factory):
-    subprocess.run(["node", "apps/web/scripts/prepare-document-assets.mjs"], check=True)
+    subprocess.run(["node", "apps/web/scripts/runtime/prepare-document-assets.mjs"], check=True)
     target = tmp_path_factory.mktemp("pdf-preview") / "bundle.js"
-    subprocess.run(["node", "apps/web/tests/build-document-window-browser.mjs", str(target),
+    subprocess.run(["node", "apps/web/tests/files/build-document-window-browser.mjs", str(target),
                     "./document-preview-browser-entry.tsx"], check=True)
     return target.read_text()
 

@@ -11,8 +11,8 @@ from openprogram.agentic_programming.function import _current_runtime as _rt_var
 def test_installs_and_resets_store(monkeypatch, tmp_path):
     # Point the default store at a temp dir so we don't touch ~/.openprogram.
     from openprogram.store.session import session_store as ss
-    monkeypatch.setattr(ss, "_default_store", None, raising=False)
-    monkeypatch.setattr(ss, "_default_root", lambda: tmp_path / "sessions", raising=False)
+    monkeypatch.setattr(ss.shared, "_default_store", None, raising=False)
+    monkeypatch.setattr(ss.shared, "_default_root", lambda: tmp_path / "sessions", raising=False)
 
     assert _store_var.get(None) is None  # standalone before
     with session_context(create_runtime_if_none=False) as h:
@@ -28,8 +28,8 @@ def test_installs_and_resets_store(monkeypatch, tmp_path):
 
 def test_reuses_passed_session_id(monkeypatch, tmp_path):
     from openprogram.store.session import session_store as ss
-    monkeypatch.setattr(ss, "_default_store", None, raising=False)
-    monkeypatch.setattr(ss, "_default_root", lambda: tmp_path / "sessions", raising=False)
+    monkeypatch.setattr(ss.shared, "_default_store", None, raising=False)
+    monkeypatch.setattr(ss.shared, "_default_root", lambda: tmp_path / "sessions", raising=False)
 
     with session_context(session_id="mysess", create_runtime_if_none=False) as h1:
         assert h1.session_id == "mysess"
@@ -42,8 +42,8 @@ def test_reuses_passed_session_id(monkeypatch, tmp_path):
 
 def test_none_mints_new_id_each_unrelated_call(monkeypatch, tmp_path):
     from openprogram.store.session import session_store as ss
-    monkeypatch.setattr(ss, "_default_store", None, raising=False)
-    monkeypatch.setattr(ss, "_default_root", lambda: tmp_path / "sessions", raising=False)
+    monkeypatch.setattr(ss.shared, "_default_store", None, raising=False)
+    monkeypatch.setattr(ss.shared, "_default_root", lambda: tmp_path / "sessions", raising=False)
 
     ids = []
     for _ in range(2):

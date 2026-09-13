@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { Box, ExternalLink, Globe, Monitor, PictureInPicture2, Server, X } from "lucide-react";
 import { SectionHeader } from "@/components/sidebar/section-header";
-import { useWebTabPip } from "@/lib/state/web-tab-pip-store";
-import { useCenterTabs } from "@/lib/state/center-tabs-store";
+import { useWebTabPip } from "@/lib/browser/web-tab-pip-store";
+import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import {
   existingResourceTabId,
   getPreviewPreference,
@@ -18,15 +18,15 @@ import {
   sessionResourceRows,
   useBrowserResourceStore,
   type SessionResource,
-} from "@/lib/state/session-resources";
+} from "@/lib/chat/session-resources";
 import {
   pendingCloseRequest,
   requestCloseBrowserPage,
   settlePendingClose,
-} from "@/lib/state/browser-control";
-import { revealExistingWebTab } from "@/lib/state/web-page-management";
-import { desktopBridge, retryRestoreWebTab } from "@/lib/desktop-bridge";
-import { useSessionResources } from "@/lib/use-session-resources";
+} from "@/lib/browser/browser-control";
+import { revealExistingWebTab } from "@/lib/browser/web-page-management";
+import { desktopBridge, retryRestoreWebTab } from "@/lib/desktop/desktop-bridge";
+import { useSessionResources } from "@/lib/chat/use-session-resources";
 import { useTranslation } from "@/lib/i18n";
 import styles from "./session-resources.module.css";
 

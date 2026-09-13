@@ -14,7 +14,7 @@ pytestmark = pytest.mark.browser
 @pytest.fixture(scope="module")
 def media_bundle(tmp_path_factory):
     target = tmp_path_factory.mktemp("media-preview") / "bundle.js"
-    subprocess.run(["node", "apps/web/tests/build-document-window-browser.mjs", str(target),
+    subprocess.run(["node", "apps/web/tests/files/build-document-window-browser.mjs", str(target),
                     "./document-preview-browser-entry.tsx"], check=True)
     return target.read_text()
 

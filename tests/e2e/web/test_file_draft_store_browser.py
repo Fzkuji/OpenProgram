@@ -14,7 +14,7 @@ pytestmark = pytest.mark.browser
 
 
 def _bundle_production_store(output: Path) -> None:
-    entry = ROOT / "apps/web/lib/state/file-draft-store.ts"
+    entry = ROOT / "apps/web/lib/files/file-draft-store.ts"
     script = """
 const esbuild = require("esbuild");
 esbuild.buildSync({

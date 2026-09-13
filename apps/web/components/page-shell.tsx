@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 
-import { usePendingRunFunction } from "@/lib/use-pending-run-function";
+import { usePendingRunFunction } from "@/lib/execution/use-pending-run-function";
 import { useWS } from "@/lib/net/use-ws";
 import { runtimeState, getSocket } from "@/lib/runtime-bridge/state";
 import { useSessionStore } from "@/lib/session-store";
@@ -233,7 +233,7 @@ export function PageShell({ page }: { page: Page }) {
   //   * new chat (/chat) — call newSession() which resets the
   //     chat area in place (welcome screen + cleared state)
   // SPA hand-off from /programs → /chat lives in its own hook —
-  // see lib/use-pending-run-function.ts.
+  // see lib/execution/use-pending-run-function.ts.
   usePendingRunFunction(pathname, ready);
 
   // Own the chat WebSocket lifecycle (slice A of the WS-layer

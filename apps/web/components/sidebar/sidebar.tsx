@@ -30,7 +30,7 @@ import {
   PanelLeftOpenIcon,
   PlusIcon,
 } from "../animated-icons";
-import { useCenterTabs } from "@/lib/state/center-tabs-store";
+import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import { useTranslation } from "@/lib/i18n";
 import { activateOnKey } from "@/lib/utils";
 import { UserMenuFooter } from "../user-menu-footer";

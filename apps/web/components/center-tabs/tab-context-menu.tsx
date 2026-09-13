@@ -4,8 +4,8 @@
  * In-DOM tab context menu (browser mode). The desktop shell renders the
  * same actions through its top-layer overlay instead — see `useTabMenu`.
  */
-import { findCenterTabGroup, type CenterTabGroup } from "@/lib/state/center-tab-groups";
-import type { CenterTab } from "@/lib/state/center-tabs-store";
+import { findCenterTabGroup, type CenterTabGroup } from "@/lib/tabs/center-tab-groups";
+import type { CenterTab } from "@/lib/tabs/center-tabs-store";
 import { useTranslation } from "@/lib/i18n";
 import type { TabMenuState } from "./use-tab-menu";
 import styles from "./center-tabs.module.css";

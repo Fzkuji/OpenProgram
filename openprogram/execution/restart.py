@@ -84,7 +84,7 @@ def _service(runner, execution_id):
 
 def prepare_shutdown(runner) -> None:
     """Request cooperative pause before the worker's bounded process teardown."""
-    from openprogram.self_update.maintenance import maintenance_blocks
+    from openprogram.self_update.control.maintenance import maintenance_blocks
 
     runner._restart_shutdown = True
     shutdown_event = getattr(runner, "_shutdown_event", None)
@@ -161,7 +161,7 @@ def _settle(store, execution, event, outcome):
 
 def reconcile(runner) -> None:
     """Resume only the exact restart-owned pause before its fixed deadline."""
-    from openprogram.self_update.maintenance import maintenance_blocks
+    from openprogram.self_update.control.maintenance import maintenance_blocks
 
     if getattr(runner, "_restart_shutdown", False) or maintenance_blocks(
         "worker_restart"

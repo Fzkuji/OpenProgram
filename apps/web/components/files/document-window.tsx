@@ -2,15 +2,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "@/lib/i18n";
 import { EditorArea, FileViewer } from "./file-viewer";
-import { getOrCreateDocumentController } from "@/lib/state/document-controller";
-import type { DocumentHistoryEntry, DocumentHistoryPage } from "@/lib/state/document-types";
+import { getOrCreateDocumentController } from "@/lib/files/document-controller";
+import type { DocumentHistoryEntry, DocumentHistoryPage } from "@/lib/files/document-types";
 import styles from "./document-window.module.css";
 
 import { fileCapabilities } from "@/lib/documents/file-formats";
-import { rawFileUrl, absRawFileUrl } from "@/lib/state/files-shared";
+import { rawFileUrl, absRawFileUrl } from "@/lib/files/files-shared";
 import { officeCapability } from "@/lib/documents/file-formats";
 import { convertOfficeDocument } from "@/lib/documents/office-editor";
-import { useCenterTabs } from "@/lib/state/center-tabs-store";
+import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import { OfficeSurface } from "./office-surface";
 import { convertRasterToPng } from "@/lib/documents/raster-format";
 import { RasterSurface } from "./raster-surface";

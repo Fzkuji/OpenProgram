@@ -86,7 +86,7 @@ def test_close_retains_dirty_data_for_retry_after_io_failure(tmp_path: Path, mon
     store = SessionStore(tmp_path / "sessions")
     store.create_session("s1", "main", title="initial")
     store._update_index_entry("s1", title="must survive")
-    original_write = module.atomic_write_text
+    original_write = module.shared.atomic_write_text
     unregistered = []
     original_unregister = module.atexit.unregister
 
@@ -98,13 +98,13 @@ def test_close_retains_dirty_data_for_retry_after_io_failure(tmp_path: Path, mon
         original_unregister(callback)
 
     monkeypatch.setattr(module.atexit, "unregister", unregister)
-    monkeypatch.setattr(module, "atomic_write_text", unavailable)
+    monkeypatch.setattr(module.shared, "atomic_write_text", unavailable)
     try:
         store.close()
         assert store._index_dirty
         assert unregistered == []
     finally:
-        monkeypatch.setattr(module, "atomic_write_text", original_write)
+        monkeypatch.setattr(module.shared, "atomic_write_text", original_write)
         store.close()
     assert not store._index_dirty
     assert unregistered == [store._flush_index]

@@ -10,7 +10,7 @@
  * session refactor) carry a foreign ``session_id`` and fall back to
  * navigating to that session.
  */
-import type { ExecutionCommand } from "@/lib/execution-debugger";
+import type { ExecutionCommand } from "@/lib/execution/execution-debugger";
 import { useEffect, useRef, useState } from "react";
 
 import type { ChatMsg } from "@/lib/session-store";
@@ -20,7 +20,7 @@ import { useTranslation } from "@/lib/i18n";
 import type { JobResourceView } from "@/lib/net/ws-events";
 import { navigate } from "@/lib/navigate";
 import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
-import { jobResourceDetails } from "@/lib/job-resource";
+import { jobResourceDetails } from "@/lib/execution/job-resource";
 import {
   type AnimatedNavIconHandle,
   ArrowUpRightIcon,

@@ -21,7 +21,7 @@ import {
 import {
   requestNativeFolder,
   validateManualFolder,
-} from "@/lib/folder-picker";
+} from "@/lib/projects/folder-picker";
 import { useTranslation } from "@/lib/i18n";
 
 interface PendingManualPath {

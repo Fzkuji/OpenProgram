@@ -310,7 +310,7 @@ def auth_store_has_credential(provider_id: str) -> bool:
     """
     try:
         from openprogram.auth.credential_provider import get_credential_provider
-        from openprogram.auth.aliases import resolve as _canon
+        from openprogram.auth.account.aliases import resolve as _canon
         target = _canon(provider_id)
         store = get_credential_provider().store
         return any(
@@ -457,7 +457,7 @@ def resolved_endpoints(provider_id: str) -> dict:
     if eps:
         return eps
     try:
-        from openprogram.auth.aliases import resolve as _canon
+        from openprogram.auth.account.aliases import resolve as _canon
         canon = _canon(provider_id)
     except Exception:
         canon = provider_id

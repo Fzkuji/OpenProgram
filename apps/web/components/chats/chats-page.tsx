@@ -22,7 +22,7 @@ import { useTranslation, type Locale } from "@/lib/i18n";
 import { formatRelativeTime } from "@/lib/format-utils/format";
 import { pushPath } from "@/lib/shallow-nav";
 import { useSessionStore, type ConvSummary } from "@/lib/session-store";
-import { useCenterTabs } from "@/lib/state/center-tabs-store";
+import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import {
   type BucketKey,
   activityTs,

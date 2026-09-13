@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.self_update.repair_candidate import _edits
+from openprogram.self_update.repair.repair_candidate import _edits
 from openprogram.self_update.types import IterationMode
 
 

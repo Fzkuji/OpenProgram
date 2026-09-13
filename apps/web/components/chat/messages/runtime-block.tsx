@@ -16,7 +16,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 
-import { surfaceOriginForChat } from "@/lib/desktop-bridge";
+import { surfaceOriginForChat } from "@/lib/desktop/desktop-bridge";
 import { formatUsageFooterLabel } from "@/lib/format-utils/format";
 import { renderMathIn } from "@/lib/format-utils/markdown";
 import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
@@ -30,7 +30,7 @@ import { showToast } from "@/lib/format-utils/toast";
 import { optimisticAction } from "@/lib/runtime-bridge/optimistic-action";
 
 import { SystemAccessRecovery } from "./system-access-recovery";
-import { systemAccessRequired } from "@/lib/system-access-result";
+import { systemAccessRequired } from "@/lib/access/system-access-result";
 
 import type { TNode } from "./tree-types";
 import { ExecutionStrip, StepRow, TreeStep, decodeEscapes } from "./execution-strip";

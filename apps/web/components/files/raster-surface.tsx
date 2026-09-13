@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import type { DocumentController } from "@/lib/state/document-controller";
+import type { DocumentController } from "@/lib/files/document-controller";
 import { createBoundRasterEditor, type RasterEditorInstance } from "@/lib/documents/raster-editor";
 import styles from "./document-window.module.css";
 
