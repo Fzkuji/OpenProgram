@@ -5,7 +5,7 @@ import time
 import uuid
 from typing import Any
 
-from openprogram.store.snapshot.checkpoint import file_state
+from openprogram.store.snapshot.checkpoint import file_state, planning
 
 
 def get_workspace_alignment(session_id: str, *, store=None) -> dict[str, Any]:
@@ -183,8 +183,8 @@ def _branch_projection(journal, turn_ids: list[str]) -> tuple[dict, list[str]]:
         ):
             unavailable.append(path)
             continue
-        before = journal._state_with_blob(turn_id, before)
-        after = journal._state_with_blob(turn_id, after)
+        before = planning.state_with_blob(journal.session_dir, turn_id, before)
+        after = planning.state_with_blob(journal.session_dir, turn_id, after)
         try:
             chain = file_state._capture_parent_chain(path)
         except OSError:

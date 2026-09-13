@@ -11,6 +11,7 @@ Modules:
 * ``file_state`` — file inspection, parent identities and digest comparison.
 * ``file_apply`` — guarded publication and rollback.
 * ``capture`` — immutable snapshots and bounded content statistics.
+* ``planning`` — committed mutations, blob resolution and history plans.
 * ``store.CheckpointStore`` — mutation receipts, history transactions and recovery.
 * ``gc`` — evict old turn directories beyond a soft cap.
 

@@ -434,3 +434,24 @@ def test_checkpoint_filesystem_has_stateless_owners():
         definitions = {n.name for n in module.body if isinstance(n, ast.FunctionDef)}
         assert functions <= definitions
         assert not functions & methods, "store must call owners without forwarding methods"
+
+
+def test_checkpoint_planning_has_an_explicit_session_owner():
+    import ast
+
+    root = ROOT / "openprogram/store/snapshot/checkpoint"
+    path = root / "planning.py"
+    assert path.exists(), "checkpoint planning must have its own implementation module"
+    module = ast.parse(path.read_text())
+    names = {"list_mutations", "state_with_blob", "plan_history_operation", "plan_rewind_operation"}
+    functions = {node.name: node for node in module.body if isinstance(node, ast.FunctionDef)}
+    assert names <= functions.keys()
+    for name in names:
+        assert functions[name].args.args[0].arg == "session_dir"
+    store = ast.parse((root / "store.py").read_text())
+    coordinator = next(node for node in store.body if isinstance(node, ast.ClassDef) and node.name == "CheckpointStore")
+    methods = {node.name: node for node in coordinator.body if isinstance(node, ast.FunctionDef)}
+    assert "_state_with_blob" not in methods
+    for name in names - {"state_with_blob"}:
+        assert len(methods[name].body) == 1
+        assert isinstance(methods[name].body[0], ast.Return)
