@@ -13,6 +13,33 @@ PDF_FIXTURE = (
 )
 
 
+def outlined_pdf():
+    """Small deterministic PDF with a public outline destination on page two."""
+    content = b"BT /F1 18 Tf 40 400 Td (Paper reading fixture) Tj ET"
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R /Outlines 8 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 500] /Resources << /Font << /F1 5 0 R >> >> /Contents 6 0 R >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 500] /Resources << /Font << /F1 5 0 R >> >> /Contents 7 0 R >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        b"<< /Length " + str(len(content)).encode() + b" >>\nstream\n" + content + b"\nendstream",
+        b"<< /Length " + str(len(content)).encode() + b" >>\nstream\n" + content + b"\nendstream",
+        b"<< /Type /Outlines /First 9 0 R /Last 9 0 R /Count 1 >>",
+        b"<< /Title (Methods) /Parent 8 0 R /Dest [4 0 R /Fit] >>",
+    ]
+    data = bytearray(b"%PDF-1.7\n")
+    offsets = []
+    for index, obj in enumerate(objects, 1):
+        offsets.append(len(data))
+        data.extend(f"{index} 0 obj\n".encode() + obj + b"\nendobj\n")
+    xref = len(data)
+    data.extend(f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode())
+    for offset in offsets:
+        data.extend(f"{offset:010d} 00000 n \n".encode())
+    data.extend(f"trailer << /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF".encode())
+    return base64.b64encode(data).decode()
+
+
 @pytest.fixture(scope="module")
 def pdf_bundle(tmp_path_factory):
     subprocess.run(["node", "apps/web/scripts/runtime/prepare-document-assets.mjs"], check=True)
@@ -142,8 +169,19 @@ def test_pdf_reader_exposes_selectable_text_and_navigation(pdf_page):
     page, errors = pdf_page
     page.evaluate("body => showFile('fixture.pdf', body)", PDF_FIXTURE)
     expect(page.locator('.textLayer').first).to_be_visible()
-    expect(page.get_by_role('button', name='Toggle sidebar')).to_be_visible()
     expect(page.get_by_role('checkbox', name='Remove line breaks when copying')).to_be_checked()
+    expect(page.get_by_role('button', name='Highlight', exact=True)).to_have_count(0)
+    expect(page.get_by_role('button', name='Text note', exact=True)).to_have_count(0)
+    page.evaluate("body => showFile('outlined.pdf', body)", outlined_pdf())
+    expect(page.get_by_text('1 / 2', exact=True)).to_be_visible()
+    page.get_by_role('button', name='Toggle sidebar').click()
+    page.get_by_role('button', name='Page 2', exact=True).click()
+    expect(page.get_by_text('2 / 2', exact=True)).to_be_visible()
+    page.get_by_role('button', name='Page 1', exact=True).click()
+    expect(page.get_by_text('1 / 2', exact=True)).to_be_visible()
+    page.get_by_role('button', name='Outline', exact=True).click()
+    page.get_by_role('button', name='Methods', exact=True).click()
+    expect(page.get_by_text('2 / 2', exact=True)).to_be_visible()
     assert errors == []
 
 
