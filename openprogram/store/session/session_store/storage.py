@@ -182,11 +182,11 @@ class StorageOperations:
                 with self._head_file_lock(recovery_git):
                     pass
                 sdir = recovery_git.path
+                verified_git = recovery_git
                 if cached and cached[0].path != sdir:
                     with self._lock:
                         self._sessions.pop(session_id, None)
                     cached = None
-                    verified_git = recovery_git
             if cached:
                 git, idx = cached
                 # @agentic_function runs execute in a fork()'d subprocess

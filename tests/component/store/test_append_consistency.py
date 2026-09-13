@@ -150,7 +150,8 @@ def test_later_metadata_patch_follows_recovered_append(stores, monkeypatch, meth
     assert fresh.get_session('append')['head_id'] == 'first'
 
 
-def test_pending_recovery_revalidates_relocated_cached_session(stores, monkeypatch):
+@pytest.mark.parametrize("cached", [False, True])
+def test_pending_recovery_revalidates_relocated_session(stores, monkeypatch, cached):
     from contextlib import contextmanager
 
     first, second, new = stores
@@ -163,7 +164,8 @@ def test_pending_recovery_revalidates_relocated_cached_session(stores, monkeypat
             append(first, 'writer', 'first')
     source = git.path
     destination = first.root_path / 'projects' / 'moved' / 'append'
-    original_lock = first._head_file_lock
+    reader = first if cached else new()
+    original_lock = reader._head_file_lock
     @contextmanager
     def relocate(current):
         if source.exists():
@@ -172,8 +174,32 @@ def test_pending_recovery_revalidates_relocated_cached_session(stores, monkeypat
             second._record_location('append', destination)
         with original_lock(current):
             yield
-    monkeypatch.setattr(first, '_head_file_lock', relocate)
-    assert first.get_session('append')['head_id'] == 'first'
-    assert [n.id for n in first.get_nodes('append')] == ['root', 'first']
+    monkeypatch.setattr(reader, '_head_file_lock', relocate)
+    assert reader.get_session('append')['head_id'] == 'first'
+    assert [n.id for n in reader.get_nodes('append')] == ['root', 'first']
     assert new().get_session('append')['head_id'] == 'first'
     assert not source.exists()
+
+
+@pytest.mark.parametrize('history_fails', [False, True])
+def test_intent_removal_flushes_directory_before_return(stores, monkeypatch, history_fails):
+    from openprogram.store.session.session_store import append as appends
+
+    first, _, _ = stores
+    git, _ = first._open('append')
+    flushed = []
+    original_sync = appends._fsync_directory
+    def observe_sync(directory):
+        assert not appends.intent_path(git).exists()
+        original_sync(directory)
+        flushed.append(directory)
+    monkeypatch.setattr(appends, '_fsync_directory', observe_sync)
+    if history_fails:
+        def fail(*_args, **_kwargs):
+            raise OSError('history unavailable')
+        monkeypatch.setattr(git, 'write_history', fail)
+        with pytest.raises(OSError, match='history unavailable'):
+            append(first, 'message', 'first')
+    else:
+        append(first, 'message', 'first')
+    assert flushed == [git.path / '.git']

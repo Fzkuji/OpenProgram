@@ -5,6 +5,7 @@ import copy
 import json
 import time
 
+from ..git_session import _fsync_directory
 from . import shared
 
 
@@ -41,6 +42,7 @@ def recover(store, git):
     store._update_index_entry(git.path.name, **fields)
     store._schedule_index_flush()
     path.unlink()
+    _fsync_directory(path.parent)
     # The writes above sync the GitSession fingerprint, but its caller's
     # index still precedes recovery and must be rebuilt before use.
     git._synced_fingerprint = None
@@ -85,6 +87,7 @@ def append_node(store, session_id, node, *, create_if_missing=True, advance_head
             if not target.exists():
                 try:
                     path.unlink()
+                    _fsync_directory(path.parent)
                 except OSError as cleanup_error:
                     failure.add_note(f"append intent cleanup failed: {cleanup_error}")
             raise
