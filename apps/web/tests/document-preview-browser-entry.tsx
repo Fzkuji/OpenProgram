@@ -1,5 +1,6 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
+import { DocumentWindow } from "../components/files/document-window";
 import { FileViewer } from "../components/files/file-viewer";
 const root = createRoot(document.getElementById("root")!);
 Object.assign(window, {
@@ -8,5 +9,6 @@ Object.assign(window, {
     root.render(<FileViewer projectId="p" path={path} sourceBlob={bytes}
       snapshot={{ project_id: "p", path, binary: true, size: bytes?.size ?? 0, mtime: 0 }} />);
   },
+  showDocument(path: string) { root.render(<DocumentWindow projectId="p" path={path} />); },
   hideFile() { root.render(null); },
 });

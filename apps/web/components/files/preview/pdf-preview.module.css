@@ -1,0 +1,20 @@
+.reader { color: var(--text-primary); background: var(--bg-primary); font-size: 13px; }
+.toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; padding: 6px 10px; border-bottom: 1px solid var(--border-subtle); }
+.toolbar button, .toolbar select, .sidebar button { min-height: 30px; padding: 4px 8px; border-radius: 4px; background: transparent; color: inherit; border: 1px solid transparent; }
+.toolbar button:hover, .sidebar button:hover { background: var(--bg-hover); }
+.toolbar button[aria-pressed=true], .sidebar button[aria-pressed=true] { background: var(--bg-secondary); border-color: var(--border-subtle); }
+.toolbar button:disabled { opacity: .4; }
+.toolbar input { border: 1px solid var(--border-subtle); border-radius: 4px; padding: 4px 6px; background: var(--bg-secondary); color: inherit; }
+.pageInput { width: 48px; }
+.divider { height: 20px; border-left: 1px solid var(--border-subtle); margin: 0 5px; }
+.search { display: flex; gap: 4px; align-items: center; margin-left: auto; }
+.search input { width: 130px; }
+.options { display: flex; gap: 20px; padding: 4px 12px; font-size: 12px; color: var(--text-secondary); border-bottom: 1px solid var(--border-subtle); }
+.options label { display: flex; gap: 6px; align-items: center; }
+.viewport { background: #252527; }
+.sidebar { width: 180px; flex: 0 0 180px; overflow: auto; border-right: 1px solid var(--border-subtle); padding: 8px; }
+.sidebar ul { list-style: none; padding-left: 10px; }
+.sidebar li button { text-align: left; width: 100%; }
+.thumbnail { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; margin: 8px 0; }
+.thumbnail canvas { background: white; box-shadow: 0 1px 4px #0004; }
+.thumbnail[aria-current=page] { outline: 2px solid #4a90e2; outline-offset: -2px; }

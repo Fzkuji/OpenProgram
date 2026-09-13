@@ -16,6 +16,7 @@ mkdirSync(target, { recursive: true });
 const distribution = "legacy/build";
 for (const name of ["pdf.mjs", "pdf.worker.mjs"]) cpSync(join(source, distribution, name), join(target, name));
 for (const name of ["cmaps", "standard_fonts", "wasm", "LICENSE"]) cpSync(join(source, name), join(target, name), { recursive: true });
+for (const name of ["pdf_viewer.mjs", "pdf_viewer.css", "images"]) cpSync(join(source, "legacy/web", name), join(target, name), { recursive: true });
 function inventory(dir, prefix = "") {
   return readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)).flatMap((entry) => {
     const name = prefix + entry.name;
