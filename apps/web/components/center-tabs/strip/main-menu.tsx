@@ -31,7 +31,7 @@ import { desktopBridge } from "@/lib/desktop/desktop-bridge";
 import { activeThemeId } from "@/lib/prefs/theme-pref";
 import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import { useTranslation } from "@/lib/i18n";
-import styles from "./center-tabs.module.css";
+import styles from "../center-tabs.module.css";
 
 export function MainMenu() {
   const router = useRouter();

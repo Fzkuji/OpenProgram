@@ -8,15 +8,15 @@ import postcss from "postcss";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 
-const launcher = read("../../components/center-tabs/new-tab-page.tsx");
-const browserHome = read("../../components/center-tabs/browser-home-page.tsx");
-const browserControls = read("../../components/center-tabs/browser-controls.tsx");
-const browserGlyph = read("../../components/center-tabs/browser-glyph.tsx");
+const launcher = read("../../components/center-tabs/panes/new-tab-page.tsx");
+const browserHome = read("../../components/center-tabs/browser/browser-home-page.tsx");
+const browserControls = read("../../components/center-tabs/browser/browser-controls.tsx");
+const browserGlyph = read("../../components/center-tabs/browser/browser-glyph.tsx");
 const browserPrefs = read("../../lib/browser/browser-prefs.ts");
 const ntpShortcuts = read("../../lib/tabs/ntp-shortcuts.ts");
 const browserLayoutSource = read("../../lib/browser/browser-layout.ts");
-const webTabPane = read("../../components/center-tabs/web-tab-pane.tsx");
-const mainMenu = read("../../components/center-tabs/main-menu.tsx");
+const webTabPane = read("../../components/center-tabs/browser/web-tab-pane.tsx");
+const mainMenu = read("../../components/center-tabs/strip/main-menu.tsx");
 const desktopMainMenu = read("../../app/menu-overlay/main-menu/page.tsx");
 const contextMenu = read("../../app/menu-overlay/context-menu/page.tsx");
 const browserSettings = read("../../components/settings/browser-settings.tsx");
@@ -26,7 +26,7 @@ const centerTabsCss = read("../../components/center-tabs/center-tabs.module.css"
 const cssRoot = postcss.parse(centerTabsCss);
 const historyCss = read("../../app/styles/right-dock/web-history.css");
 const dropdownMenu = read("../../components/ui/dropdown-menu.tsx");
-const builtin = read("../../components/center-tabs/builtin-tab-pane.tsx");
+const builtin = read("../../components/center-tabs/panes/builtin-tab-pane.tsx");
 const bridge = readDesktopBridgeSource();
 const bridgeTypes = read("../../lib/desktop/desktop-bridge-types.ts");
 const preload = read("../../../desktop/preload.js");

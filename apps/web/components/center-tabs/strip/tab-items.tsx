@@ -22,9 +22,9 @@ import type { CenterTab } from "@/lib/tabs/center-tabs-store";
 import type { CenterTabGroup } from "@/lib/tabs/center-tab-groups";
 import type { TabDragSubject } from "@/lib/tabs/tab-drag-coordinator";
 import { useTranslation } from "@/lib/i18n";
-import { builtinPageLabel } from "./builtin-page-label";
+import { builtinPageLabel } from "../panes/builtin-page-label";
 import { shiftStyle } from "./tab-strip-geometry";
-import styles from "./center-tabs.module.css";
+import styles from "../center-tabs.module.css";
 
 export function labelOf(
   tab: CenterTab,

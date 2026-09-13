@@ -8,7 +8,7 @@
  * Hard constraint: the panel reuses the app's canonical menu styles
  * (menu-styles.ts: MENU_PANEL / itemCls / SHORTCUT / MENU_SEPARATOR) and
  * the same lucide icons / labels / shortcuts as
- * components/center-tabs/main-menu.tsx — one component family, one
+ * components/center-tabs/strip/main-menu.tsx — one component family, one
  * stylesheet, no hand-rolled HTML. Only the wiring differs: instead of
  * Radix onSelect, each row calls the preload bridge's mainMenu.choose(id)
  * and the main process routes the action back to the real UI window.

@@ -1,5 +1,5 @@
 /* 网页浏览历史行（favicon 与时间列）。
-   对应组件：components/center-tabs/builtin-tab-pane.tsx */
+   对应组件：components/center-tabs/panes/builtin-tab-pane.tsx */
 
 /* ============ Web browsing history ============ */
 /* The History center page uses Chrome-like one-line rows grouped by day. */

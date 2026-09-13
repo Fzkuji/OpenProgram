@@ -36,7 +36,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useSidebarMenu, type SidebarMenuItem } from "@/components/sidebar/use-sidebar-menu";
 import { CursorClickIcon } from "@/components/animated-icons";
-import styles from "./center-tabs.module.css";
+import styles from "../center-tabs.module.css";
 
 function statusLabel(
   state: ReturnType<typeof displayedControlState>,

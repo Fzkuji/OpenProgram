@@ -19,13 +19,13 @@ import { Bookmark, Download, FileText, History, MessageCircle, CirclePlus, Termi
 
 import { ChromeIcon, FeatherIcon } from "@/components/animated-icons";
 import { useTranslation } from "@/lib/i18n";
-import { builtinPageLabel } from "./builtin-page-label";
+import { builtinPageLabel } from "../panes/builtin-page-label";
 import {
   findCenterTabGroup,
   splitCandidates,
 } from "@/lib/tabs/center-tab-groups";
 import { useCenterTabs, type CenterTab } from "@/lib/tabs/center-tabs-store";
-import styles from "./center-tabs.module.css";
+import styles from "../center-tabs.module.css";
 
 /** Secondary line under a candidate's title: origin for web tabs, path
  *  for files, kind for the rest. */

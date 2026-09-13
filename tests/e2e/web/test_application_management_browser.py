@@ -32,8 +32,8 @@ let version=0;openprogramApp.load().then(s=>{version=s.version;note.value=s.valu
     entry = '''import React,{useState} from 'react'; import {createRoot} from 'react-dom/client';
 import {AppRouterContext} from 'next/dist/shared/lib/app-router-context.shared-runtime';
 import {ApplicationsPage} from './components/applications/applications-page';
-import {NewTabPage} from './components/center-tabs/new-tab-page';
-import {ApplicationTabPane} from './components/center-tabs/application-tab-pane';
+import {NewTabPage} from './components/center-tabs/panes/new-tab-page';
+import {ApplicationTabPane} from './components/center-tabs/panes/application-tab-pane';
 import {useCenterTabs} from './lib/tabs/center-tabs-store';
 function App(){const[manage,setManage]=useState(true);const tab=useCenterTabs(s=>s.tabs.find(t=>t.id===s.activeId));return <AppRouterContext.Provider value={{push:()=>setManage(false)}}><button onClick={()=>setManage(true)}>Manage software</button><button onClick={()=>setManage(false)}>Launcher</button>{manage?<ApplicationsPage/>:<><NewTabPage/>{tab?.applicationInstanceId&&<ApplicationTabPane instanceId={tab.applicationInstanceId}/>}</>}</AppRouterContext.Provider>;}createRoot(document.getElementById('root')).render(<App/>);'''
     subprocess.run(['node', '-e', '''require('esbuild').buildSync({stdin:{contents:process.argv[3],resolveDir:process.argv[1],loader:'tsx'},bundle:true,format:'iife',platform:'browser',jsx:'automatic',loader:{'.css':'empty'},outfile:process.argv[2],tsconfig:process.argv[1]+'/tsconfig.json'});''', str(ROOT / 'apps/web'), str(bundle), entry], cwd=ROOT, check=True, capture_output=True)

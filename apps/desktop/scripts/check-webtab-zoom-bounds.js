@@ -5,7 +5,7 @@ const { cascadeMenuGeometry } = require("../menu-geometry.js");
 
 const source = require("./main-source").readMainSource();
 const paneSource = fs.readFileSync(
-  require.resolve("../../web/components/center-tabs/web-tab-pane.tsx"),
+  require.resolve("../../web/components/center-tabs/browser/web-tab-pane.tsx"),
   "utf8",
 );
 

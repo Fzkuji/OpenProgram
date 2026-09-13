@@ -462,12 +462,12 @@ testContext.assert.equal(
 
 
 (testContext.webTabPaneSource = await testContext.readFile(
-  new URL("../../components/center-tabs/web-tab-pane.tsx", testContext.sourceUrl),
+  new URL("../../components/center-tabs/browser/web-tab-pane.tsx", testContext.sourceUrl),
   "utf8",
 ));
 
 (testContext.splitViewPickerSource = await testContext.readFile(
-  new URL("../../components/center-tabs/split-view-picker.tsx", testContext.sourceUrl),
+  new URL("../../components/center-tabs/strip/split-view-picker.tsx", testContext.sourceUrl),
   "utf8",
 ));
 

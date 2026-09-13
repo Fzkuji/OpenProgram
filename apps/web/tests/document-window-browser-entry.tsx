@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { createRoot } from "react-dom/client";
 import * as documentDraftLifecycle from "../lib/files/file-drafts";
 import { closeDocumentController } from "../lib/files/document-controller";
-import { FileTabPane } from "../components/center-tabs/file-tab-pane";
+import { FileTabPane } from "../components/center-tabs/panes/file-tab-pane";
 Object.assign(window, { documentDraftLifecycle });
 function Fixture() {
   const [closed,setClosed]=useState(false);

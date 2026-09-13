@@ -19,7 +19,7 @@ testContext.assert.match(
 
 testContext.assert.match(
   await testContext.readFile(
-    new URL("../../components/center-tabs/browser-controls.tsx", testContext.sourceUrl),
+    new URL("../../components/center-tabs/browser/browser-controls.tsx", testContext.sourceUrl),
     "utf8",
   ),
   /case "collapse-to-pip":/,

@@ -60,7 +60,7 @@ import { useCenterTabs, type BuiltinPage } from "@/lib/tabs/center-tabs-store";
 import { useTranslation } from "@/lib/i18n";
 import { groupHistoryByLocalDate } from "@/lib/chat/history-groups";
 import { SearchInput } from "@/components/ui/search-input";
-import styles from "./center-tabs.module.css";
+import styles from "../center-tabs.module.css";
 
 const HISTORY_PAGE_SIZE = 250;
 const HISTORY_LIST_LIMIT = 5_000;

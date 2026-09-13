@@ -65,7 +65,7 @@ import {
 } from "@/lib/browser/browser-layout";
 import { useTranslation } from "@/lib/i18n";
 import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
-import styles from "./center-tabs.module.css";
+import styles from "../center-tabs.module.css";
 
 function useBookmarksBarPreference() {
   const [visible, setVisible] = useState(showBookmarksBar);

@@ -7,7 +7,7 @@ const source = (path) => readFileSync(new URL(path, root), "utf8");
 const layout = source("components/settings/settings-tabs-layout.tsx");
 const settingsHome = source("app/(shell)/settings/page.tsx");
 const userMenu = source("components/user-menu-footer.tsx");
-const mainMenu = source("components/center-tabs/main-menu.tsx");
+const mainMenu = source("components/center-tabs/strip/main-menu.tsx");
 const agentSelector = source("components/chat/top-bar/agent-selector.tsx");
 const appShell = source("components/app-shell.tsx");
 const providers = source("components/settings/providers/index.tsx");

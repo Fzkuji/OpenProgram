@@ -7,9 +7,9 @@ const root = path.resolve(import.meta.dirname, "../..");
 const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 
 const ids = read("lib/tabs/center-tab-ids.ts");
-const launcher = read("components/center-tabs/new-tab-page.tsx");
+const launcher = read("components/center-tabs/panes/new-tab-page.tsx");
 const shell = read("components/app-shell.tsx");
-const page = read("components/center-tabs/terminal-page.tsx");
+const page = read("components/center-tabs/panes/terminal-page.tsx");
 const bridge = readDesktopBridgeSource();
 const bridgeTypes = read("lib/desktop/desktop-bridge-types.ts");
 const preload = read("../desktop/preload.js");

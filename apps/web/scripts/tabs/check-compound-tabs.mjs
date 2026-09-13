@@ -603,7 +603,7 @@ assert.equal(
 );
 
 const tabItemsSource = await readFile(
-  new URL("../../components/center-tabs/tab-items.tsx", import.meta.url),
+  new URL("../../components/center-tabs/strip/tab-items.tsx", import.meta.url),
   "utf8",
 );
 const compoundItemSource = tabItemsSource.slice(

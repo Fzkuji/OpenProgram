@@ -9,15 +9,15 @@ import { readRightDockCss } from "../runtime/_chat-css.mjs";
 const sourcePath = new URL("../../lib/tabs/bookmarks.ts", import.meta.url);
 const sessionStorePath = new URL("../../lib/session-store/index.ts", import.meta.url);
 const navigationPath = new URL("../../lib/tabs/bookmark-navigation.ts", import.meta.url);
-const webTabPath = new URL("../../components/center-tabs/web-tab-pane.tsx", import.meta.url);
-const browserHomePath = new URL("../../components/center-tabs/browser-home-page.tsx", import.meta.url);
+const webTabPath = new URL("../../components/center-tabs/browser/web-tab-pane.tsx", import.meta.url);
+const browserHomePath = new URL("../../components/center-tabs/browser/browser-home-page.tsx", import.meta.url);
 // Bookmarks + web history are CENTER TABS now, opened from the main
 // menu — not right-sidebar views. These paths are the new landing spot;
 // the assertions below are the same guard ("the feature exists and is
 // reachable") pointed at it.
-const managerPath = new URL("../../components/center-tabs/builtin-tab-pane.tsx", import.meta.url);
-const mainMenuPath = new URL("../../components/center-tabs/main-menu.tsx", import.meta.url);
-const browserControlsPath = new URL("../../components/center-tabs/browser-controls.tsx", import.meta.url);
+const managerPath = new URL("../../components/center-tabs/panes/builtin-tab-pane.tsx", import.meta.url);
+const mainMenuPath = new URL("../../components/center-tabs/strip/main-menu.tsx", import.meta.url);
+const browserControlsPath = new URL("../../components/center-tabs/browser/browser-controls.tsx", import.meta.url);
 const contextMenuOverlayPath = new URL("../../app/menu-overlay/context-menu/page.tsx", import.meta.url);
 const desktopBridgePath = new URL("../../lib/desktop/desktop-bridge.ts", import.meta.url);
 const desktopBridgeTypesPath = new URL("../../lib/desktop/desktop-bridge-types.ts", import.meta.url);

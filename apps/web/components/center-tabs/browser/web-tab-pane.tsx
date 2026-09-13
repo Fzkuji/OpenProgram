@@ -62,7 +62,7 @@ import {
   useBrowserResourceStore,
 } from "@/lib/chat/session-resources";
 import { isWebTabOccluded, measureWebTabBounds } from "@/lib/browser/web-tab-bounds";
-import styles from "./center-tabs.module.css";
+import styles from "../center-tabs.module.css";
 import { BookmarkBar, BookmarksLibraryButton, BrowserMenu } from "./browser-controls";
 import { ActionCueTravel, BrowserControlBar } from "./browser-control-bar";
 import {

@@ -7,9 +7,9 @@ const read = (path) => fs.readFileSync(new URL(`../../${path}`, import.meta.url)
 const card = read("components/chat/messages/turn-files-chips.tsx");
 const bubble = read("components/chat/messages/assistant-bubble.tsx");
 const rail = read("components/chat/messages/message-rail.tsx");
-const review = read("components/center-tabs/review-tab-pane.tsx");
-const reviewScope = read("components/center-tabs/use-review-scope.ts");
-const reviewDiff = read("components/center-tabs/use-review-diff.ts");
+const review = read("components/center-tabs/review/review-tab-pane.tsx");
+const reviewScope = read("components/center-tabs/review/use-review-scope.ts");
+const reviewDiff = read("components/center-tabs/review/use-review-diff.ts");
 const reviewProtocol = review + reviewScope + reviewDiff;
 const store = read("lib/tabs/center-tabs-store.ts");
 const reviewLayout = read("lib/tabs/review-tab-layout.ts");

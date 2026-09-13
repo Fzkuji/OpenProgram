@@ -67,7 +67,7 @@ globalThis.reopenRouteHook = () => useSyncExternalStore(
 );
 const { createRoot } = await import("react-dom/client");
 const { setNavigate } = await import("../../lib/navigate.ts");
-const { useTabLifecycle } = await import("../../components/center-tabs/use-tab-lifecycle.ts");
+const { useTabLifecycle } = await import("../../components/center-tabs/strip/use-tab-lifecycle.ts");
 const { useCenterTabs } = await import("../../lib/tabs/center-tabs-store.ts");
 const { readCenterTabsPayload, persistedState } = await import("../../lib/tabs/center-tabs-persistence.ts");
 const { useSessionStore } = await import("../../lib/session-store/index.ts");

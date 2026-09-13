@@ -28,8 +28,8 @@
 **Files:**
 - Modify: `apps/web/lib/bookmarks.ts:6-55`
 - Modify: `apps/web/lib/session-store/index.ts:267-305`
-- Modify: `apps/web/components/center-tabs/web-tab-pane.tsx:37-77`
-- Modify: `apps/web/components/center-tabs/new-tab-page.tsx:21-46`
+- Modify: `apps/web/components/center-tabs/browser/web-tab-pane.tsx:37-77`
+- Modify: `apps/web/components/center-tabs/panes/new-tab-page.tsx:21-46`
 - Modify: `apps/web/components/right-sidebar/bookmarks-panel.tsx:6-30`
 - Modify: `apps/web/scripts/check-bookmarks.mjs:5-253`
 
@@ -171,8 +171,8 @@ Expected: both commands exit `0`; the focused command prints `bookmark storage c
 
 ```bash
 git add apps/web/lib/bookmarks.ts apps/web/lib/session-store/index.ts \
-  apps/web/components/center-tabs/web-tab-pane.tsx \
-  apps/web/components/center-tabs/new-tab-page.tsx \
+  apps/web/components/center-tabs/browser/web-tab-pane.tsx \
+  apps/web/components/center-tabs/panes/new-tab-page.tsx \
   apps/web/components/right-sidebar/bookmarks-panel.tsx \
   apps/web/scripts/check-bookmarks.mjs
 git commit -m "fix(bookmarks): sync manager across windows"

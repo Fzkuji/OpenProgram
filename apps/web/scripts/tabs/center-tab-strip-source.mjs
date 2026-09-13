@@ -27,7 +27,7 @@ const STRIP_PARTS = [
 export function readCenterTabStripSource() {
   return STRIP_PARTS.map((name) =>
     readFileSync(
-      new URL(`../../components/center-tabs/${name}`, import.meta.url),
+      new URL(`../../components/center-tabs/strip/${name}`, import.meta.url),
       "utf8",
     ).replaceAll("\r\n", "\n"),
   ).join("\n");

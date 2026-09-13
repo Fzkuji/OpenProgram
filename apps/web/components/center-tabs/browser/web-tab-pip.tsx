@@ -62,7 +62,7 @@ import {
 } from "@/lib/browser/web-tab-pip-store";
 import type { WebTabCaptureLoop } from "@/lib/browser/web-tab-capture-loop";
 
-import styles from "./center-tabs.module.css";
+import styles from "../center-tabs.module.css";
 
 type PipDrag = {
   kind: "move" | "resize";

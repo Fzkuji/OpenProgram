@@ -101,7 +101,7 @@ git commit -m "feat(tabs): add persistent web split state"
 
 **Files:**
 - Modify: `apps/web/lib/desktop-bridge.ts`
-- Modify: `apps/web/components/center-tabs/web-tab-pane.tsx`
+- Modify: `apps/web/components/center-tabs/browser/web-tab-pane.tsx`
 - Modify: `apps/web/components/chat/composer/attach/file-tiles.tsx`
 - Modify: `apps/web/scripts/check-web-split.mjs`
 
@@ -149,7 +149,7 @@ Expected: pass with no unhandled timeout.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add apps/web/lib/desktop-bridge.ts apps/web/components/center-tabs/web-tab-pane.tsx apps/web/components/chat/composer/attach/file-tiles.tsx apps/web/scripts/check-web-split.mjs
+git add apps/web/lib/desktop-bridge.ts apps/web/components/center-tabs/browser/web-tab-pane.tsx apps/web/components/chat/composer/attach/file-tiles.tsx apps/web/scripts/check-web-split.mjs
 git commit -m "fix(desktop): preserve and guard native web views"
 ```
 
@@ -157,8 +157,8 @@ git commit -m "fix(desktop): preserve and guard native web views"
 
 **Files:**
 - Modify: `apps/web/components/app-shell.tsx`
-- Modify: `apps/web/components/center-tabs/web-tab-pane.tsx`
-- Modify: `apps/web/components/center-tabs/center-tab-strip.tsx`
+- Modify: `apps/web/components/center-tabs/browser/web-tab-pane.tsx`
+- Modify: `apps/web/components/center-tabs/strip/center-tab-strip.tsx`
 - Modify: `apps/web/components/center-tabs/center-tabs.module.css`
 - Modify: `apps/web/app/styles/base.css`
 - Modify: `apps/web/scripts/check-web-split.mjs`
@@ -262,7 +262,7 @@ Expected: all exit `0`; build reports successful compilation.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add apps/web/components/app-shell.tsx apps/web/components/center-tabs/web-tab-pane.tsx apps/web/components/center-tabs/center-tab-strip.tsx apps/web/components/center-tabs/center-tabs.module.css apps/web/app/styles/base.css apps/web/scripts/check-web-split.mjs
+git add apps/web/components/app-shell.tsx apps/web/components/center-tabs/browser/web-tab-pane.tsx apps/web/components/center-tabs/strip/center-tab-strip.tsx apps/web/components/center-tabs/center-tabs.module.css apps/web/app/styles/base.css apps/web/scripts/check-web-split.mjs
 git commit -m "feat(desktop): add resizable chat web split"
 ```
 

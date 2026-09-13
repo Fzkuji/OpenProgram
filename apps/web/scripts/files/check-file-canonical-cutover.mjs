@@ -6,8 +6,8 @@ const read = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), "
 const shared = read("lib/files/files-shared.ts");
 const viewer = read("components/files/file-viewer.tsx");
 const tree = readFileTreeSource();
-const pane = read("components/center-tabs/file-tab-pane.tsx");
-const review = read("components/center-tabs/review-tab-pane.tsx");
+const pane = read("components/center-tabs/panes/file-tab-pane.tsx");
+const review = read("components/center-tabs/review/review-tab-pane.tsx");
 const draftState = read("lib/files/file-state-shared.ts");
 const drafts = read("lib/files/file-drafts.ts");
 const ws = read("lib/net/ws-request.ts");

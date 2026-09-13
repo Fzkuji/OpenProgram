@@ -394,3 +394,10 @@ def test_backup_tests_separate_archive_and_restore_responsibilities():
         'test_restore_transaction.py', 'test_restore_recovery.py',
     }
     assert expected <= {path.name for path in directory.glob('test_*.py')}
+
+
+def test_center_tab_components_are_grouped_by_responsibility():
+    directory = ROOT / 'apps/web/components/center-tabs'
+    assert not list(directory.glob('*.tsx'))
+    for feature in ('strip', 'browser', 'review', 'panes'):
+        assert (directory / feature).is_dir()

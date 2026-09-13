@@ -7,8 +7,8 @@ import { useRouter, usePathname } from "next/navigation";
 import { PageShell } from "./page-shell";
 import { Sidebar } from "./sidebar/sidebar";
 import { RightSidebar } from "./right-sidebar/right-sidebar";
-import { CenterTabStrip } from "./center-tabs/center-tab-strip";
-import { WebTabPip } from "./center-tabs/web-tab-pip";
+import { CenterTabStrip } from "./center-tabs/strip/center-tab-strip";
+import { WebTabPip } from "./center-tabs/browser/web-tab-pip";
 import { BrowserResourceProjection } from "@/lib/browser/browser-resource-projection";
 import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import { topLevelTabs } from "@/lib/browser/web-page-management";
@@ -54,43 +54,43 @@ function DeferredPaneLoading() {
 }
 
 const BuiltinTabPane = dynamic(
-  () => import("./center-tabs/builtin-tab-pane").then((module) => module.BuiltinTabPane),
+  () => import("./center-tabs/panes/builtin-tab-pane").then((module) => module.BuiltinTabPane),
   { ssr: false, loading: DeferredPaneLoading },
 );
 const BrowserHomePage = dynamic(
-  () => import("./center-tabs/browser-home-page").then((module) => module.BrowserHomePage),
+  () => import("./center-tabs/browser/browser-home-page").then((module) => module.BrowserHomePage),
   { ssr: false, loading: DeferredPaneLoading },
 );
 const ApplicationTabPane = dynamic(
-  () => import("./center-tabs/application-tab-pane").then((module) => module.ApplicationTabPane),
+  () => import("./center-tabs/panes/application-tab-pane").then((module) => module.ApplicationTabPane),
   { ssr: false, loading: DeferredPaneLoading },
 );
 const FileTabPane = dynamic(
-  () => import("./center-tabs/file-tab-pane").then((module) => module.FileTabPane),
+  () => import("./center-tabs/panes/file-tab-pane").then((module) => module.FileTabPane),
   { ssr: false, loading: DeferredPaneLoading },
 );
 const ReviewTabPane = dynamic(
-  () => import("./center-tabs/review-tab-pane").then((module) => module.ReviewTabPane),
+  () => import("./center-tabs/review/review-tab-pane").then((module) => module.ReviewTabPane),
   { ssr: false, loading: DeferredPaneLoading },
 );
 const FilesPage = dynamic(
-  () => import("./center-tabs/files-page").then((module) => module.FilesPage),
+  () => import("./center-tabs/panes/files-page").then((module) => module.FilesPage),
   { ssr: false, loading: DeferredPaneLoading },
 );
 const NewTabPage = dynamic(
-  () => import("./center-tabs/new-tab-page").then((module) => module.NewTabPage),
+  () => import("./center-tabs/panes/new-tab-page").then((module) => module.NewTabPage),
   { ssr: false, loading: DeferredPaneLoading },
 );
 const TerminalPage = dynamic(
-  () => import("./center-tabs/terminal-page").then((module) => module.TerminalPage),
+  () => import("./center-tabs/panes/terminal-page").then((module) => module.TerminalPage),
   { ssr: false, loading: DeferredPaneLoading },
 );
 const WebTabPane = dynamic(
-  () => import("./center-tabs/web-tab-pane").then((module) => module.WebTabPane),
+  () => import("./center-tabs/browser/web-tab-pane").then((module) => module.WebTabPane),
   { ssr: false, loading: DeferredPaneLoading },
 );
 
-import { PersistentFilePanes } from "./center-tabs/persistent-file-panes";
+import { PersistentFilePanes } from "./center-tabs/panes/persistent-file-panes";
 
 // Scripts shared by every page — loaded once on shell mount and kept alive for
 // the whole session. Page-specific scripts live in PageShell. Files sit in

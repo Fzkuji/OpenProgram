@@ -32,7 +32,7 @@ import { desktopBridge } from "@/lib/desktop/desktop-bridge";
 import { MainMenu } from "./main-menu";
 import { SplitViewPicker } from "./split-view-picker";
 import { useTranslation } from "@/lib/i18n";
-import styles from "./center-tabs.module.css";
+import styles from "../center-tabs.module.css";
 import {
   computeLiveShifts,
   freezeStripWidths,

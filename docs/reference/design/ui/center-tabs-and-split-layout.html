@@ -770,7 +770,7 @@
           <tr><td>R5 收起目标</td><td><code>pipCollapseTargetFor</code>（同组会话 → 配对表 → null）/ <code>collapseWebTabToPip</code>；无目标时 <code>CollapseToPipButton</code> 返回 null，BrowserMenu 不传 <code>collapseToPip</code></td></tr>
           <tr><td>agent 交互揭示（未配对或本会话配对）</td><td>同上 · <code>revealAgentWebTab</code>；<code>desktop-bridge.ts</code> 的 <code>op=preview/activate</code> 在 reveal 成功后 <code>waitForWebTabReady</code> 再跑。split 路径 <code>registerPipPair</code></td></tr>
           <tr><td>owner / 叶子关闭时清绑定与配对</td><td><code>web-tab-pip-store.ts</code> 末尾 <code>useCenterTabs.subscribe</code></td></tr>
-          <tr><td>小窗：live、拖拽、bounds、截图、展开 / 全屏 / ✕</td><td><code>apps/web/components/center-tabs/web-tab-pip.tsx</code> · <code>WebTabPip</code>；挂在 <code>app-shell.tsx</code> 的 <code>.center-body</code> 内，默认 <code>.webPip</code> 右上、<code>top:78px</code>（头部按钮下方）</td></tr>
+          <tr><td>小窗：live、拖拽、bounds、截图、展开 / 全屏 / ✕</td><td><code>apps/web/components/center-tabs/browser/web-tab-pip.tsx</code> · <code>WebTabPip</code>；挂在 <code>app-shell.tsx</code> 的 <code>.center-body</code> 内，默认 <code>.webPip</code> 右上、<code>top:78px</code>（头部按钮下方）</td></tr>
           <tr><td>R2 打开页面隐藏预览</td><td><code>web-tab-pip-store.ts</code> 的 <code>pipCoversCenter</code> 仅在 owner 会话为真；<code>web-tab-pane.tsx</code> 的 <code>.webFrame</code> 占满内容区，无停靠门户</td></tr>
           <tr><td>截图缓存</td><td><code>usePipSnapshots</code> / <code>getSnapshot</code> / <code>setSnapshot</code>；PiP 卸载与拖动时 <code>bridge.webTab.capture</code></td></tr>
           <tr><td>agent open / close / 回执</td><td><code>apps/web/lib/desktop/desktop-bridge.ts</code> · <code>installDesktopMenuHandlers</code> 内 WS 分支；<code>closeAgentWebTabResult</code>；<code>restorePriorActiveTabAfterFailedWebOpen</code></td></tr>

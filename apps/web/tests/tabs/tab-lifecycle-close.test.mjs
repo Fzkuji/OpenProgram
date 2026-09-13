@@ -2,9 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const lifecycle = readFileSync(new URL("../../components/center-tabs/use-tab-lifecycle.ts", import.meta.url), "utf8");
-const menu = readFileSync(new URL("../../components/center-tabs/use-tab-menu.ts", import.meta.url), "utf8");
-const strip = readFileSync(new URL("../../components/center-tabs/center-tab-strip.tsx", import.meta.url), "utf8");
+const lifecycle = readFileSync(new URL("../../components/center-tabs/strip/use-tab-lifecycle.ts", import.meta.url), "utf8");
+const menu = readFileSync(new URL("../../components/center-tabs/strip/use-tab-menu.ts", import.meta.url), "utf8");
+const strip = readFileSync(new URL("../../components/center-tabs/strip/center-tab-strip.tsx", import.meta.url), "utf8");
 
 test("every human tab close entry uses onTabsClose", () => {
   assert.match(lifecycle, /function onTabClose\(e: React\.SyntheticEvent, tab: CenterTab\) \{\s*onTabsClose\(e, \[tab\]\);/);

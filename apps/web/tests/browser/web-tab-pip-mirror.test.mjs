@@ -4,8 +4,8 @@ import { readFileSync } from "node:fs";
 import { startWebTabCaptureLoop } from "../../lib/browser/web-tab-capture-loop.ts";
 import { fittedImageRect, mapOperationPoint } from "../../lib/browser/browser-marker-geometry.ts";
 
-const pipSource = readFileSync(new URL("../../components/center-tabs/web-tab-pip.tsx", import.meta.url), "utf8");
-const paneSource = readFileSync(new URL("../../components/center-tabs/web-tab-pane.tsx", import.meta.url), "utf8");
+const pipSource = readFileSync(new URL("../../components/center-tabs/browser/web-tab-pip.tsx", import.meta.url), "utf8");
+const paneSource = readFileSync(new URL("../../components/center-tabs/browser/web-tab-pane.tsx", import.meta.url), "utf8");
 
 test("read-only PiP never mounts a native view or iframe", () => {
   assert.doesNotMatch(pipSource, /<iframe/);

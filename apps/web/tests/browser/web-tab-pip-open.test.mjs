@@ -13,7 +13,7 @@ const bundle = join(dir, "pip.mjs");
 await build({
   absWorkingDir: webPath,
   stdin: { contents: `
-    export { WebTabPip } from "./components/center-tabs/web-tab-pip";
+    export { WebTabPip } from "./components/center-tabs/browser/web-tab-pip";
     export { useCenterTabs } from "./lib/tabs/center-tabs-store";
     export { useWebTabPip, getSnapshot, setSnapshot, usePipSnapshots } from "./lib/browser/web-tab-pip-store";
     export { topLevelTabs } from "./lib/browser/web-page-management";

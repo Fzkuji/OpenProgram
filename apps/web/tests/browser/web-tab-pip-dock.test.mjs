@@ -14,8 +14,8 @@ const boundsCalls = [];
 await build({
   absWorkingDir: webPath,
   stdin: { contents: `
-    export { WebTabPip } from "./components/center-tabs/web-tab-pip";
-    export { WebTabPane } from "./components/center-tabs/web-tab-pane";
+    export { WebTabPip } from "./components/center-tabs/browser/web-tab-pip";
+    export { WebTabPane } from "./components/center-tabs/browser/web-tab-pane";
     export { useCenterTabs } from "./lib/tabs/center-tabs-store";
     export {
       useWebTabPip,

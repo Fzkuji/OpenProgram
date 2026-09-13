@@ -13,8 +13,8 @@ const bundle = join(dir, "floating.mjs");
 await build({
   absWorkingDir: webPath,
   stdin: { contents: `
-    export { WebTabPane } from "./components/center-tabs/web-tab-pane";
-    export { BrowserControlBar } from "./components/center-tabs/browser-control-bar";
+    export { WebTabPane } from "./components/center-tabs/browser/web-tab-pane";
+    export { BrowserControlBar } from "./components/center-tabs/browser/browser-control-bar";
     export { useCenterTabs } from "./lib/tabs/center-tabs-store";
     export {
       resetBrowserControl,

@@ -13,7 +13,7 @@ const bundle = join(dir, "control-bar.mjs");
 await build({
   absWorkingDir: webPath,
   stdin: { contents: `
-    export { BrowserControlBar } from "./components/center-tabs/browser-control-bar";
+    export { BrowserControlBar } from "./components/center-tabs/browser/browser-control-bar";
     export {
       resetBrowserControl,
       recordOperationCue,

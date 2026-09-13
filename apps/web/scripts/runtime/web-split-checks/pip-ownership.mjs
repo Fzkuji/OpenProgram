@@ -636,7 +636,7 @@ testContext.useWebTabPip.getState().hide();
 
 
 (testContext.pipSource = await testContext.readFile(
-  new URL("../../components/center-tabs/web-tab-pip.tsx", testContext.sourceUrl),
+  new URL("../../components/center-tabs/browser/web-tab-pip.tsx", testContext.sourceUrl),
   "utf8",
 ));
 

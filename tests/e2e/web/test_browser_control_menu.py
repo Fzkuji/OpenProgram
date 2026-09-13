@@ -27,7 +27,7 @@ esbuild.build({
     contents: [
       'export { createElement } from "react";',
       'export { createRoot } from "react-dom/client";',
-      'export { BrowserControlBar } from "./components/center-tabs/browser-control-bar.tsx";',
+      'export { BrowserControlBar } from "./components/center-tabs/browser/browser-control-bar.tsx";',
       'export { recordOperationCue, resetBrowserControl } from "./lib/browser/browser-control.ts";',
       'export { ingestBrowserResource, resetBrowserResources, setBrowserConnection } from "./lib/chat/session-resources.ts";',
     ].join("\n"),

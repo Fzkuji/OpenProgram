@@ -1,10 +1,10 @@
 /* 书签行语法（书签/网页历史中央 tab 页复用的行样式）。
-   对应组件：components/center-tabs/builtin-tab-pane.tsx */
+   对应组件：components/center-tabs/panes/builtin-tab-pane.tsx */
 
 /* ============ Bookmark rows ============
    Shared list grammar. The right sidebar no longer hosts a bookmarks
    view — bookmarks and web history are center tabs now
-   (components/center-tabs/builtin-tab-pane.tsx) — but these row styles
+   (components/center-tabs/panes/builtin-tab-pane.tsx) — but these row styles
    are the vocabulary those pages are built from, so they stay global. */
 .bookmarks-list {
   display: flex;

@@ -2,7 +2,7 @@
 
 import { ChromeIcon } from "@/components/animated-icons";
 
-import styles from "./center-tabs.module.css";
+import styles from "../center-tabs.module.css";
 
 export function BrowserGlyph({ size = 24 }: { size?: number }) {
   return (

@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { closeDocumentController } from "../lib/files/document-controller";
 import { DocumentWindow } from "../components/files/lazy-document-window";
-import { PersistentFilePanes } from "../components/center-tabs/persistent-file-panes";
+import { PersistentFilePanes } from "../components/center-tabs/panes/persistent-file-panes";
 
 function Fixture() {
   const [closed, setClosed] = useState(false);

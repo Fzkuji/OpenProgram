@@ -20,7 +20,7 @@ function finalDeclaration(selector, property) {
   return value;
 }
 const ntp = readFileSync(
-  new URL("../../components/center-tabs/new-tab-page.tsx", import.meta.url),
+  new URL("../../components/center-tabs/panes/new-tab-page.tsx", import.meta.url),
   "utf8",
 );
 const conversations = readFileSync(
@@ -37,7 +37,7 @@ const strip = readCenterTabStripSource();
 // pickPointerDropTarget) now lives in its own module; assertions about
 // those DEFINITIONS read here, while the strip's CALL sites stay above.
 const geometry = readFileSync(
-  new URL("../../components/center-tabs/tab-strip-geometry.ts", import.meta.url),
+  new URL("../../components/center-tabs/strip/tab-strip-geometry.ts", import.meta.url),
   "utf8",
 );
 const appShell = readFileSync(
@@ -46,7 +46,7 @@ const appShell = readFileSync(
 );
 const desktopBridge = readDesktopBridgeSource();
 const webTabPane = readFileSync(
-  new URL("../../components/center-tabs/web-tab-pane.tsx", import.meta.url),
+  new URL("../../components/center-tabs/browser/web-tab-pane.tsx", import.meta.url),
   "utf8",
 );
 const desktopMain = readDesktopMainSource();
@@ -590,7 +590,7 @@ assert.match(
 assert.match(strip, /<SplitViewPicker/);
 assert.match(strip, /subjectId=\{splitPickerTabId\}/);
 const picker = readFileSync(
-  new URL("../../components/center-tabs/split-view-picker.tsx", import.meta.url),
+  new URL("../../components/center-tabs/strip/split-view-picker.tsx", import.meta.url),
   "utf8",
 );
 // The picker lists other tabs and commits via groupTab.
