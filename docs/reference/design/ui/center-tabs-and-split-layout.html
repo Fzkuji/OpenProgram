@@ -829,7 +829,7 @@
       <p>实现采用现有 Zustand 标签库、布局规范化与路由激活路径。标签 ID 标识标签实例，sessionId 标识当前会话；不再根据会话 ID 推断标签身份。页面历史记录页面身份、会话元数据、侧栏路由和文件位置，不复制输入或消息。新建标签遇到已有 ID 时分配唯一后缀。源窗口转移删除在异步确认前后核对准备时的会话历史；导航改变快照则取消旧转移，回滚不覆盖新的导航状态。</p>
       <p>路由同步只响应 pathname 变化；会话确认由 markSessionReady 更新。用户标签导航由当前标签的 sessionId / draft 变化触发，避免旧 currentSessionId 的中间更新覆盖新导航。删除只依据已加载列表中确定移除的 ID，未加载记录不算删除。</p>
       <p>比较范围：保留本页现有网页、split 与 PiP 参考与边界；会话历史是应用内状态，不采用浏览器全局 History 作为每标签记录，不改变网页前进后退、服务端协议或权限。同一会话可以由独立标签实例显示；恢复时保留各标签的身份、内容和历史。不同 sessionId 即使标题相同也保留。</p>
-      <h3>实现状态</h3><p data-session-navigation-status="pending">每标签独立导航已实现，等待独立审查及完整验证。</p>
+      <h3>实现状态</h3><p data-session-navigation-status="complete">每标签独立导航及默认入口恢复已实现，独立规格审查和质量审查通过。导航、路由、文件重命名与历史草稿转移由公开入口测试覆盖。</p>
     </section>
   <section id="page-navigation"><h2>Initial page navigation</h2><p>Replacing an explicit New tab page records it in that tab's page history. Back returns to that initial page and Forward restores the selected application or built-in page, without adding another visible tab. Selecting another destination after Back discards the old forward entries. Existing conversation history remains navigable before returning to the initial page. History is persisted with the tab.</p></section>
 <section id="tab-controls"><h2>Tab controls</h2><p>Back, Forward, and New tab each use a 28px-wide button with an 8px gap. An empty tab-list container takes no layout space. New tab has no left divider.</p></section>
@@ -976,5 +976,5 @@
 <p>Explicit new-tab actions still create tabs. Launcher choices and navigation within a session, Files or Browser home replace the current tab. When a target identity already belongs to another tab, the current slot gets a unique instance identity. Native browser URL history remains in browser controls. No window-wide or cross-tab fallback history is retained.</p>
 <p>Acceptance: create A and B with different page histories; switch between them; traverse both directions and assert the other tab and its cursor remain byte-for-byte unchanged. Cover default launcher, files/folders, sidebar routes, sessions and applications, including identical destinations in two tabs, draft ACK/title, delete, reload and grouped layout references.</p>
 <p>Code organization: center-tabs-store.ts is the public composition entry. store/ contains typed state, shared commit helpers and actions grouped by layout, navigation, sessions, pages, browser, split and transfer. navigation/ contains pure page-history and legacy-session helpers plus selectors. No action module owns a second history store.</p>
-<h3>Implementation status</h3><p data-window-navigation-status="pending">Per-tab isolation repair is under implementation.</p></section></body>
+<h3>Implementation status</h3><p data-window-navigation-status="complete">Implemented and independently reviewed. Verification passes: 701 Web tests, 511 repository contracts, 49 browser tests, TypeScript, Web and Desktop static checks, production build and documentation links. The browser run skips 16 optional Office tests. The tab store entry has 41 lines; responsibility modules are at most 334 lines.</p></section></body>
 </html>
