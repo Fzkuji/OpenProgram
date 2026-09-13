@@ -65,6 +65,8 @@ def append_node(store, session_id, node, *, create_if_missing=True, advance_head
         shared._check_append_invariant(session_id, idx, pending, predecessor, caller)
         if pending.seq < 0:
             pending.seq = idx.next_seq
+            if pending.seq in idx._taken_seqs:
+                pending.seq = max(idx._taken_seqs) + 1
         if pending.seq in idx._taken_seqs:
             raise ValueError("append sequence already exists")
         target = history_path(git, pending)

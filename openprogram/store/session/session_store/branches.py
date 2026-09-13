@@ -1,6 +1,7 @@
 """SessionStore branches operations."""
 from __future__ import annotations
 from . import shared
+from ..placement import validate_session_id
 
 
 class BranchesOperations:
@@ -129,76 +130,79 @@ class BranchesOperations:
         meta_update: shared.Optional[dict[str, shared.Any]] = None,
     ) -> bool:
         """Durable cross-process HEAD CAS, optionally activating a branch ref."""
-        with self._session_lock(session_id):
-            pair = self._open(session_id)
-            if pair is None:
-                return False
-            git, idx = pair
+        validate_session_id(session_id)
+
+        def transform(durable, idx):
             node = idx.nodes_by_id.get(new_head_id) if new_head_id else None
             if node is not None and (node.metadata or {}).get("covers_ids"):
                 raise ValueError(
                     f"compare_and_set_head: {new_head_id!r} is a compaction summary"
                 )
-            with self._head_file_lock(git):
-                try:
-                    durable = git.read_meta()
-                    if durable.get("head_id") != expected_head_id:
-                        return False
-                    updated = dict(durable)
-                    updated["head_id"] = new_head_id
-                    updated["head_version"] = int(
+            current_head = durable.get("head_id") or durable.get("last_node_id")
+            if current_head != expected_head_id:
+                return None
+            reserved = {
+                "head_id", "last_node_id", "head_version", "writer_epoch",
+                "branch_refs", "active_branch_id",
+            }.intersection(meta_update or {})
+            if reserved:
+                raise ValueError(
+                    "meta_update cannot replace HEAD control fields: "
+                    + ", ".join(sorted(reserved))
+                )
+            updated = dict(durable)
+            updated["head_id"] = new_head_id
+            updated["head_version"] = int(
+                durable.get("head_version") or 0
+            ) + 1
+            if branch_update:
+                refs = dict(durable.get("branch_refs") or {})
+                source_id = branch_update.get("source_branch_id")
+                target_id = branch_update.get("target_branch_id")
+                if source_id:
+                    source = dict(refs.get(source_id) or {})
+                    source.setdefault("branch_id", source_id)
+                    source.setdefault("head_id", expected_head_id)
+                    source.setdefault("head_version", int(
                         durable.get("head_version") or 0
-                    ) + 1
-                    if branch_update:
-                        refs = dict(durable.get("branch_refs") or {})
-                        source_id = branch_update.get("source_branch_id")
-                        target_id = branch_update.get("target_branch_id")
-                        if source_id:
-                            source = dict(refs.get(source_id) or {})
-                            source.setdefault("branch_id", source_id)
-                            source.setdefault("head_id", expected_head_id)
-                            source.setdefault("head_version", int(
-                                durable.get("head_version") or 0
-                            ))
-                            source.setdefault("writer_epoch", int(
-                                durable.get("writer_epoch") or 0
-                            ))
-                            refs[source_id] = source
-                        if target_id and not branch_update.get("preserve_target"):
-                            target = dict(refs.get(target_id) or {})
-                            target.update({
-                                "branch_id": target_id,
-                                "head_id": new_head_id,
-                                "parent_branch_id": source_id,
-                                "head_version": updated["head_version"],
-                                "writer_epoch": int(
-                                    durable.get("writer_epoch") or 0
-                                ) + 1,
-                                "status": branch_update.get("target_status", "active"),
-                            })
-                            refs[target_id] = target
-                        elif target_id and target_id in refs \
-                                and branch_update.get("target_status"):
-                            target = dict(refs[target_id])
-                            target["status"] = branch_update["target_status"]
-                            refs[target_id] = target
-                        updated["branch_refs"] = refs
-                        active_id = branch_update.get("active_branch_id")
-                        if active_id:
-                            updated["active_branch_id"] = active_id
-                        updated["writer_epoch"] = int(
+                    ))
+                    source.setdefault("writer_epoch", int(
+                        durable.get("writer_epoch") or 0
+                    ))
+                    refs[source_id] = source
+                if target_id and not branch_update.get("preserve_target"):
+                    target = dict(refs.get(target_id) or {})
+                    target.update({
+                        "branch_id": target_id,
+                        "head_id": new_head_id,
+                        "parent_branch_id": source_id,
+                        "head_version": updated["head_version"],
+                        "writer_epoch": int(
                             durable.get("writer_epoch") or 0
-                        ) + 1
-                    if meta_update:
-                        updated.update(meta_update)
-                    git.write_meta(updated)
-                    with idx._persist_lock:
-                        with idx._lock:
-                            idx.head_id = new_head_id
-                            idx.meta = updated
-                    return True
-                finally:
-                    pass
+                        ) + 1,
+                        "status": branch_update.get("target_status", "active"),
+                    })
+                    refs[target_id] = target
+                elif target_id and target_id in refs \
+                        and branch_update.get("target_status"):
+                    target = dict(refs[target_id])
+                    target["status"] = branch_update["target_status"]
+                    refs[target_id] = target
+                updated["branch_refs"] = refs
+                active_id = branch_update.get("active_branch_id")
+                if active_id:
+                    updated["active_branch_id"] = active_id
+                updated["writer_epoch"] = int(
+                    durable.get("writer_epoch") or 0
+                ) + 1
+            if meta_update:
+                updated.update(meta_update)
+            updated.pop("last_node_id", None)
+            return shared.json.loads(shared.json.dumps(updated, ensure_ascii=False, default=str))
+
+        return self._transform_session_meta(
+            session_id, transform, create_if_missing=False,
+        ) is not None
 
 
     def message_exists(self, session_id: str, msg_id: str) -> bool:
