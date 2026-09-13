@@ -500,7 +500,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
     </div>
   </details></section>
   <section id="implementation-status"><details class="background-detail"><summary>实现状态</summary>
-    <p id="pdf-runtime-status" data-status="review-passed">PDF desktop runtime compatibility uses the matching upstream legacy modules. Public FileViewer regression tests pass in native and missing-API environments; independent specification and quality reviews pass. Final full verification and installed-App acceptance are pending.</p>
+    <p id="pdf-runtime-status" data-status="verified">PDF desktop runtime compatibility uses the matching upstream legacy modules. Public FileViewer regression tests pass in native and missing-API environments, including rendering, navigation, zoom, search and close/reopen. Independent specification and quality reviews, full Web and browser suites, repository contracts, typecheck, production build, resource budget and documentation links pass. The installed Electron runtime also decodes all pages of the reported research PDF with the staged compatibility assets.</p>
     <p>项目人工编辑的二进制发布与历史接口已完成独立规范审查、质量审查和完整后台测试。现有文本写入也使用共享恢复事务；每次写入立即发布，历史按编辑时段分组，恢复新增版本。项目移位后按当前位置恢复，离线时仍能读取已保存版本；失败与损坏记录明确显示未确认状态。</p>
     <p>统一预览窗口、文本编辑和后台自动保存控制器已完成源码实现、独立规范与质量审查，以及完整后台、Web、浏览器与文档检查。草稿覆盖未打开的文件，失败不会关闭文件标签；重命名期间禁用相关编辑，成功后按新路径重新打开。人工和模型历史已汇总到同一文件 History，可以预览与恢复。Office 的 DOCX/PPTX/XLSX 已完成真实内容修改、导出与重新打开验证；旧 DOC/PPT/XLS 需要另存 OOXML，ODF 格式已验证原格式导出。保存失败后立即重试，以及关闭前等待保存期间新增内容完成导出，也已在本地引擎中验证。安装后通过默认 App 验证资源与界面，运行状态保存在本地发布记录。</p>
     <p>PDF 分页、缩放与搜索，PSD 合成图与图层列表、TIFF 和普通图片预览，以及本地音视频播放已完成源码实现、独立审查和完整验证。预览使用本地固定版本资源，损坏或超限文件显示错误和下载入口；PDF、PSD、TIFF、音频和视频保持只读。</p>
