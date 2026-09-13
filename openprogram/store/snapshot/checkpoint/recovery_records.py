@@ -1,4 +1,4 @@
-"""Structural admission for persisted rewind records, without executing them."""
+"""Structural admission for persisted history and rewind records, without executing them."""
 from __future__ import annotations
 
 import json
@@ -107,4 +107,34 @@ def read_rewind_record(path: Path) -> dict | None:
 def invalid_rewind_result(path: Path) -> dict:
     return {"status": "recovery_required", "error_code": "RECOVERY_REQUIRED",
             "error": "invalid rewind intent", "intent_path": str(path),
+            "restored_paths": []}
+
+
+def read_history_record(path: Path) -> dict | None:
+    """Admit fields consumed by non-executing history receipt paths."""
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (UnicodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(value, dict):
+        return None
+    status = value.get("status")
+    if not isinstance(status, str) or status not in _STATUSES:
+        return None
+    actions = value.get("actions")
+    if not isinstance(actions, list):
+        return None
+    for action in actions:
+        if not isinstance(action, dict):
+            return None
+        target = action.get("path")
+        if (not isinstance(target, str) or "\0" in target
+                or not Path(target).is_absolute() or not Path(target).name):
+            return None
+    return value
+
+
+def invalid_history_result(path: Path) -> dict:
+    return {"status": "recovery_required", "error_code": "RECOVERY_REQUIRED",
+            "error": "invalid history intent", "intent_path": str(path),
             "restored_paths": []}

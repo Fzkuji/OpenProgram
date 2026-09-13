@@ -13,7 +13,9 @@ from openprogram._compat import is_link_metadata
 
 from . import capture, file_apply, file_state, manifest
 from .capture import MutationJournalError
-from .recovery_records import invalid_rewind_result, read_rewind_record
+from .recovery_records import (
+    invalid_history_result, invalid_rewind_result, read_history_record, read_rewind_record,
+)
 from .paths import (
     path_basename,
     session_backup_root,
@@ -525,29 +527,20 @@ class CheckpointStore:
             value["error_code"] = "RECOVERY_REQUIRED"
         return value
 
-    @staticmethod
-    def _read_intent(path: Path) -> dict | None:
-        try:
-            value = json.loads(path.read_text(encoding="utf-8"))
-        except (FileNotFoundError, OSError, json.JSONDecodeError):
-            return None
-        if not isinstance(value, dict):
-            return None
-        if value.get("status") == "recovery_required" and not value.get("error_code"):
-            value["error_code"] = "RECOVERY_REQUIRED"
-            try:
-                manifest.save(path, value)
-            except OSError:
-                # The normalized result remains actionable even if a read-only
-                # or damaged profile prevents the migration write.
-                pass
-        return value
-
     def read_history_intent(
         self, turn_id: str, direction: str, key: str,
     ) -> dict | None:
-        """Read one single-turn history receipt without applying it."""
-        return self._read_intent(self._intent_path(turn_id, direction, key))
+        """Read one single-turn history receipt without applying or rewriting it."""
+        path = self._intent_path(turn_id, direction, key)
+        try:
+            value = read_history_record(path)
+        except FileNotFoundError:
+            return None
+        if value is None:
+            return invalid_history_result(path)
+        if value["status"] == "recovery_required" and not value.get("error_code"):
+            value["error_code"] = "RECOVERY_REQUIRED"
+        return value
 
     def _recover_rewind_intent(
         self,
@@ -671,11 +664,11 @@ class CheckpointStore:
         )
         paths = sorted({path for root in roots for path in root.glob("*/intents/*.json")})
         for path in paths:
-            try:
-                intent = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
+            intent = read_history_record(path)
+            if intent is None:
+                results.append(invalid_history_result(path))
                 continue
-            if not isinstance(intent, dict) or intent.get("status") not in {"prepared", "applying"}:
+            if intent["status"] not in {"prepared", "applying"}:
                 continue
             intent["status"] = "recovery_required"
             intent["error_code"] = "RECOVERY_REQUIRED"
@@ -1039,21 +1032,25 @@ class CheckpointStore:
         key = idempotency_key or uuid.uuid4().hex
         transaction_id = f"{direction}_{uuid.uuid4().hex}"
         intent_path = self._intent_path(turn_id, direction, key)
-        if intent_path.exists():
-            try:
-                existing = json.loads(intent_path.read_text(encoding="utf-8"))
-                if existing.get("status") in {
-                    "committed", "rolled_back", "recovery_required", "aborted",
-                }:
-                    return self._intent_result(existing)
-                return self._intent_result({
-                    **existing,
-                    "status": "recovery_required",
-                    "error_code": "RECOVERY_REQUIRED",
-                    "error": "incomplete durable intent requires recovery",
-                })
-            except (OSError, json.JSONDecodeError):
-                pass
+        try:
+            existing = read_history_record(intent_path)
+        except FileNotFoundError:
+            existing = None
+        else:
+            if existing is None:
+                return invalid_history_result(intent_path)
+            if existing["status"] == "recovery_required" and not existing.get("error_code"):
+                existing["error_code"] = "RECOVERY_REQUIRED"
+            if existing["status"] in {
+                "committed", "rolled_back", "recovery_required", "aborted",
+            }:
+                return self._intent_result(existing)
+            return self._intent_result({
+                **existing,
+                "status": "recovery_required",
+                "error_code": "RECOVERY_REQUIRED",
+                "error": "incomplete durable intent requires recovery",
+            })
         plan = self.plan_history_operation(turn_id, direction)
         if plan.get("status") != "ready":
             return {
