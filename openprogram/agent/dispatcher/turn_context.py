@@ -14,6 +14,7 @@ success, exception and early-return paths all unwind identically.
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
 from typing import Optional, TYPE_CHECKING
 
 from openprogram.agent.run_control import (
@@ -27,6 +28,25 @@ if TYPE_CHECKING:
     from openprogram.agent.dispatcher.types import TurnRequest
 
 _log = logging.getLogger(__name__)
+
+
+@contextmanager
+def turn_scope(req: "TurnRequest"):
+    """Scope attribution across setup, execution and finalization of a turn."""
+    from openprogram.agent import plan_mode
+    from openprogram.usage.context import current_usage_context, usage_scope
+
+    outer = current_usage_context()
+    with usage_scope(
+        call_kind="chat" if outer.call_kind == "unknown" else outer.call_kind,
+        session_id=outer.session_id or req.session_id,
+        agent_id=outer.agent_id or req.agent_id,
+    ):
+        token = plan_mode.current_session_id.set(req.session_id)
+        try:
+            yield
+        finally:
+            plan_mode.current_session_id.reset(token)
 
 
 class TurnBindings:

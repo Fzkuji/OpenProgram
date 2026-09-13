@@ -72,7 +72,7 @@ from openprogram.agent.dispatcher.runtime_attach import _wrap_agentic_runtime_bl
 #   finalize.py     — phase-6 bookkeeping
 #   error_path.py   — the except branch
 from openprogram.agent.dispatcher.prep import prepare_turn
-from openprogram.agent.dispatcher.turn_context import TurnBindings
+from openprogram.agent.dispatcher.turn_context import TurnBindings, turn_scope
 from openprogram.agent.dispatcher.stream_tap import make_stream_tap
 from openprogram.agent.dispatcher.error_path import handle_turn_error
 from openprogram.agent.dispatcher.finalize import finalize_error_turn, finalize_turn
@@ -92,7 +92,6 @@ from openprogram.agent.dispatcher.loop_runner import (
 # Approval gate — used by the "ask" permission flow
 # ---------------------------------------------------------------------------
 
-from openprogram.agent import plan_mode as _plan_mode
 from openprogram.agent.permissions.approval import (
     wrap_with_approval as _wrap_with_approval,
     await_user_approval as _await_user_approval,
@@ -222,6 +221,21 @@ def process_agent_continuation(
     cancel_event: Optional[threading.Event] = None,
     execution_context: dict | None = None,
 ) -> TurnResult:
+    """Run the dispatcher inside its lexical attribution scope."""
+    with turn_scope(continuation.request):
+        return _resume_turn(
+            continuation, on_event=on_event, cancel_event=cancel_event,
+            execution_context=execution_context,
+        )
+
+
+def _resume_turn(
+    continuation,
+    *,
+    on_event: Optional[EventCallback] = None,
+    cancel_event: Optional[threading.Event] = None,
+    execution_context: dict | None = None,
+) -> TurnResult:
     """Resume an Agent checkpoint without replaying dispatcher admission.
 
     A continuation owns an already-persisted user node and assistant
@@ -344,6 +358,21 @@ def _process_turn_once(
     cancel_event: Optional[threading.Event] = None,
     execution_context: dict | None = None,
 ) -> TurnResult:
+    """Run the dispatcher inside its lexical attribution scope."""
+    with turn_scope(req):
+        return _process_turn_body(
+            req, on_event=on_event, cancel_event=cancel_event,
+            execution_context=execution_context,
+        )
+
+
+def _process_turn_body(
+    req: TurnRequest,
+    *,
+    on_event: Optional[EventCallback] = None,
+    cancel_event: Optional[threading.Event] = None,
+    execution_context: dict | None = None,
+) -> TurnResult:
     """Synchronous wrapper that runs one full agent turn.
 
     Why sync: callable from channel worker threads without async
@@ -406,41 +435,6 @@ def _process_turn_once(
                 failed=True,
                 error=f"{req.interaction} failed: {type(exc).__name__}: {exc}",
             )
-
-    # Usage metering: label every LLM call in this turn with its source.
-    # Default to "chat", but DON'T clobber a source an outer scope already
-    # set (an @agentic_function runtime / subagent wraps the turn in
-    # ``usage_scope(call_kind="exec"|"subagent")`` before calling us). Set
-    # the contextvar directly (not a ``with``) so it spans the whole sync
-    # turn, mirroring the plan-mode contextvar set just below.
-    try:
-        from dataclasses import replace as _replace
-        from openprogram.usage.context import (
-            UsageContext, current_usage_context, _current as _usage_cur,
-        )
-        _cur = current_usage_context()
-        if _cur.call_kind == "unknown":
-            _usage_cur.set(UsageContext(
-                call_kind="chat", agent_id=req.agent_id, session_id=req.session_id))
-        else:
-            # Keep the outer source (exec/subagent) but fill in this turn's
-            # session/agent so nested compaction/summary calls attribute right.
-            _usage_cur.set(_replace(
-                _cur,
-                agent_id=_cur.agent_id or req.agent_id,
-                session_id=_cur.session_id or req.session_id,
-            ))
-    except Exception:
-        # Usage metering is observability, never a reason to fail a turn;
-        # a miss only mis-attributes this turn's token counts.
-        _log.debug("usage context binding failed", exc_info=True)
-
-    # Plan-mode session context: expose ``req.session_id`` so the
-    # enter_plan_mode / exit_plan_mode tool bodies can flip the
-    # per-session flag without args plumbing. ContextVars propagate
-    # through asyncio tasks, so any coroutine the agent loop spawns
-    # from this turn (including tool executes) sees the same value.
-    _plan_mode.current_session_id.set(req.session_id)
 
     # Suffix matches the `/run` path (server.py) and the webui React
     # client's `replyId()` — all three mint the assistant reply id as
