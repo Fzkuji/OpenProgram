@@ -47,46 +47,13 @@ class SessionNodeWriter:
         Writes the Call as-is (no lossy chat-msg round trip), assigns
         a seq, and bumps head for conversation nodes. Idempotent on id.
         With create_if_missing=False, a removed session is never initialized.
-        Replaying an existing ID completes any interrupted history write.
+        Interrupted appends recover before access; durable IDs are not rewritten.
         """
-        import time as _time
-        pair = self.store._open(self.session_id, create_if_missing=create_if_missing)
-        if pair is None:
-            return
-        git, idx = pair
-        if node.id in idx.nodes_by_id:
-            # A previous append may have updated the index before its history
-            # write failed. Replaying the same ID must complete persistence.
-            existing = idx.nodes_by_id[node.id]
-            git.write_history(existing.seq, existing.role, existing.id, existing.to_dict())
-            return
-        meta = node.metadata or {}
-        # The conv edge lives ONLY on the top-level field.
-        predecessor = node.predecessor or ""
-        caller = node.caller or meta.get("caller") or ""
-        from .session_store import _check_append_invariant
-        _check_append_invariant(self.session_id, idx, node, predecessor, caller)
-        seq = idx.append(node, predecessor=predecessor, caller=caller)
-        self.store.spill_large_node(self.session_id, node)
-        git.write_history(seq, node.role, node.id, node.to_dict())
-        if not caller and self.advance_head:
-            idx.set_head(node.id)
-        activity_at = _time.time()
-        idx.set_meta(updated_at=activity_at)
-        # Persist the activity time even when this node does not advance
-        # HEAD; otherwise meta.json and the sidebar registry disagree.
-        self.store._persist_meta(git, idx)
-        # Registry too — same as SessionStore.append_message: updated_at
-        # is the sidebar's recency-sort key. The webui dispatcher appends
-        # through THIS shim, so skipping the registry here left every web
-        # chat row without a timestamp and the sidebar order collapsed to
-        # insertion order after a refresh (new sessions sank to the bottom).
-        fields: dict = {"updated_at": activity_at}
-        if node.role == "user" and node.output:
-            text = str(node.output or "").strip().replace("\n", " ")
-            fields["preview"] = (text[:77] + "…") if len(text) > 80 else text
-        self.store._update_index_entry(self.session_id, **fields)
-        self.store._schedule_index_flush()
+        from .session_store.append import append_node
+        append_node(
+            self.store, self.session_id, node,
+            create_if_missing=create_if_missing, advance_head=self.advance_head,
+        )
 
     def load(self):
         """Return a ``Graph`` populated with all nodes for this session.

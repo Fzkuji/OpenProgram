@@ -176,6 +176,17 @@ class StorageOperations:
                     or not (sdir / "history").is_dir()
                 ):
                     return None
+            from .append import intent_path
+            recovery_git = shared.GitSession(sdir)
+            if intent_path(recovery_git).exists():
+                with self._head_file_lock(recovery_git):
+                    pass
+                sdir = recovery_git.path
+                if cached and cached[0].path != sdir:
+                    with self._lock:
+                        self._sessions.pop(session_id, None)
+                    cached = None
+                    verified_git = recovery_git
             if cached:
                 git, idx = cached
                 # @agentic_function runs execute in a fork()'d subprocess
@@ -271,6 +282,8 @@ class StorageOperations:
             current = self._session_dir(session_id)
             if current != git.path:
                 git.path = current
+            from .append import recover
+            recover(self, git)
             yield
 
 

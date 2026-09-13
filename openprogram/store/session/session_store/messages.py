@@ -40,55 +40,8 @@ class MessagesOperations:
 
 
     def append_message(self, session_id: str, msg: dict[str, shared.Any]) -> None:
-        pair = self._open(session_id, create_if_missing=True)
-        if pair is None:
-            return
-        git, idx = pair
-        node = shared._msg_to_node(msg)
-        # The complete read/modify/write sequence is protected by the
-        # session-ID lock. Placement may change while a process is alive, so
-        # acquire through _head_file_lock and use its revalidated path.
-        old_path = git.path
-        with self._head_file_lock(git):
-            if git.path != old_path:
-                idx.reset()
-                idx.rebuild_from_paths(git.list_history(), git.read_meta(),
-                                       shared._node_conv_predecessor, shared._node_caller)
-            # Idempotent — skip if id already known.
-            if node.id in idx.nodes_by_id:
-                return
-            predecessor = shared._node_conv_predecessor(node)
-            caller = shared._node_caller(node)
-            shared._check_append_invariant(session_id, idx, node, predecessor, caller)
-            seq = idx.append(node, predecessor=predecessor, caller=caller)
-            self.spill_large_node(session_id, node)
-            # Write the raw node file. Commit deferred to turn end.
-            git.write_history(seq, node.role, node.id, node.to_dict())
-            # Advance head only when the conversation actually grew: a
-        # caller-less node chained onto the current tip (or the session's
-        # first node). Any other insert — a compaction summary splicing
-        # mid-chain, a side-branch write — leaves head alone; explicit
-        # moves go through set_head (context/compaction.md §5).
-            advanced = (not caller
-                        and (idx.head_id is None or predecessor == idx.head_id))
-            if advanced:
-                idx.set_head(node.id)
-            activity_at = shared.time.time()
-            idx.set_meta(updated_at=activity_at)
-            # Persist activity time while the same session lock is held.
-            with idx._persist_lock:
-                with idx._lock:
-                    meta = dict(idx.meta)
-                    meta["head_id"] = idx.head_id
-                git.write_meta(meta)
-        # Registry: every appended message bumps updated_at（最新一次聊天
-        # 时间，侧栏排序键）；user 消息顺带刷新 preview（debounced to disk）。
-        fields: dict[str, shared.Any] = {"updated_at": activity_at}
-        if node.role == "user" and node.output:
-            text = (node.output or "").strip().replace("\n", " ")
-            fields["preview"] = (text[:77] + "…") if len(text) > 80 else text
-        self._update_index_entry(session_id, **fields)
-        self._schedule_index_flush()
+        from .append import append_node
+        append_node(self, session_id, shared._msg_to_node(msg), tip_only=True)
 
 
     def append_messages(self, session_id: str, msgs: list[dict[str, shared.Any]]) -> None:
