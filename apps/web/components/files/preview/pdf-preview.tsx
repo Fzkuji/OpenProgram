@@ -28,6 +28,7 @@ export default function PdfPreview({ sourceUrl, path, controller, saveStatus }: 
   const [sidebarMode, setSidebarMode] = useState<"pages" | "outline">("pages");
   const [outline, setOutline] = useState<Outline | null>(null);
   const [query, setQuery] = useState("");
+  const activeSearch = useRef(false);
   const [matches, setMatches] = useState({ current: 0, total: 0 });
   const [cleanCopy, setCleanCopy] = useState(true);
   const cleanCopyRef = useRef(cleanCopy); cleanCopyRef.current = cleanCopy;
@@ -74,7 +75,7 @@ export default function PdfPreview({ sourceUrl, path, controller, saveStatus }: 
         bus.on("pagesinit", () => { if (abort.signal.aborted) return; currentViewer.currentScaleValue = "page-width"; setReady(true); }, { signal: abort.signal });
         bus.on("pagechanging", ({ pageNumber }: { pageNumber: number }) => setPage(pageNumber), { signal: abort.signal });
         bus.on("scalechanging", ({ scale: value }: { scale: number }) => setScale(Math.round(value * 100)), { signal: abort.signal });
-        bus.on("updatefindmatchescount", ({ matchesCount }: { matchesCount: typeof matches }) => setMatches(matchesCount), { signal: abort.signal });
+        bus.on("updatefindmatchescount", ({ matchesCount }: { matchesCount: typeof matches }) => { if (activeSearch.current) setMatches(matchesCount); }, { signal: abort.signal });
         bus.on("annotationeditormodechanged", ({ mode: value }: { mode: number }) => setMode(value), { signal: abort.signal });
         const documentOptions = { data: bytes, isEvalSupported: false, enableXfa: false,
           cMapUrl: ROOT + "cmaps/", cMapPacked: true, standardFontDataUrl: ROOT + "standard_fonts/", wasmUrl: ROOT + "wasm/" };
@@ -99,6 +100,7 @@ export default function PdfPreview({ sourceUrl, path, controller, saveStatus }: 
   function go(value: number) { if (runtime.current && Number.isFinite(value)) runtime.current.viewer.currentPageNumber = Math.max(1, Math.min(total, value)); }
   function zoom(value: string) { if (runtime.current) runtime.current.viewer.currentScaleValue = value; }
   function search(previous = false) {
+    activeSearch.current = Boolean(query.trim());
     runtime.current?.bus.dispatch("find", { source: host.current, type: "again", query, caseSensitive: false, entireWord: false, highlightAll: true, findPrevious: previous, matchDiacritics: false });
   }
   function annotate(value: number) {
@@ -108,7 +110,7 @@ export default function PdfPreview({ sourceUrl, path, controller, saveStatus }: 
   function renderOutline(items: NonNullable<Outline>) {
     return <ul>{items.map((item, index) => <li key={index}><button type="button" disabled={!item.dest} onClick={() => { if (item.dest) void runtime.current?.links.goToDestination(item.dest); }}>{item.title}</button>{item.items.length > 0 && renderOutline(item.items)}</li>)}</ul>;
   }
-  return <div className={styles.reader} style={{ height: "100%", minHeight: 320, display: "flex", flexDirection: "column" }}>
+  return <div data-pdf-reader className={styles.reader} style={{ height: "100%", minHeight: 320, display: "flex", flexDirection: "column" }}>
     <link rel="stylesheet" href={ROOT + "pdf_viewer.css"} />
     <div className={styles.toolbar} role="toolbar" aria-label={text("PDF controls", "PDF 控制")}>
       <button type="button" aria-label={text("Toggle sidebar", "切换侧栏")} aria-pressed={sidebar} onClick={() => setSidebar(!sidebar)}>☷</button>
@@ -121,7 +123,7 @@ export default function PdfPreview({ sourceUrl, path, controller, saveStatus }: 
       <button type="button" disabled={!ready} aria-label={text("Zoom in", "放大")} onClick={() => zoom(String(Math.min(4, scale / 100 + 0.25)))}>+</button>
       {controller && <><span className={styles.divider} /><button type="button" disabled={!ready} aria-pressed={mode === 0} onClick={() => annotate(0)}>{text("Read", "阅读")}</button><button type="button" disabled={!ready} aria-pressed={mode === 9} onClick={() => annotate(9)}>{text("Highlight", "高亮")}</button><button type="button" disabled={!ready} aria-pressed={mode === 3} onClick={() => annotate(3)}>{text("Text note", "文字批注")}</button><button type="button" disabled={!ready} onClick={() => runtime.current?.bus.dispatch("editingaction", { name: "undo" })}>{text("Undo", "撤销")}</button><button type="button" disabled={!ready} onClick={() => runtime.current?.bus.dispatch("editingaction", { name: "redo" })}>{text("Redo", "重做")}</button><button type="button" disabled={!ready} onClick={() => void controller.flush().catch(() => undefined)}>{text("Save", "保存")}</button></>}
       <form onSubmit={event => { event.preventDefault(); search(); }} className={styles.search}>
-        <input aria-label={text("Search PDF", "搜索 PDF")} placeholder={text("Search", "搜索")} value={query} onChange={event => { setQuery(event.target.value); setMatches({ current: 0, total: 0 }); }} />
+        <input aria-label={text("Search PDF", "搜索 PDF")} placeholder={text("Search", "搜索")} value={query} onChange={event => { setQuery(event.target.value); activeSearch.current = false; setMatches({ current: 0, total: 0 }); runtime.current?.bus.dispatch("find", { query: "", type: "", highlightAll: true }); }} />
         <button type="submit" disabled={!ready || !query.trim()}>{text("Find", "查找")}</button>
         <button type="button" disabled={!ready || !query.trim()} aria-label={text("Previous match", "上一个匹配")} onClick={() => search(true)}>↑</button>
         <span aria-label={text("Search results", "搜索结果")}>{matches.current} / {matches.total}</span>
@@ -152,7 +154,8 @@ function Thumbnail({ pdf, page, selected, onClick }: { pdf?: PDFDocumentProxy; p
       observer.disconnect();
       void pdf.getPage(page).then(async handle => {
         if (cancelled) return;
-        const viewport = handle.getViewport({ scale: 120 / handle.getViewport({ scale: 1 }).width });
+        const original = handle.getViewport({ scale: 1 });
+        const viewport = handle.getViewport({ scale: Math.min(120 / original.width, 160 / original.height) });
         element.width = Math.ceil(viewport.width); element.height = Math.ceil(viewport.height);
         task = handle.render({ canvas: element, viewport }); await task.promise;
       }).catch(() => undefined);
@@ -160,7 +163,7 @@ function Thumbnail({ pdf, page, selected, onClick }: { pdf?: PDFDocumentProxy; p
     observer.observe(element);
     return () => { cancelled = true; observer.disconnect(); task?.cancel(); };
   }, [pdf, page]);
-  return <button type="button" className={styles.thumbnail} aria-label={`Page ${page}`} aria-current={selected ? "page" : undefined} onClick={onClick}><canvas ref={canvas} style={{ width: 120, minHeight: 120 }} /><span>{page}</span></button>;
+  return <button type="button" className={styles.thumbnail} aria-label={`Page ${page}`} aria-current={selected ? "page" : undefined} onClick={onClick}><canvas ref={canvas} style={{ maxWidth: 120, maxHeight: 160 }} /><span>{page}</span></button>;
 }
 
 export { PdfPreview };

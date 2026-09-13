@@ -13,7 +13,7 @@ PDF_FIXTURE = (
 )
 
 
-def outlined_pdf():
+def outlined_pdf(media_box=b"0 0 400 500"):
     """Small deterministic PDF with a public outline destination on page two."""
     content = b"BT /F1 18 Tf 40 400 Td (Paper reading fixture) Tj ET"
     objects = [
@@ -27,6 +27,7 @@ def outlined_pdf():
         b"<< /Type /Outlines /First 9 0 R /Last 9 0 R /Count 1 >>",
         b"<< /Title (Methods) /Parent 8 0 R /Dest [4 0 R /Fit] >>",
     ]
+    objects = [obj.replace(b"0 0 400 500", media_box) for obj in objects]
     data = bytearray(b"%PDF-1.7\n")
     offsets = []
     for index, obj in enumerate(objects, 1):
@@ -127,6 +128,10 @@ def test_pdf_pages_pixels_zoom_and_text_search(pdf_page):
     search.fill("target")
     page.get_by_role("button", name="Find").click()
     expect(page.get_by_label("Search results")).to_contain_text("2 / 2")
+    expect(page.locator('.textLayer .highlight').first).to_be_visible()
+    search.fill("")
+    expect(page.locator('.textLayer .highlight')).to_have_count(0)
+    expect(page.get_by_label("Search results")).to_have_text("0 / 0")
     page.evaluate("hideFile()")
     expect(page.locator("canvas")).to_have_count(0)
     page.evaluate("body => showFile('reopened.pdf', body)", PDF_FIXTURE)
@@ -272,7 +277,48 @@ def test_pdf_text_annotation_persists_and_reopens(pdf_page, fail_first):
     }""", base64.b64encode(state['body']).decode())
     assert any(a.get('subtype') == 'Highlight' for a in annotations)
     assert any(a.get('contentsObj', {}).get('str') == 'Reading note survives reopening' for a in annotations)
+    page.route('**/api/documents/history?*', lambda route: route.fulfill(json={'entries': [{'version_id': 'v1', 'actor': 'user'}]}))
+    held = []
+    page.route('**/api/documents/history/content?*', lambda route: held.append(route))
+    page.on('dialog', lambda dialog: dialog.accept())
+    page.get_by_role('button', name='History', exact=True).click()
+    with page.expect_request('**/api/documents/history/content?*'):
+        page.get_by_role('button', name='Restore', exact=True).click()
+    reader = page.locator('[data-pdf-reader]')
+    expect(reader).to_have_attribute('inert', '')
+    # Real pointer input must not reach the annotation toolbar during restore.
+    undo = reader.locator('button').filter(has_text='Undo')
+    bounds = undo.bounding_box()
+    page.mouse.click(bounds['x'] + bounds['width'] / 2, bounds['y'] + bounds['height'] / 2)
+    expect(page.locator('.highlightEditor')).to_have_count(1)
+    expect(page.locator('.freeTextEditor')).to_have_count(1)
+    assert len(held) == 1
+    held[0].fulfill(status=503, body='history temporarily unavailable')
+    expect(reader).not_to_have_attribute('inert', '')
+    page.get_by_role('button', name='Undo', exact=True).click()
+    expect(page.locator('.highlightEditor')).to_have_count(0)
+    page.get_by_role('button', name='Redo', exact=True).click()
+    expect(page.locator('.highlightEditor')).to_have_count(1)
     page.evaluate('hideFile()')
     page.evaluate("body => showFile('saved.pdf', body)", base64.b64encode(state['body']).decode())
     expect(page.get_by_text('1 / 2', exact=True)).to_be_visible()
+    assert errors == []
+
+
+
+def test_pdf_thumbnail_bounds_extreme_page_aspect_ratio(pdf_page):
+    from playwright.sync_api import expect
+
+    page, errors = pdf_page
+    page.evaluate("body => showFile('tall.pdf', body)", outlined_pdf(b"0 0 1 14400"))
+    expect(page.get_by_text('1 / 2', exact=True)).to_be_visible()
+    page.get_by_role('button', name='Toggle sidebar').click()
+    page.wait_for_function("""() => {
+      const c = document.querySelector('aside canvas');
+      return c && c.width === 1 && c.height === 160;
+    }""")
+    dimensions = page.locator('aside canvas').first.evaluate('c => ({width:c.width,height:c.height})')
+    assert 0 < dimensions['width'] <= 120
+    assert 0 < dimensions['height'] <= 160
+    assert dimensions['width'] * dimensions['height'] <= 19200
     assert errors == []

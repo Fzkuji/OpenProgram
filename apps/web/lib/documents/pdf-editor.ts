@@ -6,6 +6,7 @@ import type { RichDocumentEditor } from "@/lib/files/document-types";
 /** Persist standard PDF annotations through the document owner's revision lease. */
 export function bindPdfEditor(pdf: PDFDocumentProxy, bus: EventBus, host: HTMLElement, controller: DocumentController) {
   const storage = pdf.annotationStorage as unknown as { onSetModified: (() => void) | null };
+  const inputHost = host.closest("[data-pdf-reader]") ?? host;
   const generation = controller.getState().editorRevision;
   let destroyed = false, readonly = false, dirty = false;
   let savedHash = pdf.annotationStorage.serializable.hash;
@@ -34,8 +35,8 @@ export function bindPdfEditor(pdf: PDFDocumentProxy, bus: EventBus, host: HTMLEl
       return task;
     },
     async flushPendingSaves() { await saves; },
-    setReadonly(value) { readonly = value; host.toggleAttribute("inert", value); },
-    setInputEnabled(value) { host.toggleAttribute("inert", !value || readonly); },
+    setReadonly(value) { readonly = value; inputHost.toggleAttribute("inert", value); },
+    setInputEnabled(value) { inputHost.toggleAttribute("inert", !value || readonly); },
     destroy() { destroyed = true; storage.onSetModified = null; bus.off("editingstateschanged", markDirty); detach(); },
     getState() { return { dirty, readonly, destroyed, status: destroyed ? "destroyed" : "ready" }; },
   };

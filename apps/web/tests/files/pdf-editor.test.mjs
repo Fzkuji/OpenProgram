@@ -9,7 +9,7 @@ function fixture() {
   const pdf = { annotationStorage: storage, async saveDocument() { return new TextEncoder().encode(revision); } };
   const controller = { getState: () => ({editorRevision: 7}), attachRichEditor: () => () => {}, markRichEditorDirty() {}, async stageRichExport(blob, generation) { staged.push({text: await blob.text(), generation}); } };
   const bus = { on(name, fn) { listeners.set(name, fn); }, off(name) { listeners.delete(name); } };
-  const editor = bindPdfEditor(pdf, bus, {toggleAttribute() {}}, controller);
+  const editor = bindPdfEditor(pdf, bus, {toggleAttribute() {}, closest() { return null; }}, controller);
   return {pdf, editor, staged, controller, change(value) { revision = value; storage.onSetModified?.(); }};
 }
 test('PDF export retains edits made while serialization is pending', async () => {
