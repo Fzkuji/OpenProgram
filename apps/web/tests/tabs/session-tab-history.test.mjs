@@ -283,3 +283,19 @@ test("local session and file history remain ahead of cross-tab fallback", () => 
   state().navigateHistory(1); assert.equal(active().sessionId, "local-B");
   state().navigateHistory(1); assert.equal(active().page, "files");
 });
+
+test("opening another session after cross-tab Back discards forward visits", () => {
+  reset(); state().openSessionTab("branch-A", "A"); state().openBuiltinTab("files");
+  state().navigateHistory(-1);
+  state().openSessionTab("branch-B", "B");
+  assert.equal(state().canNavigateHistory(1), false);
+});
+
+
+test("opening another folder after cross-tab Back discards forward visits", () => {
+  reset(); state().openBuiltinTab("files");
+  state().recordFileNavigation({projectId:"p",path:"",selectedType:"dir",expanded:[],scroll:null});
+  state().openBuiltinTab("terminal"); state().navigateHistory(-1);
+  state().recordFileNavigation({projectId:"p",path:"src",selectedType:"dir",expanded:[],scroll:null});
+  assert.equal(state().canNavigateHistory(1), false);
+});

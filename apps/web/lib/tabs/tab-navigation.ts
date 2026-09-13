@@ -19,6 +19,11 @@ export function recordWindowNavigation(
     ? old : { entries: state.activeId ? [state.activeId] : [], index: state.activeId ? 0 : -1 };
   let entries = [...history.entries];
   let index = history.index;
+  const previousTab = state.tabs.find(tab => tab.id === state.activeId);
+  const nextTab = next.tabs.find(tab => tab.id === activeId);
+  if (record && activeId === state.activeId && previousTab?.sessionId !== nextTab?.sessionId) {
+    entries = entries.slice(0, index + 1);
+  }
   // Replacement and local history navigation are one visit, not a tab switch.
   if (!record || (state.activeId && !visible.has(state.activeId))) {
     if (index >= 0) entries[index] = activeId;

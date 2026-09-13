@@ -691,7 +691,11 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
       snapshot = { ...snapshot, expanded: [...snapshot.expanded], scroll: snapshot.scroll && { ...snapshot.scroll } };
       const entries = history.entries.slice(0, history.index + 1);
       const bounded = [...entries, snapshot].slice(-100);
-      return { fileNavigationHistory: { entries: bounded, index: bounded.length - 1 }, fileNavigationRestore: null };
+      return {
+        fileNavigationHistory: { entries: bounded, index: bounded.length - 1 }, fileNavigationRestore: null,
+        windowNavigationHistory: { ...s.windowNavigationHistory,
+          entries: s.windowNavigationHistory.entries.slice(0, s.windowNavigationHistory.index + 1) },
+      };
     }),
 
     removeSessionFromHistory: (sessionId) => {
