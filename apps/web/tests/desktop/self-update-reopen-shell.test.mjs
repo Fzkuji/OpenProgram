@@ -163,7 +163,7 @@ for (const [name, tabs, activeId] of [
 ]) test(`reopen restores origin once over persisted ${name} and ACKs only a loaded transcript`, async () => {
   await setup(tabs, activeId);
   await mounted(async (host, root, socket) => {
-    const expectedActiveId = activeId;
+    const expectedActiveId = tabs.find(tab => tab.sessionId === "origin")?.id ?? activeId;
     assert.equal(window.location.pathname, "/s/origin");
     assert.deepEqual(ackRequests, []);
     // AppShell's route synchronization arrives after child effects on mount.

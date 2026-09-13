@@ -185,7 +185,10 @@ export function bindTransfers(useCenterTabs: StoreApi<CenterTabsState>, closedSe
     if (ids.length === 0 || new Set(ids).size !== ids.length) {
       return { ok: false, reason: "invalid" };
     }
-    const duplicateId = ids.find((id) => before.tabs.some((tab) => tab.id === id));
+    const sessionIds = payload.tabs.filter(tab => tab.kind === "session" && tab.sessionId).map(tab => tab.sessionId);
+    if (new Set(sessionIds).size !== sessionIds.length) return { ok: false, reason: "invalid" };
+    const duplicateId = before.tabs.find(tab => payload.tabs.some(incoming => incoming.id === tab.id
+      || (incoming.kind === "session" && tab.kind === "session" && incoming.sessionId && incoming.sessionId === tab.sessionId)))?.id;
     if (duplicateId) return { ok: false, reason: "duplicate", duplicateId };
     if (payload.source.kind === "tab" && ids.length !== 1) {
       return { ok: false, reason: "invalid" };

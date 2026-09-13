@@ -83,7 +83,7 @@ test("file navigation records folder and file steps and branches after back", ()
   assert.equal(state().canNavigateFile(1), false);
 });
 
-test("opening an existing session from another session preserves both tab instances", () => {
+test("opening an existing session focuses its tab from sessions and launchers", () => {
   reset(); state().openSessionTab("A", "Alpha"); const first = active().id;
   state().openWebTab("https://example.test"); const web = active().id;
   state().openSessionTab("A", "Alpha"); const second = active().id;
@@ -91,13 +91,17 @@ test("opening an existing session from another session preserves both tab instan
   state().setActive(web); state().openSessionTab("B", "Beta");
   assert.equal(state().tabs.length, 3);
   const third = active().id;
-  state().openSessionTab("A", "Alpha"); assert.equal(active().id, third);
+  state().openSessionTab("A", "Alpha"); assert.equal(active().id, first);
+  assert.equal(state().tabs.find(tab => tab.id === third).sessionId, "B");
+  state().openNewTabPage(); const launcher = active().id;
+  state().openSessionTab("A", "Alpha"); assert.equal(active().id, first);
+  assert.equal(state().tabs.find(tab => tab.id === launcher).kind, "ntp");
   assert.equal(state().tabs.find(tab => tab.id === first).sessionId, "A");
   state().setActive(web); const before = state().tabs;
   state().navigateSessionHistory(-1); assert.equal(state().tabs, before);
 });
 
-test("history navigation keeps its owner when another tab shows the same session", () => {
+test("history navigation focuses existing sessions without changing source history", () => {
   reset(); state().openSessionTab("A", "Alpha"); const first = active().id;
   state().openSessionTab("B", "Beta");
   state().openWebTab("https://example.test");
@@ -106,12 +110,13 @@ test("history navigation keeps its owner when another tab shows the same session
     sessionHistory: { entries: [{sessionId:"A",title:"Alpha",draft:false},{sessionId:"C",title:"Gamma",draft:false}], index: 0 } };
   useCenterTabs.setState({ tabs: [source, ...state().tabs.filter(t => t.id !== first)], activeId: source.id });
   state().navigateSessionHistory(1);
-  assert.equal(active().id, source.id);
+  assert.equal(active().id, second);
+  assert.equal(state().tabs.find(t => t.id === source.id).sessionId, "A");
   assert.equal(active().sessionId, "C");
   assert.equal(state().tabs.find(t => t.id === second).sessionId, "C");
 });
 
-test("restore preserves independent tabs displaying the same session", () => {
+test("restore retains the active grouped session and removes duplicates", () => {
   const payload = normalizeCenterTabsPayload({
     tabs: [
       { id: "s:A", kind: "session", sessionId: "A", title: "Alpha" },
@@ -121,7 +126,7 @@ test("restore preserves independent tabs displaying the same session", () => {
     activeId: "s:A:duplicate",
     groups: [{ id: "g", memberIds: ["s:A:duplicate", "w:1"], visibleIds: ["s:A:duplicate", "w:1"], focusedId: "s:A:duplicate" }],
   });
-  assert.deepEqual(payload.tabs.map(tab => tab.id), ["s:A", "s:A:duplicate", "w:1"]);
+  assert.deepEqual(payload.tabs.map(tab => tab.id), ["s:A:duplicate", "w:1"]);
   assert.equal(payload.activeId, "s:A:duplicate");
   assert.deepEqual(payload.groups, [{ id: "g", memberIds: ["s:A:duplicate", "w:1"], visibleIds: ["s:A:duplicate", "w:1"], focusedId: "s:A:duplicate" }]);
 });
@@ -428,4 +433,22 @@ test("transfers include historical file drafts and preserve keys still used by a
   assert.equal(fileDrafts.get(keys[0]).draft, "unsaved a.ts");
   for (const key of keys.slice(1)) assert.equal(fileDrafts.has(key), false);
   for (const key of keys) fileDrafts.delete(key);
+});
+
+
+test("transfers reject duplicate conversation identities without replacing either slot", async () => {
+  const { validateTransferredTabs, insertTransferredTabs } = await import("../../lib/tabs/center-tabs-store.ts");
+  for (const wasActive of [false, true]) {
+    reset(); state().openSessionTab("transfer-A", "A");
+    const before = structuredClone(state().tabs);
+    const payload = { tabs: [{ id: "s:another-slot", kind: "session", sessionId: "transfer-A", title: "A" }],
+      source: { kind: "tab" }, chats: wasActive ? [{ chatKey: "transfer-A", wasActive: true }] : [] };
+    const placement = { kind: "strip-end" };
+    assert.equal(validateTransferredTabs(payload, placement).ok, false);
+    assert.equal(insertTransferredTabs(payload, placement, { persist: false }).ok, false);
+    assert.deepEqual(state().tabs, before);
+  }
+  reset();
+  const tabs = ["one", "two"].map(id => ({ id, kind: "session", sessionId: "A", title: "A" }));
+  assert.equal(validateTransferredTabs({ tabs, chats: [], source: {kind: "group", memberIds: ["one", "two"]} }, {kind: "strip-end"}).ok, false);
 });

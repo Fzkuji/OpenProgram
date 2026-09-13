@@ -130,6 +130,15 @@ export function normalizeCenterTabsPayload(
       const { urlNativeAt: _drop, ...rest } = next;
       return rest;
     });
+  // A session ID owns one current tab per window; historical visits stay local.
+  const sessionOwners = new Map<string, CenterTab>();
+  for (const tab of tabs) {
+    if (tab.kind !== "session" || !tab.sessionId) continue;
+    if (!sessionOwners.has(tab.sessionId) || tab.id === input.activeId) {
+      sessionOwners.set(tab.sessionId, tab);
+    }
+  }
+  tabs = tabs.filter(tab => tab.kind !== "session" || !tab.sessionId || sessionOwners.get(tab.sessionId) === tab);
   let layout = normalizeCenterTabLayout({
     tabIds: tabs.map((tab) => tab.id),
     groups: Array.isArray(input.groups) ? input.groups : [],

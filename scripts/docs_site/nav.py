@@ -323,6 +323,7 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
             "reference/design/ui/theme-system.html",
             "reference/design/ui/unification-work.md",
             "reference/design/ui/window-state.md",
+            "reference/design/ui/session-tab-identity.html",
             "reference/design/ui/window-lifecycle.md",
             "reference/design/ui/web-styles.md",
             "reference/design/ui/interaction-feedback.md",

@@ -13,6 +13,7 @@ export function sessionsActions(set: StoreApi<CenterTabsState>["setState"], get:
         closedSessionAckTombstones.delete(sessionId);
         const active = s.tabs.find(tab => tab.id === s.activeId);
         const existing = s.tabs.find(tab => tab.kind === "session" && tab.sessionId === sessionId);
+        if (existing && existing.id !== active?.id) return commitCenterTabsState(s, { activeId: existing.id });
         if (active?.kind === "session") {
           if (active.sessionId === sessionId) {
             if (active.title === title) return {};
@@ -36,7 +37,6 @@ export function sessionsActions(set: StoreApi<CenterTabsState>["setState"], get:
           }));
           return commitCenterTabsState(s, { tabs: s.tabs.map(tab => tab.id === active.id ? next : tab) });
         }
-        if (existing && active?.kind !== "ntp") return commitCenterTabsState(s, { activeId: existing.id });
         let id = sessionTabId(sessionId);
         if (s.tabs.some(tab => tab.id === id)) id += `:${crypto.randomUUID()}`;
         const tab: CenterTab = { id, kind: "session", title, sessionId };

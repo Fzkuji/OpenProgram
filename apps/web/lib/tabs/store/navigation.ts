@@ -22,8 +22,12 @@ export function navigationActions(set: StoreApi<CenterTabsState>["setState"], ge
     navigateHistory: (direction): void => {
       const target = navigationTarget(get(), direction);
       if (!target) return;
-      if (target.owner.kind === "session" && target.owner.sessionId) closedSessionAckTombstones.add(target.owner.sessionId);
+      const existing = target.page.kind === "session" && target.page.sessionId
+        ? get().tabs.find(tab => tab.id !== target.owner.id && tab.kind === "session" && tab.sessionId === target.page.sessionId)
+        : undefined;
+      if (!existing && target.owner.kind === "session" && target.owner.sessionId) closedSessionAckTombstones.add(target.owner.sessionId);
       set(s => {
+        if (existing) return commitCenterTabsState(s, { activeId: existing.id });
         const entries = [...target.history.entries];
         entries[target.history.index] = tabPage(target.owner);
         let next = restoreTabPage({ ...target.history, entries }, target.index);
@@ -37,9 +41,10 @@ export function navigationActions(set: StoreApi<CenterTabsState>["setState"], ge
       });
       if (typeof window !== "undefined" && window.location) {
         const pathname = window.location.pathname;
-        const path = target.page.navigationRoute ?? (target.page.kind === "session" && target.page.sessionId && !target.page.draft
-          ? `/s/${encodeURIComponent(target.page.sessionId)}`
-          : target.page.kind === "ntp" || target.page.kind === "session" || (pathname !== "/chat" && !pathname.startsWith("/s/"))
+        const page = existing ?? target.page;
+        const path = page.navigationRoute ?? (page.kind === "session" && page.sessionId && !page.draft
+          ? `/s/${encodeURIComponent(page.sessionId)}`
+          : page.kind === "ntp" || page.kind === "session" || (pathname !== "/chat" && !pathname.startsWith("/s/"))
             ? "/chat" : pathname);
         pushPath(path);
       }
