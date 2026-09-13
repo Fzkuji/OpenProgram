@@ -26,6 +26,15 @@ Open `http://localhost:18100` in a browser. The page is a static export served b
 
 ![Chat page](../images/chat_hero.png)
 
+### File operations
+
+Copy and Cut retain the source project. Paste is available only in that project; switch back to the source project to use it. Refresh repeats an active file search.
+
+Deleting a file or folder moves it into OpenProgram's recoverable storage. Run `openprogram trash list` to find its entry, then `openprogram trash restore <entry_id>` to restore it. Restoration refuses to overwrite an existing path. Deleting or renaming a symbolic link operates on the link itself, not its target.
+
+If a text file has unsaved changes, deletion asks whether to save, export or discard them. Export starts a browser download and retains the local draft because the browser does not confirm download completion. Reopen the file after restoring it to recover the retained draft.
+
+
 ## Chat page (/chat, /s/&lt;session-id&gt;)
 
 `/chat` is the main chat interface; `/s/<session-id>` is a direct link to a single session. Switching sessions does not reload the page, and the WebSocket connection stays open.

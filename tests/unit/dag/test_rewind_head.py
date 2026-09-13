@@ -29,7 +29,7 @@ from openprogram.context.nodes import Call, ROLE_USER, ROLE_LLM
 def store(monkeypatch):
     s = SessionStore(Path(tempfile.mkdtemp()) / "s")
     # rewind_to / list_rewind_points call default_store() internally.
-    monkeypatch.setattr(ss_mod, "_default_store", s)
+    monkeypatch.setattr(ss_mod.shared, "_default_store", s)
     return s
 
 

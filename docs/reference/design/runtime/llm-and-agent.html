@@ -280,11 +280,11 @@
         </div>
         <h3>建议的定向检查</h3>
         <pre><code>pytest -q tests/component/agent/test_agentic_workflow.py
-pytest -q tests/unit/programs/test_runtime_exec_dag.py
-pytest -q tests/unit/agent/test_agentic_programming_goal.py
-pytest -q tests/component/agent/test_async_job_recovery.py
-pytest -q tests/unit/agent/test_spawn_caller_invariant.py
-pytest -q tests/component/webui/test_programs_explorer.py
+pytest -q tests/unit/programs/dag/test_runtime_exec_dag.py
+pytest -q tests/unit/agent/workflows/test_agentic_programming_goal.py
+pytest -q tests/component/agent/jobs/test_async_job_recovery.py
+pytest -q tests/unit/agent/jobs/test_spawn_caller_invariant.py
+pytest -q tests/component/webui/abilities/test_programs_explorer.py
 npm --prefix web run check:chat-ui
 npx --prefix web tsc --noEmit
 python -m scripts.docs_site.checklinks

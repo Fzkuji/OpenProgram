@@ -10,14 +10,10 @@ pytestmark = [
     pytest.mark.skipif(sys.platform != "darwin", reason="native candidate verifier uses macOS sandbox-exec"),
 ]
 
-from tests.component.self_update.test_candidate_checks import (
-    _test_plan, live,  # noqa: F401
-)
-from tests.component.self_update.test_native_checks import installed_cli, native_verifier  # noqa: F401
-from tests.component.self_update.test_system_probe import live as http_live  # noqa: F401
-from tests.component.self_update.test_verification_channel import (
-    consume, store_fixture, verifier,  # noqa: F401
-)
+from tests.component.self_update.verification.test_candidate_checks import _test_plan, live
+from tests.component.self_update.verification.test_native_checks import installed_cli, native_verifier
+from tests.component.self_update.verification.test_system_probe import live as http_live
+from tests.component.self_update.verification.test_verification_channel import consume, store_fixture, verifier
 
 
 _SCRIPTS = {

@@ -8,7 +8,7 @@
 (plugin.json / pyproject.toml / package.json) 统一解析。设计稿见
 ``docs/design/integrations/skills-and-plugins.md``。
 
-宿主由 ``openprogram.webui.routes.plugins`` 暴露 HTTP API；本包只
+宿主由 ``openprogram.webui.routes.catalog.plugins`` 暴露 HTTP API；本包只
 负责解析、加载、注册表与持久化，不假设宿主结构。
 
 ## Files in this directory

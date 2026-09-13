@@ -665,7 +665,7 @@ class OwnerAuthMiddleware:
             failed = True
         revision = values.get("revision", "")
         if revision:
-            from openprogram.webui.routes.misc import _head_sha
+            from openprogram.webui.routes.settings.misc import _head_sha
 
             if not hmac.compare_digest(revision, _head_sha()):
                 failed = True

@@ -78,7 +78,7 @@ class SelfUpdateStore:
         if target.exists():
             raise UpdateExistsError(f"update {request.update_id} already exists")
         if iteration_config is None or iteration_config["parent_id"] is None:
-            from .next_candidate import supersede
+            from .repair.next_candidate import supersede
             supersede(self)
 
         now = time.time()
@@ -123,13 +123,13 @@ class SelfUpdateStore:
             self.root / "active.json",
             {"schema": SCHEMA_VERSION, "update_id": request.update_id},
         )
-        from .diagnosis import cancel_pending
+        from .repair.diagnosis import cancel_pending
         try:
             cancel_pending(self)
         except Exception:
             import logging
             logging.getLogger(__name__).exception("Could not revoke superseded diagnosis")
-        from .source_repair import cancel_pending as cancel_repair
+        from .repair.source_repair import cancel_pending as cancel_repair
         try:
             cancel_repair(self)
         except Exception:

@@ -252,7 +252,7 @@ follows the graph instead of lagging one request behind:
 | Change | Site |
 |---|---|
 | compaction lands mid-turn | `apps/server/openprogram_server/_webui/_execute/chat.py` (`compaction_finished`) |
-| model switch | `apps/server/openprogram_server/_webui/routes/runtime.py`, `apps/server/openprogram_server/_webui/ws_actions/runtime.py` |
+| model switch | `apps/server/openprogram_server/_webui/routes/execution/runtime.py`, `apps/server/openprogram_server/_webui/ws_actions/runtime.py` |
 | branch checkout / delete | `apps/server/openprogram_server/_webui/ws_actions/branch.py` |
 | sibling checkout | `apps/server/openprogram_server/_webui/_chat_routes.py` |
 

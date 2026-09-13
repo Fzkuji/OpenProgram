@@ -13,7 +13,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 @pytest.fixture(scope="module")
 def layered_bundle(tmp_path_factory):
     target = tmp_path_factory.mktemp("layered-preview") / "bundle.js"
-    subprocess.run(["node", "apps/web/tests/build-document-window-browser.mjs", str(target),
+    subprocess.run(["node", "apps/web/tests/files/build-document-window-browser.mjs", str(target),
                     "./document-preview-browser-entry.tsx"], check=True)
     return target.read_text()
 

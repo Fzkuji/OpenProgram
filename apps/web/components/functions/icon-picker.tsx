@@ -3,7 +3,7 @@
 import { useRef } from "react";
 import styles from "./icon-picker.module.css";
 import { useTranslation } from "@/lib/i18n";
-import { useModalA11y } from "@/lib/use-modal-a11y";
+import { useModalA11y } from "@/lib/hooks/use-modal-a11y";
 import {
   type AnimatedNavIconHandle,
   AtomIcon,

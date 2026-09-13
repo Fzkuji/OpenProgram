@@ -18,11 +18,11 @@ import {
   centerTabStripEntries,
   findCenterTabGroup,
   splitCandidates,
-} from "@/lib/state/center-tab-groups";
-import { topLevelTabs } from "@/lib/state/web-page-management";
-import { useCenterTabs, type CenterTab } from "@/lib/state/center-tabs-store";
-import { buildTransferPayload, desktopBridge } from "@/lib/desktop-bridge";
-import { dragCoordinator } from "@/lib/tab-drag-coordinator";
+} from "@/lib/tabs/center-tab-groups";
+import { topLevelTabs } from "@/lib/browser/web-page-management";
+import { useCenterTabs, type CenterTab } from "@/lib/tabs/center-tabs-store";
+import { buildTransferPayload, desktopBridge } from "@/lib/desktop/desktop-bridge";
+import { dragCoordinator } from "@/lib/tabs/tab-drag-coordinator";
 import { useTranslation } from "@/lib/i18n";
 import { activeThemeId } from "@/lib/prefs/theme-pref";
 import {

@@ -9,7 +9,7 @@ import {
   desktopBridge,
   type DesktopBridge,
   type DesktopUpdateState,
-} from "@/lib/desktop-bridge";
+} from "@/lib/desktop/desktop-bridge";
 import { useFontPref, FONT_LABELS, fontStack, type FontKey } from "@/lib/prefs/font-pref";
 import {
   setAgentProfile,

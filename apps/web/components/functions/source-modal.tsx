@@ -7,7 +7,7 @@ import type { AgenticFunction } from "@/lib/types";
 import { api } from "@/lib/net/api";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/lib/i18n";
-import { useModalA11y } from "@/lib/use-modal-a11y";
+import { useModalA11y } from "@/lib/hooks/use-modal-a11y";
 
 interface Props {
   fn: AgenticFunction;

@@ -248,18 +248,18 @@ jobs:
           tests/component/runtime/test_process_liveness.py
           tests/component/runtime/test_local_backend_process_tree.py
           tests/component/runtime/test_git_bash_source_transport.py
-          tests/component/agent/test_job_cancel_projection_race.py
+          tests/component/agent/jobs/test_job_cancel_projection_race.py
           tests/component/store/test_session_store_close.py
-          tests/component/programs/test_pdf_import_isolation.py
+          tests/component/programs/tools/test_pdf_import_isolation.py
           tests/unit/core/test_windows_worker_service.py
           tests/component/security/test_sandbox.py
           tests/component/config/test_formal_release_updates.py
           tests/unit/dag
-          tests/unit/agent/test_finalize_shadow_git.py
+          tests/unit/agent/dispatcher/test_finalize_shadow_git.py
           tests/unit/permissions/test_approval_file_state.py
           tests/integration/config/test_windows_entrypoints.py::test_dispatcher_import_does_not_require_unix_fcntl
-          tests/component/webui/test_project_files.py
-          tests/component/webui/test_turn_files_ws.py
+          tests/component/webui/files/test_project_files.py
+          tests/component/webui/files/test_turn_files_ws.py
           tests/component/config/test_upgrade_cmd.py
           tests/component/store/test_backup_command.py
           tests/component/store/test_backup_staged_restore.py

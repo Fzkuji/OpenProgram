@@ -28,7 +28,7 @@ import {
 } from "react";
 
 import { useSessionStore } from "@/lib/session-store";
-import { useSkills } from "@/lib/state/skills-store";
+import { useSkills } from "@/lib/abilities/skills-store";
 
 import { SLASH_COMMANDS, type SlashCommand, type SlashContext } from "./slash-commands";
 

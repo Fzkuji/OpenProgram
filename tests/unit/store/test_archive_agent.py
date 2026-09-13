@@ -89,7 +89,7 @@ def parent_turn(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "openprogram.agent.sub_agent_run.run_agent_turn_async", fake_async)
     monkeypatch.setattr(
-        "openprogram.agent.job.runner._broadcast", lambda *a, **k: None)
+        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None)
     s.async_calls = calls
 
     yield s

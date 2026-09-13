@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { usePluginsStore, type PluginRow } from "@/lib/state/plugins-store";
+import { usePluginsStore, type PluginRow } from "@/lib/abilities/plugins-store";
 import { useTranslation } from "@/lib/i18n";
 import { Switch } from "@/components/ui/switch";
 import { SearchInput } from "@/components/ui/search-input";

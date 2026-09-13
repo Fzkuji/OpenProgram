@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { systemAccessAction } from "@/lib/system-access-action";
+import { systemAccessAction } from "@/lib/access/system-access-action";
 import { useTranslation } from "@/lib/i18n";
-import { systemAccessRequired } from "@/lib/system-access-result";
+import { systemAccessRequired } from "@/lib/access/system-access-result";
 
 type Row = { id: string; status: string; can_request?: boolean };
 

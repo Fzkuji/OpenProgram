@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 const { cascadeMenuGeometry } = require("../menu-geometry.js");
 
-const source = fs.readFileSync(require.resolve("../main.js"), "utf8");
+const source = require("./main-source").readMainSource();
 const paneSource = fs.readFileSync(
   require.resolve("../../web/components/center-tabs/web-tab-pane.tsx"),
   "utf8",

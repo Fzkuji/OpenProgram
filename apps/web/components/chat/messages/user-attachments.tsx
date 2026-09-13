@@ -25,8 +25,8 @@ import { useState } from "react";
 
 import { useTranslation } from "@/lib/i18n";
 import { useSessionStore } from "@/lib/session-store";
-import { absRawFileUrl } from "@/lib/state/files-shared";
-import { extractAttachmentMentions } from "@/lib/attachment-marker";
+import { absRawFileUrl } from "@/lib/files/files-shared";
+import { extractAttachmentMentions } from "@/lib/chat/attachment-marker";
 import { AttachmentPreview } from "./attachment-preview";
 
 export interface ParsedAttachment {

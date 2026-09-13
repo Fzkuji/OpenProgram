@@ -5,7 +5,7 @@ import type {
   ExecutionSnapshot,
   RevisionChange,
   RevisionDraft,
-} from "@/lib/execution-debugger";
+} from "@/lib/execution/execution-debugger";
 
 export class ExecutionApiError extends Error {
   readonly status: number;
@@ -39,7 +39,7 @@ type EventsResponse = {
 };
 
 export type RunningExecutionList = {
-  branches?: import("../execution-debugger").ConversationActivityBranch[];
+  branches?: import("../execution/execution-debugger").ConversationActivityBranch[];
   items: Array<{
     kind?: string;
     started_at?: number;
@@ -72,7 +72,7 @@ export type DebuggerStateResponse = {
   type?: string;
   execution_id: string;
   checkpoints?: CheckpointInspector[];
-  waits?: import("@/lib/execution-debugger").DurableWait[];
+  waits?: import("@/lib/execution/execution-debugger").DurableWait[];
   drafts?: RevisionStateResponse[];
 };
 

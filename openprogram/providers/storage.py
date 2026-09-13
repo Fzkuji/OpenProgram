@@ -550,7 +550,7 @@ def _id_taken(pid: str, cfg: dict[str, Any]) -> bool:
     counts as taken too — we suffix past it rather than clobber a provider the
     user already created. (The explicit-id path keeps its own overwrite-custom
     semantics inline.)"""
-    from openprogram.auth.aliases import resolve as _resolve_alias
+    from openprogram.auth.account.aliases import resolve as _resolve_alias
     if _resolve_alias(pid) != pid:
         return True
     if pid in _known_provider_ids():
@@ -581,7 +581,7 @@ def create_custom_provider(
     with _cache_lock:
 
         def create(cfg: dict[str, Any]) -> dict[str, Any]:
-            from openprogram.auth.aliases import resolve as _resolve_alias
+            from openprogram.auth.account.aliases import resolve as _resolve_alias
 
             pid = explicit_id
             if explicit_id:

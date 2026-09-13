@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 import styles from "./channels.module.css";
 import { useTranslation } from "@/lib/i18n";
-import { useModalA11y } from "@/lib/use-modal-a11y";
+import { useModalA11y } from "@/lib/hooks/use-modal-a11y";
 import { PLATFORM_LABEL } from "./types";
 import type { ChannelAccount } from "./types";
 

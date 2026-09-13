@@ -83,7 +83,7 @@ def test_vm_adapter_reports_attachment_during_harness_call(tmp_path, monkeypatch
 def test_resource_route_denies_other_session_before_reading(tmp_path, monkeypatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from openprogram.webui.routes import processes
+    from openprogram.webui.routes.execution import processes
 
     monkeypatch.setattr(processes, "_actor_and_session", lambda request: ({}, "allowed"))
     monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
@@ -98,7 +98,7 @@ def test_resource_route_denies_other_session_before_reading(tmp_path, monkeypatc
 def test_resource_route_keeps_processes_in_activity_only(tmp_path, monkeypatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from openprogram.webui.routes import processes
+    from openprogram.webui.routes.execution import processes
     from openprogram.session_resources import ResourceUseStore
     from openprogram.processes import ProcessStore
 
@@ -130,7 +130,7 @@ def test_resource_route_reuses_scope_and_rejects_forged_owner(tmp_path, monkeypa
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from types import SimpleNamespace
-    from openprogram.webui.routes import processes
+    from openprogram.webui.routes.execution import processes
     from openprogram.session_resources import ResourceUseStore
 
     monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)

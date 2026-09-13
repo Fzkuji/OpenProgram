@@ -18,7 +18,7 @@ pytestmark = pytest.mark.browser
 def test_application_ui_isolated_and_state_survives_reopening(tmp_path, monkeypatch):
     from playwright.sync_api import sync_playwright, expect
     from openprogram.programs._applications import catalog, state
-    from openprogram.webui.routes import applications
+    from openprogram.webui.routes.catalog import applications
     from openprogram.webui.owner_auth import OwnerAuthMiddleware, OwnerAuthState
     monkeypatch.setenv("HOME", str(tmp_path))
     # Pure Web application: saving its state never creates a Python process.
@@ -54,7 +54,7 @@ document.getElementById('save').onclick=async()=>{const s=await openprogramApp.s
     bundle = tmp_path / 'pane.js'
     subprocess.run(['node', '-e', '''
 const esbuild=require('esbuild');
-esbuild.buildSync({stdin:{contents:'import React from "react"; import {createRoot} from "react-dom/client"; import {ApplicationTabPane} from "./components/center-tabs/application-tab-pane"; import {NewTabPage} from "./components/center-tabs/new-tab-page"; import {useCenterTabs} from "./lib/state/center-tabs-store"; function App(){const tab=useCenterTabs(s=>s.tabs.find(t=>t.id===s.activeId));return window.launch?React.createElement(React.Fragment,null,React.createElement(NewTabPage),tab?.applicationInstanceId?React.createElement(ApplicationTabPane,{instanceId:tab.applicationInstanceId}):null):React.createElement(ApplicationTabPane,{instanceId:window.instanceId});} createRoot(document.getElementById("root")).render(React.createElement(App));',resolveDir:process.argv[1],loader:'tsx'},bundle:true,format:'iife',platform:'browser',jsx:'automatic',loader:{'.css':'empty'},outfile:process.argv[2],tsconfig:process.argv[1]+'/tsconfig.json'});
+esbuild.buildSync({stdin:{contents:'import React from "react"; import {createRoot} from "react-dom/client"; import {ApplicationTabPane} from "./components/center-tabs/application-tab-pane"; import {NewTabPage} from "./components/center-tabs/new-tab-page"; import {useCenterTabs} from "./lib/tabs/center-tabs-store"; function App(){const tab=useCenterTabs(s=>s.tabs.find(t=>t.id===s.activeId));return window.launch?React.createElement(React.Fragment,null,React.createElement(NewTabPage),tab?.applicationInstanceId?React.createElement(ApplicationTabPane,{instanceId:tab.applicationInstanceId}):null):React.createElement(ApplicationTabPane,{instanceId:window.instanceId});} createRoot(document.getElementById("root")).render(React.createElement(App));',resolveDir:process.argv[1],loader:'tsx'},bundle:true,format:'iife',platform:'browser',jsx:'automatic',loader:{'.css':'empty'},outfile:process.argv[2],tsconfig:process.argv[1]+'/tsconfig.json'});
 ''', str(ROOT / 'apps/web'), str(bundle)], cwd=ROOT, check=True, capture_output=True)
     app = FastAPI()
     applications.register(app)

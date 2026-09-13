@@ -41,7 +41,7 @@ def test_append_advances_meta_and_registry_with_one_timestamp(
     store = SessionStore(tmp_path / "sessions")
     store.create_session("s1", "main", updated_at=10.0)
     monkeypatch.setattr(
-        "openprogram.store.session.session_store.time.time",
+        'openprogram.store.session.session_store.shared.time.time',
         lambda: 30.0,
     )
 
@@ -71,7 +71,7 @@ def test_side_branch_append_syncs_meta_and_registry(
         "id": "m2", "role": "assistant", "content": "main", "predecessor": "m1",
     })
     monkeypatch.setattr(
-        "openprogram.store.session.session_store.time.time",
+        'openprogram.store.session.session_store.shared.time.time',
         lambda: 40.0,
     )
 
@@ -135,7 +135,7 @@ def test_update_during_deferred_write_remains_dirty_for_next_flush(
 
     import openprogram.store.session.session_store as session_store_module
 
-    real_write = session_store_module.atomic_write_text
+    real_write = session_store_module.shared.atomic_write_text
     old_write_started = threading.Event()
     release_old_write = threading.Event()
 
@@ -145,7 +145,7 @@ def test_update_during_deferred_write_remains_dirty_for_next_flush(
             assert release_old_write.wait(1)
         real_write(path, text)
 
-    monkeypatch.setattr(session_store_module, "atomic_write_text", delayed_write)
+    monkeypatch.setattr(session_store_module.shared, "atomic_write_text", delayed_write)
 
     deferred = threading.Thread(target=store._do_deferred_flush)
     deferred.start()
@@ -171,7 +171,7 @@ def test_concurrent_direct_saves_cannot_restore_an_older_snapshot(
 
     import openprogram.store.session.session_store as session_store_module
 
-    real_write = session_store_module.atomic_write_text
+    real_write = session_store_module.shared.atomic_write_text
     old_write_started = threading.Event()
     release_old_write = threading.Event()
 
@@ -181,7 +181,7 @@ def test_concurrent_direct_saves_cannot_restore_an_older_snapshot(
             assert release_old_write.wait(1)
         real_write(path, text)
 
-    monkeypatch.setattr(session_store_module, "atomic_write_text", delayed_write)
+    monkeypatch.setattr(session_store_module.shared, "atomic_write_text", delayed_write)
 
     older = threading.Thread(
         target=store.update_session,

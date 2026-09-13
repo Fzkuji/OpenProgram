@@ -15,7 +15,8 @@ from .model import (
     _freeze_json,
     _thaw_json,
 )
-from .store import ExecutionStore, _json
+from .store import ExecutionStore
+from .model import _json
 
 
 CHECKPOINT_SCHEMA_VERSION = 2

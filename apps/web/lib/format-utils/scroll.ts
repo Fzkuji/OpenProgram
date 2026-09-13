@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, type RefObject } from "react";
-import { isChatAtBottom, readBottomPadding, readComposerHeight } from "@/lib/state/chat-scroll";
+import { isChatAtBottom, readBottomPadding, readComposerHeight } from "@/lib/chat/chat-scroll";
 import { renderMathIn } from "./markdown";
 
 // "Stick to bottom" follows the last message's tail through streaming

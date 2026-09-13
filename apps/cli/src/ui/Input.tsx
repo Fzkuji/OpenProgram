@@ -5,7 +5,7 @@
  * bot tokens (with ``mask``), search queries.
  *
  * Wraps the existing LineInput component for now. Same migration
- * story as Select — call sites import from '../ui' so we can swap
+ * story as Select — call sites import from '.' so we can swap
  * the implementation without touching screens.
  */
 import React from 'react';

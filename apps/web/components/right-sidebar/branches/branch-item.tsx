@@ -4,7 +4,7 @@ import { cloneElement, useEffect, useRef, useState } from "react";
 
 import { useTranslation } from "@/lib/i18n";
 import type { JobResourceView } from "@/lib/net/ws-events";
-import { canonicalExecutionId, queueResourceSummary, jobResourceDetails } from "@/lib/job-resource";
+import { canonicalExecutionId, queueResourceSummary, jobResourceDetails } from "@/lib/execution/job-resource";
 import type { AnimatedNavIconHandle } from "@/components/animated-icons";
 
 import {

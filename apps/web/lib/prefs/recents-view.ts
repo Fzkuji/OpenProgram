@@ -1,4 +1,4 @@
-import type { ProjectSort } from "../project-groups";
+import type { ProjectSort } from "../projects/project-groups";
 /**
  * recents-view — per-browser view preferences for the sidebar Recents
  * list (which Status to show, how to sort, whether to group).

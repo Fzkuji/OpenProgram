@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-import openprogram.execution.store as execution_store
+import openprogram.execution.store.commands as execution_store
 from openprogram.execution.attempts import AttemptConflict, AttemptStore
 from openprogram.execution.checkpoints import CheckpointFragment
 from openprogram.execution.control import RuntimeControlService

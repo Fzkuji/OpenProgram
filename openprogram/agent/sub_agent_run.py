@@ -43,7 +43,7 @@ def validate_self_update_turn_request(request: Any) -> None:
     """Validate the frozen unattended verifier contract before dispatch."""
     source = getattr(request, "source", None)
     if source in {"self_update_continue", "self_update_replan"}:
-        from openprogram.self_update.continuation import require_execution
+        from openprogram.self_update.control.continuation import require_execution
         require_execution(request)
         return
     if source not in {
@@ -81,13 +81,11 @@ def validate_self_update_turn_request(request: Any) -> None:
     normalized_format = normalize_response_format(response_format)
     request.response_format = normalized_format
     if source == "self_update_verify":
-        from openprogram.self_update.recovery import (
-            require_verifier_execution as require_execution,
-        )
+        from openprogram.self_update.control.recovery import require_verifier_execution as require_execution
     elif source == "self_update_diagnose":
-        from openprogram.self_update.diagnosis import require_execution
+        from openprogram.self_update.repair.diagnosis import require_execution
     else:
-        from openprogram.self_update.source_repair import require_execution
+        from openprogram.self_update.repair.source_repair import require_execution
     require_execution(
         session_id=request.session_id,
         spawn_caller=spawn_caller,
@@ -157,13 +155,11 @@ def _execute_agent_turn(
         from openprogram.agent.authority import normalize_authority
 
         if source == "self_update_verify":
-            from openprogram.self_update.recovery import (
-                require_verifier_execution as require_execution,
-            )
+            from openprogram.self_update.control.recovery import require_verifier_execution as require_execution
         elif source == "self_update_diagnose":
-            from openprogram.self_update.diagnosis import require_execution
+            from openprogram.self_update.repair.diagnosis import require_execution
         else:
-            from openprogram.self_update.source_repair import require_execution
+            from openprogram.self_update.repair.source_repair import require_execution
         try:
             require_execution(
                 session_id=session_id,

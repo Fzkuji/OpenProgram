@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import styles from "./plugins.module.css";
 import { ManagePageHeader, ManageSubnav, managePageStyles as shared } from "@/components/ui/manage-page";
-import { usePluginsStore } from "@/lib/state/plugins-store";
+import { usePluginsStore } from "@/lib/abilities/plugins-store";
 import { useTranslation } from "@/lib/i18n";
-import { useModalA11y } from "@/lib/use-modal-a11y";
+import { useModalA11y } from "@/lib/hooks/use-modal-a11y";
 import { Download } from "lucide-react";
 import { InstalledList } from "./views/installed-list";
 import { MarketplaceBrowser } from "./views/marketplace-browser";

@@ -35,10 +35,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from openprogram.auth.credential_provider import get_credential_provider
-from openprogram.auth.accounts import (
-    DEFAULT_ACCOUNT_NAME,
-    get_account_manager,
-)
+from openprogram.auth.account.accounts import DEFAULT_ACCOUNT_NAME
+from openprogram.auth.account.accounts import get_account_manager
 from openprogram.auth.store import get_store
 from openprogram.auth.types import (
     AuthConfigError,
@@ -386,7 +384,7 @@ def adopt_all_route(account: Optional[str] = None) -> dict[str, Any]:
 def list_aliases_route() -> dict[str, str]:
     """Return the provider-alias table so the UI can render short names
     alongside canonical ids in pickers and tooltips."""
-    from openprogram.auth.aliases import known_aliases
+    from openprogram.auth.account.aliases import known_aliases
     return known_aliases()
 
 

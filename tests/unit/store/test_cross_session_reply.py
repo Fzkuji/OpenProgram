@@ -71,7 +71,7 @@ def test_followup_delivers_to_caller_session_when_cross(monkeypatch):
                 done.set()
         return _T()
     monkeypatch.setattr(
-        runner_mod,
+        runner_mod.shared,
         "threading",
         SimpleNamespace(Thread=run_inline, Lock=runner_mod.threading.Lock),
     )
@@ -107,7 +107,7 @@ def _run_followup_inline(monkeypatch, job) -> dict:
                 target()
         return _T()
     monkeypatch.setattr(
-        runner_mod,
+        runner_mod.shared,
         "threading",
         SimpleNamespace(Thread=run_inline, Lock=runner_mod.threading.Lock),
     )

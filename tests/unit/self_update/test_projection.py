@@ -5,8 +5,11 @@ import time
 import pytest
 
 from openprogram.self_update import SelfUpdateStore, UpdatePhase
-from openprogram.self_update.projection import ProjectionAccessError, list_status, read_status, running_status
-from openprogram.self_update.recovery import SYSTEM_CHECKS
+from openprogram.self_update.control.projection import ProjectionAccessError
+from openprogram.self_update.control.projection import list_status
+from openprogram.self_update.control.projection import read_status
+from openprogram.self_update.control.projection import running_status
+from openprogram.self_update.control.recovery import SYSTEM_CHECKS
 from openprogram.self_update.types import CorruptUpdateStateError, UpdateNotFoundError
 from tests.unit.self_update.test_store import _request
 

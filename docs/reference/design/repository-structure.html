@@ -162,7 +162,7 @@
           <td>纯菜单几何计算已提取到 <code>menu-geometry.js</code>，纯 worker recovery 状态已提取到 <code>worker-recovery-state.js</code>，transfer payload validation 已提取到 <code>tab-transfer-validation.js</code>；HTTP 探测、进程与窗口生命周期、原生 WebView 所有权变更、标签转移协调和菜单宿主只在各自具备执行级验收后移动。</td>
         </tr>
         <tr>
-          <td><code>apps/web/lib/desktop-bridge.ts</code></td>
+          <td><code>apps/web/lib/desktop/desktop-bridge.ts</code></td>
           <td>类型、视图状态和标签转移共处，接近 2,000 行</td>
           <td><span class="state later">分批实施</span></td>
           <td>WebTab 与 Desktop 服务公共类型已提取到 <code>desktop-bridge-types.ts</code>，preload-facing transfer contracts 已提取到 <code>desktop-transfer-types.ts</code>，并由原文件 re-export；aggregate bridge、view state、journal persistence 与 tab transfer coordination 保持在原处，直到识别出可独立执行验证的职责。</td>

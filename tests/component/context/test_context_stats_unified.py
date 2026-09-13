@@ -94,7 +94,7 @@ def test_panel_total_matches_the_ring_total(monkeypatch, session):
     ring_total = conv["_last_context_stats"]["total_used"]
 
     app = FastAPI()
-    from openprogram.webui.routes import tree as _tree
+    from openprogram.webui.routes.files import tree as _tree
     _tree.register(app)
     panel = TestClient(app).get("/api/sessions/ctx-test/context").json()
 
@@ -132,7 +132,7 @@ def test_panel_drops_stale_breakdown_after_refresh_without_head_move(session):
     srv.refresh_context_stats("ctx-test")
 
     app = FastAPI()
-    from openprogram.webui.routes import tree as _tree
+    from openprogram.webui.routes.files import tree as _tree
     _tree.register(app)
     panel = TestClient(app).get("/api/sessions/ctx-test/context").json()
 
@@ -232,7 +232,7 @@ def test_every_graph_change_calls_refresh(monkeypatch):
     wired = {
         "_execute/chat.py": "compaction",
         "ws_actions/chat.py": "manual /compact",
-        "routes/runtime.py": "model switch (REST)",
+        "routes/execution/runtime.py": "model switch (REST)",
         "ws_actions/runtime.py": "model switch (WS)",
         "ws_actions/branch.py": "branch checkout / delete",
         "_chat_routes.py": "sibling checkout",

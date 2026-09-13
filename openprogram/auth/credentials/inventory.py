@@ -62,7 +62,7 @@ SECRET_INVENTORY = (
         "profile_env",
         "profiles/*/.env",
         ("$",),
-        "openprogram.auth.accounts._write_dotenv",
+        "openprogram.auth.account.accounts._write_dotenv",
         "persistent",
         "include_on_opt_in",
         "unlink",

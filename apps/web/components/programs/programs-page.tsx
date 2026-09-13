@@ -33,8 +33,8 @@ import {
 import { useTranslation } from "@/lib/i18n";
 import { jsonFetch } from "@/lib/net/fetch-client";
 import { runtimeState } from "@/lib/runtime-bridge/state";
-import { useFunctions } from "@/lib/state/functions-store";
-import { refreshFunctionsList } from "@/lib/state/functions-actions";
+import { useFunctions } from "@/lib/abilities/functions-store";
+import { refreshFunctionsList } from "@/lib/abilities/functions-actions";
 import type { FunctionsMeta } from "@/lib/types";
 
 import {

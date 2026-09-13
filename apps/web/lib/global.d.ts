@@ -8,15 +8,15 @@
  *    desktop multi-window acceptance runs, which drive the renderer over
  *    CDP and can only reach the stores through `window`.
  */
-import type { DesktopBridge } from "./desktop-bridge";
-import type { useCenterTabs } from "./state/center-tabs-store";
+import type { DesktopBridge } from "./desktop/desktop-bridge";
+import type { useCenterTabs } from "./tabs/center-tabs-store";
 import type {
   acceptedTransfers,
   buildTransferPayload,
   desktopBridge,
   placementForDropIntent,
   stageIncomingTransfer,
-} from "./desktop-bridge";
+} from "./desktop/desktop-bridge";
 
 declare global {
   interface Window {

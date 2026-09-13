@@ -77,7 +77,7 @@ from openprogram.agent.dispatcher.stream_tap import make_stream_tap
 from openprogram.agent.dispatcher.error_path import handle_turn_error
 from openprogram.agent.dispatcher.finalize import finalize_error_turn, finalize_turn
 from openprogram.agent.dispatcher.persistence import persist_assistant_message
-from openprogram.self_update.handoff import release_prepared_update
+from openprogram.self_update.control.handoff import release_prepared_update
 
 # The agent-loop run stage. Bound as a package attribute named
 # ``_run_loop_blocking`` — the seam tests patch (patch.object(D,
@@ -367,7 +367,7 @@ def _process_turn_once(
     on_event = on_event or _noop
     user_msg_id = req.user_msg_id or uuid.uuid4().hex[:12]
     req.user_msg_id = user_msg_id
-    from openprogram.self_update.maintenance import turn_admission
+    from openprogram.self_update.control.maintenance import turn_admission
 
     # User slash actions are still durable Agent turns. Keep their existing
     # DAG-specific behavior behind the same dispatcher/driver lifecycle so

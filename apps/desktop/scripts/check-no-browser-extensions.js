@@ -15,14 +15,14 @@ function assertAbsent(source, pattern, label) {
   assert.doesNotMatch(source, pattern, label);
 }
 
-const desktopMain = read("apps/desktop/main.js");
+const desktopMain = require("./main-source").readMainSource();
 const preload = read("apps/desktop/preload.js");
 const packageJson = JSON.parse(read("apps/desktop/package.json"));
-const desktopBridge = read("apps/web/lib/desktop-bridge.ts");
+const desktopBridge = read("apps/web/lib/desktop/desktop-bridge.ts");
 const builtinPane = read("apps/web/components/center-tabs/builtin-tab-pane.tsx");
 const browserControls = read("apps/web/components/center-tabs/browser-controls.tsx");
 const webTabPane = read("apps/web/components/center-tabs/web-tab-pane.tsx");
-const builtinIds = read("apps/web/lib/state/center-tab-ids.ts");
+const builtinIds = read("apps/web/lib/tabs/center-tab-ids.ts");
 
 assert.equal(
   fs.existsSync(path.join(desktopRoot, "browser-extension-manager.js")),

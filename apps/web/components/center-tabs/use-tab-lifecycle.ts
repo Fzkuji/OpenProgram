@@ -13,11 +13,11 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
-import { useCenterTabs, type CenterTab } from "@/lib/state/center-tabs-store";
-import { findCenterTabGroup } from "@/lib/state/center-tab-groups";
+import { useCenterTabs, type CenterTab } from "@/lib/tabs/center-tabs-store";
+import { findCenterTabGroup } from "@/lib/tabs/center-tab-groups";
 import { useSessionStore } from "@/lib/session-store";
 import { newSession } from "@/lib/runtime-bridge/conversations";
-import { flushFileDocumentsBeforeClose } from "@/lib/state/file-drafts";
+import { flushFileDocumentsBeforeClose } from "@/lib/files/file-drafts";
 import { deleteAttachments } from "@/components/chat/composer/attach/attach-idb";
 import {
   draftChannelChoiceHost,
@@ -25,8 +25,8 @@ import {
 } from "@/lib/runtime-bridge/draft-channel-choice";
 import { pushPath } from "@/lib/shallow-nav";
 import { useTranslation } from "@/lib/i18n";
-import { selectTabsReadyForHumanClose } from "@/lib/state/browser-control";
-import { documentControllers } from "@/lib/state/document-controller";
+import { selectTabsReadyForHumanClose } from "@/lib/browser/browser-control";
+import { documentControllers } from "@/lib/files/document-controller";
 
 export function isChatRoute(pathname: string) {
   return pathname === "/chat" || pathname.startsWith("/s/");

@@ -27,9 +27,9 @@ import {
   MENU_SEPARATOR,
   SHORTCUT,
 } from "@/components/chat/top-bar/menu-styles";
-import { desktopBridge } from "@/lib/desktop-bridge";
+import { desktopBridge } from "@/lib/desktop/desktop-bridge";
 import { activeThemeId } from "@/lib/prefs/theme-pref";
-import { useCenterTabs } from "@/lib/state/center-tabs-store";
+import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import { useTranslation } from "@/lib/i18n";
 import styles from "./center-tabs.module.css";
 

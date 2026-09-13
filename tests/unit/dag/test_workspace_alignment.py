@@ -21,7 +21,7 @@ from openprogram.store.snapshot.checkpoint import CheckpointStore
 def branch_workspace(tmp_path: Path, monkeypatch):
     store = SessionStore(tmp_path / "sessions")
     monkeypatch.setattr(
-        "openprogram.store.session.session_store._default_store", store,
+        'openprogram.store.session.session_store.shared._default_store', store,
         raising=False,
     )
     monkeypatch.setattr("openprogram.store.default_store", lambda: store)

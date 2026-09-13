@@ -354,7 +354,7 @@ def test_backend_poll_uses_challenge_revision_proof(monkeypatch):
 
 
 def test_healthz_reports_sha(monkeypatch):
-    from openprogram.webui.routes import misc
+    from openprogram.webui.routes.settings import misc
     monkeypatch.setattr(misc, "_HEAD_SHA", None)
     sha = misc._head_sha()
     assert isinstance(sha, str)
@@ -366,7 +366,7 @@ def test_healthz_reports_sha(monkeypatch):
 
 
 def test_head_sha_is_cached(monkeypatch):
-    from openprogram.webui.routes import misc
+    from openprogram.webui.routes.settings import misc
     monkeypatch.setattr(misc, "_HEAD_SHA", "cached-value")
     monkeypatch.setattr(subprocess, "run", _explode)
     assert misc._head_sha() == "cached-value"

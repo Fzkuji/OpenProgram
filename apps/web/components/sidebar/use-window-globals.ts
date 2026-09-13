@@ -10,7 +10,7 @@
 
 import type { AgenticFunction } from "@/lib/session-store";
 import { useSessionStore } from "@/lib/session-store";
-import { useFunctions } from "@/lib/state/functions-store";
+import { useFunctions } from "@/lib/abilities/functions-store";
 
 interface FunctionsMeta {
   favorites: string[];

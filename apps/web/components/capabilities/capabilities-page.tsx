@@ -18,8 +18,8 @@ import { SearchInput } from "@/components/ui/search-input";
 import { ManagePageHeader, managePageStyles as shared } from "@/components/ui/manage-page";
 import { useTranslation } from "@/lib/i18n";
 import { pushPath } from "@/lib/shallow-nav";
-import { usePluginsStore } from "@/lib/state/plugins-store";
-import { useSkills } from "@/lib/state/skills-store";
+import { usePluginsStore } from "@/lib/abilities/plugins-store";
+import { useSkills } from "@/lib/abilities/skills-store";
 
 export type CapabilityKind = "programs" | "plugins" | "skills" | "mcp";
 

@@ -18,9 +18,9 @@ import {
   MessageCircleIcon,
   type AnimatedNavIconHandle,
 } from "@/components/animated-icons";
-import type { CenterTab } from "@/lib/state/center-tabs-store";
-import type { CenterTabGroup } from "@/lib/state/center-tab-groups";
-import type { TabDragSubject } from "@/lib/tab-drag-coordinator";
+import type { CenterTab } from "@/lib/tabs/center-tabs-store";
+import type { CenterTabGroup } from "@/lib/tabs/center-tab-groups";
+import type { TabDragSubject } from "@/lib/tabs/tab-drag-coordinator";
 import { useTranslation } from "@/lib/i18n";
 import { builtinPageLabel } from "./builtin-page-label";
 import { shiftStyle } from "./tab-strip-geometry";

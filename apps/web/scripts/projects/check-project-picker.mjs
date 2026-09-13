@@ -1,0 +1,202 @@
+import { readFileTreeSource } from "../testing/feature-source.mjs";
+import assert from "node:assert/strict";
+
+import { readChatCss } from "../runtime/_chat-css.mjs";
+import { readFileSync } from "node:fs";
+
+const root = new URL("../../", import.meta.url);
+const source = (path) => readFileSync(new URL(path, root), "utf8");
+
+const projectMenu = source("components/chat/top-bar/project-menu.tsx");
+const workingDirs = source("components/chat/top-bar/working-dir-chips.tsx");
+const fileTree = readFileTreeSource();
+const explorerHeader = source("components/files/explorer-header.tsx");
+const explorerSearch = source("components/files/explorer-search.ts");
+const fileTreeCss = source("components/files/files-panel.module.css");
+const projectsPage = source("components/projects/projects-page.tsx");
+const functionRunDialog = source("components/functions/function-run-dialog.tsx");
+const folderPicker = source("components/ui/folder-picker.tsx");
+const folderPickerClient = source("lib/projects/folder-picker.ts");
+const projectsCss = source("components/projects/projects-page.module.css");
+const sessionsList = source("components/sidebar/sessions-list.tsx");
+const functionDispatch = source(
+  "components/chat/composer/modes/fn-form/use-function-dispatch.ts",
+);
+const workflowSource = source(
+  "../../openprogram/programs/workflow/auto_workflow.py",
+);
+const chatCss = readChatCss(root);
+
+assert.doesNotMatch(projectMenu, /project-caret/);
+assert.doesNotMatch(chatCss, /project-caret/);
+assert.doesNotMatch(projectMenu, /\bisDefault\b/);
+assert.doesNotMatch(projectMenu, /\bXIcon\b/);
+assert.doesNotMatch(projectMenu, /\bremoveProject\b/);
+assert.doesNotMatch(projectMenu, /remove_project/);
+assert.doesNotMatch(projectMenu, /Remove from list|从列表移除/);
+assert.match(projectMenu, /<PopoverTrigger asChild>[\s\S]*id="projectBadge"/);
+assert.match(projectMenu, /<Check\b/);
+assert.match(projectMenu, /Open folder…/);
+assert.match(projectMenu, /useFolderPicker\(\)/);
+assert.match(workingDirs, /useFolderPicker\(\)/);
+assert.match(projectsPage, /useFolderPicker\(\)/);
+assert.match(functionRunDialog, /useFolderPicker\(\)/);
+assert.doesNotMatch(projectsPage, /fetch\(["']\/api\/pick-folder/);
+assert.doesNotMatch(functionRunDialog, /fetch\(["']\/api\/pick-folder/);
+assert.doesNotMatch(projectMenu, /restart the worker|请重启 worker/);
+assert.doesNotMatch(workingDirs, /restart the worker|请重启 worker/);
+assert.match(folderPicker, /Open folder on server/);
+assert.match(folderPicker, /absolute path on the machine running the worker/);
+assert.match(folderPicker, /validateManualFolder\(candidate\)/);
+assert.match(folderPickerClient, /method: "POST"/);
+assert.match(folderPickerClient, /manual_path: path/);
+assert.match(projectMenu, /const created = await wsRequest/);
+assert.match(projectMenu, /created\?\.ok && created\.project\?\.id/);
+assert.match(projectMenu, /setPendingProject\(activeChatKey, created\.project\.id\)/);
+assert.match(workingDirs, /pendingProjectsByChat\[activeChatKey\]/);
+assert.match(workingDirs, /pendingProjectId \?\? currentProjectId/);
+assert.match(
+  functionDispatch,
+  /if \(pendingProjectId\) body\.project_id = pendingProjectId/,
+  "a direct workflow call must bind the selected Project before execution",
+);
+assert.match(
+  functionDispatch,
+  /const windowId = desktopBridge\(\)\?\.windowId;[\s\S]*?body\.window_id = windowId/,
+  "a direct GUI function call must preserve its originating desktop window",
+);
+assert.match(
+  functionDispatch,
+  /surfaceOriginForChat\(dispatchSessionId, true\)[\s\S]*?body\.surface_ref = surface/,
+  "the Function form must submit the same exact Page descriptor as chat",
+);
+assert.match(
+  workflowSource,
+  /@agentic_function\([\s\S]*?input=\{[\s\S]*?"task"[\s\S]*?def auto_workflow\(task: str\)/,
+  "auto_workflow must expose only its task parameter",
+);
+assert.match(explorerHeader, /className=\{styles\.treeRootPath\}/);
+assert.match(explorerHeader, /styles\.treeToolbar\b/);
+assert.match(fileTree, /baseOf\(projectRoot\)/);
+assert.match(explorerHeader, /aria-expanded=\{searchOpen\}/);
+assert.match(explorerHeader, /aria-hidden=\{!searchOpen\}/);
+assert.match(explorerHeader, /searchRef\.current\?\.focus\(\)/);
+assert.match(explorerHeader, /event\.key === "Escape"\) closeSearch\(\)/);
+assert.match(fileTreeCss, /\.treeHeader\s*\{[^}]*flex-direction:\s*column/s);
+assert.match(fileTreeCss, /\.treeRootPath\s*\{/);
+assert.match(fileTreeCss, /\.treeToolbar\s*\{/);
+assert.match(fileTreeCss, /\.treeSearchRow\s*\{/);
+const pierreTree = source("components/files/pierre-file-tree.tsx");
+const pierreTheme = source("components/files/pierre-tree-theme.ts");
+assert.match(fileTree, /<PierreFileTree/);
+assert.match(pierreTree, /from "@pierre\/trees\/react"/);
+assert.match(pierreTree, /itemHeight: 30, density: 1/);
+assert.match(pierreTheme, /"file-tree-icon-chevron": "openprogram-folder"/);
+assert.match(pierreTheme, /transform: none !important/);
+assert.match(fileTreeCss, /\.treeHeader\s*\{[^}]*padding:\s*6px 8px/s);
+assert.match(fileTreeCss, /\.treeRootPath\s*\{[^}]*height:\s*36px[^}]*gap:\s*10px/s);
+assert.match(
+  projectMenu,
+  /\{list\.map\(\(p\) => \{/,
+  "missing-directory projects stay visible in the draft picker",
+);
+assert.match(
+  projectMenu,
+  /p\.path_missing \? locateFolder\(p\.id\) : switchTo\(p\.id\)/,
+  "missing draft-picker items locate the folder instead of selecting it",
+);
+assert.match(projectsPage, /const locateProject = useCallback/);
+assert.match(projectsPage, /Locate folder…/);
+assert.doesNotMatch(projectMenu, /filter\([^\n]*session_count/);
+
+// Main directory freezes on the first turn: an active session (one with a
+// session_id) must not render the switching list, and the only path that
+// changes its directory is the relocate repair.
+assert.match(projectMenu, /const frozen = sessionId !== null/);
+assert.match(projectMenu, /if \(frozen\) \{/);
+assert.match(projectMenu, /"relocate_project"/);
+assert.match(projectMenu, /Locate folder…/);
+// Missing-directory warning uses the lucide icon, never an emoji glyph.
+assert.match(projectMenu, /<AlertTriangle\b/);
+assert.doesNotMatch(projectMenu, /[⚠❗🚨📁]/u);
+assert.match(projectMenu, /path_missing/);
+assert.match(chatCss, /\.project-badge-missing\b/);
+
+assert.doesNotMatch(projectsPage, /\bremoveProject\b/);
+assert.doesNotMatch(projectsPage, /remove_project/);
+assert.doesNotMatch(projectsPage, /Remove from list|从列表移除/);
+assert.doesNotMatch(projectsPage, /styles\.removeBtn/);
+assert.doesNotMatch(projectsCss, /\.removeBtn\b/);
+assert.match(projectsPage, /\{filtered\.map\(/);
+assert.match(projectsPage, /<ProjectConfigSection\b/);
+assert.match(projectsPage, /"list_project_sessions"/);
+
+assert.match(
+  sessionsList,
+  /import\s*\{\s*projectGroups\s*,\s*moveProject\s*(?:,\s*filterProjectItems\s*)?\}\s*from\s*"@\/lib\/projects\/project-groups"/,
+);
+assert.match(sessionsList, /projectGroups\(projects, visible, view.projectOrder,/);
+
+const { projectGroups } = await import("../../lib/projects/project-groups.ts");
+
+const projects = [
+  {
+    id: "default",
+    name: "Home",
+    path: "/home/tester",
+    is_default: true,
+    session_ids: [],
+  },
+  {
+    id: "zeta",
+    name: "Zeta",
+    path: "/tmp/zeta",
+    is_default: false,
+    session_ids: ["shared"],
+  },
+  {
+    id: "alpha",
+    name: "Alpha",
+    path: "/tmp/alpha",
+    is_default: false,
+    session_ids: ["alpha-chat", "shared"],
+  },
+  {
+    id: "empty",
+    name: "Empty",
+    path: "/tmp/empty",
+    is_default: false,
+    session_ids: [],
+  },
+];
+const sessions = [
+  { id: "unclaimed", title: "Fallback" },
+  { id: "alpha-chat", title: "Alpha chat" },
+  { id: "shared", title: "First registry claim wins" },
+];
+
+assert.deepEqual(
+  projectGroups(projects, sessions).map((group) => [
+    group.key,
+    group.items.map((item) => item.id),
+  ]),
+  [
+    ["default", ["unclaimed"]],
+    ["alpha", ["alpha-chat"]],
+    ["zeta", ["shared"]],
+  ],
+  "empty project groups must stay hidden even without a narrowing filter",
+);
+assert.deepEqual(
+  projectGroups(projects, [sessions[1]]).map((group) => group.key),
+  ["alpha"],
+  "filtered project groups must contain only matching non-empty groups",
+);
+assert.deepEqual(projectGroups(projects, []), []);
+assert.deepEqual(
+  projects.map((project) => project.id),
+  ["default", "zeta", "alpha", "empty"],
+  "grouping must not reorder the project registry input",
+);
+
+console.log("project-picker checks passed");

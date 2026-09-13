@@ -1,0 +1,318 @@
+import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import { registerHooks } from "node:module";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (specifier === "@/lib/session-store") {
+      return {
+        url: new URL("../../lib/session-store/index.ts", import.meta.url).href,
+        shortCircuit: true,
+      };
+    }
+    if (specifier.startsWith("@/")) {
+      return {
+        url: new URL(`../../${specifier.slice(2)}.ts`, import.meta.url).href,
+        shortCircuit: true,
+      };
+    }
+    if (specifier.startsWith(".") && !/\.[a-z]+$/.test(specifier)) {
+      const base = new URL(specifier, context.parentURL).href;
+      const file = `${base}.ts`;
+      const url = existsSync(fileURLToPath(file)) ? file : `${base}/index.ts`;
+      return { url, shortCircuit: true };
+    }
+    return nextResolve(specifier, context);
+  },
+});
+
+const listeners = new Map();
+const storage = new Map();
+globalThis.window = {
+  fetch: globalThis.fetch,
+  addEventListener(type, handler) {
+    listeners.set(type, handler);
+  },
+  dispatchEvent() {},
+  location: { pathname: "/s/origin", hash: "" },
+};
+globalThis.localStorage = {
+  getItem: (key) => storage.get(key) ?? null,
+  setItem: (key, value) => storage.set(key, String(value)),
+  removeItem: (key) => storage.delete(key),
+};
+globalThis.WebSocket = { OPEN: 1 };
+
+const { useCenterTabs } = await import("../../lib/tabs/center-tabs-store.ts");
+const { setSocket } = await import("../../lib/runtime-bridge/state.ts");
+const {
+  installDesktopMenuHandlers,
+  subscribeBrowserHumanInput,
+  ensureWebView,
+  destroyStaleWebViews,
+  surfaceRefForChat,
+  finalizeWebTabPreview,
+  registerVisibleWebTabBounds,
+  removeVisibleWebTabBounds,
+  setWebTabReady,
+  setDesktopSplitLayoutAvailable,
+} = await import("../../lib/desktop/desktop-bridge.ts");
+
+function transferStub() {
+  const unsubscribe = () => {};
+  return {
+    onRemoveSource: () => unsubscribe,
+    onUndoDestination: () => unsubscribe,
+    onCommitted: () => unsubscribe,
+    onRejected: () => unsubscribe,
+    onRolledBack: () => unsubscribe,
+    onFinalizeOrphaned: () => unsubscribe,
+    onStageIncoming: () => unsubscribe,
+    pendingTerminal: async () => [],
+    claimPending: async () => null,
+  };
+}
+
+
+test("agent-attributed opening and popups retain background Pages without stealing a branch", async () => {
+  const sent = [], resolved = [], activated = [];
+  window.openprogramDesktop = {
+    isDesktop: true, windowId: "main", openExternal() {},
+    webTab: {
+      ensure() {}, navigate() {}, async resolve(id) { resolved.push(id); return `target:${id}`; },
+      async activate(id) { activated.push(id); return `target:${id}`; },
+      preview: async () => null, capture: async () => null,
+      setBounds() {}, show() {}, hide() {}, syncVisible() {}, destroy() {},
+      reload() {}, stop() {}, goBack() {}, goForward() {},
+      onState: () => () => {}, onPopup: () => () => {},
+    }, tabTransfer: transferStub(), updates: {},
+  };
+  setSocket({ readyState: WebSocket.OPEN, send: payload => sent.push(JSON.parse(payload)) });
+  installDesktopMenuHandlers();
+  const viewer = { id: "s:other", kind: "session", sessionId: "other", title: "Other branch" };
+  const owner = { id: "s:origin", kind: "session", sessionId: "origin", title: "Origin" };
+  const manual = { id: "w:user", kind: "web", url: "https://manual.test", title: "Manual page" };
+  useCenterTabs.setState({ tabs: [viewer, owner, manual], activeId: manual.id, groups: [], splitWebTabId: null });
+  window.location.pathname = "/settings";
+  for (let index = 0; index < 5; index++) {
+    listeners.get("op:ws-message")({ detail: { type: "webtab.command", data: {
+      op: "open", url: `https://retained.test/${index}`, req_id: `open:${index}`,
+      session_id: "origin", execution_id: "execution-a", branch_id: "branch-a", window_id: "main",
+    } } });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(useCenterTabs.getState().activeId, manual.id, "an agent may not switch the user's tab or conversation");
+    const openResult = sent.find((message) => message.action === "webtab_result" && message.req_id === `open:${index}`);
+    assert.equal(openResult?.ok, true, "background opens must not depend on a visible chat route");
+  }
+  assert.equal(resolved.length, 5);
+  assert.deepEqual(activated, []);
+  const state = useCenterTabs.getState();
+  const pages = state.tabs.filter(tab => tab.agentOpened);
+  assert.equal(pages.length, 5);
+  assert.ok(pages.every(tab => tab.agentSessionId === "origin"));
+  assert.ok(pages.every(tab => tab.agentBranchId === "branch-a"));
+  assert.ok(pages.every(tab => tab.agentExecutionId === "execution-a"));
+  assert.ok(pages.every(tab => !tab.webPinned));
+  const popupId = state.openPopupWebTab("https://retained.test/popup", pages[0].id);
+  assert.equal(useCenterTabs.getState().activeId, manual.id, "an agent popup must stay in Resources");
+  const popup = useCenterTabs.getState().tabs.find(tab => tab.id === popupId);
+  assert.equal(popup.agentBranchId, "branch-a");
+  assert.equal(popup.agentExecutionId, "execution-a");
+  assert.equal(popup.openerTabId, pages[0].id);
+  const humanPopupId = state.openPopupWebTab("https://manual.test/popup", manual.id);
+  assert.equal(useCenterTabs.getState().activeId, humanPopupId, "manual popup behavior remains available");
+});
+
+
+test("a selected image mirror supplies exact Page context without native visibility or focus", async () => {
+  const { useWebTabPip } = await import("../../lib/browser/web-tab-pip-store.ts");
+  const page = { id: "w:mirror", kind: "web", title: "Mirror", url: "https://mirror.test/" };
+  useCenterTabs.setState({ tabs: [
+    { id: "s:origin", kind: "session", sessionId: "origin", title: "Origin" },
+    { id: "s:other", kind: "session", sessionId: "other", title: "Other" }, page,
+  ], activeId: "s:origin", groups: [], splitWebTabId: null });
+  useWebTabPip.getState().show(page.id, "s:origin");
+  assert.equal(surfaceRefForChat("origin", true)?.tab_id, page.id);
+  assert.equal(surfaceRefForChat("origin", true)?.background, true);
+  assert.equal(surfaceRefForChat("other", true), null);
+  const sent = [], calls = [];
+  setSocket({ readyState: WebSocket.OPEN, send: payload => sent.push(JSON.parse(payload)) });
+  window.openprogramDesktop.webTab.preview = async (id, background) => {
+    calls.push([id, background]); return { target_id: "mirror-target", tab_id: id, preview: {} };
+  };
+  listeners.get("op:ws-message")({ detail: { type: "webtab.command", data: {
+    op: "preview", req_id: "mirror-context", window_id: "main", tab_id: page.id, background: true,
+  } } });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(calls, [[page.id, true]]);
+  assert.equal(sent.find((message) => message.action === "webtab_result" && message.req_id === "mirror-context")?.ok, true);
+  assert.equal(useCenterTabs.getState().activeId, "s:origin");
+  useCenterTabs.getState().setActive("s:other");
+  assert.equal(surfaceRefForChat("origin", true), null);
+  assert.equal(finalizeWebTabPreview(page.id, 0, { target_id: "mirror-target" }, true).ok, false,
+    "a late mirror observation must be rejected after its selected owner changes");
+  useWebTabPip.getState().end();
+});
+
+
+test("closing a retained native Page reports its exact lifecycle once", async () => {
+  const sent = [], destroyed = [];
+  setSocket({ readyState: WebSocket.OPEN, send: payload => sent.push(JSON.parse(payload)) });
+  const bridge = { windowId: "main", webTab: {
+    ensure() {}, syncVisible() {}, destroy(id) { destroyed.push(id); },
+    async destroyConfirmed(id) { destroyed.push(id); return true; },
+  } };
+  ensureWebView(bridge, "w:closing-retained", "https://close.test");
+  destroyStaleWebViews(bridge, []);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.ok(destroyed.includes("w:closing-retained"));
+  assert.deepEqual(sent.filter(message => message.tab_id === "w:closing-retained"), [
+    { action: "webtab_closed", tab_id: "w:closing-retained", window_id: "main" },
+  ]);
+  const count = sent.length;
+  destroyStaleWebViews(bridge, []);
+  assert.equal(sent.length, count);
+});
+
+test("confirmed native destroy reports close only after success", async () => {
+  const sent = [], attempts = [];
+  setSocket({ readyState: WebSocket.OPEN, send: payload => sent.push(JSON.parse(payload)) });
+  const bridge = { windowId: "main", webTab: {
+    ensure() {}, syncVisible() {}, destroy() { throw new Error("legacy destroy should not run"); },
+    async destroyConfirmed(id) { attempts.push(id); return false; },
+  } };
+  ensureWebView(bridge, "w:destroy-failed", "https://close-failed.test");
+  destroyStaleWebViews(bridge, []);
+  destroyStaleWebViews(bridge, []);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(sent.filter(message => message.tab_id === "w:destroy-failed"), []);
+  assert.deepEqual(attempts, ["w:destroy-failed"]);
+  const successBridge = { windowId: "main", webTab: {
+    ensure() {}, syncVisible() {}, destroy() {},
+    async destroyConfirmed(id) { attempts.push(id); return true; },
+  } };
+  ensureWebView(successBridge, "w:destroy-success", "https://close-success.test");
+  destroyStaleWebViews(successBridge, []);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(sent.filter(message => message.tab_id === "w:destroy-success"), [
+    { action: "webtab_closed", tab_id: "w:destroy-success", window_id: "main" },
+  ]);
+});
+
+test("dispatch and receipt share one native cue and stale geometry cannot paint", async () => {
+  const { resetBrowserResources, setBrowserConnection } = await import("../../lib/chat/session-resources.ts");
+  resetBrowserResources();
+  setBrowserConnection(true);
+  const calls = [];
+  window.openprogramDesktop.webTab.showAction = async (id, marker) => { calls.push([id, marker]); return true; };
+  useCenterTabs.setState({ tabs: [{ id: "w:cue", kind: "web", title: "Cue", url: "https://cue.test" }], activeId: "w:cue", groups: [] });
+  const row = { source: "browser", id: "association-cue", resource_id: "page-cue", session_id: "origin", conversation_session_id: "origin",
+    tab_id: "w:cue", window_id: "main", kind: "web", title: "Cue", target: "https://cue.test", status: "in_use", control_state: "active",
+    generation: 1, sequence: 1, last_operation: { id: "click-1", action: "click", phase: "dispatched", frame_id: "frame-1", geometry_revision: 0,
+      point: { x: 400, y: 300, width: 800, height: 600 } },
+  };
+  const receive = data => listeners.get("op:ws-message")({ detail: { type: "browser.resource", data } });
+  receive(row);
+  receive({ ...row, sequence: 2, last_operation: { ...row.last_operation, phase: "acknowledged" } });
+  assert.equal(calls.length, 1, "acknowledgement must neither erase a current cue nor restart its TTL");
+  assert.equal(calls[0][1].generation, 1);
+  assert.equal(calls[0][1].resourceId, "page-cue", "native cue freshness includes the backend Page incarnation");
+  receive({ ...row, sequence: 3, control_state: "paused" });
+  assert.equal(calls.at(-1)[1], null);
+  receive({ ...row, sequence: 4, last_operation: { ...row.last_operation, phase: "acknowledged" } });
+  assert.equal(calls.length, 2, "an old operation must not recreate a cue after pausing");
+  registerVisibleWebTabBounds(window.openprogramDesktop, "w:cue", { x: 0, y: 0, width: 900, height: 600 });
+  receive({ ...row, sequence: 5, last_operation: { ...row.last_operation, id: "stale-click" } });
+  assert.equal(calls.at(-1)[1], null, "the old geometry cannot be painted into a resized Page");
+  removeVisibleWebTabBounds(window.openprogramDesktop, "w:cue");
+});
+
+
+test("page interaction bridge does not subscribe or send pause messages", () => {
+  let subscriptions = 0;
+  const dispose = subscribeBrowserHumanInput({ webTab: { onHumanInput: () => { subscriptions++; } } });
+  assert.equal(subscriptions, 0);
+  dispose();
+});
+
+test("legacy destroy retires local registration once without claiming native confirmation", () => {
+  const sent = [], destroyed = [];
+  setSocket({ readyState: WebSocket.OPEN, send: payload => sent.push(JSON.parse(payload)) });
+  const bridge = { windowId: "main", webTab: {
+    ensure() {}, syncVisible() {}, destroy(id) { destroyed.push(id); },
+  } };
+  const id = "w:legacy-close";
+  ensureWebView(bridge, id, "https://legacy-close.test");
+  destroyStaleWebViews(bridge, []);
+  destroyStaleWebViews(bridge, []);
+  assert.deepEqual(destroyed.filter(item => item === id), [id]);
+  assert.deepEqual(sent.filter(message => message.tab_id === id), []);
+});
+
+test("private Page commands require their trusted conversation even when another chat is selected", async () => {
+  const page = { id: "w:private-scope", kind: "web", url: "https://private.test", title: "Private", agentOpened: true, agentSessionId: "owner" };
+  useCenterTabs.setState({ tabs: [{id:"s:other",kind:"session",sessionId:"other",title:"Other"},page], activeId:"s:other",groups:[],splitWebTabId:null });
+  const sent = [], native = [];
+  setSocket({readyState:1,send:payload=>sent.push(JSON.parse(payload))});
+  const api = window.openprogramDesktop.webTab;
+  api.resolve = async id => { native.push(id); return "target-private"; };
+  api.capture = async id => { native.push(id); return "secret-image"; };
+  api.preview = async id => { native.push(id); return {target_id:"target-private"}; };
+  for (const op of ["resolve","screenshot","preview","activate","close"]) {
+    for (const session_id of [undefined,"other"]) {
+      const req_id = `${op}:${session_id}`;
+      listeners.get("op:ws-message")({detail:{type:"webtab.command",data:{op,session_id,tab_id:page.id,window_id:"main",req_id}}});
+      await new Promise(resolve=>setImmediate(resolve));
+      assert.equal(sent.find(message=>message.req_id===req_id)?.reason_code,"page_not_accessible");
+    }
+  }
+  assert.deepEqual(native,[]);
+  const command = (session_id,req_id) => listeners.get("op:ws-message")({detail:{type:"webtab.command",data:{op:"resolve",session_id,tab_id:page.id,window_id:"main",req_id}}});
+  command("owner","own"); await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(sent.find(message=>message.req_id==="own")?.ok,true);
+  const {revealExistingWebTab} = await import("../../lib/browser/web-page-management.ts");
+  revealExistingWebTab(page.id,useCenterTabs.getState());
+  command("other","shared"); await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(sent.find(message=>message.req_id==="shared")?.ok,true);
+  let finish;
+  api.resolve = () => new Promise(resolve=>{finish=resolve;});
+  command("other","pending");
+  useCenterTabs.getState().setWebTabPinned(page.id,false);
+  finish("target-private"); await new Promise(resolve=>setImmediate(resolve));
+  const result = sent.find(message=>message.req_id==="pending");
+  assert.equal(result?.reason_code,"page_not_accessible");
+  assert.equal(result?.target_id,undefined);
+});
+
+test("restoration does not activate or reload a Page whose public access was revoked while waiting", async () => {
+  const {ingestBrowserResource,resetBrowserResources} = await import("../../lib/chat/session-resources.ts");
+  resetBrowserResources();
+  const page = {id:"w:restore-scope",kind:"web",url:"https://restore.test",title:"Restore",agentOpened:true,agentSessionId:"owner",webPinned:true};
+  useCenterTabs.setState({tabs:[page],activeId:page.id,groups:[],splitWebTabId:null});
+  const api = window.openprogramDesktop.webTab;
+  const sent = [], native = [];
+  setSocket({readyState:1,send:payload=>sent.push(JSON.parse(payload))});
+  api.activate = async id => {native.push(['activate',id]);return 'target';};
+  api.navigate = id => {native.push(['navigate',id]);};
+  api.inspect = async id => {native.push(['inspect',id]);return {url:page.url,target_id:'target'};};
+  ensureWebView(window.openprogramDesktop,page.id,page.url);
+  setWebTabReady(page.id,true);
+  registerVisibleWebTabBounds(window.openprogramDesktop,page.id,{x:0,y:0,width:900,height:600});
+  const row = {id:'restore-assoc',resource_id:'restore-page',tab_id:page.id,session_id:'owner',conversation_session_id:'owner',kind:'web',source:'browser',target:page.url,status:'restore_failed',generation:1,sequence:1};
+  ingestBrowserResource(row,'owner');
+  const originalFetch = globalThis.fetch;
+  let finish, began;
+  const started = new Promise(resolve=>{began=resolve;});
+  globalThis.fetch = () => new Promise(resolve=>{finish=resolve;began();});
+  try {
+    listeners.get('op:ws-message')({detail:{type:'webtab.command',data:{op:'activate',tab_id:page.id,session_id:'other',window_id:'main',req_id:'restore-scoped'}}});
+    await started;
+    useCenterTabs.getState().setWebTabPinned(page.id,false);
+    finish(new Response(JSON.stringify({items:[row]})));
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.deepEqual(native,[]);
+    assert.equal(sent.find(message=>message.req_id==='restore-scoped')?.reason_code,'page_not_accessible');
+  } finally { globalThis.fetch=originalFetch; resetBrowserResources(); }
+});

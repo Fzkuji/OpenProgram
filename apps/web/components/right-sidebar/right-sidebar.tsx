@@ -21,7 +21,7 @@
  * stale tab from before the migration restores into the same state.
  *
  * Imperative entry points for callers that don't own this component
- * (`rightDock.{show, close, toggle, restore}` from `lib/right-dock.ts`)
+ * (`rightDock.{show, close, toggle, restore}` from `lib/tabs/right-dock.ts`)
  * are registered on mount — see `setRightDockApi` below.
  */
 
@@ -49,9 +49,9 @@ import {
 } from "../animated-icons";
 import { FileTree } from "../files/file-tree";
 import { RunningPanel } from "./running-panel";
-import { useCenterTabs } from "@/lib/state/center-tabs-store";
-import { useCurrentProject } from "@/lib/state/files-shared";
-import { setRightDockApi } from "@/lib/right-dock";
+import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
+import { useCurrentProject } from "@/lib/files/files-shared";
+import { setRightDockApi } from "@/lib/tabs/right-dock";
 import { activateOnKey } from "@/lib/utils";
 import { useResizableRail } from "../layout/use-resizable-rail";
 import {

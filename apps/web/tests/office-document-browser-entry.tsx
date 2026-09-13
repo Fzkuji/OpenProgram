@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { createRoot } from "react-dom/client";
-import { closeDocumentController } from "../lib/state/document-controller";
+import { closeDocumentController } from "../lib/files/document-controller";
 import { DocumentWindow } from "../components/files/lazy-document-window";
 import { PersistentFilePanes } from "../components/center-tabs/persistent-file-panes";
 

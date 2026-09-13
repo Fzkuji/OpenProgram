@@ -1,7 +1,7 @@
 "use client";
 
 import { traceThemeEvent } from "@/lib/prefs/theme-pref";
-import { surfaceOriginForChat } from "@/lib/desktop-bridge";
+import { surfaceOriginForChat } from "@/lib/desktop/desktop-bridge";
 import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
 import { setWelcomeVisible } from "@/lib/runtime-bridge/helpers";
 import { setRunning } from "@/lib/runtime-bridge/ui";
@@ -9,7 +9,7 @@ import { useSessionStore } from "@/lib/session-store";
 import {
   registerChatSender,
   rememberSendSettings,
-} from "@/lib/state/send-queue";
+} from "@/lib/chat/send-queue";
 import { appendLocalUserTurn } from "@/lib/net/chat-stream";
 import {
   draftChannelChoiceFor,
@@ -28,7 +28,7 @@ import {
   pendingUserHasAttachments,
   setPendingFirstAck,
   setPendingUserText,
-} from "@/lib/pending-user-text";
+} from "@/lib/chat/pending-user-text";
 
 /**
  * Chat send path — owned by the React composer.
@@ -45,7 +45,7 @@ import {
  *     immediately (before the ack round-trip).
  *   - `setRunning(true)` — legacy run flag (runtime-bridge/ui.ts).
  *
- * The ack-pairing reservations live in `lib/pending-user-text` (also
+ * The ack-pairing reservations live in `lib/chat/pending-user-text` (also
  * read by `lib/net/chat-stream.ts` and `lib/runtime-bridge/chat-handlers.ts`),
  * and the first-message channel attach reads `draftChannelChoiceHost`
  * (lib/runtime-bridge/draft-channel-choice) — neither rides `window`.

@@ -6,7 +6,8 @@ from dataclasses import replace
 import pytest
 
 from openprogram.self_update import IterationMode, IterationPolicy, UpdateRequest
-from openprogram.self_update.iteration import TestEvidence, evaluate_iteration
+from openprogram.self_update.control.iteration import TestEvidence
+from openprogram.self_update.control.iteration import evaluate_iteration
 
 
 def _request() -> UpdateRequest:
@@ -74,7 +75,7 @@ def test_stopping_conditions(overrides, reason) -> None:
     "openprogram/agent/agent_loop.py", "openprogram/agent/internals/_model_tools.py",
     "openprogram/programs/__init__.py",
     "openprogram/programs/_runtime.py",
-    "openprogram/self_update/supervisor.py", "openprogram/sandbox/__init__.py",
+    "openprogram/self_update/control/supervisor.py", "openprogram/sandbox/__init__.py",
     "apps/desktop/scripts/install-app.sh",
 ])
 def test_sensitive_changes_require_approval_even_with_broad_scope(path) -> None:

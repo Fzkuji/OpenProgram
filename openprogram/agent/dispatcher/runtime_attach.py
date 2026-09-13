@@ -170,6 +170,13 @@ def _wrap_agentic_runtime_block(
                 from openprogram.worktree.context import current_worktree_path
                 subprocess_args = dict(args or {})
 
+                from openprogram.agent.run_control import get_current_execution_id
+                from openprogram.execution import default_store
+                execution_id = get_current_execution_id()
+                owner = default_store().get_execution(execution_id) if execution_id else None
+                owner_attempt_id = owner.current_attempt_id if owner else None
+                owner_generation = owner.owner_lease.get("generation") if owner else None
+
                 def _run_subprocess():
                     surface_snapshot = req.surface_context
                     captured_surface = None
@@ -211,6 +218,9 @@ def _wrap_agentic_runtime_block(
                             # of inventing a ``forced_<random>`` and leaving
                             # us with two orphan placeholders for one call.
                             parent_call_id=call_id,
+                            execution_id=execution_id,
+                            attempt_id=owner_attempt_id,
+                            generation=owner_generation,
                             authority=runtime_authority(
                                 req, f"agentic/{tool_name}"
                             ),
@@ -234,6 +244,9 @@ def _wrap_agentic_runtime_block(
                     None,
                     _run_subprocess,
                 )
+                if out.get("function_suspended"):
+                    from openprogram.agentic_programming.continuation import FunctionSuspended
+                    raise FunctionSuspended()
                 cleanup_result = out.get("page_cleanup_result")
                 if out.get("page_cleanup_failed") and isinstance(
                     cleanup_result, dict,

@@ -217,7 +217,7 @@ class AuthStore:
         back empty. Canonical ids pass through unchanged.
         """
         try:
-            from openprogram.auth.aliases import resolve
+            from openprogram.auth.account.aliases import resolve
 
             return resolve(provider_id)
         except Exception:
@@ -237,7 +237,7 @@ class AuthStore:
         # Reverse-alias scan: any short name that resolves to this
         # canonical id is also a valid on-disk directory.
         try:
-            from openprogram.auth.aliases import known_aliases
+            from openprogram.auth.account.aliases import known_aliases
 
             for alias, target in known_aliases().items():
                 if target == provider_id and alias != provider_id:

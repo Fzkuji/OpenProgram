@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import Callable, Iterator
 
 from .model import ExecutionRecord, ExecutionStatus
-from .store import ExecutionStore, _json
+from .store import ExecutionStore
+from .model import _json
 
 
 class AttemptStatus(str, Enum):

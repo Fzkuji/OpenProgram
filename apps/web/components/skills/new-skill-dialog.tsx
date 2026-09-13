@@ -7,7 +7,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { useSkills } from "@/lib/state/skills-store";
+import { useSkills } from "@/lib/abilities/skills-store";
 import { useTranslation } from "@/lib/i18n";
 
 export function NewSkillDialog({ open, onClose }: { open: boolean; onClose: () => void }) {

@@ -12,7 +12,7 @@
  * 图标绝对定位在标题行内部，与文字共用同一垂直中心。流式进行中的一轮
  * 不走这里（assistant-bubble 平铺实时块），落定后切到本组件。
  */
-import type { ExecutionCommand } from "@/lib/execution-debugger";
+import type { ExecutionCommand } from "@/lib/execution/execution-debugger";
 import { memo, useEffect, useState } from "react";
 import { Wrench } from "lucide-react";
 import { afterTwoAnimationFrames } from "./collapse-frame";

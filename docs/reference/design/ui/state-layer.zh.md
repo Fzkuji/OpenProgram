@@ -105,19 +105,19 @@ web 前端的状态存放方式是：**每个会话一个 Zustand store 实例�
 除主 session store 外，`apps/web/lib/state/` 下还有若干较小的 store。它们都不在会话隔离的
 关键路径上，但知道各自管什么可以避免以后重复造状态。
 
-- **`apps/web/lib/state/center-tabs-store.ts`**（1020 行）—— 标签条与窗格布局：`tabs`、
+- **`apps/web/lib/tabs/center-tabs-store.ts`**（1020 行）—— 标签条与窗格布局：`tabs`、
   `activeId`、`groups`、`splitWebTabId`、`splitRatio`
-  （`apps/web/lib/state/center-tabs-store.ts:129`）。这是*视图*状态，全局是正确的：它描述
+  （`apps/web/lib/tabs/center-tabs-store.ts:129`）。这是*视图*状态，全局是正确的：它描述
   窗口，不描述会话。它也是唯一知道"当前存在分屏"的 store，所以作用域树的会话 id 从这里来。
-- **`apps/web/lib/state/center-tab-groups.ts`** —— 对标签布局的纯函数（分组、重排、分屏窗格）。
+- **`apps/web/lib/tabs/center-tab-groups.ts`** —— 对标签布局的纯函数（分组、重排、分屏窗格）。
   自身无状态。
-- **`apps/web/lib/state/chat-scroll.ts`** —— 按 chat key 存的滚动位置助手，通过一个存储接口
-  持久化（`apps/web/lib/state/chat-scroll.ts:37`）。天然按会话分，只是不在 store 里。
-- **`apps/web/lib/state/functions-store.ts`**、**`skills-store.ts`**、
+- **`apps/web/lib/chat/chat-scroll.ts`** —— 按 chat key 存的滚动位置助手，通过一个存储接口
+  持久化（`apps/web/lib/chat/chat-scroll.ts:37`）。天然按会话分，只是不在 store 里。
+- **`apps/web/lib/abilities/functions-store.ts`**、**`skills-store.ts`**、
   **`plugins-store.ts`** —— 页面级清单及其筛选/排序/搜索的 UI 状态。确实是全局的；
   这些是设置页，不是会话。
-- **`apps/web/lib/state/files-shared.ts`** —— 项目列表、文件读取、按路径分键的文件草稿
-  （`apps/web/lib/state/files-shared.ts:144`）。按文件分，不按会话分。
+- **`apps/web/lib/files/files-shared.ts`** —— 项目列表、文件读取、按路径分键的文件草稿
+  （`apps/web/lib/files/files-shared.ts:144`）。按文件分，不按会话分。
 
 ---
 
@@ -335,7 +335,7 @@ React context 提供键，让消费方读 `map[scopeKey]` 而不是读全局。`
   它们指定一个明确的目标会话——这是一个真实的行为决策，不是机械映射。消费方：
   `apps/web/components/chat/composer/modes/resolve-mode.ts:18`、
   `apps/web/components/chat/composer/modes/fn-form/use-fn-form-state.ts`、
-  `use-fn-form-wrapper.ts`、`apps/web/lib/use-pending-run-function.ts`、
+  `use-fn-form-wrapper.ts`、`apps/web/lib/execution/use-pending-run-function.ts`、
   `apps/web/components/sidebar/favorites-list.tsx`、
   `apps/web/components/sidebar/sidebar.tsx`、
   `apps/web/components/chat/messages/runtime-block.tsx`、

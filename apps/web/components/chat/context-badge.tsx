@@ -28,7 +28,7 @@ import {
   readContextBreakdownCache,
   warmContextBreakdown,
   writeContextBreakdownCache,
-} from "@/lib/state/context-breakdown-cache";
+} from "@/lib/chat/context-breakdown-cache";
 
 interface ContextBadgeProps {
   /** Active conversation id. The component is keyed on this so a

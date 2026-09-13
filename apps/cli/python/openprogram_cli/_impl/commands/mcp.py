@@ -121,7 +121,7 @@ def _render_env(env: dict | None) -> str:
     """
     if not env:
         return "(empty)"
-    from openprogram.auth.cli import _mask
+    from openprogram.auth.cli.formatting import _mask
 
     def shown(value) -> str:
         if isinstance(value, dict):

@@ -30,7 +30,7 @@ def store(tmp_path, monkeypatch) -> SessionStore:
     monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: value)
     import openprogram.store.session.session_store as store_module
 
-    monkeypatch.setattr(store_module, "_default_store", value)
+    monkeypatch.setattr(store_module.shared, "_default_store", value)
     try:
         yield value
     finally:
@@ -608,7 +608,7 @@ def test_known_owner_registration_skips_job_runner_cache_miss_scan(monkeypatch):
     runner._lock = threading.RLock()
     runner._jobs = {}
     store = _Store()
-    monkeypatch.setattr("openprogram.agent.job.runner._runner", runner)
+    monkeypatch.setattr('openprogram.agent.job.runner.shared._runner', runner)
     monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: store)
     monkeypatch.setattr("openprogram.store.default_store", lambda: store)
     from openprogram.agent.job import store as job_store

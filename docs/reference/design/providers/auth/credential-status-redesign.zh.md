@@ -66,7 +66,7 @@ status 列本身已承载全部答案，因此不需要额外的标记。窗口�
   被排除，因此校验是唯一的恢复途径。
 - `auth/usage.py _account_healthy` —— `billing_blocked` 与 `revoked`、
   `needs_reauth` 一同被视为对轮换不健康。
-- `apps/server/openprogram_server/_webui/routes/accounts.py` —— Validate 成功后写入 `status="valid"`，
+- `apps/server/openprogram_server/_webui/routes/identity/accounts.py` —— Validate 成功后写入 `status="valid"`，
   并清除 cooldown 与 `last_error`，从而闭合 充值 → Validate → 恢复 的循环；
   account 记录中不含 `cooling` 字段，超过窗口的 `rate_limited` 上报为 `valid`。
 - `web .. account-manager.tsx` —— status 渲染为

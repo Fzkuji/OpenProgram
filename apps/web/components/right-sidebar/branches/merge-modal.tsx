@@ -11,7 +11,7 @@
 import type React from "react";
 
 import { useTranslation } from "@/lib/i18n";
-import { useModalA11y } from "@/lib/use-modal-a11y";
+import { useModalA11y } from "@/lib/hooks/use-modal-a11y";
 
 interface MergeModalProps {
   /** Selected branch head ids (≥2 when this modal is open). */

@@ -4,7 +4,7 @@ import { useCallback, useRef } from "react";
 import { useTranslation } from "@/lib/i18n";
 import type { PendingDecision } from "@/lib/session-store/types";
 import { postExecutionCommand, type WaitCommand } from "@/lib/net/execution-client";
-import { enqueueMessage, useSendQueue } from "@/lib/state/send-queue";
+import { enqueueMessage, useSendQueue } from "@/lib/chat/send-queue";
 import { showToast } from "@/lib/format-utils/toast";
 
 interface Options {

@@ -18,18 +18,17 @@ def test_file_history_restores_files_tree_and_branches_forward_history(tmp_path:
     script = r'''
 const {build}=require("esbuild");
 const mocks={
-  "@/lib/state/file-drafts":'export const hasDocumentDraftsForPath=()=>false;',
+  "@/lib/files/file-drafts":'export const hasDocumentDraftsForPath=()=>false;',
   "@/lib/i18n":'export const useTranslation=()=>({text:(en)=>en,t:(key)=>key});',
   "@/lib/net/ws-request":`export const wsRequest=(action,payload)=>globalThis.__fileRequest(action,payload);
     export const wsMutationRequest=()=>Promise.resolve(null); export const reconcileWsMutation=()=>{};
     export const idempotencyKeyFor=()=>"test"; export class MutationRegistryCapacityError extends Error {}`,
-  "@/lib/session-store":'export const useSessionStore=Object.assign((selector)=>selector({currentSessionId:null,activeChatKey:null,pendingProjectsByChat:{}}),{getState:()=>({currentSessionId:null})});',
+  "@/lib/tabs/session-store":'export const useSessionStore=Object.assign((selector)=>selector({currentSessionId:null,activeChatKey:null,pendingProjectsByChat:{}}),{getState:()=>({currentSessionId:null})});',
   "@/components/ui/popover":'export const Popover=({children})=>children; export const PopoverAnchor=({children})=>children; export const PopoverContent=({children})=>children;',
   "@/components/sidebar/sessions-list/confirm-dialog":'export const ConfirmDialog=()=>null;',
   "@/components/sidebar/use-sidebar-menu":'export const useSidebarMenu=()=>({open:false,show:()=>{},close:()=>{}});',
   "./tree-context-menu":'export const TreeContextMenu=()=>null; export const treeClipboard={};',
   "./explorer-header":'export const ExplorerHeader=()=>null; export const copyText=()=>Promise.resolve();',
-  "./file-tree-operation":'export const asServerRenameResult=x=>x;',
   "./file-tree-render":'export const InlineNameInput=()=>null;',
   "./file-management":`export const FileBreadcrumb=()=>null; export const FileDetails=()=>null; export const FileSortMenu=()=>null;
     export const useFileSort=()=>["name",()=>{}]; export const invalidateFolderSizes=()=>{}; export const formatFileBytes=x=>String(x);
@@ -40,7 +39,7 @@ build({stdin:{contents:`
 import {setNavigate} from "./lib/navigate";
 setNavigate(path=>window.history.pushState(null,"",path));
 import React,{useEffect} from "react";import{createRoot}from"react-dom/client";
-import{FileTree}from"./components/files/file-tree";import{useCenterTabs}from"./lib/state/center-tabs-store";
+import{FileTree}from"./components/files/file-tree";import{useCenterTabs}from"./lib/tabs/center-tabs-store";
 function App(){
  const active=useCenterTabs(s=>s.tabs.find(t=>t.id===s.activeId));
  const back=useCenterTabs(s=>s.navigateFileHistory), canBack=useCenterTabs(s=>s.canNavigateFile(-1));

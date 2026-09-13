@@ -9,7 +9,7 @@
  * Imported for side effects + `initChatPage()` by `useWS`.
  */
 
-import type { ExecutionCommand } from "@/lib/execution-debugger";
+import type { ExecutionCommand } from "@/lib/execution/execution-debugger";
 import {
   extractMessagesFromTree,
   fetchBranches,
@@ -48,25 +48,25 @@ import {
   renderTokenBadge,
 } from "./providers";
 import { refreshHistoryContextRange } from "./dag";
-import { sessionAckIsActive, useCenterTabs } from "@/lib/state/center-tabs-store";
-import { writeChatScroll } from "@/lib/state/chat-scroll";
+import { sessionAckIsActive, useCenterTabs } from "@/lib/tabs/center-tabs-store";
+import { writeChatScroll } from "@/lib/chat/chat-scroll";
 import { useSessionStore } from "@/lib/session-store";
 import {
   warmContextBreakdown,
   writeContextBreakdownCache,
-} from "@/lib/state/context-breakdown-cache";
-import { convToChatMsgs } from "@/lib/conv-mapper";
+} from "@/lib/chat/context-breakdown-cache";
+import { convToChatMsgs } from "@/lib/chat/conv-mapper";
 import {
   acknowledgePendingUserText,
   clearPendingFirstAck,
   clearPendingUserText,
   getPendingUserText,
-} from "@/lib/pending-user-text";
+} from "@/lib/chat/pending-user-text";
 import { shouldHydrateTranscriptForTreeUpdate } from "./transcript-hydration";
 import {
   shouldHonorRunningTaskClear,
   type ClearedTaskIdentity,
-} from "@/lib/state/running-task-clear";
+} from "@/lib/chat/running-task-clear";
 import { translateText } from "@/lib/i18n";
 
 /** The app's single draft-channel-choice host (module-level, backed by
@@ -1066,7 +1066,7 @@ interface ContextStatsData {
   input_total?: number;
   model?: string | null;
   source_mix?: unknown;
-  breakdown?: import("@/lib/state/context-breakdown-cache").ContextBreakdown & {
+  breakdown?: import("@/lib/chat/context-breakdown-cache").ContextBreakdown & {
     head_id?: string | null;
   };
 }

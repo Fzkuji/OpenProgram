@@ -16,7 +16,7 @@ def store(tmp_path, monkeypatch) -> SessionStore:
     monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: value)
     import openprogram.store.session.session_store as store_module
 
-    monkeypatch.setattr(store_module, "_default_store", value)
+    monkeypatch.setattr(store_module.shared, "_default_store", value)
     return value
 
 

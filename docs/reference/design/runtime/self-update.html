@@ -931,7 +931,7 @@
         <div class="table-row"><div>验收、诊断、修正与下一次提交</div><div>对应已校验 result/receipt 及 next-candidate summary。</div><div>逐条 verdict 和证据、修正 SHA、待授权状态、预算及 child ID。verifier pass 不等于安装已提交；安装提交完成后 update phase 才是 SUCCEEDED。</div><div>还未产生结果显示 pending；无 evidence 显示 inconclusive。回退后继续修正不能覆盖原失败结论。</div></div>
       </div>
       <h3 id="projection-contract" style="margin-top:24px">共享读取合同</h3>
-      <p><code>openprogram/self_update/projection.py</code> 提供专用工具、Web 与 Running 的共享只读投影。owner-auth 路由为 <code>GET /api/self-updates?session_id=…</code> 与 <code>GET /api/self-updates/{update_id}?session_id=…</code>，并校验 origin session；历史列表使用有上限的稳定游标分页，不依赖 active 指针。证据经同一更新的 <code>/evidence?session_id=…&amp;evidence_id=…</code> 路由再次验证，只返回签名结果引用的观察记录。</p>
+      <p><code>openprogram/self_update/control/projection.py</code> 提供专用工具、Web 与 Running 的共享只读投影。owner-auth 路由为 <code>GET /api/self-updates?session_id=…</code> 与 <code>GET /api/self-updates/{update_id}?session_id=…</code>，并校验 origin session；历史列表使用有上限的稳定游标分页，不依赖 active 指针。证据经同一更新的 <code>/evidence?session_id=…&amp;evidence_id=…</code> 路由再次验证，只返回签名结果引用的观察记录。</p>
       <p>投影只包含明确允许的字段、有限摘要和不透明 evidence ID，不返回配置、token、签名密钥、环境变量或任意日志路径。证据读取必须再次核验 owner、session、update 和 receipt 绑定；不支持任意文件读取。状态及关联结果在同一一致性边界内读取，无法形成一致快照时返回可重试错误。读操作不触发 claim、repair、Job 或 Scheduler。</p>
       <p>Update projection APIs remain read-only and session-scoped for explicit tool reads. Chat does not poll these APIs. Stored update status does not infer success or failure from a disconnected window.</p>
       <div class="cards" style="margin-top:16px">
@@ -1012,11 +1012,11 @@
 
       <div class="source-list" aria-label="当前实现入口">
         <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/programs/tools/system/self_update/__init__.py"><span>openprogram/programs/tools/system/self_update/</span><small>owner 工具、prepare/retry 审批与观察入口</small></a>
-        <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/self_update/supervisor.py"><span>openprogram/self_update/supervisor.py</span><small>外部事务控制、系统检查与回退</small></a>
-        <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/self_update/verifier_config.py"><span>openprogram/self_update/verifier_config.py</span><small>冻结配置、阶段 prompt 与工具白名单</small></a>
-        <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/self_update/verification_plan.py"><span>openprogram/self_update/verification_plan.py</span><small>固定检查、资源预算与 UI protocol 能力</small></a>
-        <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/self_update/next_candidate.py"><span>openprogram/self_update/next_candidate.py</span><small>下一候选授权、证据、预算与提交</small></a>
-        <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/self_update/projection.py"><span>openprogram/self_update/projection.py</span><small>工具、Web 和 Running 的共享只读状态</small></a>
+        <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/self_update/control/supervisor.py"><span>openprogram/self_update/control/supervisor.py</span><small>外部事务控制、系统检查与回退</small></a>
+        <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/self_update/verification/verifier_config.py"><span>openprogram/self_update/verification/verifier_config.py</span><small>冻结配置、阶段 prompt 与工具白名单</small></a>
+        <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/self_update/verification/verification_plan.py"><span>openprogram/self_update/verification/verification_plan.py</span><small>固定检查、资源预算与 UI protocol 能力</small></a>
+        <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/self_update/repair/next_candidate.py"><span>openprogram/self_update/repair/next_candidate.py</span><small>下一候选授权、证据、预算与提交</small></a>
+        <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/self_update/control/projection.py"><span>openprogram/self_update/control/projection.py</span><small>工具、Web 和 Running 的共享只读状态</small></a>
         <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/tests/component/self_update"><span>tests/component/self_update/</span><small>控制协议、验收、恢复与迭代行为测试；非实际 App 发布证明</small></a>
         <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/scripts/package-and-install-app.sh"><span>apps/desktop/scripts/package-and-install-app.sh</span><small>完整 App build、smoke 与安装入口</small></a>
         <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/scripts/install-app.sh"><span>apps/desktop/scripts/install-app.sh</span><small>事务安装、previous App 和失败恢复</small></a>

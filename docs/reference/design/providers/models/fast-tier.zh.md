@@ -68,7 +68,7 @@ supports_fast / dispatch**。CLI 缓存可以让离线浏览继续显示，但�
 ```
 连接建立 / 会话切换 / 模型切换 / 每轮消息 ack+结束
   → 前端 loadAgentSettings()（lib/runtime-bridge/providers.ts）
-  → GET /api/agent_settings（apps/server/openprogram_server/_webui/routes/runtime.py）
+  → GET /api/agent_settings（apps/server/openprogram_server/_webui/routes/execution/runtime.py）
       chat.fast = supports_fast(当前会话的 provider, model)   ← 每次现算
   → zustand agentSettings.chat.fast
   → composer 订阅重渲染：显/隐 "高速" 菜单项与 chip
@@ -97,7 +97,7 @@ openprogram/providers/anthropic/{anthropic,_claude_code_direct_runtime}.py  Clau
 openprogram/providers/openai_codex/list_models.py                    官方端点拉取 + 归一化（fast/thinking/context 来源）
 apps/server/openprogram_server/_webui/_model_listing/fetchers/__init__.py  编排：透传 fetcher 的 fast/thinking，enrich 不覆盖
 apps/server/openprogram_server/_webui/_model_listing/listing.py        supports_fast 判定入口；list_models_for_provider 优先用 fetcher thinking
-apps/server/openprogram_server/_webui/routes/runtime.py                /api/agent_settings 下发 chat.fast
+apps/server/openprogram_server/_webui/routes/execution/runtime.py                /api/agent_settings 下发 chat.fast
 apps/web/lib/session-store/types.ts                     AgentBadgeInfo.fast 类型
 apps/web/components/chat/composer/index.tsx             开关显隐 + 发送门控
 ```

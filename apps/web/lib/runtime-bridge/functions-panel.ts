@@ -11,8 +11,8 @@ import { useSessionStore } from "@/lib/session-store";
 import { addAssistantMessage } from "./chat-handlers";
 import { runtimeState } from "./state";
 import { navigate } from "@/lib/navigate";
-import { openFunctionForm, refreshFunctionsList } from "@/lib/state/functions-actions";
-import { setPendingRunFunction } from "@/lib/use-pending-run-function";
+import { openFunctionForm, refreshFunctionsList } from "@/lib/abilities/functions-actions";
+import { setPendingRunFunction } from "@/lib/execution/use-pending-run-function";
 
 interface FnDef {
   name: string;
@@ -24,7 +24,7 @@ export async function loadProgramsMeta(): Promise<void> {
     const resp = await fetch("/api/programs/meta");
     const meta = (await resp.json()) || { favorites: [], folders: {} };
     runtimeState.programsMeta = meta;
-    const { useFunctions } = await import("@/lib/state/functions-store");
+    const { useFunctions } = await import("@/lib/abilities/functions-store");
     useFunctions.getState().setMeta(meta);
   } catch {
     runtimeState.programsMeta = { favorites: [], folders: {} };

@@ -36,6 +36,7 @@ export interface FnParam {
 }
 
 export interface AgenticFunction {
+  continuation?: { supported: boolean; reason?: string; boundary?: string; state?: string };
   name: string;
   description?: string;
   category?: string;

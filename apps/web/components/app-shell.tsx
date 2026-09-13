@@ -9,18 +9,18 @@ import { Sidebar } from "./sidebar/sidebar";
 import { RightSidebar } from "./right-sidebar/right-sidebar";
 import { CenterTabStrip } from "./center-tabs/center-tab-strip";
 import { WebTabPip } from "./center-tabs/web-tab-pip";
-import { BrowserResourceProjection } from "@/lib/state/browser-resource-projection";
-import { useCenterTabs } from "@/lib/state/center-tabs-store";
-import { topLevelTabs } from "@/lib/state/web-page-management";
+import { BrowserResourceProjection } from "@/lib/browser/browser-resource-projection";
+import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
+import { topLevelTabs } from "@/lib/browser/web-page-management";
 import {
   findCenterTabGroup,
   resolveCenterTabPanes,
-} from "@/lib/state/center-tab-groups";
+} from "@/lib/tabs/center-tab-groups";
 import {
   desktopBridge,
   installDesktopMenuHandlers,
   setDesktopSplitLayoutAvailable,
-} from "@/lib/desktop-bridge";
+} from "@/lib/desktop/desktop-bridge";
 import { ToastHost } from "./ui/toast-host";
 import { Composer } from "./chat/composer";
 import { LegacyTopbarBridge } from "./chat/top-bar";
@@ -31,19 +31,19 @@ import { DagView } from "./chat/dag-view";
 import { ViewControls } from "./chat/view-controls";
 import { useSessionStore } from "@/lib/session-store";
 import { SessionScopeProvider } from "@/lib/session-store/session-scope";
-import { useColResize } from "@/lib/use-col-resize";
+import { useColResize } from "@/lib/hooks/use-col-resize";
 import { useTranslation } from "@/lib/i18n";
 import {
   clampSplitRatioForWidth,
   createSplitLayoutMeasureScheduler,
   isSplitLayoutAvailable,
-} from "@/lib/split-layout";
+} from "@/lib/tabs/split-layout";
 import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
 import { setNavigate } from "@/lib/navigate";
-import { setLastChatPath } from "@/lib/last-chat-path";
+import { setLastChatPath } from "@/lib/tabs/last-chat-path";
 import { enterExclusiveCoverageMode, renderHistoryGraph } from "@/lib/runtime-bridge/dag";
 import { initOverlayScrollbars } from "@/lib/runtime-bridge/scrollbar";
-import { hostPaintsRows } from "@/lib/state/message-window";
+import { hostPaintsRows } from "@/lib/chat/message-window";
 
 function DeferredPaneLoading() {
   return (
@@ -206,7 +206,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // `window`. Not read by any application code.
   useEffect(() => {
     window.__centerTabs = useCenterTabs;
-    import("@/lib/desktop-bridge").then((m) => {
+    import("@/lib/desktop/desktop-bridge").then((m) => {
       window.__desktopTransfer = {
         desktopBridge: m.desktopBridge,
         buildTransferPayload: m.buildTransferPayload,

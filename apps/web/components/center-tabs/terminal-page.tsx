@@ -15,9 +15,9 @@ import {
   desktopBridge,
   desktopTerminalId,
   type DesktopTerminalApi,
-} from "@/lib/desktop-bridge";
+} from "@/lib/desktop/desktop-bridge";
 import { useTranslation } from "@/lib/i18n";
-import { useCurrentProject } from "@/lib/state/files-shared";
+import { useCurrentProject } from "@/lib/files/files-shared";
 import styles from "./center-tabs.module.css";
 
 const PROJECT_RESOLVE_GRACE_MS = 500;

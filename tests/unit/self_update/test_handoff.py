@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from openprogram.self_update import SelfUpdateStore, UpdatePhase, UpdateRequest
-from openprogram.self_update.handoff import release_prepared_update
+from openprogram.self_update.control.handoff import release_prepared_update
 
 
 def _request() -> UpdateRequest:

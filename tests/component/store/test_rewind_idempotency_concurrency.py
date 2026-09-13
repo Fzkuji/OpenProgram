@@ -13,7 +13,7 @@ def test_concurrent_same_key_executes_one_rewind(tmp_path, monkeypatch):
 
     store = SessionStore(tmp_path / "sessions")
     monkeypatch.setattr(
-        "openprogram.store.session.session_store._default_store", store,
+        'openprogram.store.session.session_store.shared._default_store', store,
         raising=False,
     )
     monkeypatch.setattr(

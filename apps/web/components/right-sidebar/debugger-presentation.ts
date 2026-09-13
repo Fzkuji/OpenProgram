@@ -1,4 +1,4 @@
-import type { ExecutionSnapshot } from "@/lib/execution-debugger";
+import type { ExecutionSnapshot } from "@/lib/execution/execution-debugger";
 import type { PersistedExecutionEvent } from "@/lib/net/execution-client";
 
 type Text = (en: string, zh: string) => string;

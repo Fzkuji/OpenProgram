@@ -24,7 +24,8 @@ def get_model(provider: str, model_id: str) -> Model | None:
     # `provider` via the alias table, plus the canonical form `provider`
     # itself maps to.
     try:
-        from openprogram.auth.aliases import known_aliases, resolve
+        from openprogram.auth.account.aliases import known_aliases
+        from openprogram.auth.account.aliases import resolve
         candidates: set[str] = set()
         canon = resolve(provider)
         if canon != provider:

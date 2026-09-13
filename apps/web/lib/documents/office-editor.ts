@@ -1,7 +1,7 @@
 "use client";
 
-import type { DocumentController, } from "@/lib/state/document-controller";
-import type { RichDocumentEditor } from "@/lib/state/document-types";
+import type { DocumentController, } from "@/lib/files/document-controller";
+import type { RichDocumentEditor } from "@/lib/files/document-types";
 
 export interface OfficeEditorInstance extends RichDocumentEditor {
   save(targetExt?: string, options?: { commitPendingInput?: boolean }): Promise<File>;

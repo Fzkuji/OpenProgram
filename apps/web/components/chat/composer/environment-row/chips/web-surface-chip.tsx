@@ -2,9 +2,9 @@
 
 import { ChromeIcon } from "@/components/animated-icons";
 import { HoverTip } from "@/components/ui/tooltip";
-import { surfaceRefForChat } from "@/lib/desktop-bridge";
+import { surfaceRefForChat } from "@/lib/desktop/desktop-bridge";
 import { useTranslation } from "@/lib/i18n";
-import { useCenterTabs } from "@/lib/state/center-tabs-store";
+import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import styles from "../environment-row.module.css";
 
 export function WebSurfaceChip({

@@ -19,9 +19,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { Reorder } from "framer-motion";
 
 import { type AgenticFunction } from "@/lib/session-store";
-import { openFunctionForm } from "@/lib/state/functions-actions";
-import { setPendingRunFunction } from "@/lib/use-pending-run-function";
-import { useFunctions } from "@/lib/state/functions-store";
+import { openFunctionForm } from "@/lib/abilities/functions-actions";
+import { setPendingRunFunction } from "@/lib/execution/use-pending-run-function";
+import { useFunctions } from "@/lib/abilities/functions-store";
 import { type AnimatedNavIconHandle } from "@/components/animated-icons";
 import {
   FUNCTION_ICONS,

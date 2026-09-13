@@ -102,7 +102,7 @@ def test_slow_location_publish_does_not_block_cached_session(
     entered = threading.Event()
     release = threading.Event()
     from openprogram.store.session import session_store as store_module
-    original = store_module.atomic_write_text
+    original = store_module.shared.atomic_write_text
 
     def blocked_write(path, text):
         if path == store._locations_path():
@@ -110,7 +110,7 @@ def test_slow_location_publish_does_not_block_cached_session(
             assert release.wait(2)
         return original(path, text)
 
-    monkeypatch.setattr(store_module, "atomic_write_text", blocked_write)
+    monkeypatch.setattr(store_module.shared, "atomic_write_text", blocked_write)
     slow = threading.Thread(
         target=store._record_location,
         args=("slow", tmp_path / "project" / "slow"),
@@ -165,7 +165,7 @@ def test_concurrent_first_load_publishes_one_index(tmp_path, monkeypatch):
 def test_concurrent_location_snapshots_do_not_lose_entries(tmp_path, monkeypatch):
     store = SessionStore(tmp_path / "sessions")
     from openprogram.store.session import session_store as store_module
-    original = store_module.atomic_write_text
+    original = store_module.shared.atomic_write_text
     entered = threading.Event()
     release = threading.Event()
     writes = 0
@@ -179,7 +179,7 @@ def test_concurrent_location_snapshots_do_not_lose_entries(tmp_path, monkeypatch
                 assert release.wait(2)
         return original(path, text)
 
-    monkeypatch.setattr(store_module, "atomic_write_text", blocked_first_write)
+    monkeypatch.setattr(store_module.shared, "atomic_write_text", blocked_first_write)
     first = threading.Thread(
         target=store._record_location,
         args=("a", tmp_path / "project-a" / "a"),

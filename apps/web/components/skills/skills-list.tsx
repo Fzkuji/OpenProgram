@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSkills, type Skill } from "@/lib/state/skills-store";
+import { useSkills, type Skill } from "@/lib/abilities/skills-store";
 import { Switch } from "@/components/ui/switch";
 import { SearchInput } from "@/components/ui/search-input";
 import { ManageRow, managePageStyles as shared } from "@/components/ui/manage-page";

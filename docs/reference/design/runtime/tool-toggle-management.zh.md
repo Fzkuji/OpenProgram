@@ -264,7 +264,7 @@ provider 协程。实际执行始终使用本轮已解析且带权限 wrapper �
 ### 9.2 关键设计点（别破坏）
 
 - **展开必须确定性**：工具数组在 prompt 缓存前缀根部，顺序一抖整段缓存 miss。当前
-  `agent_tools` 按 names/registry 顺序返回，天然稳定——`tests/unit/programs/test_tool_expansion_deterministic.py`
+  `agent_tools` 按 names/registry 顺序返回，天然稳定——`tests/unit/programs/tools/test_tool_expansion_deterministic.py`
   锁住它。**以后改 `agent_tools` / `_filter_agent_tools` 切勿引入 `set()` 迭代 /
   dict churn 破坏顺序**，否则缓存会无声失效（不报错，只是悄悄变贵）。
 - **绝不把"全部工具"物化成 list 存进会话**：全部工具永远由 `{enabled: True}` 意图
@@ -277,7 +277,7 @@ provider 协程。实际执行始终使用本轮已解析且带权限 wrapper �
 
 ### 9.3 测试（回归保护）
 
-- `tests/unit/programs/test_tool_expansion_deterministic.py` — 展开确定性（缓存前缀稳定）
+- `tests/unit/programs/tools/test_tool_expansion_deterministic.py` — 展开确定性（缓存前缀稳定）
 - `tests/unit/store/test_session_config_tools_intent.py` — 意图往返、用户精选 list 原样透传、
   端到端：意图展开含新工具（send_message/list_sessions）+ web_search 叠加生效
 - `tests/unit/store/test_session_config.py::test_tools_enabled_yields_live_intent_not_snapshot` —

@@ -2,8 +2,8 @@
 
 /** Pending text stays in the queue until dispatch is acknowledged. */
 import { useTranslation } from "@/lib/i18n";
-import { useSendQueue, type QueuedMessage } from "@/lib/state/send-queue";
-import { steerQueuedMessage } from "@/lib/state/steer-message";
+import { useSendQueue, type QueuedMessage } from "@/lib/chat/send-queue";
+import { steerQueuedMessage } from "@/lib/chat/steer-message";
 import { XIcon } from "@/components/animated-icons";
 import { CornerDownRight } from "lucide-react";
 

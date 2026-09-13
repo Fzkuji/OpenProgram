@@ -115,7 +115,7 @@ def test_release_wheel_probe_runs_outside_the_checkout():
     assert "python -P -c" in workflow
     assert "assert canonical is legacy" in workflow
     assert "openprogram_server/_webui/_frontend/index.html" in workflow
-    assert "openprogram_server/_webui/routes/tree.py" in workflow
+    assert "openprogram_server/_webui/routes/files/tree.py" in workflow
     assert "openprogram_server/_webui/ws_actions/webtab.py" in workflow
     assert "openprogram_cli/_impl/application.py" in workflow
     assert "assert openprogram_cli.main is legacy_cli.main" in workflow
@@ -129,7 +129,7 @@ def test_release_wheel_probe_runs_outside_the_checkout():
 
 def test_system_version_reports_managed_release(monkeypatch):
     from openprogram.updater.detect import InstallMethod
-    from openprogram.webui.routes.config import register
+    from openprogram.webui.routes.settings.config import register
 
     monkeypatch.setattr(
         "openprogram.updater.detect.detect_install_method",

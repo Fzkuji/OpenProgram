@@ -32,12 +32,12 @@ import { motion, useReducedMotion } from "framer-motion";
 import { useCurrentSessionId } from "./use-window-globals";
 import { useSessionStore } from "@/lib/session-store";
 import type { ConvSummary } from "@/lib/session-store";
-import { useCenterTabs } from "@/lib/state/center-tabs-store";
+import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import { useTranslation } from "@/lib/i18n";
 import { activateOnKey } from "@/lib/utils";
 import { useRecentsView, setRecentsView } from "@/lib/prefs/recents-view";
 import { wsRequest } from "@/lib/net/ws-request";
-import { projectGroups, moveProject, filterProjectItems } from "@/lib/project-groups";
+import { projectGroups, moveProject, filterProjectItems } from "@/lib/projects/project-groups";
 import {
   Popover,
   PopoverAnchor,

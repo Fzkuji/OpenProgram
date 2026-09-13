@@ -259,7 +259,7 @@ def wrap_with_approval(
             )
         approval_args = args
         if name == "self_update_retry":
-            from openprogram.self_update.next_candidate import approval_preview
+            from openprogram.self_update.repair.next_candidate import approval_preview
             try:
                 preview = approval_preview(args.get("update_id"), args.get("candidate_sha"), req)
             except Exception as exc:

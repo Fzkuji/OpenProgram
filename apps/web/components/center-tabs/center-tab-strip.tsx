@@ -23,12 +23,12 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowLeft, ArrowRight, CirclePlus, Plus, SquareArrowOutUpRight } from "lucide-react";
 
-import { useCenterTabs, type CenterTab } from "@/lib/state/center-tabs-store";
-import { topLevelTabs } from "@/lib/state/web-page-management";
-import { canNavigateTabPage } from "@/lib/state/tab-page-history";
-import { centerTabStripEntries } from "@/lib/state/center-tab-groups";
-import { dragCoordinator } from "@/lib/tab-drag-coordinator";
-import { desktopBridge } from "@/lib/desktop-bridge";
+import { useCenterTabs, type CenterTab } from "@/lib/tabs/center-tabs-store";
+import { topLevelTabs } from "@/lib/browser/web-page-management";
+import { canNavigateTabPage } from "@/lib/tabs/tab-page-history";
+import { centerTabStripEntries } from "@/lib/tabs/center-tab-groups";
+import { dragCoordinator } from "@/lib/tabs/tab-drag-coordinator";
+import { desktopBridge } from "@/lib/desktop/desktop-bridge";
 import { MainMenu } from "./main-menu";
 import { SplitViewPicker } from "./split-view-picker";
 import { useTranslation } from "@/lib/i18n";

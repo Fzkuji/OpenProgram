@@ -41,7 +41,7 @@ import contextvars
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterator, Optional
 
-from .accounts import DEFAULT_ACCOUNT_NAME
+from .account.accounts import DEFAULT_ACCOUNT_NAME
 from .types import Credential
 
 

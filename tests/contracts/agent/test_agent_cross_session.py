@@ -67,10 +67,10 @@ def cross_session_store(tmp_path, monkeypatch):
     import openprogram.agent.job.runner as runner_module
 
     runner_module.shutdown_runner()
-    monkeypatch.setattr(runner_module, "_broadcast", lambda *_a, **_k: None)
-    monkeypatch.setattr(runner_module, "emit_safe", lambda *_a, **_k: None)
+    monkeypatch.setattr(runner_module.shared, "_broadcast", lambda *_a, **_k: None)
+    monkeypatch.setattr(runner_module.shared, "emit_safe", lambda *_a, **_k: None)
     monkeypatch.setattr(
-        runner_module, "_refresh_context_stats", lambda _session_id: None,
+        runner_module.shared, "_refresh_context_stats", lambda _session_id: None,
     )
     # Completion finalisation is the subject of this test.  The automatic
     # follow-up is a separate asynchronous turn and would make HEAD assertions

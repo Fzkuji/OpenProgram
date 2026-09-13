@@ -12,7 +12,7 @@ import {
   toggleShowActions,
   useBrowserControlStore,
   type BrowserControlResource,
-} from "@/lib/state/browser-control";
+} from "@/lib/browser/browser-control";
 import {
   clampFloatPosition,
   controlSurfaceVisible,
@@ -24,8 +24,8 @@ import {
   nextCueTravel,
   prefersCueReducedMotion,
   type CuePoint,
-} from "@/lib/state/browser-action-cue";
-import { browserConnectionOpen, useBrowserResourceStore } from "@/lib/state/session-resources";
+} from "@/lib/browser/browser-action-cue";
+import { browserConnectionOpen, useBrowserResourceStore } from "@/lib/chat/session-resources";
 import { useTranslation } from "@/lib/i18n";
 import { MENU_PANEL } from "@/components/chat/top-bar/menu-styles";
 import {

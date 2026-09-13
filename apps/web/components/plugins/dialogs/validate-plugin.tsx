@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import styles from "../plugins.module.css";
-import { usePluginsStore } from "@/lib/state/plugins-store";
+import { usePluginsStore } from "@/lib/abilities/plugins-store";
 import { useTranslation } from "@/lib/i18n";
-import { useModalA11y } from "@/lib/use-modal-a11y";
+import { useModalA11y } from "@/lib/hooks/use-modal-a11y";
 
 interface Check {
   name: string;

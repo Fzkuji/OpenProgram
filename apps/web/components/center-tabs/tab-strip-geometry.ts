@@ -1,8 +1,8 @@
 import type { CSSProperties } from "react";
 
-import { centerTabStripEntries } from "@/lib/state/center-tab-groups";
-import { useCenterTabs } from "@/lib/state/center-tabs-store";
-import type { TabDropIntent } from "@/lib/tab-drag-coordinator";
+import { centerTabStripEntries } from "@/lib/tabs/center-tab-groups";
+import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
+import type { TabDropIntent } from "@/lib/tabs/tab-drag-coordinator";
 
 /** Flex gap between strip entries — keep in sync with .strip/.tabsFlow gap. */
 export const STRIP_GAP = 8;

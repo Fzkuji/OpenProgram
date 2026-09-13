@@ -1,4 +1,4 @@
-import { registerSessionHistory, updateSessionHistory, useSessionHistory, type HistoryPage } from "@/lib/state/session-history";
+import { registerSessionHistory, updateSessionHistory, useSessionHistory, type HistoryPage } from "@/lib/chat/session-history";
 import { wsRequest } from "@/lib/net/ws-request";
 /**
  * Conversation / branch / channel data layer.
@@ -30,19 +30,19 @@ import {
   renderHistoryGraph,
   repaintBranchTags,
 } from "./dag";
-import { convToChatMsgs } from "@/lib/conv-mapper";
+import { convToChatMsgs } from "@/lib/chat/conv-mapper";
 import { navigate } from "@/lib/navigate";
 import { useSessionStore } from "@/lib/session-store";
 import {
   warmContextBreakdown,
   writeContextBreakdownCache,
-} from "@/lib/state/context-breakdown-cache";
-import { pushBranchInfo } from "@/lib/top-bar-sync";
+} from "@/lib/chat/context-breakdown-cache";
+import { pushBranchInfo } from "@/lib/tabs/top-bar-sync";
 import { showToast } from "@/lib/format-utils/toast";
 import {
   readChatScroll,
   restoreChatScrollIfCurrent,
-} from "@/lib/state/chat-scroll";
+} from "@/lib/chat/chat-scroll";
 
 interface LegacyConv {
   id?: string;

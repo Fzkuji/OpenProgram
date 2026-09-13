@@ -48,7 +48,7 @@ def store(tmp_path, monkeypatch):
     s = SessionStore(tmp_path / "sessions-git")
     monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: s)
     import openprogram.store.session.session_store as ss_mod
-    monkeypatch.setattr(ss_mod, "_default_store", s)
+    monkeypatch.setattr(ss_mod.shared, "_default_store", s)
     return s
 
 

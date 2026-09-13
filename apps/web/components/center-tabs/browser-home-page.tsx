@@ -14,12 +14,12 @@ import {
 } from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
-import { importBookmarkTree } from "@/lib/bookmarks";
+import { importBookmarkTree } from "@/lib/tabs/bookmarks";
 import {
   browserImportPromptFinished,
   consumeBrowserImportRequest,
   markBrowserImportPromptFinished,
-} from "@/lib/browser-prefs";
+} from "@/lib/browser/browser-prefs";
 import {
   addShortcut,
   hostOf,
@@ -27,13 +27,13 @@ import {
   removeShortcut,
   subscribeShortcuts,
   type Shortcut,
-} from "@/lib/ntp-shortcuts";
+} from "@/lib/tabs/ntp-shortcuts";
 import {
   desktopBridge,
   type DesktopBrowserImportSource,
-} from "@/lib/desktop-bridge";
+} from "@/lib/desktop/desktop-bridge";
 import { LANE_COLORS } from "@/lib/format-utils/lane-colors";
-import { normalizeWebUrl, useCenterTabs } from "@/lib/state/center-tabs-store";
+import { normalizeWebUrl, useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import { BrowserGlyph } from "./browser-glyph";
 import { BookmarkBar, BookmarksLibraryButton, BrowserMenu } from "./browser-controls";
 import styles from "./center-tabs.module.css";

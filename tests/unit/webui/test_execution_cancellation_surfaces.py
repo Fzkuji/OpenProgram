@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from tests.support.desktop_source import read_server_source
+
 from pathlib import Path
 
 
@@ -78,7 +80,7 @@ def test_surfaces_send_execution_cancel_and_use_cancel_copy():
     assert "handle_stop" not in runtime
     assert '"stop":' not in runtime
     lifecycle = (
-        ROOT / "apps/server/openprogram_server/_webui/routes/lifecycle.py"
+        ROOT / "apps/server/openprogram_server/_webui/routes/execution/lifecycle.py"
     ).read_text(encoding="utf-8")
     assert (
         'for operation in ("pause", "continue", "step", "steer", "cancel", "fork", "retry")'
@@ -97,12 +99,8 @@ def test_surfaces_send_execution_cancel_and_use_cancel_copy():
     assert "def resume_execution" not in run_control
     assert "_pause_event" not in run_control
     assert "msg_id}_reply" not in composer
-    assert '"execution_id": task.get("execution_id")' in (
-        ROOT / "apps/server/openprogram_server/server.py"
-    ).read_text(encoding="utf-8")
-    assert '"status_version": task.get("status_version")' in (
-        ROOT / "apps/server/openprogram_server/server.py"
-    ).read_text(encoding="utf-8")
+    assert '"execution_id": task.get("execution_id")' in read_server_source(ROOT)
+    assert '"status_version": task.get("status_version")' in read_server_source(ROOT)
     assert "cancelling: true" not in composer
     stop_body = composer.split("export function stopSession", 1)[1]
     assert 'status: "cancelled"' in stop_body

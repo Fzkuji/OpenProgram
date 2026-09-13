@@ -62,7 +62,7 @@ class ResourceSaga:
             raise ValueError("job id must equal canonical execution id")
         admission_id = job.admission_id or f"adm_{uuid.uuid4().hex}"
         durable_job = replace(job, admission_id=admission_id)
-        from openprogram.agent.resource_governance import _job_fingerprint
+        from openprogram.agent.resource_governance.usage import _job_fingerprint
 
         fingerprint = _job_fingerprint(durable_job)
         payload = {

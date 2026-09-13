@@ -16,7 +16,7 @@ import {
 /** Cut/copy source, module-level so it survives menu close and spans
  *  tree instances. Cleared after a cut-paste lands. */
 export const treeClipboard: {
-  current: { op: "cut" | "copy"; path: string } | null;
+  current: { op: "cut" | "copy"; projectId: string; path: string } | null;
 } = { current: null };
 
 export interface TreeContextMenuProps {

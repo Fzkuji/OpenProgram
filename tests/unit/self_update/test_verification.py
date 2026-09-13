@@ -6,10 +6,8 @@ from copy import deepcopy
 import pytest
 
 from openprogram.self_update import UpdateRequest
-from openprogram.self_update.verification import (
-    VerificationValidationError,
-    validate_verifier_result,
-)
+from openprogram.self_update.verification.verification import VerificationValidationError
+from openprogram.self_update.verification.verification import validate_verifier_result
 
 
 def _request() -> UpdateRequest:

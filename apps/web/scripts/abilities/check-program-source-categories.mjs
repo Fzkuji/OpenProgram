@@ -1,0 +1,90 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+const root = new URL("../../", import.meta.url);
+const route = readFileSync(new URL("app/(shell)/programs/page.tsx", root), "utf8");
+const page = readFileSync(new URL("components/programs/programs-page.tsx", root), "utf8");
+const logic = readFileSync(new URL("components/programs/programs-logic.ts", root), "utf8");
+const catalog = readFileSync(new URL("components/programs/programs-catalog.ts", root), "utf8");
+const source = readFileSync(new URL("components/programs/programs-source.ts", root), "utf8");
+const css = readFileSync(new URL("components/programs/programs-page.module.css", root), "utf8");
+
+assert.match(route, /@\/components\/capabilities\/capabilities-page/);
+const hub = readFileSync(new URL("components/capabilities/capabilities-page.tsx", root), "utf8");
+assert.match(hub, /@\/components\/programs\/programs-page/);
+assert.match(hub, /<ProgramsPage/);
+assert.match(page, /ManagePageHeader/);
+assert.match(page, /ExplorerHeader/);
+assert.match(page, /showRootPath=\{false\}/);
+assert.match(page, /ExplorerMatchText/);
+assert.match(page, /function renderProgramDirectory/);
+assert.match(page, /setExpanded\(new Set\(parents\)\)/);
+assert.doesNotMatch(page, /react-arborist|react-use-measure|SearchInput/);
+assert.doesNotMatch(page, /Browse source files and inspect static call relationships/);
+assert.match(page, /\/api\/programs\/explorer/);
+assert.doesNotMatch(page, /\/api\/tools/);
+assert.doesNotMatch(page, /buildRuntimeProgramDirectories|TOOL_GROUPS|runtime_only/);
+assert.match(page, /\/api\/programs\/logic/);
+assert.match(page, /data-testid="programs-explorer"/);
+assert.match(page, /data-testid="programs-call-tree"/);
+assert.match(page, /data-testid="programs-call-graph"/);
+assert.match(page, /className=\{styles\.entityHeader\}/);
+assert.match(page, /className=\{styles\.summary\}/);
+assert.match(page, /toggleFavorite/);
+assert.match(page, /Call tree/);
+assert.match(page, /Graph/);
+assert.match(logic, /for \(const edge of logic\.edges\)/);
+assert.match(logic, /rows\.length >= limit/);
+assert.match(page, /buildGraphLayout/);
+assert.match(page, /graphLayout\.nodes\.map/);
+assert.match(page, /graphLayout\.edges\.map/);
+assert.match(page, /<small>\{node\.path\}<\/small>/);
+assert.doesNotMatch(page, /graphEdges|graphEdge/);
+assert.match(page, /ancestorContinuations\.map/);
+assert.match(page, /className=\{styles\.callLabel\}/);
+assert.doesNotMatch(css, /\.callRow\s*>\s*span:nth-child/);
+assert.doesNotMatch(css, /--border-strong/);
+assert.match(css, /\.callGuideActive::before,[\s\S]*?background:\s*var\(--border-light\);/);
+assert.match(css, /\.graphNode small\s*\{[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s);
+assert.match(page, /cancelled = true/);
+assert.match(page, /fetch\("\/api\/programs\/meta"/);
+assert.match(page, /method:\s*"POST"/);
+assert.match(page, /runtimeState\.programsMeta\s*=/);
+assert.match(page, /useFunctions\.getState\(\)\.setMeta/);
+assert.match(page, /aria-pressed=\{isFavorite\}/);
+assert.match(page, /selectedEntry\?\.callable_name/);
+assert.match(page, /new URLSearchParams\(\{ run: invocationName/);
+assert.match(page, /text\("Use",\s*"使用"\)/);
+assert.match(css, /grid-template-columns:\s*var\(--programs-explorer-width\)\s+minmax\(0,\s*1fr\)/);
+assert.match(css, /--programs-explorer-width:\s*calc\(var\(--sidebar-width\) - 1px\)/);
+assert.match(page, /entry\.program_kind === "workflow"/);
+assert.match(page, /if \(entry\.entity_kind === "package"\)/);
+assert.match(page, /entry\.program_kind\?\.endsWith\("function"\)/);
+assert.match(page, /entry\.kind === "folder" && !entry\.program_kind/);
+assert.doesNotMatch(page, /Programs files|Programs 文件/);
+assert.doesNotMatch(css, /font-family:\s*var\(--font-mono\)/);
+assert.doesNotMatch(page, /All Programs|Uncategorized|ProfileNavRow/);
+assert.match(catalog, /programInvocationName/);
+assert.match(
+  readFileSync(new URL("components/ui/manage-page.tsx", root), "utf8"),
+  /isManageActionIcon\(a\.icon\)/,
+);
+assert.match(
+  readFileSync(new URL("components/ui/manage-action-icon.ts", root), "utf8"),
+  /\"render\" in icon/,
+);
+assert.doesNotMatch(catalog, /buildRuntimeProgramDirectories|functions\/connected|tool\.source/);
+assert.match(source, /search_workflows/);
+assert.match(source, /create_workflow/);
+assert.match(source, /revise_workflow/);
+assert.match(source, /auto_workflow/);
+assert.match(source, /workflow_capability|isWorkflowCapability/);
+assert.match(page, /from "\.\/programs-source"/);
+assert.match(page, /isWorkflowCapability/);
+assert.match(page, /isUserManualWorkflowEntry/);
+assert.match(page, /Auto entry · user only/);
+assert.match(page, /自动入口 · 仅用户手动/);
+assert.match(page, /Workflow capability/);
+assert.match(page, /Workflow 管理能力/);
+
+console.log("program workspace checks passed");

@@ -10,7 +10,8 @@ from fastapi.testclient import TestClient
 
 from openprogram.auth.store import AuthStore, set_store_for_testing
 from openprogram.auth.types import Credential, CredentialData, CredentialPool
-from openprogram.webui.routes import accounts, config, providers
+from openprogram.webui.routes.identity import accounts, providers
+from openprogram.webui.routes.settings import config
 
 
 _LONG_SECRET = "sk-123456789abc4"
@@ -21,7 +22,9 @@ _NEW_SECRET = "sk-new-secret-abc4"
 def secret_api(tmp_path, monkeypatch):
     """Minimal route app with isolated config, environment and AuthStore."""
     from openprogram import setup
-    from openprogram.auth import account_priority, account_selection, rotation
+    from openprogram.auth.account import account_priority
+    from openprogram.auth.account import account_selection
+    from openprogram.auth import rotation
     from openprogram.webui._model_listing import credentials
 
     config_path = tmp_path / "config.json"
@@ -485,7 +488,8 @@ def test_account_update_validate_false_skips_probe(secret_api, monkeypatch):
 
 
 def test_account_remove_has_exact_response_and_clears_active_pin(secret_api):
-    from openprogram.auth.account_selection import get_active_pin, set_active_account
+    from openprogram.auth.account.account_selection import get_active_pin
+    from openprogram.auth.account.account_selection import set_active_account
 
     _put_credential(secret_api.store)
     set_active_account("openai", "work")

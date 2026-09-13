@@ -31,7 +31,7 @@ def client(monkeypatch):
     monkeypatch.setattr(_sdb, "default_db", lambda: _FakeDB())
 
     app = FastAPI()
-    from openprogram.webui.routes import export as _export
+    from openprogram.webui.routes.files import export as _export
     _export.register(app)
     return TestClient(app)
 

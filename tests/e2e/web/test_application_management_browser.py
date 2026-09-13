@@ -18,7 +18,7 @@ pytestmark = pytest.mark.browser
 
 def test_install_manage_launch_and_reinstall_preserves_data(tmp_path, monkeypatch):
     from playwright.sync_api import sync_playwright, expect
-    from openprogram.webui.routes import applications
+    from openprogram.webui.routes.catalog import applications
     from openprogram.webui.owner_auth import OwnerAuthMiddleware, OwnerAuthState
     monkeypatch.setenv('HOME', str(tmp_path))
     source = tmp_path / 'software'
@@ -34,7 +34,7 @@ import {AppRouterContext} from 'next/dist/shared/lib/app-router-context.shared-r
 import {ApplicationsPage} from './components/applications/applications-page';
 import {NewTabPage} from './components/center-tabs/new-tab-page';
 import {ApplicationTabPane} from './components/center-tabs/application-tab-pane';
-import {useCenterTabs} from './lib/state/center-tabs-store';
+import {useCenterTabs} from './lib/tabs/center-tabs-store';
 function App(){const[manage,setManage]=useState(true);const tab=useCenterTabs(s=>s.tabs.find(t=>t.id===s.activeId));return <AppRouterContext.Provider value={{push:()=>setManage(false)}}><button onClick={()=>setManage(true)}>Manage software</button><button onClick={()=>setManage(false)}>Launcher</button>{manage?<ApplicationsPage/>:<><NewTabPage/>{tab?.applicationInstanceId&&<ApplicationTabPane instanceId={tab.applicationInstanceId}/>}</>}</AppRouterContext.Provider>;}createRoot(document.getElementById('root')).render(<App/>);'''
     subprocess.run(['node', '-e', '''require('esbuild').buildSync({stdin:{contents:process.argv[3],resolveDir:process.argv[1],loader:'tsx'},bundle:true,format:'iife',platform:'browser',jsx:'automatic',loader:{'.css':'empty'},outfile:process.argv[2],tsconfig:process.argv[1]+'/tsconfig.json'});''', str(ROOT / 'apps/web'), str(bundle), entry], cwd=ROOT, check=True, capture_output=True)
     app = FastAPI()

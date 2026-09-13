@@ -47,7 +47,7 @@ jobs:
         run: |
           python -m zipfile -l dist/openprogram-*.whl | grep 'openprogram_server/_webui/_frontend/index.html'
           python -m zipfile -l dist/openprogram-*.whl | grep 'openprogram_server/server.py'
-          python -m zipfile -l dist/openprogram-*.whl | grep 'openprogram_server/_webui/routes/tree.py'
+          python -m zipfile -l dist/openprogram-*.whl | grep 'openprogram_server/_webui/routes/files/tree.py'
           python -m zipfile -l dist/openprogram-*.whl | grep 'openprogram_server/_webui/ws_actions/webtab.py'
           python -m zipfile -l dist/openprogram-*.whl | grep 'openprogram_cli/_impl/application.py'
           wheel_path="$(realpath "$(find dist -name 'openprogram-*.whl' -print -quit)")"

@@ -34,20 +34,20 @@ import {
   removeVisibleWebTabBounds,
   setWebTabReady,
   type DesktopBridge,
-} from "@/lib/desktop-bridge";
+} from "@/lib/desktop/desktop-bridge";
 import { useTranslation } from "@/lib/i18n";
-import { browserPageShortcut } from "@/lib/browser-layout";
+import { browserPageShortcut } from "@/lib/browser/browser-layout";
 import {
   isBookmarked,
   subscribeBookmarks,
   toggleBookmark,
-} from "@/lib/bookmarks";
-import { normalizeWebUrl, useCenterTabs } from "@/lib/state/center-tabs-store";
+} from "@/lib/tabs/bookmarks";
+import { normalizeWebUrl, useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import {
   collapseWebTabToPip,
   pipCollapseTargetFor,
   useWebTabPip,
-} from "@/lib/state/web-tab-pip-store";
+} from "@/lib/browser/web-tab-pip-store";
 import {
   browserTakeoverKind,
   controlResourceFromSession,
@@ -55,13 +55,13 @@ import {
   revealPendingApproval,
   setControlNotice,
   toggleShowActions,
-} from "@/lib/state/browser-control";
+} from "@/lib/browser/browser-control";
 import {
   listedBrowserResources,
   previewTabId,
   useBrowserResourceStore,
-} from "@/lib/state/session-resources";
-import { isWebTabOccluded, measureWebTabBounds } from "@/lib/web-tab-bounds";
+} from "@/lib/chat/session-resources";
+import { isWebTabOccluded, measureWebTabBounds } from "@/lib/browser/web-tab-bounds";
 import styles from "./center-tabs.module.css";
 import { BookmarkBar, BookmarksLibraryButton, BrowserMenu } from "./browser-controls";
 import { ActionCueTravel, BrowserControlBar } from "./browser-control-bar";
@@ -69,14 +69,14 @@ import {
   controlSurfaceVisible,
   cueCancelKey,
   prefersCueReducedMotion,
-} from "@/lib/state/browser-action-cue";
+} from "@/lib/browser/browser-action-cue";
 import {
   liveOperationMarker,
   operationHistory,
   resumeErrorFor,
   showActionsEnabled,
   useBrowserControlStore,
-} from "@/lib/state/browser-control";
+} from "@/lib/browser/browser-control";
 
 export function WebTabPane({ tabId, url }: { tabId: string; url: string }) {
   // Bridge presence is fixed for the lifetime of the page (preload

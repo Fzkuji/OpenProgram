@@ -304,8 +304,10 @@ def _extract_function_info(filepath: str, name: Optional[str], category: str) ->
                     if "label" in meta:
                         pd["label"] = meta["label"]
 
+        from openprogram.agentic_programming.continuation import source_capability
         return {
             "name": name,
+            "continuation": source_capability(content, name),
             "category": effective_category,
             "description": doc,
             "params": params,

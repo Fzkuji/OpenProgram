@@ -36,7 +36,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from .account_selection import get_active_account
+from .account.account_selection import get_active_account
 from .context import (
     get_active_account_id,
     get_credential_override,

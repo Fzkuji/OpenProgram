@@ -7,11 +7,11 @@ import { BotIcon, BoxesIcon, HeartIcon, WrenchIcon } from "@/components/animated
 import { Button } from "@/components/ui/button";
 import { SearchInput } from "@/components/ui/search-input";
 import { useTranslation } from "@/lib/i18n";
-import { refreshFunctionsList } from "@/lib/state/functions-actions";
-import { getLastChatPath } from "@/lib/last-chat-path";
+import { refreshFunctionsList } from "@/lib/abilities/functions-actions";
+import { getLastChatPath } from "@/lib/tabs/last-chat-path";
 import { runtimeState } from "@/lib/runtime-bridge/state";
-import { useFunctions } from "@/lib/state/functions-store";
-import { setPendingRunFunction } from "@/lib/use-pending-run-function";
+import { useFunctions } from "@/lib/abilities/functions-store";
+import { setPendingRunFunction } from "@/lib/execution/use-pending-run-function";
 
 import { CustomSelect } from "./custom-select";
 import { CtxMenu, type CtxMenuState } from "./ctx-menu";

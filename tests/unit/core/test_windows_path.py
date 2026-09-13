@@ -41,7 +41,7 @@ def test_regular_binary_read_rejects_directory(tmp_path: Path) -> None:
 
 def test_package_hash_uses_binary_bytes_and_size_bound(tmp_path: Path) -> None:
     import hashlib
-    from openprogram.self_update.package_protocol import _read_or_hash
+    from openprogram.self_update.delivery.package_protocol import _read_or_hash
 
     target = tmp_path / "app.asar"
     payload = b"\r\n\x1a\xff"

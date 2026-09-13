@@ -288,7 +288,7 @@ class CredentialProvider:
         :meth:`apply_failure`.
         """
         if account_id is None:
-            from .account_selection import get_active_account
+            from .account.account_selection import get_active_account
             account_id = get_active_account(provider_id)
         return await self._acquire_recursive(provider_id, account_id, visited=set())
 

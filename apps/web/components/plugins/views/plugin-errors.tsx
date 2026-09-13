@@ -2,7 +2,7 @@
 
 import styles from "../plugins.module.css";
 import { managePageStyles as shared } from "@/components/ui/manage-page";
-import { usePluginsStore } from "@/lib/state/plugins-store";
+import { usePluginsStore } from "@/lib/abilities/plugins-store";
 import { useTranslation } from "@/lib/i18n";
 
 export function PluginErrors({ filter }: { filter?: string } = {}) {

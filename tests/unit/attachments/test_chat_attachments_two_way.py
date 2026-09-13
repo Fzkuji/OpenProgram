@@ -49,7 +49,7 @@ def state(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (root / "sessions").mkdir(parents=True)
     monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: root)
     monkeypatch.setattr(
-        "openprogram.store.session.session_store._default_store", None)
+        'openprogram.store.session.session_store.shared._default_store', None)
     return root
 
 
@@ -114,7 +114,7 @@ def test_marker_matches_the_regex_the_web_chip_actually_ships():
     its regex out of the shipped source and run the produced marker
     through it, so the two can't drift apart unnoticed."""
     src = (Path(__file__).resolve().parents[3]
-           / "apps/web/lib/attachment-marker.ts").read_text(encoding="utf-8")
+           / "apps/web/lib/chat/attachment-marker.ts").read_text(encoding="utf-8")
     body = re.search(r"const JSON_ATTACHED_MENTION =\s*\n\s*/(.+)/g;", src).group(1)
     ts_re = re.compile(body.replace("(?:", "(?:"))
     marker = att.format_marker("a.png", "/tmp/a.png", 20481)

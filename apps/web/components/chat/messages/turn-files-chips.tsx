@@ -20,8 +20,8 @@ import type {
   TurnFileSummary,
 } from "@/lib/session-store/types";
 import { showToast } from "@/lib/format-utils/toast";
-import { useCenterTabs } from "@/lib/state/center-tabs-store";
-import { useCurrentProject } from "@/lib/state/files-shared";
+import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
+import { useCurrentProject } from "@/lib/files/files-shared";
 
 import {
   historyPresentation,

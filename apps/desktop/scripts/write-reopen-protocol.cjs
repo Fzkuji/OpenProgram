@@ -53,10 +53,10 @@ async function writeProtocol(resources) {
   const candidates = fs.readdirSync(path.join(resources, prefix, "lib"))
     .filter(name => /^python\d+\.\d+$/.test(name))
     .map(name => `${prefix}/lib/${name}/site-packages/`)
-    .filter(site => fs.existsSync(path.join(resources, site, "openprogram/self_update/reopen.py")));
+    .filter(site => fs.existsSync(path.join(resources, site, "openprogram/self_update/control/reopen.py")));
   if (candidates.length !== 1) throw new Error("ambiguous backend reopen package");
   const site = candidates[0];
-  const backend = `${site}openprogram/self_update/reopen.py`;
+  const backend = `${site}openprogram/self_update/control/reopen.py`;
   const routes = `${site}openprogram_server/_webui/routes/self_updates.py`;
   if (!/^REOPEN_PROTOCOL = 1$/m.test(text(resources, backend)) ||
       !text(resources, routes).includes('/desktop-reopen/ack"')) throw new Error("backend reopen protocol is unavailable");
@@ -80,7 +80,7 @@ async function writeProtocol(resources) {
   fs.renameSync(temporary, target);
   // Older complete packages keep their reopen-only protocol. Capture capability
   // is advertised only when all three actual packaged consumers are present.
-  const uiBackend = `${site}openprogram/self_update/ui_checks.py`;
+  const uiBackend = `${site}openprogram/self_update/verification/ui_checks.py`;
   const uiFrontend = chunks.map(name => chunkRoot + name).find(relative => text(resources, relative).includes("selfUpdateCapture"));
   const uiTarget = path.join(resources, "update/ui-verification-protocol.json");
   const hasCapture = ["/self-update-ui.js", "/self-update-ui-guard.js", "/self-update-ui-scroll.js"]
@@ -95,7 +95,7 @@ async function writeProtocol(resources) {
     const uiBindings = { desktop: bindings.desktop, routes: bindings.routes, runtime_manifest: bindings.runtime_manifest,
       backend: await binding(resources, uiBackend), frontend: await binding(resources, uiFrontend) };
     let protocol = 1;
-    const server = `${site}openprogram_server/server.py`;
+    const server = `${site}openprogram_server/_webui/server_runtime/websocket_dispatch.py`;
     const ownerAuth = `${site}openprogram_server/_webui/owner_auth.py`;
     const scrollFrontend = chunks.map(name => chunkRoot + name).find(relative => text(resources, relative).includes("data-self-update-verification"));
     if (asar.listPackage(archive).includes("/self-update-ui-scroll.js") && scrollFrontend &&

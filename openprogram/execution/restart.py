@@ -64,7 +64,9 @@ def crash_checkpoint(service, connection, execution):
         return None
     # A later committed action makes an older checkpoint unsafe to replay.
     if connection.execute(
-        "SELECT 1 FROM effects WHERE execution_id = ? AND status = 'committed' AND updated_at > ? LIMIT 1",
+        "SELECT 1 FROM effects WHERE execution_id = ? AND status = 'committed' AND updated_at > ? "
+        "AND json_extract(metadata_json, '$.function_step') IS NULL "
+        "AND COALESCE(json_extract(receipt_json, '$.function_suspended'), 0) != 1 LIMIT 1",
         (execution.execution_id, checkpoint.created_at),
     ).fetchone():
         return None
@@ -82,7 +84,7 @@ def _service(runner, execution_id):
 
 def prepare_shutdown(runner) -> None:
     """Request cooperative pause before the worker's bounded process teardown."""
-    from openprogram.self_update.maintenance import maintenance_blocks
+    from openprogram.self_update.control.maintenance import maintenance_blocks
 
     runner._restart_shutdown = True
     shutdown_event = getattr(runner, "_shutdown_event", None)
@@ -159,7 +161,7 @@ def _settle(store, execution, event, outcome):
 
 def reconcile(runner) -> None:
     """Resume only the exact restart-owned pause before its fixed deadline."""
-    from openprogram.self_update.maintenance import maintenance_blocks
+    from openprogram.self_update.control.maintenance import maintenance_blocks
 
     if getattr(runner, "_restart_shutdown", False) or maintenance_blocks(
         "worker_restart"

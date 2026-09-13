@@ -14,7 +14,12 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 def _source(path: str) -> str:
-    return (ROOT / path).read_text(encoding="utf-8")
+    target = ROOT / path
+    if target.is_file():
+        return target.read_text(encoding="utf-8")
+    modules = sorted(target.with_suffix("").glob("*.py"))
+    assert modules, f"Missing source module: {path}"
+    return "\n".join(module.read_text(encoding="utf-8") for module in modules)
 
 
 def test_legacy_job_lifecycle_controls_are_removed_from_public_surfaces() -> None:
@@ -58,7 +63,7 @@ def test_execution_cli_declares_the_four_canonical_control_verbs() -> None:
 def test_rest_registers_every_canonical_execution_control_route() -> None:
     from fastapi import FastAPI
 
-    from openprogram.webui.routes import lifecycle
+    from openprogram.webui.routes.execution import lifecycle
 
     app = FastAPI()
     lifecycle.register(app)
@@ -80,7 +85,7 @@ def test_job_surface_sources_use_execution_envelope_and_cursor() -> None:
         "apps/cli/src/commands/jobResource.ts",
         "apps/cli/src/screens/repl/pickerRouter.tsx",
         "apps/cli/src/screens/repl/useWsEvents.ts",
-        "apps/web/lib/job-resource.ts",
+        "apps/web/lib/execution/job-resource.ts",
         "apps/web/lib/net/ws-events.ts",
         "apps/web/components/right-sidebar/branches/branch-item.tsx",
     ):

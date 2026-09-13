@@ -93,7 +93,7 @@ def _build_model_from_row(
 def _load() -> dict[str, Model]:
     from ._config_read import read_providers_config
     from .metadata import provider_endpoints
-    from openprogram.auth.aliases import resolve
+    from openprogram.auth.account.aliases import resolve
 
     merged: dict[str, Model] = {}
     try:

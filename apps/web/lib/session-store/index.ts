@@ -10,12 +10,12 @@ import {
   readSessionDraftState,
   replaceSessionDraftState,
   updateSessionDraftState,
-} from "@/lib/session-draft-persistence";
+} from "@/lib/chat/session-draft-persistence";
 import {
   draftChannelChoiceHost,
   type DraftChannelChoiceHost,
 } from "../runtime-bridge/draft-channel-choice";
-import type { SessionTransferSnapshot } from "../tab-transfer-journal";
+import type { SessionTransferSnapshot } from "../tabs/tab-transfer-journal";
 import {
   dropSessionStore,
   installScopeWriteThrough,
@@ -890,7 +890,7 @@ export const useSessionStore = createWithEqualityFn<ConvState>((set) => ({
       // drain writes cannot re-enter this `set`.
       if (!t && drain !== "never" && (wasRunning || drain === "always")) {
         queueMicrotask(() => {
-          void import("@/lib/state/send-queue").then((m) =>
+          void import("@/lib/chat/send-queue").then((m) =>
             m.useSendQueue.getState().drain(sessionId),
           );
         });

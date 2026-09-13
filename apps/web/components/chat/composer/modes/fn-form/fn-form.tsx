@@ -8,7 +8,7 @@
 "use client";
 
 import type { AgenticFunction, FnParam } from "@/lib/session-store";
-import { userFunctionParams } from "@/lib/function-invocation";
+import { userFunctionParams } from "@/lib/execution/function-invocation";
 import { useTranslation } from "@/lib/i18n";
 
 import { FieldRow } from "./fn-form-fields";
