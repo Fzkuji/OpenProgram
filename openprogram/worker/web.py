@@ -219,7 +219,7 @@ def start_web_frontend(
     env["PORT"] = str(port)
     env["OPENPROGRAM_PARENT_PID"] = str(os.getpid())
 
-    from openprogram._compat import node_tool_cmd
+    from openprogram._compat import node_tool_cmd, no_window_creation_flags
     watcher = wd / "scripts" / "with-parent-watch.mjs"
     cmd = (
         ["node", str(watcher)]
@@ -292,6 +292,9 @@ def _start_build_id_watcher(
 
     def _loop() -> None:
         import time as _t
+
+        from openprogram._compat import no_window_creation_flags
+
         nonlocal last_seen
         while True:
             _t.sleep(2.0)
