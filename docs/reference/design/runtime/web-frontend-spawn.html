@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Web frontend subprocess creation</title>
+<style>body{font:16px/1.6 system-ui;max-width:850px;margin:48px auto;padding:0 24px;color:#172033}code{background:#eef2f6;padding:2px 4px}</style>
+<h1>Web frontend subprocess creation</h1>
+<p>The worker starts Next.js through <code>start_web_frontend</code> and restarts it when <code>.next/BUILD_ID</code> changes. Both subprocess creation sites use the shared <code>no_window_creation_flags</code> helper from <code>openprogram._compat</code>. Each calling function imports the helper in its own scope, just as the build function does. A function-local import in the build function cannot provide a binding to another function.</p>
+<h2>Compatibility and failure behavior</h2>
+<p>The existing platform helper supplies zero flags on POSIX and the background-window flag on Windows. Command construction, environment propagation, port reclamation and manifest patching retain their current behavior. A failed initial spawn returns None after reporting OSError. A failed rebuild spawn reports OSError and leaves the watcher able to observe a subsequent build. Shutdown selects the latest successful subprocess handle.</p>
+<h2>Acceptance and boundaries</h2>
+<p>Component tests invoke the public startup entry with fake subprocesses and capture the production watcher callback without starting an unbounded thread. A temporary BUILD_ID file drives successive rebuilds. Tests verify helper flags at initial and repeated spawn sites, latest-child shutdown, and recovery after a spawn error. Process creation and port reclamation are isolated, so checks cannot affect the running App. Tests first fail against the missing-import baseline and then pass with the contributor's fix.</p>
+<p>This change restores existing behavior. It introduces no dependency, API, configuration or security-boundary change. Watcher scheduling, shutdown cancellation and unrelated platform behavior remain outside this repair.</p>
+<h2>Implementation status</h2>
+<p>The contributor's two local imports implement the repair. Behavior checks and independent reviews are required before release; exact commands and results are maintained in the review ledger.</p>
+</html>
