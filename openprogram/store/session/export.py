@@ -100,7 +100,7 @@ def _call_summary(msg: dict[str, Any]) -> dict[str, str]:
         "name": _redact(str(msg.get("function") or _tool_use(msg).get("name")
                             or "(unnamed call)")),
         "status": "failed" if msg.get("is_error") else "ok",
-        "args": _clip(args, MAX_ARGS_CHARS) if args else "",
+        "args": _clip(_redact(str(args)), MAX_ARGS_CHARS) if args else "",
         "result": _clip(_redact("" if content is None else str(content)), MAX_RESULT_CHARS),
     }
 
