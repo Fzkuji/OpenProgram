@@ -7,7 +7,7 @@ is deliberately aligned).
 
 ## 1. What Fast is
 
-The "Fast" toggle in the composer's More options menu (the sliders icon). When on, the request carries the
+The gauge button in the composer's thinking-effort panel. When on, the request carries the
 vendor's high-speed knob:
 
 | Family | Wire shape | Billing reality |
@@ -17,8 +17,8 @@ vendor's high-speed knob:
 
 Absence from this table does not prove that a provider lacks a fast tier.
 xAI documents Priority Processing for its official API; the Grok subscription
-route is a separate, unverified endpoint. The proposed UI and route-aware
-extension are specified in [Composer speed control](../../ui/composer-fast-control.html).
+route is a separate, unverified endpoint. The UI and route-aware
+behavior are specified in [Composer speed control](../../ui/composer-fast-control.html).
 Implementation verification is tracked in the linked design status.
 
 ## 2. Route capability

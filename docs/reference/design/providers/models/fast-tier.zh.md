@@ -6,7 +6,7 @@
 
 ## 1. Fast 是什么
 
-聊天输入框“更多选项”（滑杆图标）菜单里的"高速"开关。开了之后，请求按厂商协议带上高速档参数：
+思考强度弹窗右上角的仪表按钮控制高速模式。开了之后，请求按厂商协议带上高速档参数：
 
 | 家族 | 线上形态 | 计费事实 |
 |---|---|---|
@@ -96,6 +96,13 @@ apps/web/components/chat/composer/index.tsx             开关显隐 + 发送门
 ```
 
 改动指南：codex 的 fast/thinking 全自动，加/去模型什么都不用做——点 Fetch
-重拉端点即可；换判定逻辑 → 只动 `listing.py::supports_fast`；claude-code 加/去
-fast → 动 `default_fast` 的 Opus 部分；其他 provider 想要 fast → models.dev
-认识它就自动生效。
+重拉端点即可；判定逻辑由 `providers.fast.fast_capability` 统一维护；claude-code 加/去
+fast → 动 `default_fast` 的 Opus 部分；其他 provider 使用已确认的线路配置或目录能力，不按模型名推定支持。
+
+## 响应证据
+
+Completions 与 Responses 在 Usage 中分别保留请求档位和实际返回档位。
+每次调用的证据按列表累计，随 assistant 消息保存，普通聊天用量区域在重新读取后
+仍能显示实际高速、实际标准和未确认的调用数量。Anthropic 已发送高速请求但没有
+返回速度证据时标为未确认。xAI 返回的实际费用优先于目录估价；缺少高速价格证据
+时记为未知，不直接使用标准档估价。
