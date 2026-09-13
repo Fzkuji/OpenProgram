@@ -1106,6 +1106,7 @@ def test_mutation_operates_on_symlink_entry(project_root, action, target_kind):
         link.symlink_to(target, target_is_directory=target_kind == 'directory')
     except OSError:
         pytest.skip('symlinks unavailable')
+    original_link = os.readlink(link)
     before = target.exists()
     handler = getattr(ws_files, f'handle_project_file_{action}')
     data = _run(handler, {'project_id': 'p1', 'path': 'alias', 'new_path': 'other',
@@ -1120,7 +1121,7 @@ def test_mutation_operates_on_symlink_entry(project_root, action, target_kind):
         assert not link.is_symlink()
     if action != 'delete':
         assert (project_root / 'other').is_symlink()
-        assert os.readlink(project_root / 'other') == str(target)
+        assert os.readlink(project_root / 'other') == original_link
 
 
 def test_deleted_file_can_be_restored(project_root):

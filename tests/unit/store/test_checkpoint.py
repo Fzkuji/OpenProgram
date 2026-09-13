@@ -216,3 +216,73 @@ def test_history_apply_without_dir_fd_reverts_and_reapplies(
     )
     assert reapplied["status"] == "committed"
     assert target.read_text(encoding="utf-8") == "after"
+
+
+def test_snapshot_accepts_stable_descriptor_metadata_representation(
+        session_dir, workdir, monkeypatch):
+    import stat
+    from types import SimpleNamespace
+
+    target = workdir / "portable.py"
+    target.write_text("original")
+    observed = target.stat()
+    original_fstat = checkpoint_store.os.fstat
+
+    def descriptor_stat(fd):
+        info = original_fstat(fd)
+        if (info.st_dev, info.st_ino) == (observed.st_dev, observed.st_ino):
+            fields = {name: getattr(info, name) for name in dir(info)
+                      if name.startswith("st_")}
+            fields["st_mode"] ^= stat.S_IXUSR
+            return SimpleNamespace(**fields)
+        return info
+
+    monkeypatch.setattr(checkpoint_store.os, "fstat", descriptor_stat)
+    store = CheckpointStore(session_dir)
+    store.backup_before_edit("portable", str(target))
+    target.write_text("changed")
+    store.restore_turn("portable")
+    assert target.read_text() == "original"
+    assert stat.S_IMODE(target.stat().st_mode) == stat.S_IMODE(observed.st_mode)
+
+
+@pytest.mark.parametrize("changed_api", ["descriptor", "path"])
+def test_snapshot_rejects_metadata_change_during_read(
+        session_dir, workdir, monkeypatch, changed_api):
+    from types import SimpleNamespace
+
+    target = workdir / "changing.py"
+    target.write_text("original")
+    observed = target.stat()
+    original_fstat = checkpoint_store.os.fstat
+    original_lstat = checkpoint_store.os.lstat
+    reads = 0
+
+    def changed(info):
+        fields = {name: getattr(info, name) for name in dir(info)
+                  if name.startswith("st_")}
+        fields["st_mtime_ns"] += 1
+        return SimpleNamespace(**fields)
+
+    def descriptor_stat(fd):
+        nonlocal reads
+        info = original_fstat(fd)
+        if (info.st_dev, info.st_ino) == (observed.st_dev, observed.st_ino):
+            reads += 1
+            if changed_api == "descriptor" and reads >= 2:
+                return changed(info)
+        return info
+
+    def path_stat(path, *args, **kwargs):
+        info = original_lstat(path, *args, **kwargs)
+        if changed_api == "path" and reads >= 2 and Path(path) == target:
+            return changed(info)
+        return info
+
+    monkeypatch.setattr(checkpoint_store.os, "fstat", descriptor_stat)
+    monkeypatch.setattr(checkpoint_store.os, "lstat", path_stat)
+    store = CheckpointStore(session_dir)
+    with pytest.raises(checkpoint_store.MutationJournalError, match="changed while reading"):
+        store.backup_before_edit("changing", str(target))
+    assert target.read_text() == "original"
+    assert store.restore_turn("changing") == []

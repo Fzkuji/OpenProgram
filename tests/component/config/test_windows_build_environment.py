@@ -53,9 +53,9 @@ def test_asset_staging_restores_environment_after_failure(tmp_path, configured, 
     (fake_bin / "npm.cmd").write_text(
         '@echo off\nif "%1"=="%TEST_FAIL_COMMAND%" exit /b 17\nexit /b 0\n'
     )
-    # No Python or uv command is reached before these two injected failures.
+    # Office assets are staged by Python before the injected npm failures.
     placeholder = fake_bin / "placeholder.cmd"
-    placeholder.write_text("@exit /b 19\n")
+    placeholder.write_text('@echo off\nif "%~nx1"=="stage.py" exit /b 0\nexit /b 19\n')
     keys = ("npm_config_workspace", "npm_config_workspaces", "NEXT_IGNORE_INCORRECT_LOCKFILE")
     env = dict(os.environ, PATH=str(fake_bin) + os.pathsep + os.environ["PATH"],
                OPENPROGRAM_UV_BIN=str(placeholder), OPENPROGRAM_BUILD_PYTHON=str(placeholder),
