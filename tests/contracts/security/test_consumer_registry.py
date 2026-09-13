@@ -37,6 +37,7 @@ EXPECTED_CONSUMERS = {
     "plugins.marketplace",
     "plugins.autoupdate",
     "updater.github",
+    "office.assets",
     "provider.fixed_api",
     "provider.configured_api",
     "provider.oauth.fixed",
@@ -103,6 +104,7 @@ EXPECTED_FIXED_ORIGINS = {
     ),
     "plugins.autoupdate": frozenset({"https://pypi.org", "https://registry.npmjs.org"}),
     "updater.github": frozenset({"https://api.github.com"}),
+    "office.assets": frozenset({"https://github.com", "https://release-assets.githubusercontent.com"}),
     "provider.fixed_api": frozenset(
         {
             "https://ai-gateway.vercel.sh",
@@ -183,7 +185,11 @@ def test_every_consumer_declares_finite_limits_and_mime_policy():
             0 < port <= 65535 for port in spec.allowed_ports
         )
         assert 0 < spec.max_redirects <= 20
-        assert 0 < spec.max_decoded_body_bytes <= 128 * 1024 * 1024
+        if key == "office.assets":
+            # The pinned optional archive streams to disk, not an in-memory API body.
+            assert spec.max_decoded_body_bytes == 732_695_641
+        else:
+            assert 0 < spec.max_decoded_body_bytes <= 128 * 1024 * 1024
         assert spec.accepted_mime_prefixes
         assert all(
             prefix and prefix == prefix.lower()

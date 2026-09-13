@@ -404,3 +404,35 @@ def test_office_runtime_error_preserves_ready_editor(office_window):
     assert trigger.evaluate("(node, original) => node === original", original)
     expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
     assert errors == []
+
+
+def test_optional_office_consent_cancel_retry_and_open(office_window):
+    from playwright.sync_api import expect
+    page, origin, _, errors = office_window
+    attempts = []
+    def availability(route):
+        if len(attempts) < 2:
+            route.fulfill(json={"available": False, "installable": True, "downloadBytes": 732695641})
+        else:
+            route.continue_()
+    def install(route):
+        attempts.append(True)
+        route.fulfill(status=503 if len(attempts) == 1 else 200, json={"installed": len(attempts) > 1})
+    page.route('**/api/documents/office-host?*', availability)
+    page.route('**/api/documents/office-install', install)
+    page.goto(origin + '/?file=baseline.pptx')
+    expect(page.get_by_role('button', name='Install', exact=True)).to_be_visible()
+    assert not attempts
+    expect(page.locator('[data-office-editor] iframe')).to_have_count(0)
+    page.get_by_role('button', name='Cancel', exact=True).click()
+    expect(page.get_by_role('button', name='Install', exact=True)).to_have_count(0)
+    assert not attempts
+    page.get_by_role('button', name='Installation options', exact=True).click()
+    page.get_by_role('button', name='Install', exact=True).click()
+    expect(page.get_by_role('button', name='Retry', exact=True)).to_be_visible()
+    assert len(attempts) == 1
+    page.get_by_role('button', name='Retry', exact=True).click()
+    expect(page.locator('[data-office-editor] > iframe')).to_have_count(1, timeout=45000)
+    expect(page.locator('[data-office-editor]')).to_have_attribute('aria-busy', 'false', timeout=45000)
+    assert len(attempts) == 2
+    assert not errors

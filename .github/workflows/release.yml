@@ -15,9 +15,6 @@ permissions:
 
 env:
   RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-  OFFICE_ASSET_RELEASE: v0.9.0
-  OFFICE_ASSET_NAME: OfficeAssets-d15d12b-dc31dd9d.zip
-  OFFICE_ASSET_SHA256: 6367f66bb618e1c1ddfa27fffbb7ebcf084b652c8484d8923d42492ed0b5447d
 
 jobs:
   platforms:
@@ -54,40 +51,6 @@ jobs:
           version: "0.11.16"
       - name: Verify version
         run: python scripts/release/verify-release-version.py --tag "${RELEASE_TAG}"
-      - name: Prepare pinned Office resources
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          gh release download "$OFFICE_ASSET_RELEASE" --repo "$GITHUB_REPOSITORY" \
-            --pattern "$OFFICE_ASSET_NAME" --dir "$RUNNER_TEMP/office-input"
-          python - <<'PYTHON'
-          import hashlib
-          import os
-          from pathlib import Path
-          import zipfile
-          from openprogram.office_assets import validate_prepared_office_pack
-
-          archive = Path(os.environ["RUNNER_TEMP"]) / "office-input" / os.environ["OFFICE_ASSET_NAME"]
-          hasher = hashlib.sha256()
-          with archive.open("rb") as stream:
-              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                  hasher.update(chunk)
-          digest = hasher.hexdigest()
-          if digest != os.environ["OFFICE_ASSET_SHA256"]:
-              raise SystemExit("Office build input digest mismatch")
-          output = Path(os.environ["RUNNER_TEMP"]) / "office-pack"
-          with zipfile.ZipFile(archive) as bundle:
-              bundle.extractall(output)
-          validate_prepared_office_pack(output)
-          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as stream:
-              stream.write(f"OPENPROGRAM_OFFICE_PACK={output}\n")
-          PYTHON
-      - uses: actions/upload-artifact@v7
-        with:
-          name: office-build-input
-          path: ${{ runner.temp }}/office-input/*
-          compression-level: 0
       - name: Build developer Python distributions
         run: |
           scripts/release/stage-release-assets.sh
@@ -142,35 +105,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends --yes xvfb xauth libgl1 libglib2.0-0
-      - name: Prepare pinned Office resources
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          gh release download "$OFFICE_ASSET_RELEASE" --repo "$GITHUB_REPOSITORY" \
-            --pattern "$OFFICE_ASSET_NAME" --dir "$RUNNER_TEMP/office-input"
-          python - <<'PYTHON'
-          import hashlib
-          import os
-          from pathlib import Path
-          import zipfile
-          from openprogram.office_assets import validate_prepared_office_pack
-
-          archive = Path(os.environ["RUNNER_TEMP"]) / "office-input" / os.environ["OFFICE_ASSET_NAME"]
-          hasher = hashlib.sha256()
-          with archive.open("rb") as stream:
-              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                  hasher.update(chunk)
-          digest = hasher.hexdigest()
-          if digest != os.environ["OFFICE_ASSET_SHA256"]:
-              raise SystemExit("Office build input digest mismatch")
-          output = Path(os.environ["RUNNER_TEMP"]) / "office-pack"
-          with zipfile.ZipFile(archive) as bundle:
-              bundle.extractall(output)
-          validate_prepared_office_pack(output)
-          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as stream:
-              stream.write(f"OPENPROGRAM_OFFICE_PACK={output}\n")
-          PYTHON
       - name: Build complete product runtime
         if: matrix.platform != 'windows'
         env:

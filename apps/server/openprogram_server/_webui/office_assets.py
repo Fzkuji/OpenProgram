@@ -28,8 +28,7 @@ _INLINE_HANDLER_RE = re.compile(r"\son[a-z]+\s*=\s*([\"'])(.*?)\1", re.IGNORECAS
 
 
 def load_installed_office_pack() -> OfficeAssetPack:
-    runtime = managed_runtime_root()
-    root = runtime / "assets" / "office" if runtime else prepared_office_cache()
+    root = prepared_office_cache()
     try:
         return validate_prepared_office_pack(root)
     except (OSError, ValueError):
@@ -166,7 +165,7 @@ async def _send_error(send, status: int, error: str) -> None:
     await send({"type": "http.response.body", "body": body})
 
 
-def office_host_availability(request, pack: OfficeAssetPack) -> dict:
+def office_install_rejection(request) -> dict | None:
     client = request.client.host if request.client else ""
     if not is_loopback_host(client):
         return {"available": False, "reason": "local_client_required"}
@@ -181,8 +180,16 @@ def office_host_availability(request, pack: OfficeAssetPack) -> dict:
             return {"available": False, "reason": "local_main_origin_required"}
         if not is_loopback_host(parsed_origin.hostname or "") or parsed_origin.port != request.app.state.owner_auth.port:
             return {"available": False, "reason": "local_main_origin_required"}
+    return None
+
+
+def office_host_availability(request, pack: OfficeAssetPack) -> dict:
+    rejection = office_install_rejection(request)
+    if rejection:
+        return rejection
     if not pack.available:
-        return {"available": False, "reason": pack.unavailable_reason or "unavailable"}
+        from openprogram.office_install import OFFICE_DOWNLOAD_BYTES
+        return {"available": False, "reason": "not_installed", "installable": True, "downloadBytes": OFFICE_DOWNLOAD_BYTES}
     session = request.query_params.get("session_id", "")
     if not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", session):
         return {"available": False, "reason": "invalid_session_id"}

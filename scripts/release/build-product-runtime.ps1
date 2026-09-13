@@ -101,12 +101,7 @@ foreach ($Directory in @(
 )) {
     New-Item -ItemType Directory -Path (Join-Path $RuntimeRoot $Directory) -Force | Out-Null
 }
-if (Test-Path -LiteralPath (Join-Path $RepoRoot "apps\desktop\build\office") -PathType Container) {
-    Invoke-Native $BuildPython (Join-Path $RepoRoot "scripts/release/office/stage.py") `
-        --source (Join-Path $RepoRoot "apps/desktop/build/office") --output (Join-Path $RuntimeRoot "assets/office")
-} else {
-    throw "prepared Office asset pack is required but missing"
-}
+
 
 Invoke-Native $Uv build --wheel --out-dir (Join-Path $RuntimeRoot "wheel") $RepoRoot
 $ManagedPythonRoot = Join-Path $RuntimeRoot ".python-build"

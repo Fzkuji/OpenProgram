@@ -9,13 +9,13 @@ export interface OfficeEditorInstance extends RichDocumentEditor {
 }
 interface OfficeMount { activate(): Promise<OfficeEditorInstance>; destroy(): Promise<void>; }
 interface OfficeApi { mountOfficeEditor(container: HTMLElement, options: Record<string, unknown>): OfficeMount; }
-interface HostAvailability { available: boolean; moduleUrl?: string; hostUrl?: string; packageVersion?: string; hostBuildId?: string; assetManifestDigest?: string; reason?: string; }
+interface HostAvailability { available: boolean; installable?: boolean; downloadBytes?: number; moduleUrl?: string; hostUrl?: string; packageVersion?: string; hostBuildId?: string; assetManifestDigest?: string; reason?: string; }
 
 export async function officeHostAvailability(sessionId: string, fetcher: typeof fetch = fetch, signal?: AbortSignal): Promise<HostAvailability> {
   const response = await fetcher(`/api/documents/office-host?session_id=${encodeURIComponent(sessionId)}`, { signal });
   if (!response.ok) throw new Error(`Office resources are unavailable (${response.status}).`);
   const value = await response.json() as HostAvailability;
-  if (!value.available || !value.hostUrl) throw new Error(value.reason ?? "Office editing is unavailable.");
+  if ((!value.available || !value.hostUrl) && !value.installable) throw new Error(value.reason ?? "Office editing is unavailable.");
   return value;
 }
 
@@ -127,6 +127,7 @@ export async function convertOfficeDocument(controller: DocumentController, byte
   signal.throwIfAborted();
   const availability = await officeHostAvailability(crypto.randomUUID().replace(/-/g, "").slice(0, 20), fetch, signal);
   signal.throwIfAborted();
+  if (!availability.available) throw new Error("Install Office document support before converting this file.");
   const container = document.createElement("div");
   Object.assign(container.style, { position: "fixed", width: "1024px", height: "768px",
     top: "0", left: "0", visibility: "hidden", pointerEvents: "none" });

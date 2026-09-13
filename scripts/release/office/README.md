@@ -28,17 +28,19 @@ licenses. `onlyoffice-runtime-assets.json` is the editor's native manifest;
 `openprogram-office-assets.json` inventories every installed file with size and
 SHA-256. Its host identity must match the actual editor handshake.
 
-Release staging accepts `OPENPROGRAM_OFFICE_PACK` pointing to this prepared
-installation. Alternatively, set `OPENPROGRAM_OFFICE_SOURCE`,
-`OPENPROGRAM_OFFICE_FONT_PACK` and `OPENPROGRAM_OFFICE_FONT_INPUT` to build it
-at staging time. With no explicit inputs it uses an already verified build
-output or the matching profile cache. A missing pack stops release staging.
-There are no downloads when opening a document.
+Office support is optional. Default release staging, native runtime builds and
+local App refresh do not download, prepare or bundle the Office pack. Opening
+a document checks availability only; the user chooses Install before the
+fixed release archive is downloaded (about 699 MiB). Runtime installation
+verifies its pinned archive digest, validates every resource and publishes to
+the profile cache. App and source workers use that same cache; old App-bundled
+packs are no longer selected. No restart is required after installation.
 
-The runtime stores resources under `assets/office`. Source and PATH workers
-read the matching version under the profile's `cache/office` directory. Local
-App refresh installs the same frozen pack into both locations. An arbitrary
-`OPENPROGRAM_RUNTIME_ROOT` environment value cannot override server assets.
+For explicit editor development or testing, `stage.py --source /path/to/pack
+--output /path/to/output` still stages a verified pack. `--web-root` optionally
+copies the small parent module for standalone tests. Production serves the
+parent module from the authenticated API after installation. The large runtime
+does not enter the Python wheel or initial chat bundle.
 
 Installations contain immutable `versions/<manifest-sha256>` directories.
 All copied bytes are validated and flushed before `current.json` atomically
@@ -56,10 +58,6 @@ OpenProgram checkout. Font inputs and their original licenses are explicit
 build inputs, and their relative names and hashes are recorded in
 `source/font-provenance.json`.
 
-GitHub release builders download the pinned `OfficeAssets-d15d12b-dc31dd9d.zip`
-build input from `v0.9.0`. The workflow verifies its archive SHA-256 and the
-complete Office manifest before staging; it does not depend on a runner's
-profile cache. The input archive is included in the release artifact manifest.
-A rebuild dispatch selects an existing immutable source tag. A newer workflow
-controller can prepare the build environment without changing that tag's code.
-The first publication finalizes its draft only after all native jobs pass.
+The optional installer downloads `OfficeAssets-d15d12b-dc31dd9d.zip` from
+`v0.9.0`. The fixed URL, archive size and SHA-256 are declared in
+`openprogram/office_install.py`. Default release jobs do not fetch that asset.

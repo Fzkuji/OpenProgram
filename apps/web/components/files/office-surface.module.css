@@ -8,3 +8,5 @@
 @media (prefers-reduced-motion:reduce) { .officeSpinner { animation:none; } }
 
 .officeRuntimeError { position:absolute; top:0; left:0; right:0; z-index:1; background:var(--bg-primary); }
+
+.officeActions { display:flex; gap:8px; margin-top:4px; }

@@ -78,12 +78,7 @@ mkdir -p \
   "$runtime_root/python" \
   "$runtime_root/wheel"
 
-if test -d "$repo_root/apps/desktop/build/office"; then
-  "$json_python" "$repo_root/scripts/release/office/stage.py" --source "$repo_root/apps/desktop/build/office" --output "$runtime_root/assets/office"
-else
-  printf 'prepared Office asset pack is required but missing\n' >&2
-  exit 1
-fi
+
 
 "$uv_bin" build --wheel --out-dir "$runtime_root/wheel" "$repo_root"
 UV_PYTHON_INSTALL_DIR="$runtime_root/python" \
