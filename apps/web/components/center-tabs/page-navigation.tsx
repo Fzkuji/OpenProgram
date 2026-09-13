@@ -3,7 +3,7 @@
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { useTranslation } from "@/lib/i18n";
 import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
-import { navigationTarget } from "@/lib/tabs/tab-navigation";
+import { navigationTarget } from "@/lib/tabs/navigation/selectors";
 import styles from "./center-tabs.module.css";
 
 export function PageNavigation() {

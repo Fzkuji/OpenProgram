@@ -92,7 +92,7 @@ export function useTabLifecycle({
       const sid = decodeURIComponent(pathname.slice("/s/".length));
       const title = useSessionStore.getState().conversations[sid]?.title ?? "";
       openSessionTab(sid, title);
-    } else if (currentSessionId) {
+    } else if (currentSessionId && activeTab?.kind === "session" && !activeTab.draft) {
       // /chat 且 chat_ack 已分配 id → 草稿 tab 原地转正。
       const title =
         useSessionStore.getState().conversations[currentSessionId]?.title ?? "";
@@ -185,7 +185,8 @@ export function useTabLifecycle({
       // as before.
       if (!isChatRoute(pathname) || pathname.startsWith("/s/")) return;
     }
-    if (useCenterTabs.getState().navigationRoute) return;
+    const route = useCenterTabs.getState().navigationRoute;
+    if (route) { pushPath(route); return; }
     const tab = useCenterTabs.getState().tabs.find(
       (candidate) => candidate.id === activeId,
     );
@@ -226,6 +227,7 @@ export function useTabLifecycle({
     if (reactivateCurrentSession) {
       setSessionActivationRequest((request) => request + 1);
     }
+    if (tab.navigationRoute) { pushPath(tab.navigationRoute); return; }
     if (tab.kind !== "session" && !isChatRoute(pathname)) router.push("/chat");
   }
 

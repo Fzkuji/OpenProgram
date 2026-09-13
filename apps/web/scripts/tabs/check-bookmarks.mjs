@@ -26,7 +26,7 @@ const desktopPreloadPath = new URL("../../../desktop/preload.js", import.meta.ur
 // The strip is split across center-tab-strip.tsx and its submodules;
 // readCenterTabStripSource concatenates them in source order.
 const appShellPath = new URL("../../components/app-shell.tsx", import.meta.url);
-const tabsStorePath = new URL("../../lib/tabs/center-tabs-store.ts", import.meta.url);
+const tabsStorePath = new URL("../../lib/tabs/store/pages.ts", import.meta.url);
 // Deterministic tab-id helpers (builtinTabId, BuiltinPage, …) now live in
 // their own module; the store's openBuiltinTab action still CALLS them.
 const tabIdsPath = new URL("../../lib/tabs/center-tab-ids.ts", import.meta.url);

@@ -1042,7 +1042,7 @@ assert.match(
 // The graph moved out of the right sidebar into the chat pane, switched by
 // the Obsidian-style controls at the pane's top-right. State is per tab.
 const centerTabsStore = readFileSync(
-  new URL("../../lib/tabs/center-tabs-store.ts", import.meta.url),
+  new URL("../../lib/tabs/store/pages.ts", import.meta.url),
   "utf8",
 );
 assert.match(

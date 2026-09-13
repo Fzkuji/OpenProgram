@@ -1,6 +1,6 @@
-import { normalizeTabPageHistory } from "./tab-page-history";
+import { normalizeTabPageHistory } from "./navigation/page-history";
 import { topLevelTabs } from "../browser/web-page-management";
-import { normalizeSessionHistory } from "./session-tab-history";
+import { normalizeSessionHistory } from "./navigation/session-history";
 /**
  * Center-tab persistence + payload normalization.
  *
@@ -117,7 +117,7 @@ export function normalizeCenterTabsPayload(
     .filter((tab) => tab.kind !== "builtin" || String(tab.page) !== "extensions")
     .filter((tab) => tab.kind !== "application" || (
       /^[a-z][a-z0-9._-]{0,95}$/.test(tab.applicationId ?? "") &&
-      /^[a-f0-9]{64}$/.test(tab.applicationInstanceId ?? "") && tab.id === `app:${tab.applicationInstanceId}`
+      /^[a-f0-9]{64}$/.test(tab.applicationInstanceId ?? "") && (tab.id === `app:${tab.applicationInstanceId}` || new RegExp(`^app:${tab.applicationInstanceId}:tab:[a-f0-9-]{36}$`).test(tab.id))
     ))
     .map((tab) => {
       if (tab.id === DRAFT_SESSION_TAB_ID) return draftTab();
@@ -130,19 +130,6 @@ export function normalizeCenterTabsPayload(
       const { urlNativeAt: _drop, ...rest } = next;
       return rest;
     });
-  // A session has one center tab per window. Prefer the persisted active tab
-  // when malformed state contains duplicates; otherwise preserve first order.
-  const activeSessionTab = tabs.find(tab => tab.id === input.activeId && tab.kind === "session");
-  const keptSessionIds = new Set<string>();
-  if (activeSessionTab?.kind === "session" && activeSessionTab.sessionId) {
-    keptSessionIds.add(activeSessionTab.sessionId);
-  }
-  tabs = tabs.filter(tab => {
-    if (tab.kind !== "session" || !tab.sessionId) return true;
-    if (keptSessionIds.has(tab.sessionId)) return tab.id === activeSessionTab?.id;
-    keptSessionIds.add(tab.sessionId);
-    return true;
-  });
   let layout = normalizeCenterTabLayout({
     tabIds: tabs.map((tab) => tab.id),
     groups: Array.isArray(input.groups) ? input.groups : [],

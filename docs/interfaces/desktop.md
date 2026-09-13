@@ -1,6 +1,6 @@
 # Desktop App and built-in browser
 
-The default launcher is part of navigation history. Tab-strip Back and Forward follow the actual visit order through the launcher, built-in pages, sidebar pages, applications, sessions, and file locations in this window. Opening an existing destination also preserves a return to the launcher. Choosing a new destination after Back discards forward visits. Closed or deleted destinations are skipped. Window visits last for the current window lifetime; browser controls continue to own navigation between webpage URLs.
+Each tab keeps its own Back and Forward history, beginning with its default launcher. Navigation restores pages only inside the selected tab; switching tabs adds no history. Opening the same destination from another launcher preserves both tabs independently. Choosing a new destination after Back replaces only that tab’s forward history. History is saved with the tab. Browser controls handle navigation between webpage URLs.
 
 The macOS and Windows Desktop Apps present OpenProgram as a multi-pane workspace. Each pane can hold Files, a chat, the built-in Browser, or a Terminal, and panes can be split or moved between app windows without changing the underlying session or browser tab.
 
@@ -14,7 +14,7 @@ Terminal panes use the login shell on macOS and Windows PowerShell through ConPT
 
 When running Desktop from source on Linux, terminal panes use an installed absolute `SHELL` path, then fall back to `/bin/bash` or `/bin/sh`. They do not require zsh. If no shell is available, the terminal reports the missing prerequisite before starting a process.
 
-Within one window, reopening a session activates its existing chat tab. If it is not open, navigation reuses the current chat tab or opens a chat tab beside a webpage. Back and Forward also activate an existing tab when their destination is already open. Restoring a window removes duplicate chat tabs for the same session without deleting messages or drafts; sessions with identical titles remain separate.
+Opening a conversation from a session tab reuses that tab, even when another tab displays the same conversation. A launcher also opens its own independent instance. From other page kinds, an existing session tab can be selected or a new one opened. Back and Forward always stay in the selected tab. Draft input and background title updates survive navigation and reload; deleted sessions are removed from every history.
 
 ## Opening the Browser
 

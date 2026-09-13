@@ -136,7 +136,7 @@ test("closing a session in a split does not activate its now hidden owned page",
   assert.ok(state.tabs.some(t=>t.id==="w:hidden"));
 });
 
-const { canNavigateTabPage } = await import("../../lib/tabs/tab-page-history.ts");
+const { canNavigateTabPage } = await import("../../lib/tabs/navigation/page-history.ts");
 test("New tab is preserved behind application and built-in page navigation", () => {
   for (const open of [s => s.openApplicationTab("calculator", "a".repeat(64), "Calculator"),
     s => s.openBuiltinTab("files"), s => s.openBuiltinTab("browser"), s => s.openBuiltinTab("terminal")]) {

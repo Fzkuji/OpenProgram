@@ -1,3 +1,4 @@
+const { copyNavigationFields, copyPageHistory } = require("./tab-transfer/page-history.js");
 const { Buffer } = require("buffer");
 
 function isPlainObject(value) {
@@ -106,7 +107,7 @@ function validateTransferPayload(ctx, value) {
       boundedString(tab[field], `tab.${field}`, 16 * 1024);
     }
     if (tab.kind === "application" && (!/^[a-z][a-z0-9._-]{0,95}$/.test(tab.applicationId ?? "")
-      || !/^[a-f0-9]{64}$/.test(tab.applicationInstanceId ?? "") || tab.id !== `app:${tab.applicationInstanceId}`)) {
+      || !/^[a-f0-9]{64}$/.test(tab.applicationInstanceId ?? "") || (tab.id !== `app:${tab.applicationInstanceId}` && !new RegExp(`^app:${tab.applicationInstanceId}:tab:[a-f0-9-]{36}$`).test(tab.id)))) {
       throw new TypeError("Invalid application identity");
     }
     if (seen.has(tab.id)) throw new TypeError("Transfer tab ids must be unique");
@@ -142,6 +143,20 @@ function validateTransferPayload(ctx, value) {
       }
       normalized.sessionHistory = { entries, index: history.index };
     }
+    copyNavigationFields(tab, normalized, boundedString);
+    copyPageHistory(tab, normalized, page => {
+      if (page.kind === "builtin") {
+        boundedString(page.id, "page.id", 4 * 1024, true);
+        boundedString(page.title, "page.title", 4 * 1024);
+        if (!["files", "browser", "bookmarks", "history", "downloads", "terminal", "claude", "review"].includes(page.page)) {
+          throw new TypeError("Invalid builtin history page");
+        }
+        const result = { id: page.id, kind: page.kind, title: page.title ?? "", page: page.page };
+        copyNavigationFields(page, result, boundedString);
+        return result;
+      }
+      return validateTransferPayload(ctx, { tabs: [page], source: { kind: "tab" }, chats: [] }).payload.tabs[0];
+    });
     tabs.push(normalized);
   }
 
@@ -205,8 +220,11 @@ function validateTransferPayload(ctx, value) {
   }
 
   const rawFileDrafts = value.fileDrafts ?? [];
-  if (!Array.isArray(rawFileDrafts) || rawFileDrafts.length > FILE_DRAFT_MAX_COUNT) {
-    throw new TypeError("fileDrafts must contain at most three entries");
+  const historicalFileCount = new Set(tabs.flatMap(tab => (tab.pageHistory?.entries ?? [tab])
+    .filter(page => page.kind === "file" && page.projectId && page.path)
+    .map(page => JSON.stringify([page.projectId, page.path])))).size;
+  if (!Array.isArray(rawFileDrafts) || rawFileDrafts.length > Math.max(FILE_DRAFT_MAX_COUNT, historicalFileCount)) {
+    throw new TypeError("fileDrafts exceed the transferred file history");
   }
   const fileDrafts = [];
   const fileDraftKeys = new Set();
@@ -250,7 +268,7 @@ function validateTransferPayload(ctx, value) {
 
   const rawChats = value.chats ?? [];
   const chatLimit = Math.max(3, new Set(tabs.flatMap(tab =>
-    tab.kind === "session" ? (tab.sessionHistory?.entries ?? [tab]).map(entry => entry.sessionId) : [],
+    [...(tab.sessionHistory?.entries ?? []), ...(tab.pageHistory?.entries ?? [tab])].flatMap(entry => entry.sessionId ? [entry.sessionId] : []),
   )).size);
   if (!Array.isArray(rawChats) || rawChats.length > chatLimit) {
     throw new TypeError("chats exceed the transferred session history");
