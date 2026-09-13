@@ -87,24 +87,7 @@ def persist_turn_file_summary(
                 else "unavailable"
             ),
         }
-        pair = store._open(session_id)
-        if pair is None:
-            return summary
-        git, index = pair
-        node = index.nodes_by_id.get(assistant_msg_id)
-        if node is None:
-            return summary
-        node.metadata = {**(node.metadata or {}), "turn_files": summary}
-        import json as _json
-        role = (node.role or "x")[0]
-        path = git.path / "history" / f"{node.seq:04d}-{role}-{node.id}.json"
-        if path.exists():
-            tmp = path.with_suffix(".json.tmp")
-            tmp.write_text(
-                _json.dumps(node.to_dict(), ensure_ascii=False, default=str),
-                encoding="utf-8",
-            )
-            tmp.replace(path)
+        store.merge_node_metadata(session_id, assistant_msg_id, {"turn_files": summary})
         return summary
     except Exception:
         _log.warning(
@@ -253,37 +236,11 @@ def commit_turn_to_shadow_git(
                        "turn %s", root, session_id, assistant_msg_id)
             return None
 
-        pair = store._open(session_id)
-        if pair is None:
-            return after
-        git, idx = pair
-        node = idx.nodes_by_id.get(assistant_msg_id)
-        if node is None:
-            return after
-        node.metadata = {
-            **(node.metadata or {}),
+        store.merge_node_metadata(session_id, assistant_msg_id, {
             "shadow_git": {
-                # The store's own resolved root, not the raw candidate:
-                # commit_turn relativized under it, so turn_file_diff
-                # must relativize under the identical path or the rel
-                # names disagree and every diff comes back empty.
-                "repo": str(shadow.project_path),
-                "before": before, "after": after,
+                "repo": str(shadow.project_path), "before": before, "after": after,
             },
-        }
-        # Per-node metadata lives in the node's history file (not
-        # meta.json) — rewrite it so the stamp survives a worker
-        # restart, mirroring the project_commit stamp above.
-        import json as _json
-        role = (node.role or "x")[0]
-        fp = git.path / "history" / f"{node.seq:04d}-{role}-{node.id}.json"
-        if fp.exists():
-            tmp = fp.with_suffix(".json.tmp")
-            tmp.write_text(
-                _json.dumps(node.to_dict(), ensure_ascii=False, default=str),
-                encoding="utf-8",
-            )
-            tmp.replace(fp)
+        })
         return after
     except Exception:
         # The turn's diff falls back to the approximate difflib path. Say
@@ -519,30 +476,10 @@ def finalize_turn(
             try:
                 _proj = _pc._project_for(req.session_id)
                 _store2 = default_store()
-                _pair = _store2._open(req.session_id)
-                if _proj is not None and _pair is not None:
-                    _g, _idx = _pair
-                    _n = _idx.nodes_by_id.get(assistant_msg_id)
-                    if _n is not None:
-                        _n.metadata = {
-                            **(_n.metadata or {}),
-                            "project_commit": {
-                                "repo": _proj.path, "sha": _commit_sha,
-                            },
-                        }
-                        # Per-node metadata lives in the node's history
-                        # file (not meta.json) — rewrite it so the stamp
-                        # survives a worker restart, mirroring _revert.py.
-                        import json as _json
-                        _rl = (_n.role or "x")[0]
-                        _fp = _g.path / "history" / f"{_n.seq:04d}-{_rl}-{_n.id}.json"
-                        if _fp.exists():
-                            _tmp = _fp.with_suffix(".json.tmp")
-                            _tmp.write_text(
-                                _json.dumps(_n.to_dict(), ensure_ascii=False, default=str),
-                                encoding="utf-8",
-                            )
-                            _tmp.replace(_fp)
+                if _proj is not None:
+                    _store2.merge_node_metadata(req.session_id, assistant_msg_id, {
+                        "project_commit": {"repo": _proj.path, "sha": _commit_sha},
+                    })
             except Exception:
                 # Without the stamp a later revert_turn falls back to the
                 # file-snapshot restore instead of a git-aware undo.

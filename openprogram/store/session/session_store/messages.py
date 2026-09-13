@@ -97,72 +97,92 @@ class MessagesOperations:
 
 
     @staticmethod
-    def _rewrite_history_node(git: shared.GitSession, node: shared.Call) -> None:
-        """Atomically replace one existing history node without syncing it."""
-        role_letter = (node.role or "x")[0]
-        path = git.path / "history" / (
-            f"{node.seq:04d}-{role_letter}-{node.id}.json"
+    def _history_node_path(git, node):
+        return git.path / "history" / (
+            f"{node.seq:04d}-{(node.role or 'x')[0]}-{node.id}.json"
         )
-        if path.exists():
-            shared.atomic_write_text(
-                path,
-                shared.json.dumps(node.to_dict(), ensure_ascii=False, default=str),
-            )
 
+    @shared.contextmanager
+    def _node_write_scope(self, session_id):
+        """Keep placement, index refresh and node writes in one writer scope."""
+        with self._session_lock(session_id):
+            pair = self._open(session_id)
+            if pair is None:
+                yield None
+                return
+            git, idx = pair
+            old_path = git.path
+            with self._head_file_lock(git), idx._persist_lock:
+                if git.path != old_path or git.stale():
+                    idx.rebuild_from_paths(
+                        git.list_history(), git.read_meta(),
+                        shared._node_conv_predecessor, shared._node_caller,
+                    )
+                    git.mark_synced()
+                yield git, idx
+
+    def _update_history_node(self, session_id, git, idx, node_id, fields):
+        cached = idx.nodes_by_id.get(node_id)
+        if cached is None:
+            return
+        path = self._history_node_path(git, cached)
+        try:
+            payload = shared.json.loads(shared.read_text_with_retry(path))
+        except FileNotFoundError:
+            return
+        node = shared.Call(**{
+            key: value for key, value in payload.items()
+            if key in shared.Call.__dataclass_fields__
+        })
+        if (node.id, node.seq, node.role) != (cached.id, cached.seq, cached.role):
+            raise ValueError(f"history node identity mismatch: {node_id}")
+        # Apply changes to a detached durable snapshot, never to the cache
+        # before the file replacement has succeeded.
+        for key, value in fields.items():
+            if key != "metadata":
+                setattr(node, key, value)
+        if "output" in fields:
+            self.spill_large_node(session_id, node)
+        metadata = fields.get("metadata")
+        if isinstance(metadata, dict):
+            current = node.metadata if isinstance(node.metadata, dict) else {}
+            node.metadata = {**current, **metadata}
+        for edge in ("predecessor", "caller"):
+            value = getattr(node, edge)
+            if value is not None and not isinstance(value, str):
+                raise TypeError(f"{edge} must be a string or None")
+        if self._history_node_path(git, node) != path:
+            raise ValueError("updating a node cannot change its history filename")
+        shared.atomic_write_text(
+            path, shared.json.dumps(node.to_dict(), ensure_ascii=False, default=str),
+        )
+        old_predecessor = cached.predecessor or None
+        old_caller = cached.caller or None
+        cached.__dict__.update(node.__dict__)
+        idx.reindex_edges(
+            node_id, old_predecessor=old_predecessor, old_caller=old_caller,
+        )
 
     def update_node(
         self, session_id: str, node_id: str, **fields: shared.Any,
     ) -> None:
         """Update one current node and rewrite its history file once."""
-        pair = self._open(session_id)
-        if pair is None:
-            return
-        git, idx = pair
-        node = idx.nodes_by_id.get(node_id)
-        if node is None:
-            return
-        old_predecessor = node.predecessor or None
-        old_caller = node.caller or None
-        metadata = fields.pop("metadata", {})
-        for key, value in fields.items():
-            setattr(node, key, value)
-        if "output" in fields:
-            self.spill_large_node(session_id, node)
-        if isinstance(metadata, dict):
-            current = node.metadata if isinstance(node.metadata, dict) else {}
-            node.metadata = {**current, **metadata}
-        idx.reindex_edges(
-            node_id,
-            old_predecessor=old_predecessor,
-            old_caller=old_caller,
-        )
-        old_path = git.path
-        with self._head_file_lock(git):
-            if git.path != old_path:
-                idx.reset()
-                idx.rebuild_from_paths(git.list_history(), git.read_meta(),
-                                       shared._node_conv_predecessor, shared._node_caller)
-            self._rewrite_history_node(git, node)
-
+        with self._node_write_scope(session_id) as pair:
+            if pair is not None:
+                self._update_history_node(session_id, *pair, node_id, fields)
 
     def merge_node_metadata_batch(
         self,
         session_id: str,
         patches: dict[str, dict[str, shared.Any]],
     ) -> None:
-        """Merge one session's node metadata with one index open."""
-        pair = self._open(session_id)
-        if pair is None:
-            return
-        git, idx = pair
-        for node_id, patch in patches.items():
-            node = idx.nodes_by_id.get(node_id)
-            if node is None:
-                continue
-            current = node.metadata if isinstance(node.metadata, dict) else {}
-            node.metadata = {**current, **patch}
-            with self._head_file_lock(git):
-                self._rewrite_history_node(git, node)
+        """Merge current durable metadata with one open and writer scope."""
+        with self._node_write_scope(session_id) as pair:
+            if pair is not None:
+                for node_id, patch in patches.items():
+                    self._update_history_node(
+                        session_id, *pair, node_id, {"metadata": patch},
+                    )
 
 
     def merge_node_metadata(
