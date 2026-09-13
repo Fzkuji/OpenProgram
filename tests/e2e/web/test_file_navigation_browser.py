@@ -45,7 +45,7 @@ function App(){
  const active=useCenterTabs(s=>s.tabs.find(t=>t.id===s.activeId));
  useEffect(()=>{useCenterTabs.getState().openBuiltinTab("files")},[]);
  return <><button onClick={()=>{useCenterTabs.getState().openNewTabPage();useCenterTabs.getState().openSessionTab("sidebar-owner","Owner")}}>Open session sidebar</button><PageNavigation/>
-  {active?.kind==="session"?<aside><FileTree projectId="project"/></aside>:null}
+  {active?.kind==="session"?<main data-page="files"><FileTree projectId="project"/></main>:null}
   {active?.kind==="builtin"&&active.page==="files"?<main data-page="files"><FileTree projectId="project" central/></main>:null}
   {active?.kind==="file"?<main data-page="file"><output data-file-path="active">{active.path}</output></main>:null}
   <output data-active-kind="active">{active?.kind??"none"}</output></>;
