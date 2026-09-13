@@ -39,13 +39,12 @@ build({stdin:{contents:`
 import {setNavigate} from "./lib/navigate";
 setNavigate(path=>window.history.pushState(null,"",path));
 import React,{useEffect} from "react";import{createRoot}from"react-dom/client";
+import{PageNavigation}from"./components/center-tabs/page-navigation";
 import{FileTree}from"./components/files/file-tree";import{useCenterTabs}from"./lib/tabs/center-tabs-store";
 function App(){
  const active=useCenterTabs(s=>s.tabs.find(t=>t.id===s.activeId));
- const back=useCenterTabs(s=>s.navigateFileHistory), canBack=useCenterTabs(s=>s.canNavigateFile(-1));
- const forward=useCenterTabs(s=>s.navigateFileHistory), canForward=useCenterTabs(s=>s.canNavigateFile(1));
  useEffect(()=>{useCenterTabs.getState().openBuiltinTab("files")},[]);
- return <><button aria-label="Back" disabled={!canBack} onClick={()=>back(-1)}>Back</button><button aria-label="Forward" disabled={!canForward} onClick={()=>forward(1)}>Forward</button>
+ return <><PageNavigation/>
   {active?.kind==="builtin"&&active.page==="files"?<main data-page="files"><FileTree projectId="project" central/></main>:null}
   {active?.kind==="file"?<main data-page="file"><output data-file-path="active">{active.path}</output></main>:null}
   <output data-active-kind="active">{active?.kind??"none"}</output></>;

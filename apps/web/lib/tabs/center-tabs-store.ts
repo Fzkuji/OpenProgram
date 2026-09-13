@@ -23,7 +23,7 @@ import { create } from "zustand";
 import { pushPath } from "../shallow-nav";
 import { activeVisit, navigationTarget, recordFileVisit, recordWindowNavigation, restoreVisitPage, type WindowNavigationHistory } from "./tab-navigation";
 import { topLevelTabs } from "../browser/web-page-management";
-import { recordTabPage, tabPage, type TabPageHistory } from "./tab-page-history";
+import { mapTabPages, recordTabPage, tabPage, type TabPageHistory } from "./tab-page-history";
 import { sessionHistory, withSessionHistory, type SessionTabHistory } from "./session-tab-history";
 import {
   MAX_CENTER_TAB_GROUP_MEMBERS,
@@ -433,18 +433,20 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
       set((s) => {
         if (!s.tabs.some((tab) => tab.id === id)) return {};
         const group = findCenterTabGroup(s.groups, id);
-        if (s.activeId === id && (!group || group.focusedId === id)) return {};
+        if (s.activeId === id && (!group || group.focusedId === id) && !s.navigationRoute) return {};
         const layout = group
           ? focusCenterTabGroupMember({
               tabIds: s.tabs.map((tab) => tab.id),
               groups: s.groups,
             }, group.id, id)
           : { tabIds: s.tabs.map((tab) => tab.id), groups: s.groups };
-        return commitCenterTabsState(s, {
+        const next = commitCenterTabsState(s, {
           activeId: id,
           tabs: tabsForLayout(s.tabs, layout),
           groups: layout.groups,
         });
+        return s.navigationRoute ? { ...next, navigationRoute: undefined,
+          windowNavigationHistory: recordWindowNavigation(s, { ...next, navigationRoute: undefined }) } : next;
       }),
 
     moveTab: (id, beforeId) =>
@@ -811,7 +813,7 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
 
     markSessionReady: (sessionId) =>
       set((s) => {
-        const tabs = s.tabs.map(tab => {
+        const tabs = s.tabs.map(original => mapTabPages(original, tab => {
           if (tab.kind !== "session") return tab;
           const history = sessionHistory(tab);
           if (!history.entries.some(entry => entry.sessionId === sessionId && entry.draft)) return tab;
@@ -819,7 +821,7 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
             ? { ...entry, draft: false } : entry);
           return { ...tab, draft: tab.sessionId === sessionId ? false : tab.draft,
             sessionHistory: { ...history, entries } };
-        });
+        }));
         return commitCenterTabsState(s, { tabs });
       }),
 
@@ -1216,8 +1218,9 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
         const idx = s.tabs.findIndex((t) => t.id === id);
         if (idx < 0) return {};
         const closingTab = s.tabs[idx];
-        if (closingTab.kind === "session") {
-          for (const entry of sessionHistory(closingTab).entries)
+        for (const page of [closingTab, ...(closingTab.pageHistory?.entries ?? [])]) {
+          if (page.kind !== "session") continue;
+          for (const entry of sessionHistory(page).entries)
             if (entry.sessionId) closedSessionAckTombstones.add(entry.sessionId);
         }
         const tabs = s.tabs.filter((t) => t.id !== id);
@@ -1236,14 +1239,14 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
 
     renameSessionTab: (sessionId, title) =>
       set((s) => {
-        const tabs = s.tabs.map(tab => {
+        const tabs = s.tabs.map(original => mapTabPages(original, tab => {
           if (tab.kind !== "session") return tab;
           const history = sessionHistory(tab);
           if (!history.entries.some(entry => entry.sessionId === sessionId && entry.title !== title)) return tab;
           return { ...tab, title: tab.sessionId === sessionId ? title : tab.title,
             sessionHistory: { ...history, entries: history.entries.map(entry =>
               entry.sessionId === sessionId ? { ...entry, title } : entry) } };
-        });
+        }));
         if (tabs.every((tab, index) => tab === s.tabs[index])) return {};
         return commitCenterTabsState(s, { tabs });
       }),
@@ -1257,8 +1260,8 @@ export function sessionAckIsActive(sessionId: string): boolean {
   const active = state.tabs.find(tab => tab.id === state.activeId);
   if (active?.kind === "session" && active.sessionId === sessionId) return true;
   if (closedSessionAckTombstones.has(sessionId)) return false;
-  const hasTab = state.tabs.some(tab => tab.kind === "session"
-    && sessionHistory(tab).entries.some(entry => entry.sessionId === sessionId));
+  const hasTab = state.tabs.some(tab => [tab, ...(tab.pageHistory?.entries ?? [])].some(page => page.kind === "session"
+    && sessionHistory(page).entries.some(entry => entry.sessionId === sessionId)));
   return !hasTab && !sessionId.startsWith("local_");
 }
 

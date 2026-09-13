@@ -138,6 +138,7 @@ export function FileTree({
     restoreGeneration.current += 1;
     const scroll = pierreRef.current?.getScrollState() ?? null;
     useCenterTabs.getState().updateFileNavigationView?.({ expanded: [...expandedPaths].sort(), scroll });
+    if (type === "file") openFileTab(projectId, path);
     recordFileNavigation({
       projectId,
       path,
@@ -148,7 +149,6 @@ export function FileTree({
   };
   const openFile = (path: string) => {
     recordNavigation(path, "file");
-    openFileTab(projectId, path);
     // Preserve the conversation route: changing it reactivates its session tab.
     const pathname = typeof window === "undefined" ? "" : window.location?.pathname ?? "";
     if (pathname !== "/chat" && !pathname.startsWith("/s/")) navigate("/chat");

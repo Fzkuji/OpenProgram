@@ -376,3 +376,20 @@ test("returning from Files restores a sidebar route without launcher activation 
     assert.equal(window.location.pathname, "/skills");
   });
 });
+
+
+test("clicking the current conversation tab leaves a sidebar route and records the return", async () => {
+  await setup([other], other.id, "detached");
+  useCenterTabs.setState({ navigationRoute: undefined, windowNavigationHistory: {entries: [], index: -1} });
+  await mounted(async () => {
+    await act(async () => {
+      useCenterTabs.getState().recordRouteNavigation("/skills");
+      navigate("/skills");
+    });
+    await act(async () => lifecycle.onTabClick(useCenterTabs.getState().tabs.find(tab => tab.id === other.id)));
+    assert.equal(window.location.pathname, "/s/other");
+    assert.equal(useCenterTabs.getState().navigationRoute, undefined);
+    await act(async () => useCenterTabs.getState().navigateHistory(-1));
+    assert.equal(window.location.pathname, "/skills");
+  });
+});

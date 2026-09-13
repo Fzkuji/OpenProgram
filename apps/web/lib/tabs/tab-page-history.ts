@@ -45,3 +45,14 @@ export function normalizeTabPageHistory(tab: CenterTab): CenterTab {
     && history.entries[history.index].id === tab.id && history.entries[history.index].kind === tab.kind;
   return valid ? tab : tabPage(tab);
 }
+
+
+/** Apply metadata updates to the current page and every retained page. */
+export function mapTabPages(tab: CenterTab, update: (page: CenterTab) => CenterTab): CenterTab {
+  const next = update(tab);
+  if (!tab.pageHistory) return next;
+  const entries = tab.pageHistory.entries.map((page, index) => index === tab.pageHistory!.index
+    ? tabPage(next) : update(page));
+  const changed = next !== tab || entries.some((page, index) => index !== tab.pageHistory!.index && page !== tab.pageHistory!.entries[index]);
+  return changed ? { ...next, pageHistory: { ...tab.pageHistory, entries } } : tab;
+}

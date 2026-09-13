@@ -361,3 +361,23 @@ test("sidebar routes also return to the launcher in visit order", () => {
   state().openBuiltinTab("files"); assert.equal(state().canNavigateHistory(1), false);
   state().navigateHistory(-1); assert.equal(state().navigationRoute, "/skills");
 });
+
+test("launcher round trip preserves a draft acknowledgement and title", () => {
+  reset(); state().openNewTabPage();
+  const draft = state().claimDraftSessionTab();
+  state().navigateHistory(-1); assert.equal(active().kind, "ntp");
+  state().markSessionReady(draft); state().renameSessionTab(draft, "Acknowledged");
+  state().navigateHistory(1);
+  assert.equal(active().sessionId, draft);
+  assert.equal(active().draft, false);
+  assert.equal(active().title, "Acknowledged");
+});
+
+
+test("acknowledgements cannot activate a session retained behind the launcher or closed", () => {
+  reset(); state().openNewTabPage(); state().openSessionTab("retained-ready", "Ready");
+  state().navigateHistory(-1);
+  assert.equal(sessionAckIsActive("retained-ready"), false);
+  state().closeTab(active().id);
+  assert.equal(sessionAckIsActive("retained-ready"), false);
+});
