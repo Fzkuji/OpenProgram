@@ -1,11 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
+import { readFileTreeSource } from "../../scripts/testing/feature-source.mjs";
 
-const source = readFileSync(
-  new URL("../../components/files/file-tree.tsx", import.meta.url),
-  "utf8",
-).replace(/\r\n/g, "\n");
+const source = readFileTreeSource().replace(/\r\n/g, "\n");
 
 test("FileTree pages directories with snapshot cursors and automatic near-end pagination", () => {
   assert.match(source, /interface DirectoryPage/);
