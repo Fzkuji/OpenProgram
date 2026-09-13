@@ -370,3 +370,29 @@ test("native transfer preserves launcher, file view and isolated application his
   assert.throws(() => transfer({...active(), applicationInstanceId: "b".repeat(64)}), /identity/);
   assert.throws(() => transfer({...source, pageHistory:{entries:[{...source}],index:0}}), /Nested page history/);
 });
+
+test("passive sidebar file-tree seeding does not replace a session or its history", () => {
+  reset(); state().openNewTabPage(); state().openSessionTab("sidebar-owner", "Owner");
+  const before = structuredClone(active());
+  for (const path of ["", "src"]) state().recordFileNavigation({projectId:"p",path,selectedType:"dir",expanded:[],scroll:null});
+  assert.deepEqual(active(), before);
+  state().navigateHistory(-1); assert.equal(active().kind, "ntp");
+  state().navigateHistory(1); assert.equal(active().sessionId, "sidebar-owner");
+});
+
+test("renaming a file preserves its launcher history and another same-target tab", () => {
+  reset(); state().openFileTab("p", "b.ts"); const other = structuredClone(active());
+  state().openNewTabPage(); const home = active().id;
+  state().openBuiltinTab("files"); state().openFileTab("p", "a.ts");
+  state().recordFileNavigation({projectId:"p",path:"a.ts",selectedType:"file",expanded:[],scroll:{path:"a.ts",offset:9}});
+  state().retargetFileTab(active().id, "p", "b.ts");
+  assert.notEqual(active().id, other.id);
+  assert.deepEqual(state().tabs.find(tab => tab.id === other.id), other);
+  assert.equal(active().path, "b.ts");
+  assert.equal(active().fileNavigationSnapshot.path, "b.ts");
+  assert.equal(active().fileNavigationSnapshot.scroll.path, "b.ts");
+  state().navigateHistory(-1); assert.equal(active().page, "files");
+  state().navigateHistory(-1); assert.equal(active().id, home);
+  state().navigateHistory(1); state().navigateHistory(1);
+  assert.equal(active().path, "b.ts");
+});

@@ -63,14 +63,14 @@ export function navigationActions(set: StoreApi<CenterTabsState>["setState"], ge
 
     recordFileNavigation: snapshot => set(s => {
       const active = s.tabs.find(tab => tab.id === s.activeId);
-      if (!active) return {};
+      if (!active || (active.kind !== "file" && !(active.kind === "builtin" && active.page === "files"))) return {};
       const current = active.fileNavigationSnapshot;
       if (current?.projectId === snapshot.projectId && current.path === snapshot.path && current.selectedType === snapshot.selectedType) return {};
       snapshot = { ...snapshot, expanded: [...snapshot.expanded], scroll: snapshot.scroll && { ...snapshot.scroll } };
       let next: CenterTab = snapshot.selectedType === "dir"
         ? { id: active.id, kind: "builtin", title: "", page: "files", fileNavigationSnapshot: snapshot }
         : { ...active, fileNavigationSnapshot: snapshot };
-      if (current) next = recordTabPage(active, next);
+      if (current || next.kind !== active.kind) next = recordTabPage(active, next);
       else if (active.pageHistory) next = {
         ...next, pageHistory: {
           ...active.pageHistory,

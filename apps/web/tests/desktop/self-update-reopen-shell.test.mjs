@@ -356,7 +356,7 @@ test("Back on /chat clears an acknowledged session and survives remount", async 
 test("returning from Files restores a sidebar route without launcher activation overriding it", async () => {
   const home = { id: "ntp:route-origin", kind: "ntp", title: "" };
   await setup([home], home.id, "detached");
-  useCenterTabs.setState({ navigationRoute: undefined, windowNavigationHistory: {entries: [], index: -1} });
+  useCenterTabs.setState({ navigationRoute: undefined });
   await mounted(async () => {
     await act(async () => {
       useCenterTabs.getState().recordRouteNavigation("/skills");
@@ -378,7 +378,7 @@ test("returning from Files restores a sidebar route without launcher activation 
 
 test("clicking the current tab preserves its sidebar page; Back restores its conversation", async () => {
   await setup([other], other.id, "detached");
-  useCenterTabs.setState({ navigationRoute: undefined, windowNavigationHistory: {entries: [], index: -1} });
+  useCenterTabs.setState({ navigationRoute: undefined });
   await mounted(async () => {
     await act(async () => {
       useCenterTabs.getState().recordRouteNavigation("/skills");

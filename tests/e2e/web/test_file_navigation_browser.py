@@ -44,7 +44,8 @@ import{FileTree}from"./components/files/file-tree";import{useCenterTabs}from"./l
 function App(){
  const active=useCenterTabs(s=>s.tabs.find(t=>t.id===s.activeId));
  useEffect(()=>{useCenterTabs.getState().openBuiltinTab("files")},[]);
- return <><PageNavigation/>
+ return <><button onClick={()=>{useCenterTabs.getState().openNewTabPage();useCenterTabs.getState().openSessionTab("sidebar-owner","Owner")}}>Open session sidebar</button><PageNavigation/>
+  {active?.kind==="session"?<aside><FileTree projectId="project"/></aside>:null}
   {active?.kind==="builtin"&&active.page==="files"?<main data-page="files"><FileTree projectId="project" central/></main>:null}
   {active?.kind==="file"?<main data-page="file"><output data-file-path="active">{active.path}</output></main>:null}
   <output data-active-kind="active">{active?.kind??"none"}</output></>;
@@ -119,6 +120,14 @@ createRoot(document.getElementById("root")).render(<App/>);`,resolveDir:process.
             expect(files).to_be_visible()
             page.get_by_role("button", name="Back", exact=True).click()
             expect(files).to_be_visible()
+            page.get_by_role("button", name="Open session sidebar", exact=True).click()
+            expect(page.get_by_role("treeitem", name="folder", exact=True)).to_be_visible()
+            expect(page.locator('[data-active-kind="active"]')).to_have_text("session")
+            page.get_by_role("treeitem", name="folder", exact=True).click()
+            expect(page.locator('[data-active-kind="active"]')).to_have_text("session")
+            page.get_by_role("button", name="Back", exact=True).click()
+            expect(page.locator('[data-active-kind="active"]')).to_have_text("ntp")
+            assert not errors, errors
         finally:
             server.shutdown()
             thread.join(timeout=5)

@@ -4,8 +4,9 @@ import { replaceGroupTabId } from "@/lib/tabs/center-tabs-persistence";
 import { openReviewTabLayout } from "@/lib/tabs/review-tab-layout";
 import type { StoreApi } from "zustand";
 import { topLevelTabs } from "../../browser/web-page-management";
+import { mapTabPages } from "../navigation/page-history";
 import { sessionHistory } from "../navigation/session-history";
-import { commitCenterTabsState, focusOrCreate } from "./core";
+import { commitCenterTabsState, focusOrCreate, independentTab } from "./core";
 import type { CenterTab, CenterTabsState } from "./types";
 
 export function pagesActions(set: StoreApi<CenterTabsState>["setState"], get: StoreApi<CenterTabsState>["getState"], closedSessionAckTombstones: Set<string>): Pick<CenterTabsState, "openFileTab" | "openBuiltinTab" | "openApplicationTab" | "openReviewTab" | "setTabDirty" | "setTabDagView" | "retargetFileTab" | "openNewTabPage" | "closeTab"> {
@@ -92,30 +93,26 @@ export function pagesActions(set: StoreApi<CenterTabsState>["setState"], get: St
       set((s) => {
         const tab = s.tabs.find((t) => t.id === oldId && t.kind === "file");
         if (!tab) return {};
-        const newId = fileTabId(newProjectId, newPath);
-        if (newId === oldId) return {};
-        if (s.tabs.some((t) => t.id === newId)) {
-          // Target already open — drop the stale tab; if it was the
-          // active one, the surviving tab at the new path takes focus.
-          const tabs = s.tabs.filter((t) => t.id !== oldId);
-          return commitCenterTabsState(s, {
-            tabs,
-            activeId: s.activeId === oldId ? newId : s.activeId,
-          });
-        }
-        const tabs = s.tabs.map((t) =>
-          t.id === oldId
-            ? {
-              ...t,
-              id: newId,
-              projectId: newProjectId,
-              path: newPath,
-              title: newPath.split("/").pop() || newPath,
-            }
-            : t,
-        );
+        if (tab.projectId === newProjectId && tab.path === newPath) return {};
+        const newId = independentTab({ ...tab, id: fileTabId(newProjectId, newPath) }, s.tabs, oldId).id;
+        const next = mapTabPages(tab, page => {
+          const snapshot = page.fileNavigationSnapshot;
+          const matchingFile = page.kind === "file" && page.projectId === tab.projectId && page.path === tab.path;
+          const matchingView = snapshot?.projectId === tab.projectId && snapshot?.path === tab.path;
+          if (!matchingFile && !matchingView) return page;
+          return {
+            ...page,
+            ...(matchingFile ? { id: newId, projectId: newProjectId, path: newPath, title: newPath.split("/").pop() || newPath } : {}),
+            ...(matchingView ? {
+              fileNavigationSnapshot: {
+                ...snapshot!, projectId: newProjectId, path: newPath,
+                scroll: snapshot!.scroll?.path === tab.path ? { ...snapshot!.scroll, path: newPath } : snapshot!.scroll
+              }
+            } : {}),
+          };
+        });
         return commitCenterTabsState(s, {
-          tabs,
+          tabs: s.tabs.map(item => item.id === oldId ? next : item),
           activeId: s.activeId === oldId ? newId : s.activeId,
           groups: replaceGroupTabId(s.groups, oldId, newId),
           splitWebTabId: s.splitWebTabId === oldId ? newId : s.splitWebTabId,

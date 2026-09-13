@@ -170,9 +170,8 @@ export interface CenterTabsState {
   /** Flip a session tab between the transcript and the context DAG. */
   setTabDagView: (id: string, dagView: boolean) => void;
   /** Retarget a file tab after its file was renamed/moved on disk:
-   *  new deterministic id + title (basename), order and active state
-   *  preserved. If a tab already exists at the new id, the stale tab
-   *  closes instead (focus moves to the survivor if it was active). */
+   *  new file identity and title, preserving its own history and order.
+   *  A separate tab displaying the target remains independent. */
   retargetFileTab: (oldId: string, newProjectId: string, newPath: string) => void;
   /** Focus-or-create the singleton tab for a built-in page. */
   openBuiltinTab: (page: BuiltinPage) => void;

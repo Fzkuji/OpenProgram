@@ -1,10 +1,10 @@
-import { pageHistory } from "../navigation/page-history";
 import type { CenterTabGroup } from "@/lib/tabs/center-tab-groups";
 import { MAX_CENTER_TAB_GROUP_MEMBERS, findCenterTabGroup } from "@/lib/tabs/center-tab-groups";
 import type { CenterTabsPersistedPayload } from "@/lib/tabs/center-tabs-persistence";
 import { normalizeCenterTabsPayload, orderTabs, persistCenterTabsPayload, persistedState } from "@/lib/tabs/center-tabs-persistence";
 import type { DesktopTransferPayload, TabDropPlacement } from "@/lib/tabs/tab-transfer-journal";
 import type { StoreApi } from "zustand";
+import { pageHistory } from "../navigation/page-history";
 import { fileHistoryFor } from "../navigation/selectors";
 import { sessionHistory } from "../navigation/session-history";
 import type { CenterTab, CenterTabsState } from "./types";
@@ -276,12 +276,14 @@ export function bindTransfers(useCenterTabs: StoreApi<CenterTabsState>, closedSe
         if (!current) return false;
         const navigation = (tab: CenterTab) => {
           const history = pageHistory(tab);
-          return { index: history.index, entries: history.entries.map(entry => ({
-            id: entry.id, kind: entry.kind, sessionId: entry.sessionId, title: entry.title,
-            draft: !!entry.draft, navigationRoute: entry.navigationRoute, page: entry.page,
-            path: entry.path, projectId: entry.projectId, url: entry.url,
-            fileNavigationSnapshot: entry.fileNavigationSnapshot,
-          })) };
+          return {
+            index: history.index, entries: history.entries.map(entry => ({
+              id: entry.id, kind: entry.kind, sessionId: entry.sessionId, title: entry.title,
+              draft: !!entry.draft, navigationRoute: entry.navigationRoute, page: entry.page,
+              path: entry.path, projectId: entry.projectId, url: entry.url,
+              fileNavigationSnapshot: entry.fileNavigationSnapshot,
+            }))
+          };
         };
         return JSON.stringify(navigation(current)) === JSON.stringify(navigation(expected));
       });

@@ -215,7 +215,10 @@ export function FileTree({
   const revealScrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    const history = useCenterTabs.getState().fileNavigationHistory;
+    const state = useCenterTabs.getState();
+    const active = state.tabs.find(tab => tab.id === state.activeId);
+    if (active?.kind !== "builtin" || active.page !== "files") return;
+    const history = state.fileNavigationHistory;
     const hasProjectHistory = history?.entries.some(entry => entry.projectId === projectId);
     if (!hasProjectHistory) recordNavigation("", "dir", new Set());
   // Seed only a new project; remounting Files must preserve the history cursor.
