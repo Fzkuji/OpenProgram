@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type MouseEvent } from "react";
-import type { DesktopContextMenuItem } from "@/lib/desktop-bridge-types";
+import type { DesktopContextMenuItem } from "@/lib/desktop/desktop-bridge-types";
 
 export type SidebarMenuItem = DesktopContextMenuItem & {
   onSelect?: () => void;

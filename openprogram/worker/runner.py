@@ -262,7 +262,7 @@ def run_foreground() -> int:
 
     recovery_ready = False
     try:
-        from openprogram.self_update.recovery import recover_pending_updates
+        from openprogram.self_update.control.recovery import recover_pending_updates
         recovery_ready = recover_pending_updates()
     except Exception as exc:
         print(f"[worker] self-update recovery failed: {type(exc).__name__}")

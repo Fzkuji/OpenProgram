@@ -1,4 +1,4 @@
-import { rememberSystemAccessFromTree } from "../system-access-result";
+import { rememberSystemAccessFromTree } from "../access/system-access-result";
 /**
  * Chat-stream WS reducer.
  *
@@ -41,7 +41,7 @@ import {
   type ChatMsg,
   type ChatToolCall,
 } from "@/lib/session-store";
-import { sessionAckIsActive, useCenterTabs } from "@/lib/state/center-tabs-store";
+import { sessionAckIsActive, useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import {
   acknowledgePendingUserText,
   clearPendingUserText,
@@ -51,7 +51,7 @@ import {
   getPendingUserText,
   pendingUserHasAttachments,
   rejectPendingUserText,
-} from "@/lib/pending-user-text";
+} from "@/lib/chat/pending-user-text";
 
 interface StreamEvent {
   type: "text" | "thinking" | "tool_use" | "tool_result" | "sub_agent";
@@ -233,7 +233,7 @@ function handleAck(
   // The server does NOT echo a web-originated user turn back as a
   // `user_message` broadcast (only channel/peer turns get that). So the
   // user bubble is created here, from the text the composer stashed on
-  // `lib/pending-user-text` just before sending. `chat_ack.msg_id`
+  // `lib/chat/pending-user-text` just before sending. `chat_ack.msg_id`
   // IS the user turn's id — keying it here lets the reply (`_reply`
   // suffix) and the later result anchor to the same turn.
   const text = getPendingUserText(sid);
@@ -335,7 +335,7 @@ function handleResponse(d: ChatResponseData | undefined): void {
     // Leave their original composer draft and files in place for an explicit
     // retry instead of silently converting the turn to plain text.
     if (rejected && !hasAttachments) {
-      void import("@/lib/state/send-queue").then((m) =>
+      void import("@/lib/chat/send-queue").then((m) =>
         m.requeueRejected(sid, rejected),
       );
     }

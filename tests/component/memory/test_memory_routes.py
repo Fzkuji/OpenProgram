@@ -71,7 +71,7 @@ def memory(tmp_path, monkeypatch):
 
 @pytest.fixture
 def client(memory):
-    from openprogram.webui.routes import memory as routes
+    from openprogram.webui.routes.settings import memory as routes
     app = FastAPI()
     routes.register(app)
     return TestClient(app)
@@ -81,7 +81,7 @@ def client(memory):
 
 
 def test_within_rejects_paths_that_leave_the_root(tmp_path):
-    from openprogram.webui.routes.memory import _within
+    from openprogram.webui.routes.settings.memory import _within
 
     root = tmp_path / "topics"
     root.mkdir()
@@ -768,7 +768,7 @@ def test_save_gives_up_while_the_workspace_lock_is_held(
     from openprogram.memory.management.transaction import (
         workspace_write_lock,
     )
-    from openprogram.webui.routes import memory as routes
+    from openprogram.webui.routes.settings import memory as routes
 
     monkeypatch.setattr(routes, "WRITE_LOCK_TIMEOUT_S", 0.2)
     edited = NOTE.replace("worth keeping", "worth remembering")
@@ -832,7 +832,7 @@ def test_backend_none_rejects_every_web_memory_route(
         lambda: {"memory": {"backend": "none"}},
     )
 
-    from openprogram.webui.routes import memory as routes
+    from openprogram.webui.routes.settings import memory as routes
 
     app = FastAPI()
     routes.register(app)

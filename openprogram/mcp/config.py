@@ -57,7 +57,7 @@ from openprogram import paths as _paths
 # One mask shape across the whole product — the same helper the
 # provider-credential routes use, so an MCP env value and an API key
 # render identically in the UI.
-from openprogram.webui.routes._credential_secrets import mask_credential
+from openprogram.webui.routes.identity._credential_secrets import mask_credential
 
 
 CONFIG_FILENAME = "mcp_servers.json"

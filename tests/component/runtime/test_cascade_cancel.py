@@ -84,13 +84,13 @@ def fake_worker(monkeypatch):
         staticmethod(fake_run),
     )
     monkeypatch.setattr(
-        "openprogram.agent.job.runner._broadcast", lambda *a, **k: None,
+        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
     )
     yield calls, barrier, cancel_seen, entered
     barrier.set()
-    with runner_mod._runner_lock:
-        runner = runner_mod._runner
-        runner_mod._runner = None
+    with runner_mod.shared._runner_lock:
+        runner = runner_mod.shared._runner
+        runner_mod.shared._runner = None
     if runner is not None:
         runner.shutdown(wait=True)
 

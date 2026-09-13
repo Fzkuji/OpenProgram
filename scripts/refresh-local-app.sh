@@ -181,24 +181,28 @@ test -f "$asar_cli" || {
   exit 1
 }
 
-# Copy every top-level file named in apps/desktop/package.json build.files.
+# Copy every relative file named in apps/desktop/package.json build.files.
 # Do not duplicate that list by hand — that is how window-lifecycle.js
 # was omitted from the packaged asar.
 desktop_files="$(
   "$local_python" - "$repo_root/apps/desktop/package.json" <<'PY'
 import json
 import sys
+from pathlib import PurePosixPath
 
 with open(sys.argv[1], encoding="utf-8") as stream:
     files = json.load(stream)["build"]["files"]
 for name in files:
-    if not isinstance(name, str) or "/" in name or "!" in name:
-        continue
+    if not isinstance(name, str) or not name:
+        raise SystemExit("build.files must contain relative file paths")
+    path = PurePosixPath(name)
+    if path.is_absolute() or ".." in path.parts or any(char in name for char in "*?[]!\\\n\r"):
+        raise SystemExit(f"unsupported desktop module path: {name!r}")
     print(name)
 PY
 )"
 test -n "$desktop_files" || {
-  printf 'apps/desktop/package.json build.files listed no top-level modules\n' >&2
+  printf 'apps/desktop/package.json build.files listed no modules\n' >&2
   exit 1
 }
 
@@ -319,6 +323,7 @@ PY
         "$desktop_file" >&2
       exit 1
     }
+    mkdir -p "$(dirname "$desktop_stage/$desktop_file")"
     cp "$source_file" "$desktop_stage/$desktop_file"
   done <<<"$desktop_files"
   rm -f "$desktop_stage/browser-extension-manager.js" \

@@ -249,7 +249,7 @@ provider 实际计费偏离多少。
 | 变化 | 落点 |
 |---|---|
 | turn 中压缩落地 | `apps/server/openprogram_server/_webui/_execute/chat.py`（`compaction_finished`） |
-| 切换模型 | `apps/server/openprogram_server/_webui/routes/runtime.py`、`apps/server/openprogram_server/_webui/ws_actions/runtime.py` |
+| 切换模型 | `apps/server/openprogram_server/_webui/routes/execution/runtime.py`、`apps/server/openprogram_server/_webui/ws_actions/runtime.py` |
 | 分支 checkout / 删除 | `apps/server/openprogram_server/_webui/ws_actions/branch.py` |
 | 兄弟版本 checkout | `apps/server/openprogram_server/_webui/_chat_routes.py` |
 

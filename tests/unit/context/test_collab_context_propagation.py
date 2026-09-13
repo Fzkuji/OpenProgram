@@ -70,7 +70,7 @@ def _run_followup(job, monkeypatch, inside=None):
         "openprogram.agent.production_driver.CanonicalAgentAdapter", _Adapter,
     )
     monkeypatch.setattr(
-        "openprogram.agent.job.runner._broadcast", lambda *a, **k: None,
+        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
     )
     runner = JobRunner(max_workers=1)
     try:

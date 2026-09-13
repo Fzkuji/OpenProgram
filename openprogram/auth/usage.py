@@ -46,7 +46,7 @@ def acquire_pooled(
     rotation.
     """
     from .store import get_store
-    from .account_selection import get_active_account
+    from .account.account_selection import get_active_account
     from .credential_provider import get_credential_provider
     from .types import AuthError, AuthConfigError
     from .resolver import resolve_connection
@@ -114,7 +114,7 @@ def _pick_account(provider_id: str, pools: list, strategy: str):
         return None
     import time as _t
     now = int(_t.time() * 1000)
-    from .account_priority import account_priority_key
+    from .account.account_priority import account_priority_key
     _k = account_priority_key(provider_id)             # the user's drag order is the priority
     pools = sorted(pools, key=lambda p: _k(p.account_id))
     healthy = [p for p in pools if _account_healthy(p, now)]

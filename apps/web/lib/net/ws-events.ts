@@ -13,7 +13,7 @@
  * because the payload arrives as untrusted JSON off the socket.
  */
 
-import type { EventCursor, ExecutionSnapshot } from "@/lib/execution-debugger";
+import type { EventCursor, ExecutionSnapshot } from "@/lib/execution/execution-debugger";
 
 /** `openprogram/webui/ws_actions/session.py:_broadcast_permission_rules` */
 export interface PermissionRulesDetail {

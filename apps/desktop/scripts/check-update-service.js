@@ -228,7 +228,7 @@ try {
 
 console.log("desktop update service checks passed");
 
-const mainSource = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+const mainSource = require("./main-source").readMainSource();
 const preloadSource = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
 assert.match(mainSource, /new DesktopUpdateService/);
 assert.match(mainSource, /fetchImpl:\s*desktopUpdateFetch/);

@@ -124,23 +124,23 @@ Beyond the main session store, `apps/web/lib/state/` holds several smaller store
 None of them is on the critical path for session scoping, but knowing what
 lives where prevents duplicating state later.
 
-- **`apps/web/lib/state/center-tabs-store.ts`** (1020 lines) — the tab strip and
+- **`apps/web/lib/tabs/center-tabs-store.ts`** (1020 lines) — the tab strip and
   pane layout: `tabs`, `activeId`, `groups`, `splitWebTabId`, `splitRatio`
-  (`apps/web/lib/state/center-tabs-store.ts:129`). This is *view* state and is
+  (`apps/web/lib/tabs/center-tabs-store.ts:129`). This is *view* state and is
   correctly global: it describes the window, not a session. It is also the
   store that knows a split exists at all, so it is where the scope tree gets
   its session ids from.
-- **`apps/web/lib/state/center-tab-groups.ts`** — pure functions over the tab
+- **`apps/web/lib/tabs/center-tab-groups.ts`** — pure functions over the tab
   layout (grouping, reordering, split panes). No state of its own.
-- **`apps/web/lib/state/chat-scroll.ts`** — scroll position helpers keyed by chat
+- **`apps/web/lib/chat/chat-scroll.ts`** — scroll position helpers keyed by chat
   key, persisted through a storage interface
-  (`apps/web/lib/state/chat-scroll.ts:37`). Already per-session by construction,
+  (`apps/web/lib/chat/chat-scroll.ts:37`). Already per-session by construction,
   just not inside the store.
-- **`apps/web/lib/state/functions-store.ts`**, **`skills-store.ts`**,
+- **`apps/web/lib/abilities/functions-store.ts`**, **`skills-store.ts`**,
   **`plugins-store.ts`** — page-level catalogues and their filter/sort/search
   UI state. Genuinely global; these are settings pages, not sessions.
-- **`apps/web/lib/state/files-shared.ts`** — project list, file reads, and file
-  drafts keyed by path (`apps/web/lib/state/files-shared.ts:144`). Per-file, not
+- **`apps/web/lib/files/files-shared.ts`** — project list, file reads, and file
+  drafts keyed by path (`apps/web/lib/files/files-shared.ts:144`). Per-file, not
   per-session.
 
 ---
@@ -423,7 +423,7 @@ Every Group B field becomes a property of `SessionScopeState`, read through
   session — a genuine behaviour decision, not a mechanical mapping. Consumers:
   `apps/web/components/chat/composer/modes/resolve-mode.ts:18`,
   `apps/web/components/chat/composer/modes/fn-form/use-fn-form-state.ts`,
-  `use-fn-form-wrapper.ts`, `apps/web/lib/use-pending-run-function.ts`,
+  `use-fn-form-wrapper.ts`, `apps/web/lib/execution/use-pending-run-function.ts`,
   `apps/web/components/sidebar/favorites-list.tsx`,
   `apps/web/components/sidebar/sidebar.tsx`,
   `apps/web/components/chat/messages/runtime-block.tsx`, and

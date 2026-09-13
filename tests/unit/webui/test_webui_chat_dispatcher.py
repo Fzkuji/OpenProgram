@@ -375,7 +375,7 @@ def test_write_tool_checkpoints_when_dag_runtime_unavailable(
     # (like all read-side code) resolves `default_store()` directly, so
     # pin the singleton too or it reads the developer's real sessions.
     monkeypatch.setattr(
-        "openprogram.store.session.session_store._default_store", db,
+        'openprogram.store.session.session_store.shared._default_store', db,
         raising=False,
     )
     # Other suites setattr a real attribute over the lazy
@@ -464,7 +464,7 @@ def test_shadow_git_commits_on_webui_turn(
 
     # See the sibling test: pin the read-side singleton as well.
     monkeypatch.setattr(
-        "openprogram.store.session.session_store._default_store", db,
+        'openprogram.store.session.session_store.shared._default_store', db,
         raising=False,
     )
     # Other suites setattr a real attribute over the lazy

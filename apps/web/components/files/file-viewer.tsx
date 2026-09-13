@@ -24,7 +24,7 @@ import {
   getCachedFileRead,
   latestFileMtime,
   rawFileUrl,
-} from "@/lib/state/files-shared";
+} from "@/lib/files/files-shared";
 import styles from "./files-panel.module.css";
 import previewStyles from "./preview/preview.module.css";
 

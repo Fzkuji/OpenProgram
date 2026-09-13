@@ -121,7 +121,7 @@ def test_local_builds_keep_identity_and_refuse_rotation(tmp_path):
 
 
 def test_candidate_sandbox_cannot_read_signing_material(tmp_path, monkeypatch):
-    from openprogram.self_update.supervisor import _sandbox_profile
+    from openprogram.self_update.control.supervisor import _sandbox_profile
     owner = tmp_path / "owner"
     secret = owner / "Library/Application Support/OpenProgram/local-signing/password"
     secret.parent.mkdir(parents=True)

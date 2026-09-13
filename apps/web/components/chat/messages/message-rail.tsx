@@ -13,7 +13,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import { useSessionStore } from "@/lib/session-store";
-import { whenAreaScrollSettles } from "@/lib/state/chat-scroll";
+import { whenAreaScrollSettles } from "@/lib/chat/chat-scroll";
 import type { TurnFileSummary } from "@/lib/session-store/types";
 import { Markdown } from "@/lib/format-utils/markdown";
 import { parseAttachments, AttachmentChips } from "./user-attachments";

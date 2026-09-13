@@ -82,10 +82,9 @@ review output are available in Git history; they are not current acceptance resu
 or installed package and rejects an already-loaded foreign canonical package.
 <code>openprogram.cli</code>, <code>python -m openprogram</code>, and CLI module entry points remain
 compatibility surfaces; moving internal files must preserve their behavior.</p>
-<p><code>openprogram/webui/</code> remains a Server compatibility surface. The checkout still
-contains <code>openprogram/webui/routes/agents.py</code>, so Server ownership is not yet
-physically confined to <code>apps/server/</code>. Do not describe the complete Server move
-or removal of all compatibility modules as finished.</p>
+<p><code>openprogram/webui/</code> remains a Server compatibility surface. Route implementations, including Agent profiles, belong to
+<code>apps/server/openprogram_server/_webui/routes/</code> and are grouped by product domain.
+The compatibility package resolves the application modules without duplicating their implementation.</p>
 <p><code>scripts/install-release.sh</code> remains the public installer entry, while its
 implementation resides under <code>scripts/release/</code>. The root npm workspace and lock
 file coordinate Web, Desktop and CLI dependencies. Consumers must not assume a
@@ -116,7 +115,12 @@ python<span class="w"> </span>-m<span class="w"> </span>scripts.docs_site.checkl
 <ul><li>Clipboard entries identify their source project. Cross-project paste is unavailable until an explicit cross-project transfer operation exists.</li><li>Mutations operate on the selected directory entry. Symbolic-link targets are never implicitly renamed or deleted; unsafe paths fail without changing either entry.</li><li>Deletion offers recoverable handling where supported. Exporting an unsaved draft does not authorize erasing the only confirmed retained copy; an unconfirmed browser download retains the local draft.</li><li>Refreshing files repeats the active search with its unchanged query and preserves request-generation isolation.</li></ul>
 <h3>Acceptance</h3>
 <p>Public WebSocket regression tests cover symbolic links. Mounted Web tests cover project clipboard ownership, active-search refresh and draft preservation. Module relocation preserves collected test identities and installed imports. Source and test inventories record directory counts and large-file responsibilities. All contributor Python layers, Web tests/typecheck/check/build, affected CLI and Desktop checks, documentation links and wheel import acceptance run before release. Specification and quality review are independent.</p>
-<p>These changes are planned; the status table is updated only after implementation and verification.</p>
+<h3>Module responsibilities</h3>
+<p>Execution control separates activation, cancellation, waits, branch operations, recovery and safe points on one service instance. Execution storage separates records, commands, events, state blobs, projections and finish repair while retaining one store and its transaction boundaries. Job execution, resource governance, Agent production execution, workflow runtime and session storage use the same approach: operation modules share the owning instance and canonical module state.</p>
+<p>Desktop main composes window and IPC registration with modules for transfers, native views, layout, menus, downloads and overlays. Its package manifest explicitly includes nested modules, and the refresh script preserves their relative paths. The Web Desktop bridge groups state, restoration, transfers, menus, events and surfaces; file-tree actions and query helpers retain the existing request lifecycle. Server runtime operations share the canonical Server state. Self-update verification binds the packaged WebSocket dispatch module that enforces its command restrictions and accepts previous package layouts for rollback.</p>
+<p>Feature directories replace flat Web libraries, scripts and tests, Python authentication and update modules, Server routes and mixed test directories. Large test and check files retain all scenarios, common fixture ownership and deterministic discovery. Subprocess acceptance belongs to the integration test layer.</p>
+<p>File length remains a review signal. Generated Yoga bindings and the vendored Ink renderer retain their upstream organization. Independent provider adapters remain peer files. Desktop main retains application composition; cohesive checkpoint transactions, security HTTP policy and other single-domain modules are not split solely to meet an arbitrary line limit. The inventory records remaining large files without declaring them all resolved.</p>
+<p>The source changes are present. Independent reviews, the complete regression manifest and installed-App acceptance remain pending; source presence alone does not establish completion.</p>
 <h2 id="implementation-status">Implementation status<a class="header-anchor" href="#implementation-status">#</a></h2>
 <div class="doc-scroll" role="region" tabindex="0" aria-label="Implementation table"><table>
 <thead>
@@ -134,8 +138,8 @@ python<span class="w"> </span>-m<span class="w"> </span>scripts.docs_site.checkl
 </tr>
 <tr>
 <td>Server ownership</td>
-<td>Partial</td>
-<td>Resolve the remaining legacy agents route and verify compatibility consumers before removal.</td>
+<td>Present in source; verification pending</td>
+<td>Verify grouped routes, compatibility imports, packaged assets and installed Server behavior.</td>
 </tr>
 <tr>
 <td>Desktop and Web decomposition</td>

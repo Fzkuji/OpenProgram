@@ -14,7 +14,7 @@ from openprogram.security.safe_http import (
 )
 from openprogram.security.url_policy import OwnerURLException
 from openprogram.webui.owner_auth import OwnerAuthMiddleware, OwnerAuthState
-from openprogram.webui.routes import config as config_routes
+from openprogram.webui.routes.settings import config as config_routes
 from openprogram.webui.ws_actions.settings import handle_set_setting
 
 

@@ -9,11 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.webui.routes._credential_secrets import (
-    declared_credential_names,
-    has_credential_field,
-    is_declared_credential_name,
-)
+from openprogram.webui.routes.identity._credential_secrets import declared_credential_names, has_credential_field, is_declared_credential_name
 
 
 @pytest.mark.parametrize(

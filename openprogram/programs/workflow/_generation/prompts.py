@@ -169,7 +169,7 @@ Available registered functions:
 
 
 def _plan_prompt(task: str, functions: dict[str, Callable]) -> str:
-    from .._generation import planner
+    from . import planner
 
     return (
         PLANNER_INSTRUCTIONS.replace("{delivery}", DELIVERY_INSTRUCTIONS).replace(
@@ -201,7 +201,7 @@ def _author_prompt(
 ) -> str:
     import json
 
-    from .._generation import planner
+    from . import planner
 
     prompt = (
         PROJECT_AUTHOR_INSTRUCTIONS.replace(
@@ -247,7 +247,7 @@ def _rewrite_prompt(
 ) -> str:
     import json
 
-    from .._generation import planner
+    from . import planner
 
     return (
         PLANNER_INSTRUCTIONS.replace("{delivery}", DELIVERY_INSTRUCTIONS).replace(

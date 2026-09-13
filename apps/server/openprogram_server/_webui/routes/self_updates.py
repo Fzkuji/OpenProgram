@@ -8,8 +8,13 @@ from fastapi import Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from openprogram.self_update.projection import ProjectionAccessError, list_status, read_evidence, read_status
-from openprogram.self_update.reopen import ReopenUnavailable, acknowledge_reopen, resolve_reopen
+from openprogram.self_update.control.projection import ProjectionAccessError
+from openprogram.self_update.control.projection import list_status
+from openprogram.self_update.control.projection import read_evidence
+from openprogram.self_update.control.projection import read_status
+from openprogram.self_update.control.reopen import ReopenUnavailable
+from openprogram.self_update.control.reopen import acknowledge_reopen
+from openprogram.self_update.control.reopen import resolve_reopen
 from openprogram.self_update.store import SelfUpdateStore
 from openprogram.self_update.types import ConcurrentUpdateError, SelfUpdateError, UpdateNotFoundError
 
@@ -71,7 +76,8 @@ def _reopen_response(request, update_id, ack=None):
 def register(app):
     @app.api_route("/api/self-updates/{update_id}/desktop-verification/{nonce}", methods=["GET", "POST"])
     async def api_desktop_verification(request: Request, update_id: str, nonce: str):
-        from openprogram.self_update.ui_checks import MAX_CAPTURE_BYTES, exchange
+        from openprogram.self_update.verification.ui_checks import MAX_CAPTURE_BYTES
+        from openprogram.self_update.verification.ui_checks import exchange
         try:
             require_owner(request)
             body = None

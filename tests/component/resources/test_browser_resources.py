@@ -33,7 +33,7 @@ def _exec(eid, session_id, parent=None):
 
 def test_retained_browser_page_survives_invocation_and_is_listed(tmp_path, monkeypatch):
     from openprogram.browser_resources import BrowserResourceStore
-    from openprogram.webui.routes import processes
+    from openprogram.webui.routes.execution import processes
 
     monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
     db = _conversation(tmp_path)
@@ -81,7 +81,7 @@ def test_retained_browser_page_survives_invocation_and_is_listed(tmp_path, monke
 
 def test_listed_resource_keeps_origin_name_after_head_moves(tmp_path, monkeypatch):
     from openprogram.browser_resources import BrowserResourceStore
-    from openprogram.webui.routes import processes
+    from openprogram.webui.routes.execution import processes
 
     monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
     db = _conversation(tmp_path)
@@ -220,7 +220,7 @@ def test_disconnect_leaves_unavailable_descriptor_without_live_lease(tmp_path, m
 
 
 def test_resource_route_denies_other_conversation_before_reading(tmp_path, monkeypatch):
-    from openprogram.webui.routes import processes
+    from openprogram.webui.routes.execution import processes
 
     monkeypatch.setattr(processes, "_actor_and_session", lambda request: ({}, "allowed"))
     monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
@@ -240,7 +240,7 @@ def test_control_rejects_stale_generation_and_does_not_label_paused_from_request
     tmp_path, monkeypatch,
 ):
     from openprogram.browser_resources import BrowserResourceStore
-    from openprogram.webui.routes import processes
+    from openprogram.webui.routes.execution import processes
 
     monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
     db = _conversation(tmp_path)
@@ -522,7 +522,7 @@ def _paused_wait_open(eid, session_id="parent"):
 
 def test_wait_open_projects_waiting_and_resume_does_not_continue(tmp_path, monkeypatch):
     from openprogram.browser_resources import BrowserResourceStore
-    from openprogram.webui.routes import processes
+    from openprogram.webui.routes.execution import processes
 
     monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
     db = _conversation(tmp_path)

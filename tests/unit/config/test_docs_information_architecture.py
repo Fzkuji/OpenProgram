@@ -53,7 +53,7 @@ def test_gui_agent_design_covers_flow_boundaries_and_file_ownership() -> None:
         "openprogram/agent/surface_context.py",
         "openprogram/programs/workflow/browser/__init__.py",
         "apps/server/openprogram_server/_webui/ws_actions/webtab.py",
-        "apps/web/lib/desktop-bridge.ts",
+        "apps/web/lib/desktop/desktop-bridge.ts",
         "apps/desktop/main.js",
     ):
         assert path in source

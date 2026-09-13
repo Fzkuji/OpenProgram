@@ -90,119 +90,59 @@ _MSG_CACHE_CAP = 64
 _msg_cache: "_collections.OrderedDict[str, list[dict]]" = _collections.OrderedDict()
 
 
-def _get_messages(session_id: str) -> list[dict]:
-    """Return the active-branch messages for a conversation.
-
-    Reads from cache when warm, falls back to SessionDB.get_branch on
-    miss. The cache contains COPIES — callers that mutate the list
-    won't accidentally invalidate the cache, but they must call
-    _invalidate_messages(session_id) afterwards if they wrote anything
-    that should be visible.
-
-    Returns ``[]`` for unknown session_ids — same as the dict-based
-    reader's behavior, so existing call sites don't need null-guards.
-    """
-    with _msg_cache_lock:
-        if session_id in _msg_cache:
-            _msg_cache.move_to_end(session_id)
-            return list(_msg_cache[session_id])
-    # Cache miss — load from DB. Out of the lock so concurrent
-    # different-conv reads don't serialize.
-    try:
-        from openprogram.agent.session_db import default_db
-        msgs = default_db().get_branch(session_id)
-    except Exception:
-        msgs = []
-    with _msg_cache_lock:
-        _msg_cache[session_id] = msgs
-        _msg_cache.move_to_end(session_id)
-        while len(_msg_cache) > _MSG_CACHE_CAP:
-            _msg_cache.popitem(last=False)
-        return list(msgs)
-
-
-def _invalidate_messages(session_id: str) -> None:
-    """Drop ``session_id``'s cached branch list. Call after any write
-    that should be visible to the next reader: append_message,
-    set_head, retry/edit, deepest_leaf jumps."""
-    with _msg_cache_lock:
-        _msg_cache.pop(session_id, None)
-
-
-def _hydrate_messages_from_db(session_id: str) -> list[dict]:
-    """Force-refresh and return the active branch. Used by paths that
-    just wrote to SessionDB and need the next read to be fresh."""
-    _invalidate_messages(session_id)
-    return _get_messages(session_id)
-
-
+from contextlib import contextmanager as _contextmanager
 _HEAD_UNSET = object()
 
+from ._webui.server_runtime.session_persistence import (
+    _get_messages,
+    _invalidate_messages,
+    _hydrate_messages_from_db,
+    _set_active_head,
+    _deepest_leaf_db,
+    _emit_running_task_event,
+    _web_follow_up,
+    _save_session,
+    _default_agent_id,
+    _delete_session_files,
+    _restore_sessions,
+)
+from ._webui.server_runtime.broadcasts import (
+    _broadcast,
+    _broadcast_to_principal,
+    _log,
+)
+from ._webui.server_runtime.session_lifecycle import (
+    _cleanup_session_resources,
+    _get_or_create_session,
+    _canonical_foreground_task,
+    _is_run_active,
+    _try_reserve_run,
+    _try_reserve_run_locked,
+    _release_run_reservation,
+    _activate_run_reservation,
+    _finish_owned_run,
+    _release_session_occupancy_for_execution,
+)
+from ._webui.server_runtime.context_stats import (
+    _append_msg,
+    _execute_in_context,
+    _broadcast_context_stats,
+    _resolve_context_window,
+    _build_context_occupancy,
+    _conv_context_window,
+    session_context_stats,
+    refresh_context_stats,
+    _broadcast_chat_response,
+)
+from ._webui.server_runtime.websocket_dispatch import (
+    _send_operation_error,
+    _websocket_handler,
+    _build_ws_action_registry,
+    _valid_uuid_request_id,
+    _validate_file_request,
+    _handle_ws_command,
+)
 
-def _set_active_head(
-    session_id: str,
-    head_id: Optional[str],
-    *,
-    expected_head_id: object = _HEAD_UNSET,
-    meta_update: Optional[dict] = None,
-) -> bool:
-    """Switch the conversation's active branch leaf.
-
-    Used by retry / edit / sibling-checkout / deepest-leaf jump /
-    branch-checkout / branch-delete / attach / rewind UIs — every path
-    that moves HEAD must come through here.
-
-    Writes SessionDB.sessions.head_id (so cross-process readers and the
-    dispatcher's next get_branch see the new head), re-reads the new
-    branch into the in-memory ``conv["head_id"]`` / ``conv["messages"]``
-    mirror, and invalidates the messages cache.
-
-    The ``conv["messages"]`` refresh is not optional: ``_save_session``
-    flushes that list and ``conv["head_id"]`` straight back into
-    SessionDB, so a mirror left on the old branch silently reverts the
-    head move on the next save.
-    """
-    try:
-        from openprogram.agent.session_db import default_db
-        db = default_db()
-        if expected_head_id is _HEAD_UNSET:
-            db.set_head(session_id, head_id)
-        elif not db.compare_and_set_head(
-            session_id,
-            expected_head_id,  # type: ignore[arg-type]
-            head_id,
-            meta_update=meta_update,
-        ):
-            return False
-    except Exception as e:
-        _log(f"_set_active_head: SessionDB write failed for {session_id}: {e}")
-        return False
-    branch = None
-    if db is not None:
-        try:
-            branch = db.get_branch(session_id) or []
-        except Exception as e:
-            _log(f"_set_active_head: get_branch failed for {session_id}: {e}")
-    with _sessions_lock:
-        conv = _sessions.get(session_id)
-        if conv is not None:
-            conv["head_id"] = head_id
-            if branch is not None:
-                conv["messages"] = branch
-    _invalidate_messages(session_id)
-    return True
-
-
-def _deepest_leaf_db(session_id: str, root_id: str) -> Optional[str]:
-    """SessionDB-backed deepest_leaf — finds the tip of the subtree
-    under ``root_id`` so sibling-checkout lands on the latest reply,
-    not the fork point. Mirrors openprogram.context.git.deepest_leaf
-    but reads from SQL instead of an in-memory message list."""
-    try:
-        from openprogram.agent.session_db import default_db
-        return default_db().get_deepest_leaf(session_id, root_id)
-    except Exception:
-        return None
 
 # Global default providers (used when creating new conversations)
 # (Provider state moved to openprogram.webui._runtime_management)
@@ -219,110 +159,9 @@ _running_tasks: dict = {}  # session_id → {msg_id, func_name, started_at, ...}
 _running_tasks_lock = threading.Lock()
 
 
-def _emit_running_task_event(
-    session_id: str,
-    *,
-    cleared_execution_id: str | None = None,
-    cleared_msg_id: str | None = None,
-) -> None:
-    """Broadcast the current running-task state for ``session_id``.
-
-    Emits a ``running_task`` envelope if a task is active, or a
-    ``running_task_clear`` envelope otherwise. A clear names the
-    finished turn so a newer reservation (or a just-sent placeholder)
-    is not idled by a late frame. Callers should invoke this
-    immediately after mutating ``_running_tasks`` (still under the
-    lock is fine — the actual socket send is queued).
-    """
-    try:
-        with _running_tasks_lock:
-            task = _running_tasks.get(session_id)
-            task = dict(task) if task else None
-        task = _canonical_foreground_task(session_id) or task
-        if task:
-            payload = {
-                "type": "running_task",
-                "data": {
-                    "session_id": session_id,
-                    "msg_id": task.get("msg_id"),
-                    "func_name": task.get("func_name"),
-                    "started_at": task.get("started_at"),
-                    "display_params": task.get("display_params", ""),
-                    "execution_id": task.get("execution_id"),
-                    "status_version": task.get("status_version"),
-                },
-            }
-        else:
-            data = {"session_id": session_id}
-            if cleared_execution_id:
-                data["execution_id"] = cleared_execution_id
-            if cleared_msg_id:
-                data["msg_id"] = cleared_msg_id
-            payload = {
-                "type": "running_task_clear",
-                "data": data,
-            }
-        _broadcast(json.dumps(payload, default=str))
-    except Exception:
-        # Broadcast is best-effort; never let it kill the turn.
-        pass
-
-
-
 # ---------------------------------------------------------------------------
 # Follow-up context manager — shared by run / edit / any command handler
 # ---------------------------------------------------------------------------
-from contextlib import contextmanager as _contextmanager
-
-
-@_contextmanager
-def _web_follow_up(session_id: str, msg_id: str, func_name: str, tree_cb=None):
-    """Set up follow-up question support for a web UI command execution.
-
-    Registers a global ask_user handler that sends follow-up questions to
-    the browser via WebSocket and blocks until the user answers.
-
-    Args:
-        session_id:   Conversation ID (for routing the answer back).
-        msg_id:    Message ID (for associating with the right chat message).
-        func_name: Function name (for display in the frontend).
-        tree_cb:   Optional tree event callback to trigger on follow-up.
-    """
-    fq = queue.Queue()
-    ended = threading.Event()
-    with _follow_up_lock:
-        _follow_up_queues[session_id] = fq
-
-    def _handler(question: str) -> Optional[str]:
-        if ended.is_set():
-            return None
-        _broadcast_chat_response(session_id, msg_id, {
-            "type": "follow_up_question",
-            "question": question,
-            "function": func_name,
-        })
-        if tree_cb is not None:
-            tree_cb("follow_up", {})
-        try:
-            answer = fq.get(timeout=300)
-        except queue.Empty:
-            return None
-        if answer is _FOLLOW_UP_DISCONNECTED:
-            ended.set()
-            return None
-        if isinstance(answer, dict) and answer.get("_cancelled"):
-            ended.set()
-            return None
-        return answer
-
-    set_ask_user(_handler)
-    try:
-        yield
-    finally:
-        set_ask_user(None)
-        with _follow_up_lock:
-            _follow_up_queues.pop(session_id, None)
-
 
 
 # ---------------------------------------------------------------------------
@@ -342,173 +181,7 @@ from openprogram.webui._runtime_management import (
 )
 
 
-
 from openprogram.webui import persistence as _persist
-
-
-def _save_session(session_id: str):
-    """Persist one conversation's meta + messages under its agent.
-
-    Per-function execution trees are written incrementally by
-    append_tree_event in the tree event callback — we do not rewrite
-    them here. An empty conversation (no messages yet, no session row
-    in SessionDB) is skipped entirely so the user doesn't see "ghost"
-    history rows for chats they never typed in.
-    """
-    if not session_id:
-        return
-    with _sessions_lock:
-        conv = _sessions.get(session_id)
-        if conv is None:
-            return
-        # Skip persistence for brand-new conversations the user hasn't
-        # actually used. Once _append_msg lands the first message it
-        # creates the session row, and from that point on this guard
-        # passes (db.get_session is non-None) and we save normally.
-        if not conv.get("messages"):
-            try:
-                from openprogram.agent.session_db import default_db
-                if default_db().get_session(session_id) is None:
-                    return
-            except Exception:
-                pass
-        runtime = conv.get("runtime")
-        from openprogram.agent.session_db import default_db as _save_db
-        _db_sess = _save_db().get_session(session_id)
-        agent_id = (_db_sess or {}).get("agent_id") or _default_agent_id()
-        meta = {
-            "id": session_id,
-            "agent_id": agent_id,
-            "provider_name": conv.get("provider_name"),
-            "provider_override": conv.get("provider_override"),
-            "model_override": conv.get("model_override"),
-            "session_id": getattr(runtime, "_session_id", None),
-            "model": getattr(runtime, "model", None),
-            "context_tree": None,
-            "_chat_usage": conv.get("_chat_usage"),
-            "_last_context_stats": conv.get("_last_context_stats"),
-            "_last_exec_session": conv.get("_last_exec_session"),
-            "_last_exec_cumulative_usage": conv.get("_last_exec_cumulative_usage"),
-            # No head_id here — the conv dict is a display mirror and
-            # HEAD has exactly one writer, SessionStore.set_head
-            # (context/compaction.md §5). Writing the mirror's head back
-            # was the phantom head-move path: a stale mirror (restored
-            # from an old save, or advanced by a transcript-only row
-            # like a compaction marker) silently overwrote real moves.
-            "tools_enabled": conv.get("tools_enabled"),
-            "tools_override": conv.get("tools_override"),
-            "thinking_effort": conv.get("thinking_effort"),
-            "permission_mode": conv.get("permission_mode"),
-        }
-        messages = list(conv.get("messages", []))
-    try:
-        _persist.save_meta(agent_id, session_id, meta)
-        # No save_messages: every real row reaches the store through
-        # db.append_message at write time (_append_msg / dispatcher);
-        # the mirror's extra rows are transcript-only (status lines,
-        # compaction markers) and must never become store nodes.
-    except Exception as e:
-        _log(f"[save_conversation] {session_id} error: {e}")
-
-
-def _default_agent_id() -> str:
-    """Which agent does a new conversation land in when the client
-    didn't specify one? Falls back to the registry default."""
-    try:
-        from openprogram.agent.management import manager as _A
-        spec = _A.get_default()
-        if spec is not None:
-            return spec.id
-    except Exception:
-        pass
-    return "main"
-
-
-def _delete_session_files(session_id: str):
-    """Destroy a session by id via the source of truth (SessionStore).
-
-    No agent_id lookup: SessionStore deletes by session_id alone. The
-    old "find the owning agent, then delete its dir" path could not see
-    sessions whose meta had no agent_id (forced-tool-call shells), which
-    is what left orphans that reappeared on refresh."""
-    try:
-        from openprogram.agent.session_db import default_db
-        default_db().delete_session(session_id)
-    except Exception as e:
-        _log(f"[delete_session_files] {session_id} error: {e}")
-
-
-def _restore_sessions():
-    """Walk every agent's sessions dir and hydrate _sessions."""
-    for agent_id, session_id in _persist.list_sessions():
-        try:
-            data = _persist.load_session(agent_id, session_id)
-            if data is None:
-                continue
-
-            root_ctx = None  # tree Context retired — UI now reads DAG nodes
-
-            provider_name = data.get("provider_name")
-            provider_override = data.get("provider_override")
-            model_override = data.get("model_override")
-            # The "session_id" inside meta is the LLM runtime's own
-            # session identifier (Claude Code, etc.) — separate from
-            # session_id in this loop, which is the SessionDB primary
-            # key. Use a different local name to keep them apart.
-            runtime_session_id = data.get("session_id") or data.get("llm_session_id")
-            model = data.get("model")
-
-            # Skip eager runtime restore unless this session was
-            # explicitly switched (provider_override). Without an
-            # override we can't tell whether the persisted
-            # ``provider_name`` reflects a user choice or stale state
-            # written by the old auto-default-on-create path; letting
-            # ``_get_session_runtime`` build the runtime lazily from agent
-            # config is the only way old buggy sessions escape the
-            # legacy claude-code default.
-            runtime = None
-            if provider_override:
-                try:
-                    runtime = _create_runtime_for_visualizer(
-                        provider_override, model=model_override or model
-                    )
-                    if runtime_session_id and hasattr(runtime, "_session_id"):
-                        runtime._session_id = runtime_session_id
-                        runtime._turn_count = 1
-                        runtime.has_session = True
-                except Exception:
-                    runtime = None
-
-            # ContextGit migration: backfill predecessor on legacy
-            # messages and pick a head_id. Old conversations become a
-            # straight linear chain (see docs/design/context/overview.md).
-            from openprogram.context.git import (
-                normalize_parent_pointers,
-                head_or_tip,
-            )
-            msgs = data.get("messages", [])
-            normalize_parent_pointers(msgs)
-            head_id = data.get("head_id") or head_or_tip({}, msgs)
-
-            with _sessions_lock:
-                _sessions[session_id] = {
-                    "id": session_id,
-                    "agent_id": data.get("agent_id") or agent_id,
-                    "runtime": runtime,
-                    "provider_name": provider_override or None,
-                    "provider_override": provider_override,
-                    "model_override": model_override,
-                    "messages": msgs,
-                    "_chat_usage": data.get("_chat_usage"),
-                    "_last_context_stats": data.get("_last_context_stats"),
-                    "_last_exec_session": data.get("_last_exec_session"),
-                    "_last_exec_cumulative_usage": data.get("_last_exec_cumulative_usage"),
-                    "head_id": head_id,
-                }
-            _log(f"[restore] agent={agent_id} session={session_id}: "
-                 f"{data.get('title')} (runtime_session={runtime_session_id})")
-        except Exception as e:
-            _log(f"[restore] failed for {session_id}: {e}")
 
 
 def _load_config() -> dict:
@@ -630,75 +303,6 @@ def _load_agent_session_meta(session_key: str) -> Optional[dict]:
     return None
 
 
-def _broadcast(msg: str):
-    """Send a message to all connected WebSocket clients."""
-    if not _ws_connections:
-        return
-    from openprogram.webui.ws_delivery import send_to_connection
-
-    with _ws_lock:
-        conns = list(_ws_connections)
-    for ws in conns:
-        send_to_connection(ws, msg, _loop)
-
-
-def _broadcast_to_principal(
-    msg: str,
-    principal_id: str,
-    *,
-    exclude=None,
-) -> None:
-    """Send one owner-scoped state transition to matching connections."""
-    if not _ws_connections:
-        return
-    from openprogram.webui.ws_delivery import send_to_connection
-    from openprogram.webui.ws_errors import principal_id_for_websocket
-
-    with _ws_lock:
-        conns = list(_ws_connections)
-    for ws in conns:
-        if ws is exclude:
-            continue
-        try:
-            matches = principal_id_for_websocket(ws) == principal_id
-        except PermissionError:
-            matches = False
-        if matches:
-            send_to_connection(ws, msg, _loop)
-
-
-def _log(text: str):
-    """Webui server log line.
-
-    Stdout print is gated on "are we actually running as the webui
-    server right now?" — when ``start_server`` has booted, the
-    ``_server_thread`` global is alive, and stdout is the server's
-    terminal where logs belong. Without that guard, every CLI REPL
-    call that just imports ``_runtime_management`` (which calls this
-    via ``_log``) would pollute the chat transcript with "[probe] xxx
-    unavailable", "[restore] ...", etc.
-
-    ``OPENPROGRAM_DEBUG_RUNTIME=1`` mirrors lines to stderr regardless
-    of mode for devs tracing CLI startup.
-    """
-    if _server_thread is not None and _server_thread.is_alive():
-        print(text)
-    else:
-        import os as _os
-        if _os.environ.get("OPENPROGRAM_DEBUG_RUNTIME", "").strip() in ("1", "true", "yes"):
-            import sys as _sys
-            print(text, file=_sys.stderr, flush=True)
-
-
-def _cleanup_session_resources(session_id: str, conv: dict):
-    """Clean up all resources associated with a deleted conversation."""
-    # Clean up follow-up queues and running tasks
-    with _follow_up_lock:
-        _follow_up_queues.pop(session_id, None)
-    with _running_tasks_lock:
-        _running_tasks.pop(session_id, None)
-
-
 from openprogram.webui._functions import (
     _discover_functions,
     _extract_input_meta,
@@ -720,280 +324,6 @@ from openprogram.webui._functions import (
 # ---------------------------------------------------------------------------
 # Conversation management — each conversation is a DAG in SessionDB
 # ---------------------------------------------------------------------------
-
-def _get_or_create_session(session_id: str = None,
-                                agent_id: str = None,
-                                *,
-                                channel: str = None,
-                                account_id: str = None,
-                                peer: str = None) -> dict:
-    """Get or create a conversation with its own DAG session + Runtime.
-
-    If ``agent_id`` is provided the new conversation is bound to that
-    agent; otherwise it lands in the registry's default agent. Existing
-    conversations keep whatever agent they were created under — we
-    never rebind on lookup.
-
-    The optional ``channel`` / ``account_id`` / ``peer`` triple binds the
-    new conversation to a chat channel (e.g. ``wechat`` + ``baby``).
-    Ignored on lookup of existing conversations — call
-    ``set_conversation_channel`` to change them after creation.
-    """
-    if session_id is None:
-        session_id = "local_" + uuid.uuid4().hex[:10]
-    with _sessions_lock:
-        if session_id not in _sessions:
-            resolved_agent = agent_id or _default_agent_id()
-            # Hydrate the active branch from SessionDB so a webui
-            # restart / fresh worker process sees the same messages
-            # the dispatcher and channels worker have been writing.
-            # Empty list for brand-new conversations.
-            try:
-                from openprogram.agent.session_db import default_db
-                _db = default_db()
-                _hydrated = _db.get_branch(session_id) or []
-                _sess = _db.get_session(session_id)
-                _hydrated_head = _sess.get("head_id") if _sess else None
-            except Exception:
-                _hydrated = []
-                _sess = None
-                _hydrated_head = None
-            resolved_agent = (
-                agent_id
-                or ((_sess or {}).get("agent_id") if isinstance(_sess, dict) else None)
-                or resolved_agent
-            )
-            # Inherit a user-pinned (provider, model) from the most
-            # recent picker click that didn't have a session attached.
-            # Lets the welcome-page flow "pick Opus, then start a chat"
-            # actually run Opus — otherwise the new conv falls back to
-            # the agent profile's default model.
-            _inherit_prov = _user_pinned_provider
-            _inherit_model = _user_pinned_model
-            _log(
-                f"[_get_or_create_session] creating {session_id!r} "
-                f"inherit_prov={_inherit_prov!r} inherit_model={_inherit_model!r}"
-            )
-            _sessions[session_id] = {
-                "id": session_id,
-                "runtime": None,          # created lazily on first message
-                "agent_id": resolved_agent,  # so _resolve's agent-default tier fires
-                "provider_name": ((_sess or {}).get("provider_name") if isinstance(_sess, dict) else None)
-                                 or _inherit_prov,
-                # Read the persisted per-conv override back (same pattern as
-                # provider_name above); fall back to the global pinned value.
-                # Without this a rebuilt session loses the user's model pick and
-                # dispatch falls back to the agent/global default.
-                "provider_override": ((_sess or {}).get("provider_override") if isinstance(_sess, dict) else None)
-                                     or _inherit_prov,
-                "model_override": ((_sess or {}).get("model_override") if isinstance(_sess, dict) else None)
-                                  or _inherit_model,
-                "messages": _hydrated,
-                "head_id": _hydrated_head,
-                "tools_enabled": ((_sess or {}).get("tools_enabled") if isinstance(_sess, dict) else None),
-                "tools_override": ((_sess or {}).get("tools_override") if isinstance(_sess, dict) else None),
-                "thinking_effort": ((_sess or {}).get("thinking_effort") if isinstance(_sess, dict) else None),
-                "permission_mode": ((_sess or {}).get("permission_mode") if isinstance(_sess, dict) else None),
-            }
-            # session.start on the bus — plugin subscribers included.
-            # emit_safe swallows failures: never break session creation.
-            from openprogram.events import emit_safe
-            emit_safe("session.start", "system", {
-                "session_id": session_id,
-                "agent_id": resolved_agent,
-                "channel": channel,
-            }, {"session": session_id})
-        return _sessions[session_id]
-
-
-def _canonical_foreground_task(session_id: str) -> dict | None:
-    from openprogram.execution import default_store
-    from openprogram.execution.foreground import active_foreground_task
-
-    return active_foreground_task(default_store(), session_id)
-
-
-def _is_run_active(session_id: str) -> bool:
-    """Is there an in-flight agent run for this conversation?
-
-    Single source of truth for UI gating (Edit / Retry buttons go grey
-    while a run is active). Driven off ``_running_tasks`` — the same
-    dict we use for pause / stop, so we can't drift out of sync.
-    """
-    # A durable continuation no longer owns the initial transport thread.
-    if _canonical_foreground_task(session_id) is not None:
-        return True
-    with _running_tasks_lock:
-        task = _running_tasks.get(session_id)
-        # A chat handler reserves the session before it mutates the DAG and
-        # before its runtime thread exists. Treat that short state as active;
-        # otherwise a second handler would delete the reservation as a
-        # "zombie" and both turns could pass the guard.
-        stale_reservation = False
-        stale_task = None
-        if task and task.get("_reserved"):
-            if time.time() - task.get("started_at", 0) > 300:
-                stale_task = _running_tasks.pop(session_id, None)
-                stale_reservation = True
-            else:
-                return True
-    if stale_reservation:
-        _emit_running_task_event(
-            session_id,
-            cleared_msg_id=(stale_task or {}).get("msg_id"),
-            cleared_execution_id=(stale_task or {}).get("execution_id"),
-        )
-        return False
-    if task is None:
-        # Runtime registration precedes reservation handoff. If another
-        # observer arrives in that interval, the runtime itself still blocks
-        # a second turn even if stop/cleanup just removed the task entry.
-        return _has_active_runtime(session_id)
-    # Zombie entry (no live runtime registered) → not actually running.
-    # Drop it so subsequent calls don't keep blocking Edit/Retry/etc.
-    if not _has_active_runtime(session_id):
-        with _running_tasks_lock:
-            current = _running_tasks.get(session_id)
-            if current is not task:
-                # A concurrent observer may already have removed the stale
-                # owner and admitted another turn. Never clear its reservation.
-                return current is not None or _has_active_runtime(session_id)
-            if _has_active_runtime(session_id):
-                return True
-            zombie = _running_tasks.pop(session_id, None)
-        _emit_running_task_event(
-            session_id,
-            cleared_msg_id=(zombie or {}).get("msg_id"),
-            cleared_execution_id=(zombie or {}).get("execution_id"),
-        )
-        return False
-    return True
-
-
-def _try_reserve_run(session_id: str, msg_id: str) -> bool:
-    from openprogram.store.session.session_lock import session_interprocess_lock
-    try:
-        with session_interprocess_lock(session_id, timeout=0.25):
-            return _try_reserve_run_locked(session_id, msg_id)
-    except (TimeoutError, BlockingIOError):
-        return False
-
-
-def _try_reserve_run_locked(session_id: str, msg_id: str) -> bool:
-    """Atomically reserve one session for a chat turn before DAG mutation."""
-    try:
-        from openprogram.store.session.migration import session_hold_active
-        from openprogram.paths import get_state_dir
-        if session_hold_active(Path(get_state_dir()) / "sessions", session_id):
-            return False
-    except Exception:
-        return False
-    if _is_run_active(session_id):
-        return False
-    now = time.time()
-    with _running_tasks_lock:
-        if session_id in _running_tasks:
-            return False
-        _running_tasks[session_id] = {
-            "msg_id": msg_id,
-            "func_name": "_chat",
-            "started_at": now,
-            "last_event_at": now,
-            "display_params": "",
-            "loaded_func_ref": None,
-            "stream_events": [],
-            # Admission mints the canonical execution id. A provisional
-            # reservation must not publish or derive one from msg_id.
-            "execution_id": None,
-            "_reserved": True,
-        }
-    return True
-
-
-def _release_run_reservation(session_id: str, msg_id: str) -> None:
-    """Release only the still-provisional reservation owned by ``msg_id``."""
-    with _running_tasks_lock:
-        task = _running_tasks.get(session_id)
-        if task and task.get("_reserved") and task.get("msg_id") == msg_id:
-            _running_tasks.pop(session_id, None)
-
-
-def _activate_run_reservation(session_id: str, msg_id: str, runtime) -> bool:
-    """Atomically hand an owned reservation to its registered runtime."""
-    with _running_tasks_lock:
-        task = _running_tasks.get(session_id)
-        if not (task and task.get("_reserved")
-                and task.get("msg_id") == msg_id):
-            return False
-        # Publish the runtime handoff before clearing the provisional marker.
-        # This closes the observer window in which _is_run_active could treat
-        # an admitted turn as a zombie and allow a duplicate start.
-        _register_active_runtime(session_id, runtime)
-        task.pop("_reserved", None)
-        task["started_at"] = time.time()
-        task["last_event_at"] = task["started_at"]
-    return True
-
-
-def _finish_owned_run(session_id: str, msg_id: str) -> bool:
-    """Remove only the task/runtime pair still owned by ``msg_id``."""
-    with _running_tasks_lock:
-        task = _running_tasks.get(session_id)
-        if not (task and task.get("msg_id") == msg_id):
-            return False
-        _running_tasks.pop(session_id, None)
-    # The active-runtime registration is the handoff counterpart to the
-    # provisional reservation.  Retire it only after ownership was matched;
-    # a late finisher must not clear a newer run in the same session.
-    _unregister_active_runtime(session_id)
-    return True
-
-
-def _release_session_occupancy_for_execution(execution: dict) -> bool:
-    """Release the session slot as soon as cancel intent is accepted.
-
-    Occupancy is the running-task entry AND the active runtime.
-    Popping only ``_running_tasks`` is not enough: ``_is_run_active``
-    still returns True via ``_has_active_runtime``. A newer reservation
-    (different ``msg_id``) is left intact. Broadcasts
-    ``running_task_clear`` so every client matches.
-    """
-    session_id = execution.get("session_id") if execution else None
-    execution_id = (
-        (execution.get("execution_id") or "").strip() if execution else ""
-    )
-    if not session_id or not execution_id:
-        return False
-    msg_id = None
-    with _running_tasks_lock:
-        task = _running_tasks.get(session_id)
-        task_msg = task.get("msg_id") if task else None
-        task_exec = task.get("execution_id") if task else None
-    if task_msg:
-        if task_exec == execution_id:
-            msg_id = task_msg
-        else:
-            return False
-    else:
-        return False
-    released = _finish_owned_run(session_id, msg_id)
-    if not released:
-        # Task already gone; still drop a leftover foreground runtime so
-        # ``_is_run_active`` cannot stay True via ``_has_active_runtime``.
-        with _running_tasks_lock:
-            leftover = _running_tasks.get(session_id)
-            if leftover is None or leftover.get("msg_id") == msg_id:
-                _unregister_active_runtime(session_id)
-                if leftover is not None:
-                    _running_tasks.pop(session_id, None)
-                released = True
-    if released:
-        _emit_running_task_event(
-            session_id,
-            cleared_execution_id=execution_id,
-            cleared_msg_id=msg_id,
-        )
-    return released
 
 
 # One wording for every "you can't move HEAD right now" rejection, so
@@ -1017,122 +347,6 @@ from openprogram.context.git import (  # noqa: E402
 )
 
 
-def _append_msg(conv: dict, msg: dict) -> None:
-    """Append ``msg`` to ``conv``: in-memory mirror + SessionDB.
-
-    Single source of truth path for non-dispatcher webui writes (run /
-    create / error / system messages). Dispatcher already writes
-    user+assistant rows itself; this helper covers everything else.
-
-    Order matters:
-      1. ``_raw_advance_head`` mutates ``conv["messages"]`` and
-         ``conv["head_id"]`` so existing readers see it immediately.
-      2. SessionDB.append_message persists for cross-process readers.
-      3. SessionDB.set_head bumps the active leaf — without this,
-         a fresh ``_get_messages`` cache miss would walk back to the
-         old head and miss the just-appended row.
-      4. Cache invalidation is last so step 3 is visible.
-
-    Failures in steps 2-4 are logged but non-fatal; the in-memory
-    mirror stays consistent for display. The store is the source of
-    truth — mirror rows never sync back (context/compaction.md §5).
-    """
-    # Streaming-resume: if a placeholder with this id already lives
-    # in ``conv["messages"]`` (e.g. ``run.py`` wrote a status=running
-    # row before kicking off the function, and now we're back with
-    # the final reply), update the existing entry in place instead of
-    # appending a duplicate. The on-disk side handles its own
-    # dedup — ``SessionStore.append_message`` is idempotent on id
-    # and the final reply uses ``SessionNodeWriter.update()`` to patch
-    # the persisted node.
-    # Dispatcher completion advances the durable head without updating this
-    # server's conversation mirror. Resolve an ordinary user append before
-    # advance_head fills in a predecessor from that potentially stale mirror.
-    # Explicit predecessors, including None for a root fork, remain exact.
-    if msg.get("role") == "user" and "predecessor" not in msg and conv.get("id"):
-        from openprogram.agent.session_db import default_db
-        session = default_db().get_session(conv["id"]) or {}
-        msg["predecessor"] = session.get("head_id") or "ROOT"
-
-    _existing_idx = -1
-    if msg.get("id"):
-        for _i, _existing in enumerate(conv.get("messages") or []):
-            if _existing.get("id") == msg["id"]:
-                _existing_idx = _i
-                break
-    if _existing_idx >= 0:
-        conv["messages"][_existing_idx] = {**conv["messages"][_existing_idx], **msg}
-        conv["head_id"] = msg["id"]
-    else:
-        _raw_advance_head(conv, msg)
-    cid = conv.get("id")
-    msg_id = msg.get("id")
-    if not cid or not msg_id:
-        return
-    try:
-        from openprogram.agent.session_db import default_db
-        db = default_db()
-        if db.get_session(cid) is None:
-            create_kwargs = {}
-            # Channel binding + presentational fields — these no longer
-            # live in the _sessions dict, so pull from the message itself
-            # or from run-config fields still on the dict.
-            for fld in ("source", "peer_display"):
-                v = msg.get(fld)
-                if v:
-                    create_kwargs[fld] = v
-            # Per-session run config — these used to be written via
-            # save_session_run_config which create_session'd a ghost row
-            # even when the user never sent a real message. Now folded
-            # into the same create_session call as the first message so
-            # SessionDB only ever holds rows for sessions with content.
-            for fld in (
-                "tools_enabled", "tools_override", "thinking_effort",
-                "permission_mode", "sandbox_enabled",
-            ):
-                v = conv.get(fld)
-                if v is not None:
-                    create_kwargs[fld] = v
-            db.create_session(cid, msg.get("agent_id") or _default_agent_id(), **create_kwargs)
-        # Ensure ROOT node + user caller=ROOT for session DAG.
-        if msg.get("role") == "user":
-            try:
-                from openprogram.context.nodes import Call as _C, ROLE_USER as _RU
-                from openprogram.store import SessionNodeWriter as _GS
-                _ROOT_ID = "ROOT"
-                if not db.message_exists(cid, _ROOT_ID):
-                    _GS(db, cid).append(_C(
-                        id=_ROOT_ID, role=_RU, output="",
-                        metadata={"display": "root"},
-                    ))
-                # The predecessor was resolved before mirror mutation above,
-                # or supplied explicitly by the caller (None means a root fork).
-                _pred = msg.get("predecessor")
-                _umeta = {k: v for k, v in msg.items()
-                          if k not in {"id", "role", "content", "timestamp",
-                                       "predecessor"}
-                          and v is not None}
-                # The conv edge is the top-level Call field (Decision 1):
-                # a real prior turn's reply id, or ROOT explicitly for a
-                # first turn / root-level fork.
-                _GS(db, cid).append(_C(
-                    id=msg_id,
-                    role=_RU,
-                    output=msg.get("content") or "",
-                    caller=_ROOT_ID,
-                    predecessor=_pred or _ROOT_ID,
-                    metadata=_umeta,
-                ))
-            except Exception:
-                db.append_message(cid, msg)
-        else:
-            db.append_message(cid, msg)
-        db.set_head(cid, msg_id)
-    except Exception as e:
-        _log(f"_append_msg: SessionDB write failed for {cid}/{msg_id}: {e}")
-    _invalidate_messages(cid)
-
-
 # Thinking-effort picker configs + runtime apply helpers live in
 # _thinking.py. Re-exported here for existing call sites.
 from openprogram.webui._thinking import (  # noqa: E402
@@ -1145,282 +359,6 @@ from openprogram.webui._thinking import (  # noqa: E402
 )
 
 
-def _execute_in_context(session_id: str, msg_id: str, action: str, **kwargs):
-    """Legacy name kept for ws_actions/chat.py and _chat_routes.py callers.
-
-    The real implementation lives in openprogram/webui/_execute/. This shim
-    just forwards so existing import sites keep working.
-    """
-    from openprogram.webui._execute import execute_in_context
-    return execute_in_context(session_id, msg_id, action, **kwargs)
-
-
-
-
-def _broadcast_context_stats(session_id: str, msg_id: str, chat_runtime=None, exec_runtime=None):
-    """Broadcast chat & exec token usage stats to frontend.
-
-    Chat usage: use the provider's latest reported value directly.
-      - CLI providers report usage that already reflects the full session context.
-      - API providers report usage that includes the full conversation in input_tokens.
-      - No accumulation — provider knows best about its own usage.
-    Exec usage: per-function execution, read from exec_runtime.last_usage.
-    """
-    conv = _sessions.get(session_id)
-    if not conv:
-        return
-
-    _zero = {"input_tokens": 0, "output_tokens": 0, "cache_read": 0}
-
-    # --- Chat usage: use last_usage (per-call = current context window size) ---
-    # NOT session_usage (cumulative across all API calls, inflated for Codex).
-    # last_usage.input_tokens = total tokens sent in the last call ≈ context size.
-    if chat_runtime:
-        usage = getattr(chat_runtime, 'last_usage', None)
-        if usage and (usage.get("input_tokens") or usage.get("output_tokens") or usage.get("cache_read") or usage.get("cache_create")):
-            conv["_chat_usage"] = {
-                "input_tokens": usage.get("input_tokens", 0),
-                "output_tokens": usage.get("output_tokens", 0),
-                "cache_read": usage.get("cache_read", 0),
-                "cache_create": usage.get("cache_create", 0),
-                # 最后一次调用的 prompt 体积（input+cache_read）≈ 当前
-                # 上下文占用；badge 圆环用它算百分比，不用 turn 累计值。
-                "context_tokens": usage.get("context_tokens", 0),
-            }
-
-    # --- Exec usage (per-function, not cumulative) ---
-    exec_stats = None
-    if exec_runtime:
-        eu = getattr(exec_runtime, 'last_usage', None)
-        if eu and (eu.get("input_tokens") or eu.get("output_tokens") or eu.get("cache_read") or eu.get("cache_create")):
-            exec_stats = {
-                "input_tokens": eu.get("input_tokens", 0),
-                "output_tokens": eu.get("output_tokens", 0),
-                "cache_read": eu.get("cache_read", 0),
-                "cache_create": eu.get("cache_create", 0),
-            }
-
-    # Include provider name so frontend can apply provider-specific formatting
-    provider_name = conv.get("provider_name", _runtime_management._default_provider) or ""
-
-    # Best-effort context window for the current model — frontend uses this
-    # to render the input/output % bar. Falls back to None on unknown.
-    chat_model = getattr(chat_runtime, "model", None) if chat_runtime else None
-
-    context_window = (_resolve_context_window(provider_name, chat_model)
-                      or _conv_context_window(conv))
-
-    # The request that just finished measured the real prompt size, so the
-    # occupancy record switches to the ``measured`` basis and stores the
-    # measured/estimated ratio as calibration.
-    measured = int((conv.get("_chat_usage") or {}).get("context_tokens") or 0)
-    occupancy = _build_context_occupancy(
-        session_id, conv, measured_total=measured, window=context_window,
-    )
-
-    stats = {
-        "type": "context_stats",
-        "chat": conv.get("_chat_usage", dict(_zero)),
-        "exec": exec_stats,
-        "provider": provider_name,
-        "model": chat_model,
-        "context_window": occupancy["window"] or context_window,
-        **occupancy,
-        "_context_rev": int(conv.get("_context_rev") or 0),
-    }
-    breakdown = conv.get("_last_context_breakdown")
-    if breakdown:
-        stats["breakdown"] = breakdown
-    conv["_last_context_stats"] = stats
-    _broadcast_chat_response(session_id, msg_id, stats)
-
-
-def _resolve_context_window(provider_name, model) -> int | None:
-    """Real context window for ``provider:model`` from the model registry.
-
-    The runtime object carries no window of its own, so the registry is the
-    single place both the ring and the ``/context`` panel look it up. A
-    ``provider:model`` string splits on the colon; a bare id uses the
-    session's provider.
-    """
-    if not model:
-        return None
-    try:
-        from openprogram.providers.models import get_model as _get_model
-        from openprogram.context.tokens import real_context_window
-        prov, mid = provider_name, str(model)
-        if ":" in mid:
-            prov, mid = mid.split(":", 1)
-        m = _get_model(prov, mid) if prov and mid else None
-        return real_context_window(m) if m is not None else None
-    except Exception:
-        return None
-
-
-def _build_context_occupancy(session_id, conv, *, measured_total=None,
-                             window=None, estimated_total=None) -> dict:
-    """``{window, total_used, basis, estimated[, calibration]}`` for a session.
-
-    Falls back to the last broadcast record when the estimate cannot be
-    computed (a brand-new session with no branch yet, a DB read failure),
-    so a transient error never blanks the ring.
-    """
-    from openprogram.context import session_stats as _cs
-
-    try:
-        occupancy = _cs.build_stats(
-            session_id,
-            head_id=(conv or {}).get("head_id"),
-            measured_total=measured_total,
-            window=window,
-            estimated_total=estimated_total,
-        )
-        snapshot = occupancy.pop("_breakdown", None)
-        if snapshot is not None and conv is not None:
-            occ = {
-                key: occupancy[key]
-                for key in ("window", "total_used", "basis", "estimated", "calibration")
-                if key in occupancy
-            }
-            finalized = _cs.finalize_breakdown(snapshot, occ)
-            finalized["head_id"] = conv.get("head_id")
-            finalized["_context_rev"] = int(conv.get("_context_rev") or 0)
-            conv["_last_context_breakdown"] = finalized
-        return occupancy
-    except Exception:
-        prev = (conv or {}).get("_last_context_stats") or {}
-        return {
-            "window": int(window or prev.get("window") or 0),
-            "total_used": int(measured_total or prev.get("total_used") or 0),
-            "basis": "measured" if measured_total else
-                     (prev.get("basis") or "estimated"),
-            "estimated": int(prev.get("estimated") or 0),
-        }
-
-
-def _conv_context_window(conv) -> int | None:
-    """Window for whatever model the session is pointed at right now.
-
-    Reads the picker override first — a model switch writes it
-    immediately, while the session's persisted model only catches up on
-    the next save — then the live runtime.
-    """
-    conv = conv or {}
-    provider = (conv.get("provider_override")
-                or conv.get("provider_name")
-                or _runtime_management._default_provider) or ""
-    model = conv.get("model_override") or getattr(
-        conv.get("runtime"), "model", None,
-    )
-    return _resolve_context_window(provider, model)
-
-
-def session_context_stats(
-    session_id: str,
-    head_id: str | None = None,
-    *,
-    estimated_total: int | None = None,
-    window: int | None = None,
-) -> dict:
-    """The occupancy record for a session, recomputed against the graph now.
-
-    ``/context`` calls this so the panel's headline total is byte-identical
-    to the ring's. A measured reading stays measured only while the graph
-    has not moved since; ``refresh_context_stats`` is what flips it back to
-    ``estimated`` when it has.
-    """
-    conv = _sessions.get(session_id) or {}
-    prev = conv.get("_last_context_stats") or {}
-    same_rev = int(prev.get("_context_rev") or 0) == int(
-        conv.get("_context_rev") or 0
-    )
-    if prev.get("basis") == "measured" and (
-        head_id is None or head_id == conv.get("head_id")
-    ) and same_rev:
-        out = {k: prev[k] for k in
-                ("window", "total_used", "basis", "estimated",
-                 "calibration", "_context_rev")
-                if k in prev}
-        if estimated_total is not None:
-            out["estimated"] = int(estimated_total)
-            if int(estimated_total) > 0:
-                out["calibration"] = round(
-                    int(out.get("total_used") or 0) / int(estimated_total), 4
-                )
-        if window:
-            out["window"] = int(window)
-        return out
-    return _build_context_occupancy(
-        session_id,
-        {**conv, "head_id": head_id or conv.get("head_id")},
-        window=window or _conv_context_window(conv),
-        estimated_total=estimated_total,
-    )
-
-
-def refresh_context_stats(session_id: str, msg_id: str = "") -> None:
-    """Re-estimate and broadcast after the graph moved under the session.
-
-    Compaction landing, a model switch, a branch checkout or delete all
-    change what the next request will carry while no request is in flight.
-    Each one calls this, and the ring follows the graph immediately instead
-    of waiting for the next reply.
-    """
-    conv = _sessions.get(session_id)
-    if conv is None:
-        return
-    conv["_context_rev"] = int(conv.get("_context_rev") or 0) + 1
-    occupancy = _build_context_occupancy(
-        session_id, conv, window=_conv_context_window(conv),
-    )
-    prev = conv.get("_last_context_stats") or {}
-    stats = {
-        **{k: v for k, v in prev.items() if k not in ("calibration", "breakdown")},
-        "type": "context_stats",
-        "session_id": session_id,
-        "context_window": occupancy["window"] or prev.get("context_window"),
-        **occupancy,
-        "_context_rev": conv["_context_rev"],
-    }
-    breakdown = conv.get("_last_context_breakdown")
-    if breakdown:
-        stats["breakdown"] = breakdown
-    conv["_last_context_stats"] = stats
-    _broadcast_chat_response(session_id, msg_id or "", stats)
-
-
-def _broadcast_chat_response(session_id: str, msg_id: str, response: dict):
-    """Broadcast a chat response to all WebSocket clients.
-
-    Post-stop suppression: when this session has been cancelled
-    (``mark_cancelled`` flag is up), drop any further chat_response
-    envelopes for it. The in-flight worker thread can keep producing
-    output for up to ~1.2s after stop while cooperative cancel
-    reaches a hook point; without this gate, the UI would keep
-    receiving streaming text / tree updates / partial tool results
-    after the user explicitly asked for silence. The DB writes
-    continue underneath (so the partial state is preserved if the
-    user comes back), only the WS broadcast is gagged. The cancel
-    flag is cleared by the cleanup path so subsequent turns can
-    broadcast normally.
-    """
-    if _is_cancelled(session_id):
-        # Always let the explicit ``stopped`` status frame through —
-        # that's how the UI flips its own state to stopped. Anything
-        # else (stream_event / tree_update / result / status≠stopped)
-        # is post-stop noise and gets dropped.
-        if not (response.get("type") == "status"
-                and response.get("stopped")):
-            return
-    response["session_id"] = session_id
-    response["msg_id"] = msg_id
-    response["timestamp"] = time.time()
-
-    # No need to store in messages list — the DAG in SessionDB IS the storage
-    msg = json.dumps({"type": "chat_response", "data": response}, default=str)
-    _broadcast(msg)
-
-
 from openprogram.webui._chat_helpers import (
     parse_chat_input as _parse_chat_input,
 )
@@ -1430,223 +368,10 @@ from openprogram.webui._chat_helpers import (
 # WebSocket handler (module-level to avoid FastAPI closure issues)
 # ---------------------------------------------------------------------------
 
-async def _send_operation_error(
-    ws,
-    cmd: object,
-    *,
-    code: str,
-    retryable: bool = False,
-    scope: str | None = None,
-    severity: str = "error",
-    exc=None,
-) -> None:
-    """Persist one safe command failure before enqueueing its wire frame."""
-    from starlette.websockets import WebSocketDisconnect
-    from openprogram.webui.ws_errors import (
-        operation_error_frame,
-        persist_operation_error_frame,
-    )
-
-    frame = operation_error_frame(
-        cmd,
-        code=code,
-        retryable=retryable,
-        scope=scope,
-        severity=severity,
-    )
-    metadata = frame["data"]
-    import logging
-    logger = logging.getLogger("openprogram.webui")
-    if exc is None:
-        logger.warning(
-            "[ws] command failed correlation_id=%s action=%r session_id=%r "
-            "code=%s",
-            metadata["correlation_id"],
-            metadata["action"],
-            metadata["session_id"],
-            metadata["code"],
-        )
-    else:
-        logger.error(
-            "[ws] action failed correlation_id=%s action=%r session_id=%r "
-            "error_type=%s",
-            metadata["correlation_id"],
-            metadata["action"],
-            metadata["session_id"],
-            type(exc).__name__,
-            exc_info=(type(exc), exc, exc.__traceback__),
-        )
-    try:
-        persist_operation_error_frame(ws, frame)
-    except Exception as store_exc:
-        logger.critical(
-            "[ws] user error persistence failed correlation_id=%s "
-            "error_type=%s",
-            metadata["correlation_id"],
-            type(store_exc).__name__,
-            exc_info=(type(store_exc), store_exc, store_exc.__traceback__),
-        )
-        try:
-            await ws.close(code=1011, reason="state_recovery_required")
-        except Exception:
-            pass
-        raise WebSocketDisconnect(1011) from store_exc
-    await ws.send_text(json.dumps(frame))
-
-async def _websocket_handler(ws):
-    """WebSocket endpoint for real-time chat streaming."""
-    from starlette.websockets import WebSocketDisconnect
-    from openprogram.webui.ws_errors import OperationError
-
-    await ws.accept()
-
-    from openprogram.webui.ws_delivery import QueuedWebSocket
-
-    ws = QueuedWebSocket(ws, asyncio.get_running_loop())
-    ws.start()
-
-    with _ws_lock:
-        _ws_connections.append(ws)
-    try:
-        functions = _discover_functions()
-        await ws.send_text(json.dumps(
-            {"type": "functions_list", "data": functions}, default=str
-        ))
-        # Send current provider info
-        await ws.send_text(json.dumps(
-            {"type": "provider_info", "data": _get_provider_info()}, default=str
-        ))
-
-        # Keep alive — receive pings/messages
-        while True:
-            data = await ws.receive_text()
-            if data == "ping":
-                await ws.send_text(json.dumps({"type": "pong"}))
-            else:
-                try:
-                    cmd = json.loads(data)
-                except json.JSONDecodeError:
-                    await _send_operation_error(
-                        ws,
-                        {},
-                        code="invalid_request",
-                        scope="system",
-                    )
-                    continue
-                if not isinstance(cmd, dict):
-                    await _send_operation_error(
-                        ws,
-                        {},
-                        code="invalid_request",
-                        scope="system",
-                    )
-                    continue
-                try:
-                    await _handle_ws_command(ws, cmd)
-                except WebSocketDisconnect:
-                    raise
-                except OperationError as operation_error:
-                    await _send_operation_error(
-                        ws,
-                        cmd,
-                        code=operation_error.code,
-                        retryable=operation_error.retryable,
-                        scope=operation_error.scope,
-                        severity=operation_error.severity,
-                    )
-                except Exception as exc:
-                    await _send_operation_error(
-                        ws,
-                        cmd,
-                        code="handler_error",
-                        exc=exc,
-                    )
-
-    except WebSocketDisconnect as e:
-        # Normal client departure (refresh/close, codes 1000/1001/1005) —
-        # one quiet line, no stack; a traceback here buries real errors.
-        _log(f"[ws] client disconnected ({e.code})")
-    except Exception:
-        import logging
-        # structured + carries the traceback; never dumps a raw trace to stdout
-        logging.getLogger("openprogram.webui").exception("[ws] connection error")
-    finally:
-        from openprogram.webui.ws_actions.webtab import release_connection
-
-        release_connection(ws)
-        with _ws_lock:
-            try:
-                _ws_connections.remove(ws)
-            except ValueError:
-                pass
-            focused_session_id = getattr(ws, "_focused_session_id", None)
-            has_other_observer = bool(focused_session_id) and any(
-                getattr(conn, "_focused_session_id", None) == focused_session_id
-                for conn in _ws_connections
-            )
-        if focused_session_id and not has_other_observer:
-            with _follow_up_lock:
-                follow_up_queue = _follow_up_queues.get(focused_session_id)
-            if follow_up_queue is not None:
-                try:
-                    follow_up_queue.put_nowait(_FOLLOW_UP_DISCONNECTED)
-                except queue.Full:
-                    pass
-        await ws.stop()
-
 
 # ---------------------------------------------------------------------------
 # WebSocket command handler (module-level so _websocket_handler can call it)
 # ---------------------------------------------------------------------------
-
-def _build_ws_action_registry() -> dict:
-    """Lazy-build the action → handler dispatch table.
-
-    Done at module import time but populated from ws_actions/* modules
-    that internally `from openprogram.webui import server as _s` — safe
-    because lookup only happens when an action fires at WS-message time,
-    well after server.py has finished loading.
-    """
-    from openprogram.webui.ws_actions import (
-        agent as _ws_agent,
-        branch as _ws_branch,
-        channel as _ws_channel,
-        chat as _ws_chat,
-        runtime as _ws_runtime,
-        session as _ws_session,
-        permissions as _ws_permissions,
-        context_commits as _ws_commits,
-        turn_files as _ws_turn_files,
-        files as _ws_files,
-        sub_agent as _ws_sub_agent,
-        merge as _ws_merge,
-        job as _ws_job,
-        worktree as _ws_worktree,
-        project as _ws_project,
-        settings as _ws_settings,
-        user_error as _ws_user_error,
-        webtab as _ws_webtab,
-    )
-    table: dict = {}
-    table.update(_ws_branch.ACTIONS)
-    table.update(_ws_session.ACTIONS)
-    table.update(_ws_permissions.ACTIONS)
-    table.update(_ws_agent.ACTIONS)
-    table.update(_ws_channel.ACTIONS)
-    table.update(_ws_runtime.ACTIONS)
-    table.update(_ws_chat.ACTIONS)
-    table.update(_ws_commits.ACTIONS)
-    table.update(_ws_turn_files.ACTIONS)
-    table.update(_ws_files.ACTIONS)
-    table.update(_ws_sub_agent.ACTIONS)
-    table.update(_ws_merge.ACTIONS)
-    table.update(_ws_job.ACTIONS)
-    table.update(_ws_worktree.ACTIONS)
-    table.update(_ws_project.ACTIONS)
-    table.update(_ws_settings.ACTIONS)
-    table.update(_ws_user_error.ACTIONS)
-    table.update(_ws_webtab.ACTIONS)
-    return table
 
 
 WS_ACTIONS: dict = _build_ws_action_registry()
@@ -1666,73 +391,6 @@ _FILE_MUTATION_ACTIONS = frozenset({
     "project_file_copy", "project_file_delete", "revert_turn", "reapply_turn",
 })
 
-
-def _valid_uuid_request_id(value: object) -> bool:
-    if not isinstance(value, str):
-        return False
-    try:
-        return str(uuid.UUID(value)) == value
-    except (ValueError, AttributeError):
-        return False
-
-
-def _validate_file_request(cmd: dict, action: str) -> None:
-    """Reject file requests before a handler can start filesystem work."""
-    from openprogram.webui.ws_errors import OperationError
-
-    if action not in _FILE_REQUEST_ACTIONS:
-        return
-    if not _valid_uuid_request_id(cmd.get("request_id")):
-        raise OperationError("invalid_request", scope="system")
-    if action in _FILE_MUTATION_ACTIONS:
-        key = cmd.get("idempotency_key")
-        if not _valid_uuid_request_id(key):
-            raise OperationError("invalid_request", scope="system")
-
-
-async def _handle_ws_command(ws, cmd: dict):
-    """Handle a WebSocket command from the client."""
-    if _server_stopping.is_set():
-        await ws.send_text(json.dumps({"type": "action_error", "data": {
-            "code": "worker_stopping", "message": "OpenProgram is restarting. Reconnect before continuing.",
-        }}))
-        return
-    from openprogram.self_update.ui_checks import permits_ws_command
-    if not permits_ws_command(ws, cmd):
-        await ws.send_text(json.dumps({
-            "type": "action_error",
-            "data": {"code": "ui_verification_active"},
-        }))
-        return
-    from openprogram.webui.ws_errors import safe_operation_metadata
-
-    action = safe_operation_metadata(cmd.get("action"))
-    if action is None:
-        from openprogram.webui.ws_errors import OperationError
-
-        raise OperationError("invalid_request", scope="system")
-    _validate_file_request(cmd, action)
-    if action == "list_sessions" and cmd.get("history_version") == 1:
-        ws._history_protocol = 1
-    print(f"[ws] command received: action={action}")
-
-    h = WS_ACTIONS.get(action)
-    if h is not None:
-        # load_session cannot be moved wholesale to asyncio.to_thread: it
-        # awaits session_loaded, running_task, and question replay frames at
-        # different points. Its blocking models.dev lookup is SWR, and cold
-        # context accounting is offloaded inside the handler. The remaining
-        # DB/graph hydration stays synchronous until computation and sends can
-        # be separated without changing the frame contract.
-        await h(ws, cmd)
-        return
-
-    # Unknown action. Silently dropping these is how a frontend command
-    # that names a handler nobody wrote (or renamed) looks exactly like a
-    # backend that is merely slow — no error, no log, no clue. Say so on
-    # both channels. ``apps/web/scripts/check-ws-actions.mjs`` is the guard
-    # that keeps this branch unreachable in practice.
-    await _send_operation_error(ws, cmd, code="unknown_action")
 
 # ---------------------------------------------------------------------------
 # FastAPI app
@@ -2026,12 +684,12 @@ def create_app(*, owner_auth=None, port: int = 18100):
 
     # REST endpoints
     # Read-only catalog routes (tree, functions, tokens, programs meta)
-    from openprogram.webui.routes import tree as _routes_tree
+    from openprogram.webui.routes.files import tree as _routes_tree
     _routes_tree.register(app)
 
     # POST /api/programs/refresh — re-scan agentics/ for newly-installed
     # programs (manual "refresh" button; same core the watcher uses).
-    from openprogram.webui.routes import programs as _routes_programs
+    from openprogram.webui.routes.catalog import programs as _routes_programs
     _routes_programs.register(app)
 
     # /api/chat/branch, /api/function/{name} — routes.chat
@@ -2045,111 +703,111 @@ def create_app(*, owner_auth=None, port: int = 18100):
     app.include_router(_chat_router)
 
     # Workdir picker, browse, history, canvas — registered from routes.workdir
-    from openprogram.webui.routes import workdir as _routes_workdir
+    from openprogram.webui.routes.files import workdir as _routes_workdir
     _routes_workdir.register(app)
 
     # @file mention support — composer search + single-file read.
-    from openprogram.webui.routes import file_search as _routes_file_search
+    from openprogram.webui.routes.files import file_search as _routes_file_search
     _routes_file_search.register(app)
 
     # Pause / Resume / Stop — routes.lifecycle
-    from openprogram.webui.routes import lifecycle as _routes_lifecycle
+    from openprogram.webui.routes.execution import lifecycle as _routes_lifecycle
     _routes_lifecycle.register(app)
 
     # Durable Goal projection and pause/edit/resume/cancel actions.
-    from openprogram.webui.routes import goal as _routes_goal
+    from openprogram.webui.routes.execution import goal as _routes_goal
     _routes_goal.register(app)
 
     # Pending user-input questions list/reply/reject — routes.questions
     # (REST parity for runtime.ask; WS is the live path). Reconnect recovery.
-    from openprogram.webui.routes import questions as _routes_questions
+    from openprogram.webui.routes.execution import questions as _routes_questions
     _routes_questions.register(app)
 
     # /api/providers, /api/provider/{name}, /api/models — routes.runtime
-    from openprogram.webui.routes import runtime as _routes_runtime
+    from openprogram.webui.routes.execution import runtime as _routes_runtime
     _routes_runtime.register(app)
 
     # Model catalog (LobeChat-style settings) — routes.providers
-    from openprogram.webui.routes import providers as _routes_providers
+    from openprogram.webui.routes.identity import providers as _routes_providers
     _routes_providers.register(app)
 
-    from openprogram.webui.routes import usage as _routes_usage
+    from openprogram.webui.routes.settings import usage as _routes_usage
     _routes_usage.register(app)
 
     # Global running-work snapshot for the right-sidebar Running panel.
-    from openprogram.webui.routes import running as _routes_running
+    from openprogram.webui.routes.execution import running as _routes_running
     _routes_running.register(app)
 
     from openprogram.webui.routes import self_updates as _routes_self_updates
     _routes_self_updates.register(app)
 
-    from openprogram.webui.routes import provider_login as _routes_provider_login
+    from openprogram.webui.routes.identity import provider_login as _routes_provider_login
     _routes_provider_login.register(app)
 
     # Generic per-provider account management (/api/providers/{id}/accounts/*).
     # Registered AFTER providers.py so its literal /claude-code/accounts routes
     # match first; this module serves every other provider from the AuthStore.
-    from openprogram.webui.routes import accounts as _routes_accounts
+    from openprogram.webui.routes.identity import accounts as _routes_accounts
     _routes_accounts.register(app)
 
     # /api/config GET/POST registered from routes.config
-    from openprogram.webui.routes import config as _routes_config
+    from openprogram.webui.routes.settings import config as _routes_config
     _routes_config.register(app)
 
     # Function source / editor + node lookup — routes.functions
-    from openprogram.webui.routes import functions as _routes_functions
+    from openprogram.webui.routes.catalog import functions as _routes_functions
     _routes_functions.register(app)
 
-    # Memory API — routes registered from openprogram.webui.routes.memory
-    from openprogram.webui.routes import memory as _routes_memory
+    # Memory API — routes registered from openprogram.webui.routes.settings.memory
+    from openprogram.webui.routes.settings import memory as _routes_memory
     _routes_memory.register(app)
 
-    from openprogram.webui.routes import documents as _routes_documents
+    from openprogram.webui.routes.files import documents as _routes_documents
     _routes_documents.register(app)
 
     # Scheduler task CRUD — independent from Memory; tasks may hold read-only
     # MemoryRefs but their lifecycle is owned here.
-    from openprogram.webui.routes import scheduler as _routes_scheduler
+    from openprogram.webui.routes.execution import scheduler as _routes_scheduler
     _routes_scheduler.register(app)
 
     # /api/sessions/{id}/export — download a session as Markdown / HTML
-    from openprogram.webui.routes import export as _routes_export
+    from openprogram.webui.routes.files import export as _routes_export
     _routes_export.register(app)
 
-    from openprogram.webui.routes import misc as _routes_misc
+    from openprogram.webui.routes.settings import misc as _routes_misc
     _routes_misc.register(app)
 
     # /api/agents — agent list (used by settings/channels binding picker)
-    from openprogram.webui.routes import agents as _routes_agents
+    from openprogram.webui.routes.catalog import agents as _routes_agents
     _routes_agents.register(app)
 
     # /api/channels/{platform}/{account_id}/status — adapter heartbeat
-    from openprogram.webui.routes import channels as _routes_channels
+    from openprogram.webui.routes.settings import channels as _routes_channels
     _routes_channels.register(app)
 
     # /api/mcp/* — MCP server management (shared by webui / CLI / TUI)
-    from openprogram.webui.routes import mcp as _routes_mcp
+    from openprogram.webui.routes.catalog import mcp as _routes_mcp
     _routes_mcp.register(app)
 
     # Narrow owner-authenticated bridge used by the independent stdio MCP
     # process. Browser Page bindings remain owned by this worker process.
-    from openprogram.webui.routes import web_use as _routes_web_use
+    from openprogram.webui.routes.execution import web_use as _routes_web_use
     _routes_web_use.register(app)
 
     # /api/skills/* — Skills management
-    from openprogram.webui.routes import skills as _routes_skills
+    from openprogram.webui.routes.catalog import skills as _routes_skills
     _routes_skills.register(app)
 
     # /api/plugins/* — Plugins management
-    from openprogram.webui.routes import plugins as _routes_plugins
+    from openprogram.webui.routes.catalog import plugins as _routes_plugins
     _routes_plugins.register(app)
-    from openprogram.webui.routes import applications as _routes_applications
+    from openprogram.webui.routes.catalog import applications as _routes_applications
     _routes_applications.register(app)
-    from openprogram.webui.routes import office_assets as _routes_office_assets
+    from openprogram.webui.routes.files import office_assets as _routes_office_assets
     _routes_office_assets.register(app)
 
     # /api/commands/* — Unified slash-command registry (Phase 1)
-    from openprogram.webui.routes import commands as _routes_commands
+    from openprogram.webui.routes.catalog import commands as _routes_commands
     _routes_commands.register(app)
 
     # /docs — static design-documentation site (built into docs/_site/)

@@ -23,7 +23,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { useSessionHistory } from "@/lib/state/session-history";
+import { useSessionHistory } from "@/lib/chat/session-history";
 import { loadOlderSessionHistory } from "@/lib/runtime-bridge/conversations";
 import { ArrowDown } from "lucide-react";
 
@@ -45,7 +45,7 @@ import {
   readChatScroll,
   resolveChatScrollTop,
   writeChatScroll,
-} from "@/lib/state/chat-scroll";
+} from "@/lib/chat/chat-scroll";
 import {
   RECYCLE_MIN_ROWS,
   collectAlwaysLive,
@@ -56,7 +56,7 @@ import {
   noteChatWidth,
   setRowHeight,
   type WindowNode,
-} from "@/lib/state/message-window";
+} from "@/lib/chat/message-window";
 import { Avatar } from "@/components/avatar";
 import { showToast } from "@/lib/format-utils/toast";
 import { renderMathInChat } from "@/lib/runtime-bridge/markdown-render";

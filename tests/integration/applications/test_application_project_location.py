@@ -10,7 +10,7 @@ from tests.support.waiting import wait_until
 def test_open_application_follows_project_moves_and_rejects_replacements(tmp_path, monkeypatch):
     monkeypatch.setenv('HOME', str(tmp_path))
     from openprogram.store.project import resolve_project, relocate_project
-    from openprogram.webui.routes import applications
+    from openprogram.webui.routes.catalog import applications
 
     folder = tmp_path / 'project'
     folder.mkdir()

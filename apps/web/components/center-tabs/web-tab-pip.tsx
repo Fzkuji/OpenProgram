@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { CircleHelp, ExternalLink, Maximize2, Minimize2, MoreVertical, Pause, Pin, Play, X } from "lucide-react";
 
-import { desktopBridge } from "@/lib/desktop-bridge";
+import { desktopBridge } from "@/lib/desktop/desktop-bridge";
 import { ActionCueTravel } from "./browser-control-bar";
 import { useTranslation } from "@/lib/i18n";
 import { MENU_PANEL } from "@/components/chat/top-bar/menu-styles";
@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useSidebarMenu, type SidebarMenuItem } from "@/components/sidebar/use-sidebar-menu";
-import { useCenterTabs } from "@/lib/state/center-tabs-store";
+import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import {
   browserTakeoverKind,
   controlResourceFromSession,
@@ -26,9 +26,9 @@ import {
   showActionsEnabled,
   toggleShowActions,
   useBrowserControlStore,
-} from "@/lib/state/browser-control";
-import { fittedImageRect, mapOperationPoint } from "@/lib/state/browser-marker-geometry";
-import { cueCancelKey, prefersCueReducedMotion } from "@/lib/state/browser-action-cue";
+} from "@/lib/browser/browser-control";
+import { fittedImageRect, mapOperationPoint } from "@/lib/browser/browser-marker-geometry";
+import { cueCancelKey, prefersCueReducedMotion } from "@/lib/browser/browser-action-cue";
 import {
   followCurrentBranch,
   getPreviewPreference,
@@ -41,8 +41,8 @@ import {
   useBrowserResourceStore,
   viewedBranchFor,
   type SessionResource,
-} from "@/lib/state/session-resources";
-import { revealExistingWebTab } from "@/lib/state/web-page-management";
+} from "@/lib/chat/session-resources";
+import { revealExistingWebTab } from "@/lib/browser/web-page-management";
 import {
   clampPipRect,
   getSnapshot,
@@ -59,8 +59,8 @@ import {
   useWebTabPip,
   type PipResizeDir,
   type WebTabPipRect,
-} from "@/lib/state/web-tab-pip-store";
-import type { WebTabCaptureLoop } from "@/lib/state/web-tab-capture-loop";
+} from "@/lib/browser/web-tab-pip-store";
+import type { WebTabCaptureLoop } from "@/lib/browser/web-tab-capture-loop";
 
 import styles from "./center-tabs.module.css";
 

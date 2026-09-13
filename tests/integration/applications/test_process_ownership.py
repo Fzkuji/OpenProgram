@@ -23,7 +23,7 @@ def source_package(tmp_path, backend):
 
 
 def application():
-    from openprogram.webui.routes import applications
+    from openprogram.webui.routes.catalog import applications
     app = FastAPI()
     applications.register(app)
     return app

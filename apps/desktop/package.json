@@ -48,6 +48,13 @@
     "afterPack": "scripts/write-reopen-protocol.cjs",
     "files": [
       "main.js",
+      "main/action-cues.js",
+      "main/control-overlays.js",
+      "main/downloads.js",
+      "main/menus.js",
+      "main/transfers.js",
+      "main/view-layout.js",
+      "main/web-views.js",
       "menu-geometry.js",
       "native-context-menu.js",
       "worker-recovery-state.js",

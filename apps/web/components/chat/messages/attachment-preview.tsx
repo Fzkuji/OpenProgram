@@ -19,9 +19,9 @@ import { useState } from "react";
 
 import { DocumentWindow } from "@/components/files/lazy-document-window";
 import { useTranslation } from "@/lib/i18n";
-import { useModalA11y } from "@/lib/use-modal-a11y";
+import { useModalA11y } from "@/lib/hooks/use-modal-a11y";
 import { useSessionStore } from "@/lib/session-store";
-import { absRawFileUrl } from "@/lib/state/files-shared";
+import { absRawFileUrl } from "@/lib/files/files-shared";
 
 export function AttachmentPreview({
   path,

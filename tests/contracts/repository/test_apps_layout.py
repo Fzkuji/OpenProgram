@@ -194,7 +194,7 @@ def test_server_application_assembly_is_owned_by_apps_workspace() -> None:
 def test_server_transport_implementation_is_owned_by_apps_workspace() -> None:
     implementation = ROOT / "apps/server/openprogram_server/_webui"
 
-    assert (implementation / "routes/tree.py").is_file()
+    assert (implementation / "routes/files/tree.py").is_file()
     assert (implementation / "ws_actions/webtab.py").is_file()
     assert (implementation / "frontend.py").is_file()
     assert (implementation / "owner_auth.py").is_file()
@@ -202,7 +202,7 @@ def test_server_transport_implementation_is_owned_by_apps_workspace() -> None:
 
 def test_legacy_server_transport_imports_load_the_apps_sources() -> None:
     from openprogram.webui import frontend, owner_auth
-    from openprogram.webui.routes import tree
+    from openprogram.webui.routes.files import tree
     from openprogram.webui.ws_actions import webtab
 
     implementation = ROOT / "apps/server/openprogram_server/_webui"

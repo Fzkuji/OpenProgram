@@ -309,11 +309,11 @@ def test_user_docs_do_not_advertise_removed_bundled_skills() -> None:
         ROOT / "docs/reference/design/runtime/session/distill.zh.md",
         ROOT / "openprogram/__init__.py",
         ROOT / "openprogram/skills/loader.py",
-        ROOT / "openprogram/agentic_programming/runtime.py",
+        *sorted((ROOT / "openprogram/agentic_programming/runtime").glob("*.py")),
         ROOT / "apps/cli/python/openprogram_cli/_impl/parser.py",
         ROOT / "apps/cli/python/openprogram_cli/_impl/commands/skills.py",
-        ROOT / "apps/server/openprogram_server/_webui/routes/functions.py",
-        ROOT / "apps/server/openprogram_server/_webui/routes/skills.py",
+        ROOT / "apps/server/openprogram_server/_webui/routes/catalog/functions.py",
+        ROOT / "apps/server/openprogram_server/_webui/routes/catalog/skills.py",
     ]
     stale_markers = (
         "skills_bundled/",

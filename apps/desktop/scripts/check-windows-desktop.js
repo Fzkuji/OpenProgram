@@ -46,7 +46,7 @@ assert.deepEqual(chromeCalls, [
 ]);
 
 const desktopRoot = path.resolve(__dirname, "..");
-const mainSource = fs.readFileSync(path.join(desktopRoot, "main.js"), "utf8");
+const mainSource = require("./main-source").readMainSource();
 const preloadSource = fs.readFileSync(path.join(desktopRoot, "preload.js"), "utf8");
 const chromeCss = fs.readFileSync(
   path.resolve(desktopRoot, "..", "web", "app", "styles", "base.css"),

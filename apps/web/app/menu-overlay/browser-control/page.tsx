@@ -4,7 +4,7 @@ import { Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChevronDown, CircleHelp, Clock3, Eye, Pause, Play, X } from "lucide-react";
 
 import { CursorClickIcon } from "@/components/animated-icons";
-import type { DesktopBrowserControlOverlay } from "@/lib/desktop-bridge-types";
+import type { DesktopBrowserControlOverlay } from "@/lib/desktop/desktop-bridge-types";
 
 type OverlayUpdate = DesktopBrowserControlOverlay & { collapsed?: boolean };
 

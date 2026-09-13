@@ -4,5 +4,5 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def fixture_recovery_agents(tmp_path, monkeypatch):
-    from openprogram.self_update import bootstrap
+    from openprogram.self_update.delivery import bootstrap
     monkeypatch.setattr(bootstrap, "_agents_directory", lambda: tmp_path / "Library/LaunchAgents")

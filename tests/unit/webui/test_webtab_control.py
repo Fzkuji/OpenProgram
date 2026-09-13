@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.support.desktop_source import read_desktop_bridge_source, read_desktop_source
+
 import asyncio
 import json
 from pathlib import Path
@@ -453,9 +455,9 @@ def test_app_attach_matches_control_plane_target_across_all_electron_pages():
 
 
 def test_desktop_activation_waits_for_navigation_before_target_receipt():
-    source = (REPO_ROOT / "apps" / "desktop" / "main.js").read_text(encoding="utf-8")
+    source = read_desktop_source(REPO_ROOT)
     start = source.index("async function activateView")
-    end = source.index("\nfunction withView", start)
+    end = source.index("function withView", start)
     activate = source[start:end]
     assert "await navigateView(ctx, id, url)" in activate
     assert activate.index("await navigateView(ctx, id, url)") < activate.index(
@@ -464,13 +466,13 @@ def test_desktop_activation_waits_for_navigation_before_target_receipt():
 
 
 def test_desktop_target_id_uses_electron_debugger_api():
-    source = (REPO_ROOT / "apps" / "desktop" / "main.js").read_text(encoding="utf-8")
+    source = read_desktop_source(REPO_ROOT)
     assert "getOrCreateDevToolsTargetId" not in source
     assert 'client.sendCommand("Target.getTargetInfo")' in source
 
 
 def test_desktop_navigation_deduplicates_same_pending_url():
-    source = (REPO_ROOT / "apps" / "desktop" / "main.js").read_text(encoding="utf-8")
+    source = read_desktop_source(REPO_ROOT)
     start = source.index("function loadView")
     end = source.index("function ensureView", start)
     load_view = source[start:end]
@@ -480,9 +482,9 @@ def test_desktop_navigation_deduplicates_same_pending_url():
 
 
 def test_desktop_activation_does_not_restore_a_tab_changed_while_loading():
-    source = (REPO_ROOT / "apps" / "desktop" / "main.js").read_text(encoding="utf-8")
+    source = read_desktop_source(REPO_ROOT)
     start = source.index("async function activateView")
-    end = source.index("\nfunction withView", start)
+    end = source.index("function withView", start)
     activate = source[start:end]
     show_index = activate.index("showView(ctx, id)")
     navigate_index = activate.index("await navigateView(ctx, id, url)")
@@ -494,7 +496,7 @@ def test_desktop_activation_does_not_restore_a_tab_changed_while_loading():
 
 
 def test_desktop_native_navigation_helpers_clear_pending_records():
-    source = (REPO_ROOT / "apps" / "desktop" / "main.js").read_text(encoding="utf-8")
+    source = read_desktop_source(REPO_ROOT)
     # The actual reload callback is exercised by Desktop's VM check.
     # Both native helpers must explicitly invalidate their pending record.
     start = source.index("function destroyView")
@@ -610,9 +612,7 @@ def test_close_app_reused_page_detaches_only(monkeypatch):
 
 
 def test_renderer_control_contract_targets_ready_session_split():
-    source = (REPO_ROOT / "apps" / "web" / "lib" / "desktop-bridge.ts").read_text(
-        encoding="utf-8"
-    )
+    source = read_desktop_bridge_source(REPO_ROOT)
     assert "id = state.openWebTabInSplit(d.url)" in source
     assert "await waitForWebTabReady(id, 2000)" in source
     assert "if (ready && tab?.kind === \"web\")" in source

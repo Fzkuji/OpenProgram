@@ -682,8 +682,8 @@ openprogram/programs/workflow/*/__init__.py           @agentic_function
 
 ## Test invariants (what the suite locks down)
 
-The unit suite (``tests/unit/programs/test_tools_runtime.py``,
-``tests/component/agent/test_dispatcher_tools.py``) covers:
+The unit suite (``tests/unit/programs/runtime/test_tools_runtime.py``,
+``tests/component/agent/turns/test_dispatcher_tools.py``) covers:
 
 - Docstring + signature → parameters schema
 - Sync / async fn dispatch

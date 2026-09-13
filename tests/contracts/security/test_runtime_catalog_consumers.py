@@ -631,7 +631,7 @@ def test_web_mcp_catalog_route_uses_configured_registry_client(
 ):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from openprogram.webui.routes import mcp
+    from openprogram.webui.routes.catalog import mcp
     from openprogram import paths
 
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path)
@@ -656,7 +656,7 @@ def test_web_mcp_catalog_malformed_status_hides_signed_url_and_peer_echo(
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from openprogram import paths
-    from openprogram.webui.routes import mcp
+    from openprogram.webui.routes.catalog import mcp
 
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path)
     app = FastAPI()
@@ -680,7 +680,7 @@ def test_web_mcp_catalog_rejects_non_2xx_without_leaking_signed_url_or_body(
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from openprogram import paths
-    from openprogram.webui.routes import mcp
+    from openprogram.webui.routes.catalog import mcp
 
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path)
     app = FastAPI()
@@ -758,7 +758,7 @@ def test_skills_rejects_redirect_without_location_as_sanitized_status(server):
 def test_skills_web_status_error_hides_signed_source_url(server):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from openprogram.webui.routes import skills
+    from openprogram.webui.routes.catalog import skills
 
     app = FastAPI()
     skills.register(app)
@@ -810,7 +810,7 @@ def test_skills_invalid_index_hides_peer_values_from_web_routes(
 ):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from openprogram.webui.routes import skills
+    from openprogram.webui.routes.catalog import skills
 
     server.mode = "index_invalid"
     url = f"http://127.0.0.1:{server.port}/catalog.json?sig=QUERY-SECRET"
@@ -857,7 +857,7 @@ def test_marketplace_cli_and_web_status_errors_hide_signed_source_url(
     from fastapi.testclient import TestClient
     from openprogram.cli.commands.plugins import _cmd_plugins_search
     from openprogram.plugins import marketplace
-    from openprogram.webui.routes import plugins
+    from openprogram.webui.routes.catalog import plugins
 
     url = f"http://127.0.0.1:{server.port}/echo-error/TOKEN-PATH?sig=QUERY-SECRET"
     entry = {"id": "signed", "name": "signed", "url": url}
@@ -964,7 +964,7 @@ def test_web_mcp_catalog_rejects_wrong_json_mime(monkeypatch, server, tmp_path):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from openprogram import paths
-    from openprogram.webui.routes import mcp
+    from openprogram.webui.routes.catalog import mcp
 
     server.mode = "index_wrong_mime"
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path)
@@ -987,7 +987,7 @@ def test_web_mcp_diff_keeps_same_origin_catalog_errors_distinct(
     from fastapi.testclient import TestClient
     from openprogram import paths
     from openprogram.mcp.config import MCPServerConfig, save_configs
-    from openprogram.webui.routes import mcp
+    from openprogram.webui.routes.catalog import mcp
 
     origin = f"http://127.0.0.1:{server.port}"
     sources = [

@@ -1,9 +1,9 @@
 "use client";
 
 import styles from "../plugins.module.css";
-import type { PluginRow } from "@/lib/state/plugins-store";
+import type { PluginRow } from "@/lib/abilities/plugins-store";
 import { useTranslation } from "@/lib/i18n";
-import { useModalA11y } from "@/lib/use-modal-a11y";
+import { useModalA11y } from "@/lib/hooks/use-modal-a11y";
 import { Button } from "@/components/ui/button";
 
 interface Props {

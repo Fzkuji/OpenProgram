@@ -19,7 +19,7 @@ import {
   HistoryIcon,
 } from "../animated-icons";
 import { useTranslation } from "@/lib/i18n";
-import { refreshFunctionsList } from "@/lib/state/functions-actions";
+import { refreshFunctionsList } from "@/lib/abilities/functions-actions";
 import {
   sidebarNavActionClass,
   sidebarNavIconClass,

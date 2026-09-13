@@ -46,7 +46,7 @@ def test_concurrent_create_has_one_winner(tmp_path: Path) -> None:
 
 
 def test_reader_has_bounded_wait_for_writer(tmp_path):
-    from openprogram.self_update.projection import read_status
+    from openprogram.self_update.control.projection import read_status
     from openprogram.self_update.types import ConcurrentUpdateError
 
     store = SelfUpdateStore(tmp_path / "updates")

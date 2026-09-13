@@ -15,17 +15,17 @@
  * live assistant to cancelled, and clears runningTask so the send queue
  * drains at 0ms. Server cancelled still wins on reload.
  */
-import type { ExecutionCommand } from "@/lib/execution-debugger";
+import type { ExecutionCommand } from "@/lib/execution/execution-debugger";
 import { useCallback } from "react";
 
 import { useSessionStore } from "@/lib/session-store";
 import { runtimeState } from "@/lib/runtime-bridge/state";
-import { parseFunctionInvocation } from "@/lib/function-invocation";
+import { parseFunctionInvocation } from "@/lib/execution/function-invocation";
 import { showToast } from "@/lib/format-utils/toast";
-import { enqueueMessage } from "@/lib/state/send-queue";
-import { steerQueuedMessage } from "@/lib/state/steer-message";
-import { useFunctions } from "@/lib/state/functions-store";
-import { buildAttachmentEnvelope } from "@/lib/attachment-marker";
+import { enqueueMessage } from "@/lib/chat/send-queue";
+import { steerQueuedMessage } from "@/lib/chat/steer-message";
+import { useFunctions } from "@/lib/abilities/functions-store";
+import { buildAttachmentEnvelope } from "@/lib/chat/attachment-marker";
 import { attachmentsBlockSend } from "../attach/attachment-session-cache";
 import { expandAtMentions } from "../attach/at-mention";
 import { expandPasteTokens, missingPasteIds } from "../paste/paste-store";

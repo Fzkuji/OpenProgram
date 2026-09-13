@@ -6,7 +6,7 @@
 
 These tests pin the *membership* half of that rule: which nodes the walk
 admits, and which it must never reach. The frame/expose half is pinned by
-tests/unit/programs/test_render_context.py.
+tests/unit/programs/dag/test_render_context.py.
 """
 
 from __future__ import annotations

@@ -25,7 +25,7 @@ pytestmark = pytest.mark.browser
 @pytest.fixture(scope="module")
 def office_window_bundle(tmp_path_factory):
     output = tmp_path_factory.mktemp("office-window-build") / "window.js"
-    subprocess.run(["node", "apps/web/tests/build-office-document-browser.mjs", str(output)], check=True)
+    subprocess.run(["node", "apps/web/tests/files/build-office-document-browser.mjs", str(output)], check=True)
     return output.read_bytes()
 
 
@@ -36,9 +36,9 @@ def office_window(tmp_path, monkeypatch, office_window_bundle):
     from openprogram.office_assets import validate_prepared_office_pack
     from openprogram.store.project import project_store
     from openprogram.webui.owner_auth import OwnerAuthMiddleware, OwnerAuthState
-    from openprogram.webui.routes.documents import register as register_documents
-    from openprogram.webui.routes.office_assets import register as register_office
-    from openprogram.webui.routes.file_search import register as register_files
+    from openprogram.webui.routes.files.documents import register as register_documents
+    from openprogram.webui.routes.files.office_assets import register as register_office
+    from openprogram.webui.routes.files.file_search import register as register_files
 
     configured = os.environ.get("OPENPROGRAM_TEST_OFFICE_PACK")
     if not configured:

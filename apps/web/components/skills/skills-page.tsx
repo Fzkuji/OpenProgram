@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSkills } from "@/lib/state/skills-store";
+import { useSkills } from "@/lib/abilities/skills-store";
 import { SkillsList } from "./skills-list";
 import { NewSkillDialog } from "./new-skill-dialog";
 import { DiscoverySources } from "./discovery";

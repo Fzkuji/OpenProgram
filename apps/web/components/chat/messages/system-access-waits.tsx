@@ -10,7 +10,7 @@ import {
   rememberSystemAccessWait,
   takeLiveSystemAccessWaits,
   type SystemAccessWait,
-} from "@/lib/system-access-wait-state";
+} from "@/lib/access/system-access-wait-state";
 
 type AccessWait = SystemAccessWait;
 

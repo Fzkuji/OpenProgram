@@ -12,7 +12,7 @@
  * Implementation: thin wrapper over the existing Picker component
  * (which has been battle-tested in REPL). The point of the kit
  * version is a stable, kit-namespaced import so screens can move to
- * ``import { Select } from '../ui'`` and we can swap the
+ * ``import { Select } from '.'`` and we can swap the
  * implementation later without touching call sites.
  */
 import React from 'react';

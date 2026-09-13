@@ -86,9 +86,7 @@ def _cmd_skills_update(all_flag: bool, name: str | None) -> int:
     """
     from openprogram.skills.discovery import diff, install_one
     from openprogram.skills.loader import list_skills
-    from openprogram.webui.routes.skills import (
-        _load_discovery_sources, DEFAULT_DISCOVERY_SUGGESTIONS,
-    )
+    from openprogram.webui.routes.catalog.skills import _load_discovery_sources, DEFAULT_DISCOVERY_SUGGESTIONS
 
     if not all_flag and not name:
         print("Error: pass --all or a skill name", file=sys.stderr)

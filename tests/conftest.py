@@ -263,4 +263,4 @@ def _drop_tmp_rooted_session_store():
     if cached is None:
         return
     if "openprogram-test-home" not in str(getattr(cached, "root_path", "")):
-        session_store._default_store = None
+        session_store.shared._default_store = None

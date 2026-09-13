@@ -2,17 +2,17 @@
 
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "@/lib/i18n";
-import { useExecutionDebugger } from "@/lib/use-execution-debugger";
-import { useManagedProcesses } from "@/lib/use-managed-processes";
+import { useExecutionDebugger } from "@/lib/execution/use-execution-debugger";
+import { useManagedProcesses } from "@/lib/execution/use-managed-processes";
 import { processIsActive, stopProcess, type ManagedProcess } from "@/lib/net/process-client";
-import type { ExecutionSnapshot } from "@/lib/execution-debugger";
+import type { ExecutionSnapshot } from "@/lib/execution/execution-debugger";
 import { ChevronRight, Bot, Terminal } from "lucide-react";
 import { SectionHeader } from "@/components/sidebar/section-header";
 import { Button } from "@/components/ui/button";
 import { DebuggerPanel } from "./debugger-panel";
 import { SidebarNotice } from "./sidebar-notice";
 import { executionTitle, executionRequest, executionNeedsAttention, executionStatusLabel, shortTime, updatedTime } from "./debugger-presentation";
-import { activityBranches, type ActivityBranch } from "@/lib/activity-branches";
+import { activityBranches, type ActivityBranch } from "@/lib/execution/activity-branches";
 import styles from "./running-panel.module.css";
 
 

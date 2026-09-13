@@ -352,7 +352,7 @@ def run_loop_blocking(
     inside the loop.
 
     `stream_fn` is the seam tests use to inject a fake provider —
-    see tests/unit/agent/test_dispatcher_integration.py. None means use
+    see tests/unit/agent/dispatcher/test_dispatcher_integration.py. None means use
     the default (real provider via stream_simple).
     """
     from openprogram.agent.agent_loop import agent_loop, agent_loop_resume

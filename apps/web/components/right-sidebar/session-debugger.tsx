@@ -1,6 +1,6 @@
 "use client";
 
-import { useExecutionDebugger } from "@/lib/use-execution-debugger";
+import { useExecutionDebugger } from "@/lib/execution/use-execution-debugger";
 import { DebuggerPanel } from "./debugger-panel";
 
 /** Remounted by session ID so requests, selections and drafts never cross chats. */

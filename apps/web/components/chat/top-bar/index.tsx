@@ -11,7 +11,7 @@
  * `LegacyTopbarBridge` (rendered unconditionally by AppShell) seeds the
  * zustand store from the current runtime state on mount; from then on
  * the runtime-bridge updaters push into it directly via
- * `lib/top-bar-sync.ts`. Dropdowns still delegate to the submodules here
+ * `lib/tabs/top-bar-sync.ts`. Dropdowns still delegate to the submodules here
  * (project-menu / agent-selector / permission-menu / channel-menu).
  * 分支入口只剩右栏 History 的 BranchesPanel（原 BranchBadge chip 已删，
  * 与列表重复）。
@@ -39,7 +39,7 @@ import {
 import { HoverTip } from "@/components/ui/tooltip";
 
 import { AgentSelector } from "./agent-selector";
-import { pushAgentSettings, pushBranchInfo, pushStatusBadge } from "@/lib/top-bar-sync";
+import { pushAgentSettings, pushBranchInfo, pushStatusBadge } from "@/lib/tabs/top-bar-sync";
 
 export { ProjectBadge } from "./project-menu";
 export { WorkingDirChips } from "./working-dir-chips";

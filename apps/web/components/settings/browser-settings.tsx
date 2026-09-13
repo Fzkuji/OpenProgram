@@ -8,8 +8,8 @@ import {
   setShowBookmarksBar,
   showBookmarksBar,
   subscribeBrowserPrefs,
-} from "@/lib/browser-prefs";
-import { desktopBridge } from "@/lib/desktop-bridge";
+} from "@/lib/browser/browser-prefs";
+import { desktopBridge } from "@/lib/desktop/desktop-bridge";
 import { useTranslation } from "@/lib/i18n";
 import { BrowserImportDialog } from "@/components/center-tabs/browser-home-page";
 import styles from "./settings-page.module.css";

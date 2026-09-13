@@ -18,7 +18,7 @@ import {
   readContextBreakdownCache,
   subscribeContextBreakdownCache,
   type ContextBreakdown as Breakdown,
-} from "@/lib/state/context-breakdown-cache";
+} from "@/lib/chat/context-breakdown-cache";
 
 interface Props {
   sessionId: string | null;

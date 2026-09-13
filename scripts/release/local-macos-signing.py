@@ -3,5 +3,5 @@
 from pathlib import Path
 import runpy
 
-runpy.run_path(str(Path(__file__).resolve().parents[2] / "openprogram/self_update/local_signing.py"),
+runpy.run_path(str(Path(__file__).resolve().parents[2] / "openprogram/self_update/delivery/local_signing.py"),
               run_name="__main__")

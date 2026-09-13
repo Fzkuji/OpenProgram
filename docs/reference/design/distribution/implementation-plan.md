@@ -302,7 +302,7 @@ The platform runtime and public desktop artifact probes run on native release ru
 ### Prior-batch full gate manifest
 
 ```text
-python -m pytest tests/component/webui/test_webui_frontend.py tests/unit/webui/test_desktop_packaged_files.py tests/component/config/test_distribution_release.py
+python -m pytest tests/component/webui/runtime/test_webui_frontend.py tests/unit/webui/test_desktop_packaged_files.py tests/component/config/test_distribution_release.py
 python -m scripts.docs_site.checklinks
 python -m scripts.docs_site.build
 python -m pytest tests/ --ignore=tests/integration

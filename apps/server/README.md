@@ -14,5 +14,5 @@ no duplicate route or WebSocket implementation.
 
 ```bash
 uv run --locked pytest -q tests/contracts/repository/test_apps_layout.py \
-  tests/component/webui/test_healthz.py
+  tests/component/webui/runtime/test_healthz.py
 ```

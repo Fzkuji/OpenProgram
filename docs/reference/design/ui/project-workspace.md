@@ -18,7 +18,7 @@ file tree right, with the project list as an expandable table.
 | Right sidebar shell (history/detail/context views) | `apps/web/components/right-sidebar/` | chat overview panel |
 | Memory page editor (edit/preview mode, save) | `apps/web/components/memory/` | file editing (slice 5) |
 | `wsRequest` helper + ws action registry | `apps/web/lib/net/ws-request.ts`, `apps/server/openprogram_server/server.py` | all new APIs |
-| `/api/pick-folder` native folder picker | `apps/server/openprogram_server/_webui/routes/workdir.py` | add-project flow |
+| `/api/pick-folder` native folder picker | `apps/server/openprogram_server/_webui/routes/files/workdir.py` | add-project flow |
 
 The project file WS API, file tree, file viewer, and center file tabs are now
 implemented. The remaining workspace work is (a) the `/projects/[id]` route
@@ -27,7 +27,7 @@ the session Overview panel.
 
 ## 2. Backend: project file API
 
-The implemented modules `apps/server/openprogram_server/_webui/ws_actions/files.py`
+The implemented modules `apps/server/openprogram_server/_webui/ws_actions/files/__init__.py`
 and `files_ws.py` are registered like the other action modules.
 
 | Action | Request | Reply |

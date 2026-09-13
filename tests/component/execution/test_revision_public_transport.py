@@ -250,7 +250,7 @@ def test_rest_and_websocket_actions_expose_only_the_revision_envelope(
     monkeypatch.setattr(execution_package, "default_store", lambda: store)
     app = FastAPI()
     app.state.owner_auth = SimpleNamespace(authority=_actor("author"))
-    from openprogram.webui.routes.lifecycle import register
+    from openprogram.webui.routes.execution.lifecycle import register
     from openprogram.webui.ws_actions.runtime import ACTIONS
 
     register(app)

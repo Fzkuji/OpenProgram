@@ -739,7 +739,7 @@ def test_scheduler_rest_api_crud_omits_frozen_execution_spec(scheduler_env):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from openprogram.scheduler import service
-    from openprogram.webui.routes import scheduler as routes
+    from openprogram.webui.routes.execution import scheduler as routes
 
     tmp_path, _schedule = scheduler_env
     app = FastAPI()

@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 def test_operation_state_question_deduplication_and_cancel(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
-    from openprogram.webui.routes import applications
+    from openprogram.webui.routes.catalog import applications
 
     source = tmp_path / "source"
     source.mkdir()
@@ -31,7 +31,7 @@ operations = {'save': save, 'confirm': confirm}
     }))
     app = FastAPI()
     applications.register(app)
-    from openprogram.webui.routes import lifecycle
+    from openprogram.webui.routes.execution import lifecycle
     from openprogram.agent.authority import owner_authority, owner_principal_id
     from types import SimpleNamespace
     lifecycle.register(app)
@@ -107,7 +107,7 @@ operations = {'save': save, 'confirm': confirm}
 
 def test_model_runtime_binding_and_failure_are_recorded(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
-    from openprogram.webui.routes import applications
+    from openprogram.webui.routes.catalog import applications
     source = tmp_path / 'model-source'
     source.mkdir()
     (source / 'index.html').write_text('<!doctype html><title>Model</title>')
@@ -167,7 +167,7 @@ def test_install_from_named_desktop_runtime(tmp_path, monkeypatch):
     import sys
     import shlex
     import pytest
-    from openprogram.webui.routes import applications
+    from openprogram.webui.routes.catalog import applications
 
     monkeypatch.setenv('HOME', str(tmp_path))
     runtime = tmp_path / 'runtime'

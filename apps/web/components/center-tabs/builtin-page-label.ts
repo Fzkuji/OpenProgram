@@ -1,5 +1,5 @@
 import type { useTranslation } from "@/lib/i18n";
-import type { BuiltinPage } from "@/lib/state/center-tabs-store";
+import type { BuiltinPage } from "@/lib/tabs/center-tabs-store";
 
 /** One name per built-in page, shared by the tab strip, the split
  *  picker and the main menu so the page is called the same thing

@@ -25,7 +25,7 @@ def run_providers_section() -> int:
     """Provider setup — always interactive. Imports CLI logins, OAuth, or
     pasted API keys. QuickStart can't skip — at least one provider required.
     """
-    from openprogram.auth.interactive import run_interactive_setup
+    from openprogram.auth.login.interactive import run_interactive_setup
     return run_interactive_setup()
 
 

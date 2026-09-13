@@ -13,8 +13,8 @@ import {
   type ExecutionCommandAction,
   type ExecutionSnapshot,
   type RevisionDraft,
-} from "@/lib/execution-debugger";
-import { buildWaitAnswer } from "@/lib/execution-wait";
+} from "@/lib/execution/execution-debugger";
+import { buildWaitAnswer } from "@/lib/execution/execution-wait";
 import type { PersistedExecutionEvent, UnresolvedEffect } from "@/lib/net/execution-client";
 import { SidebarNotice } from "./sidebar-notice";
 import { Button } from "@/components/ui/button";

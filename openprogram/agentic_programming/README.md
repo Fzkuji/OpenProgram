@@ -29,7 +29,6 @@ agentic_programming, never the other way around.
 - **`decision.py`** — decision
 - **`function.py`** — agentic_function
 - **`llm.py`** — One model request using the ambient agentic-programming Runtime
-- **`runtime.py`** — runtime
 - **`runtime_scope.py`** — Lazily own a Runtime for standalone model operations
 - **`session.py`** — Session management
 - **`tool_format.py`** — Convert an ``@agentic_function`` spec into other frameworks' tool formats
@@ -37,5 +36,6 @@ agentic_programming, never the other way around.
 ## Sub-packages
 
 - **`control_flow/`** — Control flow primitives for agentic workflows
+- **`runtime/`** — LLM calls with automatic DAG integration
 
 _Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._

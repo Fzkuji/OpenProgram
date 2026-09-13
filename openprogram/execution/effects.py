@@ -11,7 +11,8 @@ from enum import Enum
 from typing import Any, Callable, Mapping
 
 from .model import ExecutionStatus
-from .store import ExecutionStore, _json
+from .store import ExecutionStore
+from .model import _json
 
 
 class EffectClassification(str, Enum):
