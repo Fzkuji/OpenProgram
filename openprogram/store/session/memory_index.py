@@ -20,6 +20,7 @@ walks ``history/`` and reads ``meta.json`` to repopulate fully.
 """
 from __future__ import annotations
 
+from bisect import insort_right
 import json
 import threading
 from dataclasses import dataclass, field
@@ -27,6 +28,14 @@ from typing import Any, Optional
 
 from openprogram.context.nodes import Call
 from .git_session import read_text_with_retry
+
+
+def _insert_by_seq(items, item, *, key):
+    """Keep ordinary appends O(1), inserting earlier sequences in order."""
+    if not items or key(items[-1]) <= key(item):
+        items.append(item)
+    else:
+        insort_right(items, item, key=key)
 
 
 @dataclass
@@ -79,12 +88,18 @@ class SessionMemoryIndex:
                 if node.seq >= self.next_seq:
                     self.next_seq = node.seq + 1
             self.nodes_by_id[node.id] = node
-            self.nodes_by_seq.append(node)
+            _insert_by_seq(self.nodes_by_seq, node, key=lambda value: value.seq)
             self._taken_seqs.add(node.seq)
             if predecessor:
-                self.children_by_predecessor.setdefault(predecessor, []).append(node.id)
+                _insert_by_seq(
+                    self.children_by_predecessor.setdefault(predecessor, []), node.id,
+                    key=lambda node_id: self.nodes_by_id[node_id].seq,
+                )
             if caller:
-                self.children_by_caller.setdefault(caller, []).append(node.id)
+                _insert_by_seq(
+                    self.children_by_caller.setdefault(caller, []), node.id,
+                    key=lambda node_id: self.nodes_by_id[node_id].seq,
+                )
             return node.seq
 
     def set_head(self, head_id: Optional[str]) -> None:
