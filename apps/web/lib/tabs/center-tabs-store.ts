@@ -374,8 +374,8 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
 
   return {
     windowNavigationHistory: { entries: initial.activeId ? [initial.activeId] : [], index: initial.activeId ? 0 : -1 },
-    canNavigateHistory: direction => navigationTarget(useCenterTabs.getState(), direction) !== null,
-    navigateHistory: direction => {
+    canNavigateHistory: (direction): boolean => navigationTarget(useCenterTabs.getState(), direction) !== null,
+    navigateHistory: (direction): void => {
       const target = navigationTarget(useCenterTabs.getState(), direction);
       if (!target) return;
       if (target.kind === "page") { useCenterTabs.getState().navigateSessionHistory(direction); return; }
