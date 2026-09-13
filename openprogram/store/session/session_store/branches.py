@@ -330,6 +330,17 @@ class BranchesOperations:
         return tips
 
 
+    def _update_branch_metadata(self, session_id, head_msg_id, mutate):
+        def update(branches):
+            entry = dict(branches.get(head_msg_id) or {})
+            mutate(entry)
+            branches[head_msg_id] = entry
+            return branches
+
+        branches = self.update_session_dict(session_id, "branches", update)
+        return {} if branches is None else dict(branches[head_msg_id])
+
+
     def set_branch_name(
         self,
         session_id: str,
@@ -344,11 +355,6 @@ class BranchesOperations:
         see docs/design/runtime/branch-naming.md). Unspecified existing
         fields are preserved — callers that only touch the name must not
         wipe the lock, the counters, or the archive flag."""
-        pair = self._open(session_id, create_if_missing=True)
-        if pair is None:
-            return
-        git, idx = pair
-
         def _mutate(entry: dict) -> None:
             now = shared.time.time()
             entry["name"] = name
@@ -356,8 +362,7 @@ class BranchesOperations:
             entry["updated_at"] = now
             entry.update(fields)
 
-        idx.update_branch_entry(head_msg_id, _mutate)
-        self._persist_meta(git, idx)
+        self._update_branch_metadata(session_id, head_msg_id, _mutate)
 
 
     def get_branch_meta(self, session_id: str, head_msg_id: str) -> dict[str, shared.Any]:
@@ -379,19 +384,13 @@ class BranchesOperations:
         its name. Used for lifecycle facts that ride the same entry as
         the name (``archived`` / ``archived_at`` / ``archived_reason``
         — see agent-collaboration.md, archiving)."""
-        pair = self._open(session_id, create_if_missing=True)
-        if pair is None:
-            return
-        git, idx = pair
-
         def _mutate(entry: dict) -> None:
             now = shared.time.time()
             entry.update(fields)
             entry.setdefault("created_at", now)
             entry["updated_at"] = now
 
-        idx.update_branch_entry(head_msg_id, _mutate)
-        self._persist_meta(git, idx)
+        self._update_branch_metadata(session_id, head_msg_id, _mutate)
 
 
     def bump_branch_turns(self, session_id: str, head_msg_id: str) -> int:
@@ -399,16 +398,10 @@ class BranchesOperations:
         new value. Used by finalize_turn to decide whether to trigger
         Stage-2 auto-rename (counter, not a message count — see
         branch-naming.md 第四节)."""
-        pair = self._open(session_id, create_if_missing=True)
-        if pair is None:
-            return 0
-        git, idx = pair
-
         def _mutate(entry: dict) -> None:
             entry["turns"] = int(entry.get("turns", 0)) + 1
 
-        merged = idx.update_branch_entry(head_msg_id, _mutate)
-        self._persist_meta(git, idx)
+        merged = self._update_branch_metadata(session_id, head_msg_id, _mutate)
         return int(merged.get("turns", 0))
 
 

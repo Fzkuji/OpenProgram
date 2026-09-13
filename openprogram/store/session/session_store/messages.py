@@ -103,10 +103,10 @@ class MessagesOperations:
         )
 
     @shared.contextmanager
-    def _node_write_scope(self, session_id):
+    def _session_write_scope(self, session_id, *, create_if_missing=False):
         """Keep placement, index refresh and node writes in one writer scope."""
         with self._session_lock(session_id):
-            pair = self._open(session_id)
+            pair = self._open(session_id, create_if_missing=create_if_missing)
             if pair is None:
                 yield None
                 return
@@ -167,7 +167,7 @@ class MessagesOperations:
         self, session_id: str, node_id: str, **fields: shared.Any,
     ) -> None:
         """Update one current node and rewrite its history file once."""
-        with self._node_write_scope(session_id) as pair:
+        with self._session_write_scope(session_id) as pair:
             if pair is not None:
                 self._update_history_node(session_id, *pair, node_id, fields)
 
@@ -177,7 +177,7 @@ class MessagesOperations:
         patches: dict[str, dict[str, shared.Any]],
     ) -> None:
         """Merge current durable metadata with one open and writer scope."""
-        with self._node_write_scope(session_id) as pair:
+        with self._session_write_scope(session_id) as pair:
             if pair is not None:
                 for node_id, patch in patches.items():
                     self._update_history_node(

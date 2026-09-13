@@ -133,28 +133,33 @@ class SessionsOperations:
                              session_id, project_id, e)
 
 
+    def _transform_session_meta(self, session_id, transform):
+        """Transform current durable metadata, publishing only after success."""
+        with self._session_write_scope(session_id, create_if_missing=True) as pair:
+            if pair is None:
+                return None
+            git, idx = pair
+            meta = transform(git.read_meta())
+            if meta is None:
+                return None
+            git.write_meta(meta)
+            with idx._lock:
+                idx.meta.clear()
+                idx.meta.update(meta)
+                idx.head_id = meta.get("head_id")
+            return meta
+
     def update_session(self, session_id: str, **fields: shared.Any) -> None:
-        pair = self._open(session_id, create_if_missing=True)
-        if pair is None:
+        clean = {key: value for key, value in fields.items() if value is not None}
+
+        def transform(meta):
+            meta.update(clean)
+            return meta
+
+        if self._transform_session_meta(session_id, transform) is None:
             return
-        git, idx = pair
-        with self._head_file_lock(git):
-            # head_id needs special routing because it's also the index's
-            # ``head_id`` field.
-            if "head_id" in fields and fields["head_id"] is not None:
-                idx.set_head(fields.pop("head_id"))
-            # Drop Nones so we don't clobber existing fields with NULL.
-            clean = {k: v for k, v in fields.items() if v is not None}
-            if clean:
-                idx.set_meta(**clean)
-            with idx._persist_lock:
-                with idx._lock:
-                    meta = dict(idx.meta)
-                    meta["head_id"] = idx.head_id
-                git.write_meta(meta)
-        # Sync registry.
-        index_fields = {k: v for k, v in clean.items()
-                        if k in self._INDEX_FIELDS}
+        index_fields = {key: value for key, value in clean.items()
+                        if key in self._INDEX_FIELDS}
         if index_fields:
             self._update_index_entry(session_id, **index_fields)
             self._save_index()
@@ -186,24 +191,16 @@ class SessionsOperations:
         The callback must not perform I/O or re-enter the store. Returning
         None rejects the update without changing durable or cached state.
         """
-        pair = self._open(session_id, create_if_missing=True)
-        if pair is None:
-            return None
-        git, idx = pair
-        with self._head_file_lock(git):
-            with idx._persist_lock:
-                meta = git.read_meta()
-                current = meta.get(field)
-                value = update(current if isinstance(current, dict) else {})
-                if value is None:
-                    return None
-                meta[field] = dict(value)
-                with idx._lock:
-                    idx.meta.clear()
-                    idx.meta.update(meta)
-                    idx.head_id = meta.get("head_id")
-                git.write_meta(meta)
-        return value
+        def transform(meta):
+            current = meta.get(field)
+            value = update(current if isinstance(current, dict) else {})
+            if value is None:
+                return None
+            meta[field] = dict(value)
+            return meta
+
+        meta = self._transform_session_meta(session_id, transform)
+        return None if meta is None else meta[field]
 
 
     def get_session(self, session_id: str) -> shared.Optional[dict[str, shared.Any]]:
