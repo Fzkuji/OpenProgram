@@ -134,4 +134,4 @@ def test_default_discovery_does_not_scan_home(tmp_path, monkeypatch):
     shutil.rmtree(old)
     relocated = discovery_mod.discover_moved_projects(roots=[fake_home])
     assert relocated == []
-    assert projects.get_project(proj.id).path.endswith("/old")
+    assert Path(projects.get_project(proj.id).path) == old

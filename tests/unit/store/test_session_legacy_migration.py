@@ -305,3 +305,40 @@ def test_unrelated_existing_destination_is_preserved_on_conflict(tmp_path, monke
     }) == "failed"
     assert marker.read_text(encoding="utf-8") == "keep"
     assert source.exists()
+
+
+def test_migration_flush_uses_writable_handles_on_windows(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    store = _isolate(tmp_path, monkeypatch)
+    project, sid, source, _recovery = _legacy_session(tmp_path, store)
+    descriptors = {}
+
+    def open_file(path, flags, *args, **kwargs):
+        fd = os.open(path, flags, *args, **kwargs)
+        descriptors[fd] = flags
+        return fd
+
+    def flush_file(fd):
+        if not descriptors[fd] & os.O_RDWR:
+            raise OSError("Windows file flush requires write access")
+        return os.fsync(fd)
+
+    def close_file(fd):
+        descriptors.pop(fd, None)
+        return os.close(fd)
+
+    windows_os = SimpleNamespace(**vars(os))
+    windows_os.name = "nt"
+    windows_os.open = open_file
+    windows_os.fsync = flush_file
+    windows_os.close = close_file
+    monkeypatch.setattr(migration, "os", windows_os)
+    result = migrate_session(store, {
+        "session_id": sid, "project_id": project.id, "source": str(source),
+    })
+    assert result == "done", load_journal(store.root_path)
+    destination = nested_session_dir(store.root_path, project.id, sid)
+    assert json.loads((destination / "meta.json").read_text())["title"] == "kept"
+    assert not source.exists()
+    assert not descriptors

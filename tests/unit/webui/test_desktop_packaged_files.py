@@ -37,7 +37,7 @@ def _required_files() -> set[str]:
             resolved = _resolve(current, spec)
             if resolved is not None:
                 queue.append(resolved)
-    return {str(path.relative_to(DESKTOP)) for path in seen}
+    return {path.relative_to(DESKTOP).as_posix() for path in seen}
 
 
 def _whitelist() -> list[str]:

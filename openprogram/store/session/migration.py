@@ -182,7 +182,9 @@ def _fsync_tree(path: Path) -> None:
                 # The link itself has no file data to flush.  Opening it would
                 # follow an external target and could flush unrelated data.
                 continue
-            fd = os.open(file_path, os.O_RDONLY)
+            # Windows FlushFileBuffers requires a writable file handle.
+            flags = os.O_RDWR if os.name == "nt" else os.O_RDONLY
+            fd = os.open(file_path, flags)
             try:
                 os.fsync(fd)
             finally:

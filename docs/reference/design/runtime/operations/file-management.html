@@ -508,7 +508,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
     <div class="decision-line"><b>当前实现状态：</b>目录/搜索 snapshot、文件 request identity、durable mutation、有界 read cache、持久 dirty draft、Review 服务端分页、canonical entry-point cutover 与稳定模块边界均已完成独立审查。</div>
     <p class="intro" style="margin-top:12px">实现证据写入对应测试；本设计页只维护当前合同与总体状态。</p>
   </details></section>
-<section><h2>Portable snapshot consistency</h2><p>Regular-file snapshots compare descriptor metadata before and after reading, and path metadata before opening and after reading. Descriptor and path identity must agree on device and inode. Metadata from different operating-system APIs is not compared as if it had identical timestamp or mode representation. Either observation changing aborts publication; the path observation supplies the stored permission mode.</p></section>
+<section><h2>Portable snapshot consistency</h2><p>Regular-file snapshots compare descriptor metadata before and after reading, and path metadata before opening and after reading. Descriptor and path identity must agree on device and inode. Metadata from different operating-system APIs is not compared as if it had identical timestamp or mode representation. Either observation changing aborts publication; the path observation supplies the stored permission mode. Legacy migration opens staged files with writable handles on Windows before flushing data, while preserving the source until publication succeeds.</p></section>
 </main>
 <script>
 const OP={
