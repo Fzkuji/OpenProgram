@@ -438,16 +438,19 @@ class CheckpointStore:
                 child = os.open(
                     component["name"], flags | nofollow, dir_fd=descriptor,
                 )
-                child_info = os.fstat(child)
-                if (child_info.st_dev, child_info.st_ino) != (
-                    component.get("dev"), component.get("ino"),
-                ):
+                try:
+                    child_info = os.fstat(child)
+                    if (child_info.st_dev, child_info.st_ino) != (
+                        component.get("dev"), component.get("ino"),
+                    ):
+                        raise OSError(f"history parent changed before apply: {path}")
+                except BaseException:
                     os.close(child)
-                    raise OSError(f"history parent changed before apply: {path}")
+                    raise
                 os.close(descriptor)
                 descriptor = child
             return descriptor
-        except Exception:
+        except BaseException:
             os.close(descriptor)
             raise
 
@@ -857,10 +860,12 @@ class CheckpointStore:
             return str(target.parent / guard_name) if guard_exists else None
         finally:
             try:
-                os.unlink(tmp_name, dir_fd=parent_descriptor)
-            except FileNotFoundError:
-                pass
-            os.close(parent_descriptor)
+                try:
+                    os.unlink(tmp_name, dir_fd=parent_descriptor)
+                except FileNotFoundError:
+                    pass
+            finally:
+                os.close(parent_descriptor)
 
     def _apply_state_without_dir_fd(
         self,
