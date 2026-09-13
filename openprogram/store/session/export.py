@@ -78,17 +78,27 @@ def _tool_use(msg: dict[str, Any]) -> dict[str, Any]:
 def _call_summary(msg: dict[str, Any]) -> dict[str, str]:
     """One tool call flattened to the fields both renderers print."""
     args = _tool_use(msg).get("arguments")
+    if isinstance(args, str):
+        try:
+            parsed = json.loads(args)
+        except (ValueError, TypeError):
+            pass
+        else:
+            if isinstance(parsed, (dict, list)) and remove_secret_values(parsed) != parsed:
+                args = parsed
+    args = remove_secret_values(args)
     if args not in (None, "", {}) and not isinstance(args, str):
         try:
             args = json.dumps(args, ensure_ascii=False, default=str)
         except (TypeError, ValueError):
             args = str(args)
+    content = msg.get("content")
     return {
-        "name": str(msg.get("function") or _tool_use(msg).get("name")
-                    or "(unnamed call)"),
+        "name": _redact(str(msg.get("function") or _tool_use(msg).get("name")
+                            or "(unnamed call)")),
         "status": "failed" if msg.get("is_error") else "ok",
-        "args": _redact(_clip(args, MAX_ARGS_CHARS)) if args else "",
-        "result": _redact(_clip(msg.get("content"), MAX_RESULT_CHARS)),
+        "args": _clip(args, MAX_ARGS_CHARS) if args else "",
+        "result": _clip(_redact("" if content is None else str(content)), MAX_RESULT_CHARS),
     }
 
 
@@ -135,7 +145,7 @@ def collect_turns(
     for index, msg in enumerate(branch, 1):
         turns.append({
             "index": index,
-            "role": _turn_label(msg),
+            "role": _redact(_turn_label(msg)),
             "timestamp": _timestamp(msg.get("timestamp")),
             "content": _redact(str(msg.get("content") or "").strip()),
             "calls": [_call_summary(c)
@@ -317,7 +327,8 @@ def export_session(
 
     turns = collect_turns(session_id, head_id=head_id,
                           include_tool_calls=include_tool_calls, store=store)
-    title = _session_title(session_id, store)
+    title = _redact(_session_title(session_id, store))
+    session_id = _redact(session_id)
     if export_format == "html":
         return render_html(session_id, turns, title)
     return render_markdown(session_id, turns, title)
