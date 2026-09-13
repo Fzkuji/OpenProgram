@@ -1,14 +1,14 @@
 # 准备每周报告
 
-报告套件包含三个独立版本的子 Workflow 和总入口 `report`，需要安装到 Programs 目录。
-源码 checkout 本身不会安装这些包；这些 Workflow 支持独立执行和通过 `report` 组合。微信读取依赖可访问的搜索与会话控件；控件不可用时返回可恢复状态，不会标记汇总完成。
+报告套件包含三个独立版本的子 Workflow 和总入口 `weekly_report`，需要安装到 Programs 目录。
+源码 checkout 本身不会安装这些包；这些 Workflow 支持独立执行和通过 `weekly_report` 组合。微信读取依赖可访问的搜索与会话控件；控件不可用时返回可恢复状态，不会标记汇总完成。
 
 | 入口 | 用途 | 外部写入 |
 | --- | --- | --- |
-| `weekly_report(task)` | 个人草稿、明确要求的飞书查看或修改 | 仅独立的明确提交或修改请求允许写飞书 |
+| `personal_weekly_report(task)` | 个人草稿、明确要求的飞书查看或修改 | 仅独立的明确提交或修改请求允许写飞书 |
 | `group_weekly_report(task)` | 收集组员周报、核对缺失人员、生成本地汇总 | 不发送微信消息 |
 | `tencent_weekly_report(task)` | 周五下午给 leader 的约 100 字腾讯进度 | 只生成本地稿 |
-| `report(task)` | 路由多类报告并分别保留结果 | 组合调用只生成草稿，不继承个人提交授权 |
+| `weekly_report(task)` | 路由多类报告并分别保留结果 | 组合调用只生成草稿，不继承个人提交授权 |
 
 ## 根据已有记录整理腾讯汇报
 
@@ -19,14 +19,14 @@ Asia/Shanghai 确定当前 ISO 周次，先复用当前工作目录 `reports` �
 片段并核验引用，不会直接当作腾讯工作。检索有数量和大小限制，来源不可访问或信息不足
 时仍需明确处理。可用 `report_roots` 指定最多五个来源目录。
 
-腾讯与总入口 `report` 成功后直接返回正文，来源、字数及模型调用信息保存在本地稿件文件。
+腾讯与总入口 `weekly_report` 成功后直接返回正文，来源、字数及模型调用信息保存在本地稿件文件。
 程序组合时，在 JSON 任务中指定 `"result_format": "structured"`，即可获得状态、文件路径和
 恢复参数；总入口内部使用此模式。生成和核验采用低推理强度、每次最多 180 秒的执行时限，
 恢复不重置重试预算，模型失败不会输出成功稿件。
 
 ## 准备多份报告
 
-在 Abilities 中选择 `report`，将下面 JSON 作为字符串填入 `task`：
+在 Abilities 中选择 `weekly_report`，将下面 JSON 作为字符串填入 `task`：
 
 ```json
 {
@@ -78,4 +78,4 @@ Workflow 本身不创建定时任务，也不发送给 leader；启用定时运�
 
 ## 源码组织
 
-四个独立汇报 Workflow 包集中在 `openprogram/programs/workflow/reports/`：`weekly_report`（个人）、`group_weekly_report`（小组）、`tencent_weekly_report`（腾讯）和 `report`（总入口）。共享内部模块位于 `workflow/_reports/`。公开调用名称和配置的输出路径不变。分类目录用于组织源码，本身不是一个 Workflow。
+四个独立汇报 Workflow 包集中在 `openprogram/programs/workflow/weekly_report/`：`personal_weekly_report`（个人）、`group_weekly_report`（小组）、`tencent_weekly_report`（腾讯）和 `weekly_report`（总入口）。共享内部模块位于 `workflow/_reports/`。总入口为 `weekly_report`，个人入口为 `personal_weekly_report`；配置的输出路径不变。分类目录用于组织源码，本身不是一个 Workflow。

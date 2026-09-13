@@ -458,3 +458,29 @@ def test_packages_replace_legacy_application_category(tmp_path, monkeypatch):
     paths = [entry['path'] for entry in response.json()['entries']]
     assert 'packages' in paths
     assert 'applications' not in paths
+
+
+def test_owned_weekly_folder_exposes_four_callable_children(tmp_path, monkeypatch):
+    import types
+    from openprogram.webui.routes.catalog import programs
+    client = _client(tmp_path, monkeypatch)
+    external = tmp_path / "owned" / "programs"
+    names = ("weekly_report", "personal_weekly_report", "group_weekly_report", "tencent_weekly_report")
+    monkeypatch.setattr(programs, "_catalog_roots", lambda: [programs.PROGRAMS_ROOT.resolve(), external])
+    monkeypatch.setattr("openprogram.agentic_programming.function._registry", registered := {})
+    for name in names:
+        directory = external / "workflow" / "weekly_report" / name
+        source = directory / "workflow.py"
+        _write(source, f"def {name}(task):\n    return task\n")
+        (directory / ".git").mkdir()
+        namespace = {"__name__":f"openprogram.programs.workflow.{name}"}
+        exec(compile(source.read_text(), str(source), "exec"), namespace)
+        registered[name] = types.SimpleNamespace(_fn=namespace[name], description=name)
+    root = client.get("/api/programs/explorer", params={"path":"workflow"}).json()
+    folder = next(row for row in root["entries"] if row["name"] == "weekly_report")
+    assert folder["kind"] == "folder" and folder["has_children"] and folder["program_kind"] is None
+    result = client.get("/api/programs/explorer", params={"path":"workflow/weekly_report"})
+    assert result.status_code == 200
+    entries = result.json()["entries"]
+    assert {row["callable_name"] for row in entries} == set(names)
+    assert all(row["program_kind"] == "workflow" and not row["has_children"] for row in entries)

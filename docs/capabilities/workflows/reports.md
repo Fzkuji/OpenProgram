@@ -1,22 +1,22 @@
 # Prepare weekly reports
 
 The report suite consists of three independently versioned Workflow packages and
-one coordinating `report` package. They must be installed in the Programs catalog;
-this source checkout alone does not install them. The suite supports independent execution and composition through the `report` entry.
+one coordinating `weekly_report` package. They must be installed in the Programs catalog;
+this source checkout alone does not install them. The suite supports independent execution and composition through the `weekly_report` entry.
 Native WeChat collection depends on accessible search and conversation controls;
 unavailable controls return a recoverable state instead of a completed report.
 
 | Entry | Purpose | External writes |
 | --- | --- | --- |
-| `weekly_report(task)` | Personal report drafts and explicit Feishu inspection or record updates | Only explicit standalone submission/update requests may write to Feishu |
+| `personal_weekly_report(task)` | Personal report drafts and explicit Feishu inspection or record updates | Only explicit standalone submission/update requests may write to Feishu |
 | `group_weekly_report(task)` | Collect group reports, track missing members, and prepare a local summary | Never sends WeChat messages |
 | `tencent_weekly_report(task)` | Approximately 100 Chinese characters of Tencent progress for a leader, intended for Friday afternoon | Local draft only |
-| `report(task)` | Route one or several report requests and retain separate results | Prepares drafts; does not inherit permission to submit a personal report |
+| `weekly_report(task)` | Route one or several report requests and retain separate results | Prepares drafts; does not inherit permission to submit a personal report |
 
 ## Prepare a Tencent report from existing records
 
 Select `tencent_weekly_report` in Abilities and enter `Prepare this week's Tencent
-report`. The Workflow uses the current ISO week in Asia/Shanghai. It first reuses
+weekly_report`. The Workflow uses the current ISO week in Asia/Shanghai. It first reuses
 original current-week Tencent evidence in the workspace's `reports` directory,
 then considers other report sources and dated OpenProgram memory. Explicit
 materials take precedence. Records from other weeks, uncertain month/year-only
@@ -26,7 +26,7 @@ as Tencent work. Discovery is bounded, so unavailable or insufficient sources
 still require clarification. Optional `report_roots` selects up to five source
 directories.
 
-Successful Tencent and `report` calls return the report body directly. Sources,
+Successful Tencent and `weekly_report` calls return the report body directly. Sources,
 character count and model-call information remain in local draft files. For
 programmatic composition, pass `"result_format": "structured"` in the JSON task;
 this returns the status, artifact paths and recovery object. The coordinator
@@ -36,7 +36,7 @@ produce a success draft.
 
 ## Prepare several reports
 
-Select `report` in Abilities and supply a JSON string as `task`:
+Select `weekly_report` in Abilities and supply a JSON string as `task`:
 
 ```json
 {
@@ -107,4 +107,4 @@ material source must be configured separately before enabling a scheduled run.
 
 ## Source organization
 
-The four independent report Workflow packages are grouped under `openprogram/programs/workflow/reports/`: `weekly_report` (personal), `group_weekly_report` (group), `tencent_weekly_report` (Tencent), and `report` (routing). Shared internal helpers live in `workflow/_reports/`. Public call names and configured output paths are unchanged. A category directory organizes sources; it is not an additional Workflow.
+The four independent report Workflow packages are grouped under `openprogram/programs/workflow/weekly_report/`: `personal_weekly_report` (personal), `group_weekly_report` (group), `tencent_weekly_report` (Tencent), and `weekly_report` (routing). Shared internal helpers live in `workflow/_reports/`. The coordinator is named `weekly_report`; the personal entry is `personal_weekly_report`. Configured output paths are unchanged. A category directory organizes sources; it is not an additional Workflow.
