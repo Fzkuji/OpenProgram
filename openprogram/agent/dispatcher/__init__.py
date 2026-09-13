@@ -258,16 +258,16 @@ def process_agent_continuation(
         req=req, assistant_msg_id=assistant_msg_id, db=db,
         snapshot_project_baseline=False,
     )
-    _agentic_tool_names: set[str] = set()
-    _ordered_blocks: list[dict] = []
-    _on_event_persist = make_stream_tap(
-        on_event=on_event,
-        req=req,
-        assistant_msg_id=assistant_msg_id,
-        placeholder_inserted=True,
-        agentic_tool_names=_agentic_tool_names,
-    )
     try:
+        _agentic_tool_names: set[str] = set()
+        _ordered_blocks: list[dict] = []
+        _on_event_persist = make_stream_tap(
+            on_event=on_event,
+            req=req,
+            assistant_msg_id=assistant_msg_id,
+            placeholder_inserted=True,
+            agentic_tool_names=_agentic_tool_names,
+        )
         final_text, usage, tool_calls = _run_loop_blocking(
             req=req,
             history=history,
@@ -511,23 +511,31 @@ def _process_turn_once(
     _bindings = TurnBindings.bind(
         req=req, assistant_msg_id=assistant_msg_id, db=db,
     )
-    _project_baseline = _bindings.project_baseline
-    # Fresh outbound-attachment list for this turn — ``send_file`` calls
-    # append to it, step 4b below folds it into the reply text.
-    from openprogram.programs.tools.interaction import send_file as _send_file
-    _send_file.begin_turn()
+    try:
+        _project_baseline = _bindings.project_baseline
+        # Fresh outbound-attachment list for this turn — ``send_file`` calls
+        # append to it, step 4b below folds it into the reply text.
+        from openprogram.programs.tools.interaction import send_file as _send_file
+        _send_file.begin_turn()
 
-    # 3b. Persist an assistant *placeholder* row so the row exists in
-    #     the DB before tool_execution_end events start firing. This
-    #     lets the in-flight tool rows (added by the stream tap) hang
-    #     off ``caller = assistant_msg_id`` — and lets a mid-turn page
-    #     refresh actually find them via the parent aggregation in
-    #     webui/persistence._aggregate_tool_messages. We update this
-    #     row's content + tool_calls/blocks at turn end (step 5) once
-    #     the LLM's final text is known.
-    _placeholder_inserted = (
-        restart_existing and db.message_exists(req.session_id, assistant_msg_id)
-    ) or _writer.open_placeholder(assistant_msg_id, user_msg_id)
+        # 3b. Persist an assistant *placeholder* row so the row exists in
+        #     the DB before tool_execution_end events start firing. This
+        #     lets the in-flight tool rows (added by the stream tap) hang
+        #     off ``caller = assistant_msg_id`` — and lets a mid-turn page
+        #     refresh actually find them via the parent aggregation in
+        #     webui/persistence._aggregate_tool_messages. We update this
+        #     row's content + tool_calls/blocks at turn end (step 5) once
+        #     the LLM's final text is known.
+        _placeholder_inserted = (
+            restart_existing and db.message_exists(req.session_id, assistant_msg_id)
+        ) or _writer.open_placeholder(assistant_msg_id, user_msg_id)
+
+    except BaseException:
+        try:
+            _bindings.release()
+        except BaseException:
+            _log.exception("failed to release turn bindings after setup failure")
+        raise
 
     # 4. Run the agent loop. Errors below get caught and reported as
     #    a system message so the conversation isn't left in a stuck

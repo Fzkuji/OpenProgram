@@ -19,8 +19,6 @@ from typing import Optional, TYPE_CHECKING
 from openprogram.agent.run_control import (
     get_current_execution_id as _get_execution_id,
     get_current_session_id as _get_session_id,
-    reset_current_execution_id as _reset_execution_id,
-    reset_current_session_id as _reset_session_id,
     set_current_execution_id as _set_execution_id,
     set_current_session_id as _set_session_id,
 )
@@ -48,6 +46,7 @@ class TurnBindings:
         self._sandbox_token = None
         self._req_session_id: Optional[str] = None
         self._execution_id_token = None
+        self._deferred_token = None
 
     @classmethod
     def bind(
@@ -59,6 +58,17 @@ class TurnBindings:
         snapshot_project_baseline: bool = True,
     ) -> "TurnBindings":
         self = cls()
+        try:
+            self._bind(req, assistant_msg_id, db, snapshot_project_baseline)
+        except BaseException:
+            try:
+                self.release()
+            except BaseException:
+                _log.exception("failed to unwind partial turn bindings")
+            raise
+        return self
+
+    def _bind(self, req, assistant_msg_id, db, snapshot_project_baseline) -> None:
         self._req_session_id = req.session_id
         # A normal foreground turn has no outer execution owner. Bind its
         # assistant reply id so every question emitted during this turn is
@@ -140,7 +150,7 @@ class TurnBindings:
         # session-scoped "loaded deferred tools" set so tool_search can
         # mutate it and subsequent turns see the updated set.
         from openprogram.programs import install_loaded_deferred
-        install_loaded_deferred()
+        self._deferred_token = install_loaded_deferred()
 
         # Project auto-commit (entity layer): snapshot which paths are
         # already dirty in the session's bound project BEFORE the agent
@@ -200,63 +210,69 @@ class TurnBindings:
             )
         except Exception:
             self._sandbox_token = None
-        return self
 
     def release(self) -> None:
-        """Reset every ContextVar bound by :meth:`bind`.
+        """Restore owned contexts even when a resource cleanup fails.
 
-        Guarded because attach may have silently failed (no provider
-        configured). ValueError is what ContextVar.reset raises when the
-        token came from a different context — the only failure worth
-        tolerating here.
+        Validate surface ownership before releasing browser resources. A foreign
+        token does not authorize cleanup, but must not skip other local tokens.
+        Operational errors are propagated after every reset has been attempted.
         """
-        from openprogram.store import (
-            _store as _store_var,
-            _current_turn_id as _turn_id_var,
-        )
-        from openprogram.agentic_programming.function import (
-            _current_runtime as _current_runtime_var,
-            _render_range_override as _render_range_var,
-        )
-        try:
-            if self._web_use_owner_id is not None:
-                from openprogram.programs.workflow.browser.web_use_runtime import (
-                    release_owner_if_initialized as _release_web_use_owner,
+        errors: list[BaseException] = []
+
+        def attempt(callback, *args):
+            try:
+                callback(*args)
+            except BaseException as error:
+                errors.append(error)
+
+        def reset_token(name):
+            token = getattr(self, name)
+            if token is None:
+                return False
+            try:
+                token.var.reset(token)
+            except ValueError:
+                _log.debug(
+                    "context token %s belongs to another context for session %s",
+                    name, self._req_session_id, exc_info=True,
                 )
-                _release_web_use_owner(self._web_use_owner_id)
-            if self._surface_token is not None:
-                from openprogram.agent.surface_context import (
-                    current as _current_surface,
-                    release_bindings as _release_surface_bindings,
-                    reset as _reset_surface,
-                )
-                _release_surface_bindings(_current_surface())
-                _reset_surface(self._surface_token)
-            if self._runtime_token is not None:
-                _current_runtime_var.reset(self._runtime_token)
-            if self._store_token is not None:
-                _store_var.reset(self._store_token)
-            if self._turn_id_token is not None:
-                _turn_id_var.reset(self._turn_id_token)
-            if self._turn_request_token is not None:
-                from openprogram.agent.turn_request_context import (
-                    reset_turn_request,
-                )
-                reset_turn_request(self._turn_request_token)
-            if self._render_range_token is not None:
-                _render_range_var.reset(self._render_range_token)
-            if self._session_id_token is not None:
-                _reset_session_id(self._session_id_token)
-            if self._execution_id_token is not None:
-                _reset_execution_id(self._execution_id_token)
-            if self._worktree_token is not None:
-                from openprogram.worktree.context import reset_worktree
-                reset_worktree(self._worktree_token)
-            if self._sandbox_token is not None:
-                from openprogram.sandbox import reset_turn_policy
-                reset_turn_policy(self._sandbox_token)
-        except ValueError:
-            _log.debug(
-                "context var teardown ran in a foreign context for session %s",
-                self._req_session_id, exc_info=True,
+                return False
+            except BaseException as error:
+                errors.append(error)
+                return False
+            setattr(self, name, None)
+            return True
+
+        def release_browser(owner):
+            from openprogram.programs.workflow.browser.web_use_runtime import (
+                release_owner_if_initialized,
             )
+            release_owner_if_initialized(owner)
+
+        def release_surface(surface):
+            from openprogram.agent.surface_context import release_bindings
+            release_bindings(surface)
+
+        surface = (
+            self._surface_token.var.get()
+            if self._surface_token is not None else None
+        )
+        owns_surface = reset_token("_surface_token")
+        if owns_surface:
+            if self._web_use_owner_id is not None:
+                owner = self._web_use_owner_id
+                self._web_use_owner_id = None
+                attempt(release_browser, owner)
+            attempt(release_surface, surface)
+        for name in (
+            "_sandbox_token", "_runtime_token", "_store_token",
+            "_deferred_token", "_turn_id_token", "_turn_request_token",
+            "_render_range_token", "_session_id_token", "_execution_id_token",
+            "_worktree_token",
+        ):
+            reset_token(name)
+        if errors:
+            for error in errors[1:]:
+                _log.error("additional turn cleanup failure: %s", error)
+            raise errors[0]
