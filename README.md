@@ -256,3 +256,14 @@ Using OpenProgram in your work, or building on the code? Please cite our paper �
 ## License
 
 [AGPL-3.0](LICENSE) © 2026 Fzkuji. Free to use, study, modify, and share — but any derivative you distribute **or run as a network service** must also be released under the AGPL, with attribution preserved.
+
+## Acknowledgements
+
+Thank you to everyone who helps improve OpenProgram through code, bug reports,
+reproductions, tests, documentation, reviews, and suggestions. These contributions
+make the framework more reliable and easier to use.
+
+We appreciate our [code contributors](https://github.com/Fzkuji/OpenProgram/graphs/contributors)
+and everyone who contributes through [issues](https://github.com/Fzkuji/OpenProgram/issues?q=is%3Aissue)
+and [pull requests](https://github.com/Fzkuji/OpenProgram/pulls?q=is%3Apr), including
+contributions that do not appear in the commit history.
