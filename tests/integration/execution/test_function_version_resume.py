@@ -797,3 +797,26 @@ def test_dynamic_import_is_rejected_before_external_work(tmp_path, monkeypatch):
             function(str(tmp_path))
     assert not (tmp_path / "effects").exists()
     assert store.get_execution(active.execution_id).status.value == "paused"
+
+
+def test_continue_rejects_invalid_function_policy_without_mutation(tmp_path):
+    import asyncio
+    from openprogram.execution.state_machine import InvalidCommand
+
+    store, active, service = _active_execution(tmp_path)
+    execution = store.get_execution(active.execution_id)
+    with pytest.raises(InvalidCommand, match="invalid function code policy"):
+        asyncio.run(
+            service.request_continue(
+                command_id="invalid-policy",
+                execution_id=execution.execution_id,
+                expected_version=execution.status_version,
+                actor={"surface": "test"},
+                code_change_policy="unrecognized",
+            )
+        )
+    assert (
+        store.get_execution(execution.execution_id).status_version
+        == execution.status_version
+    )
+    assert store.list_commands(execution.execution_id) == []

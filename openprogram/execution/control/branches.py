@@ -9,6 +9,7 @@ from ..checkpoints import CheckpointManifest
 from ..model import CommandKind, CommandStatus, ControlCommand, ExecutionRecord, ExecutionStatus
 from ..store import ExecutionConflict, _json
 from ..safe_points import AgentSafePointConflict
+from ..state_machine import InvalidCommand
 
 from .shared import (
     Activator,
