@@ -79,8 +79,8 @@ def test_release_workflow_publishes_structured_release_notes() -> None:
     workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
         encoding="utf-8"
     )
-    assert 'notes_file=".github/release-notes/$GITHUB_REF_NAME.md"' in workflow
-    assert 'release_version="${GITHUB_REF_NAME#v}"' in workflow
+    assert 'notes_file=".github/release-notes/$RELEASE_TAG.md"' in workflow
+    assert 'release_version="${RELEASE_TAG#v}"' in workflow
     assert 'test -s "$notes_file"' in workflow
     assert "release notes must be English" in workflow
     assert '--title "OpenProgram $release_version Release"' in workflow

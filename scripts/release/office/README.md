@@ -55,3 +55,11 @@ validator and installer. The source archive does not constitute a standalone
 OpenProgram checkout. Font inputs and their original licenses are explicit
 build inputs, and their relative names and hashes are recorded in
 `source/font-provenance.json`.
+
+GitHub release builders download the pinned `OfficeAssets-d15d12b-dc31dd9d.zip`
+build input from `v0.9.0`. The workflow verifies its archive SHA-256 and the
+complete Office manifest before staging; it does not depend on a runner's
+profile cache. The input archive is included in the release artifact manifest.
+A rebuild dispatch selects an existing immutable source tag. A newer workflow
+controller can prepare the build environment without changing that tag's code.
+The first publication finalizes its draft only after all native jobs pass.
