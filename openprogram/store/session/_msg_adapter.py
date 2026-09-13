@@ -126,6 +126,10 @@ def _msg_to_node(msg: dict) -> Call:
 
 def _node_to_msg(node: Call, session_id: str) -> dict:
     meta = dict(node.metadata or {})
+    # Routing identity belongs to the stored node and requested session.
+    # Legacy extension fields may contain conflicting copies.
+    meta.pop("id", None)
+    meta.pop("session_id", None)
 
     # streaming-resume schema (docs/design/runtime/streaming-resume.md)
     # Every msg dict carries a ``status`` so the chat can tell at a
