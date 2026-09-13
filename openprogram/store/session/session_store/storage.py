@@ -314,24 +314,15 @@ class StorageOperations:
         dispatcher can call it at turn end; also called internally by
         write paths that don't need an explicit commit boundary.
 
-        Repo layout is append-only by design — no mutable "current
-        state" mirror file: history/ holds per-node files, context/
-        commits/ holds per-commit files, meta.json carries session-
-        level scalars (head_id is a UI pointer, single-valued by
-        construction). Two agents writing concurrently never target
-        the same file. Refresh meta only here.
+        Mutation APIs persist their files before returning. The session lock
+        completes pending append recovery before Git records those files;
+        committing must not overwrite them with a stale cache snapshot.
 
         Returns commit sha or None if nothing to commit.
         """
         pair = self._open(session_id)
         if not pair:
             return None
-        git, idx = pair
+        git, _ = pair
         with self._head_file_lock(git):
-            with idx._persist_lock:
-                with idx._lock:
-                    meta = dict(idx.meta)
-                    meta["head_id"] = idx.head_id
-                git.write_meta(meta)
             return git.commit_all(message)
-
