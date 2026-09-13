@@ -188,7 +188,7 @@ An `isError=True` return is reflected in `details["is_error"]`, and what the LLM
 
 ### 5. Test isolation — beware of `from openprogram.paths import get_state_dir`
 
-`tests/integration/store/test_attach_lazy_session.py` uses `monkeypatch.setattr("openprogram.paths.get_state_dir", ...)` to redirect the state directory. If `config.py` pulls it in via `from openprogram.paths import get_state_dir`, the first import happens **during** the attach test (because the webui startup hook triggers `_start_mcp_servers` → import `openprogram.mcp` → import `config`), and the lambda gets permanently bound into our module, leaking after the attach test ends.
+`tests/integration/store/sessions/test_attach_lazy_session.py` uses `monkeypatch.setattr("openprogram.paths.get_state_dir", ...)` to redirect the state directory. If `config.py` pulls it in via `from openprogram.paths import get_state_dir`, the first import happens **during** the attach test (because the webui startup hook triggers `_start_mcp_servers` → import `openprogram.mcp` → import `config`), and the lambda gets permanently bound into our module, leaking after the attach test ends.
 
 Fix: `from openprogram import paths as _paths`, and look up the attribute live on every call to `_paths.get_state_dir()`. Watch out: if the test suite adds a new paths monkeypatch, confirm our `config.py` still goes through the module reference.
 

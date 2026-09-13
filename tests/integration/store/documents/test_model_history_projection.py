@@ -49,7 +49,7 @@ def test_two_processes_project_one_retained_model_version(tmp_path):
     project=tmp_path / "project"
     project.mkdir()
     env={**os.environ,"HOME":str(home),"USERPROFILE":str(home),"OPENPROGRAM_PROFILE":""}
-    cwd=Path(__file__).resolve().parents[3]
+    cwd=Path(__file__).resolve().parents[4]
     setup=subprocess.run([sys.executable,"-c",SCRIPT,"setup",str(project)],cwd=cwd,env=env,
                          text=True,capture_output=True,timeout=30,check=True)
     project_id=json.loads(setup.stdout.strip().splitlines()[-1])["project"]

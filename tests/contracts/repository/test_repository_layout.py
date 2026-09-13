@@ -375,3 +375,10 @@ def test_node_apps_share_one_root_npm_workspace_lock() -> None:
         not (ROOT / "apps" / app / "package-lock.json").exists()
         for app in ("web", "desktop", "cli")
     )
+
+
+def test_storage_tests_are_grouped_by_feature():
+    for layer in ('unit', 'component', 'integration'):
+        directory = ROOT / 'tests' / layer / 'store'
+        assert not list(directory.glob('test_*.py')), f'ungrouped storage tests: {directory}'
+        assert list(directory.glob('*/test_*.py')), f'missing storage feature tests: {directory}'

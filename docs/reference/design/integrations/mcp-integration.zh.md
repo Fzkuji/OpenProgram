@@ -187,7 +187,7 @@ opencode 是 lazy:服务实例化时不连,首次 `tools()` 调用才 spawn。�
 
 ### 5. 测试隔离 — 警惕 `from openprogram.paths import get_state_dir`
 
-`tests/integration/store/test_attach_lazy_session.py` 用 `monkeypatch.setattr("openprogram.paths.get_state_dir", ...)` 重定向 state 目录。如果 `config.py` 用 `from openprogram.paths import get_state_dir` 引入,首次 import 发生在 attach 测试**期间**(因为 webui startup hook 触发 `_start_mcp_servers` → import `openprogram.mcp` → import `config`),lambda 会被永久 binding 到我们模块,attach 测试结束后泄漏。
+`tests/integration/store/sessions/test_attach_lazy_session.py` 用 `monkeypatch.setattr("openprogram.paths.get_state_dir", ...)` 重定向 state 目录。如果 `config.py` 用 `from openprogram.paths import get_state_dir` 引入,首次 import 发生在 attach 测试**期间**(因为 webui startup hook 触发 `_start_mcp_servers` → import `openprogram.mcp` → import `config`),lambda 会被永久 binding 到我们模块,attach 测试结束后泄漏。
 
 修复:`from openprogram import paths as _paths`,每次调 `_paths.get_state_dir()` 现查 attribute。监控:test 套件如果加新的 paths monkeypatch,确认我们的 `config.py` 仍然走 module reference。
 

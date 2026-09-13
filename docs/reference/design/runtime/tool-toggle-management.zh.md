@@ -278,9 +278,9 @@ provider 协程。实际执行始终使用本轮已解析且带权限 wrapper �
 ### 9.3 测试（回归保护）
 
 - `tests/unit/programs/tools/test_tool_expansion_deterministic.py` — 展开确定性（缓存前缀稳定）
-- `tests/unit/store/test_session_config_tools_intent.py` — 意图往返、用户精选 list 原样透传、
+- `tests/unit/store/sessions/test_session_config_tools_intent.py` — 意图往返、用户精选 list 原样透传、
   端到端：意图展开含新工具（send_message/list_sessions）+ web_search 叠加生效
-- `tests/unit/store/test_session_config.py::test_tools_enabled_yields_live_intent_not_snapshot` —
+- `tests/unit/store/sessions/test_session_config.py::test_tools_enabled_yields_live_intent_not_snapshot` —
   `tools=True` 产出 `{enabled:True}` 意图而非 list 快照
 - `tests/unit/context/test_tool_defer.py` — §7.6 的各项 defer 性质，含轮边界冻结
 - `tests/unit/context/test_budget.py` — 工具计价两半各自对真实 tokenize 载荷校验（§7.5）

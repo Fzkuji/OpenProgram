@@ -306,8 +306,8 @@ Regression coverage lives in `tests/unit/context/test_tool_defer.py`:
 ### 9.3 Tests (regression protection)
 
 - `tests/unit/programs/tools/test_tool_expansion_deterministic.py` — deterministic expansion (stable cache prefix)
-- `tests/unit/store/test_session_config_tools_intent.py` — intent round-trip, verbatim pass-through of user-picked lists, and end to end: the expanded intent includes new tools (send_message / list_agents) and web_search layering takes effect
-- `tests/unit/store/test_session_config.py::test_tools_enabled_yields_live_intent_not_snapshot` — `tools=True` produces `{enabled:True}` intent rather than a list snapshot
+- `tests/unit/store/sessions/test_session_config_tools_intent.py` — intent round-trip, verbatim pass-through of user-picked lists, and end to end: the expanded intent includes new tools (send_message / list_agents) and web_search layering takes effect
+- `tests/unit/store/sessions/test_session_config.py::test_tools_enabled_yields_live_intent_not_snapshot` — `tools=True` produces `{enabled:True}` intent rather than a list snapshot
 - `tests/unit/context/test_tool_defer.py` — the deferral properties of §7.6, including the turn-boundary freeze
 - `tests/unit/context/test_budget.py` — each half of the tool pricing against a real tokenized payload (§7.5)
 

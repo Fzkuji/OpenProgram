@@ -249,7 +249,7 @@ jobs:
           tests/component/runtime/test_local_backend_process_tree.py
           tests/component/runtime/test_git_bash_source_transport.py
           tests/component/agent/jobs/test_job_cancel_projection_race.py
-          tests/component/store/test_session_store_close.py
+          tests/component/store/sessions/test_session_store_close.py
           tests/component/programs/tools/test_pdf_import_isolation.py
           tests/unit/core/test_windows_worker_service.py
           tests/component/security/test_sandbox.py
@@ -261,8 +261,8 @@ jobs:
           tests/component/webui/files/test_project_files.py
           tests/component/webui/files/test_turn_files_ws.py
           tests/component/config/test_upgrade_cmd.py
-          tests/component/store/test_backup_command.py
-          tests/component/store/test_backup_staged_restore.py
+          tests/integration/store/backup/test_backup_command.py
+          tests/integration/store/backup/test_backup_staged_restore.py
       - name: Complete Windows unit regression
         timeout-minutes: 15
         run: >-

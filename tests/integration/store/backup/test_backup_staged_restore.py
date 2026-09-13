@@ -335,7 +335,7 @@ _write_config({'generation': 'concurrent'})
             os.fspath(published),
             os.fspath(release),
         ],
-        cwd=Path(__file__).parents[3],
+        cwd=Path(__file__).parents[4],
         env=env,
     )
     writer: subprocess.Popen | None = None
@@ -343,7 +343,7 @@ _write_config({'generation': 'concurrent'})
         _wait_for_path(published)
         writer = subprocess.Popen(
             [sys.executable, "-c", writer_script, os.fspath(attempted)],
-            cwd=Path(__file__).parents[3],
+            cwd=Path(__file__).parents[4],
             env=env,
         )
         _wait_for_path(attempted)
@@ -430,7 +430,7 @@ _write_config({'generation': 'concurrent'})
             os.fspath(recovering),
             os.fspath(release),
         ],
-        cwd=Path(__file__).parents[3],
+        cwd=Path(__file__).parents[4],
         env=env,
     )
     writer: subprocess.Popen | None = None
@@ -438,7 +438,7 @@ _write_config({'generation': 'concurrent'})
         _wait_for_path(recovering)
         writer = subprocess.Popen(
             [sys.executable, "-c", writer_script, os.fspath(attempted)],
-            cwd=Path(__file__).parents[3],
+            cwd=Path(__file__).parents[4],
             env=env,
         )
         _wait_for_path(attempted)
