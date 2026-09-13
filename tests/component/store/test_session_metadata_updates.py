@@ -99,3 +99,27 @@ def test_metadata_write_keeps_intervening_history_visible(stores, monkeypatch):
         assert {node.id for node in store.get_nodes('meta')} == {'root', 'second'}
         assert store.get_session('meta')['head_id'] == 'second'
         assert store.get_session('meta')['title'] == 'renamed'
+
+
+def test_update_during_first_creation_preserves_initial_metadata(tmp_path, monkeypatch):
+    store = SessionStore(tmp_path / 'sessions')
+    fresh = None
+    original = store._persist_meta
+    def interleave(git, index):
+        store.update_session('creating', pinned=True)
+        original(git, index)
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(store, '_persist_meta', interleave)
+            store.create_session('creating', 'main', title='Original title', source='cli', channel='test-channel')
+        fresh = SessionStore(tmp_path / 'sessions')
+        for reader in (store, fresh):
+            current = reader.get_session('creating')
+            assert current['title'] == 'Original title'
+            assert current['source'] == 'cli'
+            assert current['channel'] == 'test-channel'
+            assert current['pinned'] is True
+    finally:
+        if fresh is not None:
+            fresh.close()
+        store.close()

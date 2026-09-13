@@ -139,7 +139,14 @@ class SessionsOperations:
             if pair is None:
                 return None
             git, idx = pair
-            meta = transform(git.read_meta())
+            meta = git.read_meta()
+            if not meta and idx.meta.get("id") == session_id and not git.list_history():
+                # create_session has installed its initial fields but has not
+                # persisted them yet. No durable record supersedes them.
+                with idx._lock:
+                    meta = dict(idx.meta)
+                    meta["head_id"] = idx.head_id
+            meta = transform(meta)
             if meta is None:
                 return None
             git.write_meta(meta)

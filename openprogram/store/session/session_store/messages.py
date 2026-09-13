@@ -104,7 +104,7 @@ class MessagesOperations:
 
     @shared.contextmanager
     def _session_write_scope(self, session_id, *, create_if_missing=False):
-        """Keep placement, index refresh and node writes in one writer scope."""
+        """Keep placement, index refresh and writes in one writer scope."""
         with self._session_lock(session_id):
             pair = self._open(session_id, create_if_missing=create_if_missing)
             if pair is None:
@@ -114,10 +114,16 @@ class MessagesOperations:
             old_path = git.path
             with self._head_file_lock(git), idx._persist_lock:
                 if git.path != old_path or git.stale():
-                    idx.rebuild_from_paths(
-                        git.list_history(), git.read_meta(),
-                        shared._node_conv_predecessor, shared._node_caller,
+                    paths, meta = git.list_history(), git.read_meta()
+                    pending_creation = (
+                        create_if_missing and not paths and not meta
+                        and idx.meta.get("id") == session_id
                     )
+                    if not pending_creation:
+                        idx.rebuild_from_paths(
+                            paths, meta,
+                            shared._node_conv_predecessor, shared._node_caller,
+                        )
                     git.mark_synced()
                 yield git, idx
 
