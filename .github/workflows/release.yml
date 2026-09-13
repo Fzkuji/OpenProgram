@@ -3,9 +3,21 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing immutable release tag to rebuild
+        required: true
+        type: string
 
 permissions:
   contents: write
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+  OFFICE_ASSET_RELEASE: v0.9.0
+  OFFICE_ASSET_NAME: OfficeAssets-d15d12b-dc31dd9d.zip
+  OFFICE_ASSET_SHA256: 6367f66bb618e1c1ddfa27fffbb7ebcf084b652c8484d8923d42492ed0b5447d
 
 jobs:
   platforms:
@@ -15,6 +27,8 @@ jobs:
       desktop: ${{ steps.select.outputs.desktop }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - name: Select release platforms
         id: select
         env:
@@ -28,6 +42,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
@@ -37,7 +53,41 @@ jobs:
         with:
           version: "0.11.16"
       - name: Verify version
-        run: python scripts/release/verify-release-version.py --tag "${GITHUB_REF_NAME}"
+        run: python scripts/release/verify-release-version.py --tag "${RELEASE_TAG}"
+      - name: Prepare pinned Office resources
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release download "$OFFICE_ASSET_RELEASE" --repo "$GITHUB_REPOSITORY" \
+            --pattern "$OFFICE_ASSET_NAME" --dir "$RUNNER_TEMP/office-input"
+          python - <<'PYTHON'
+          import hashlib
+          import os
+          from pathlib import Path
+          import zipfile
+          from openprogram.office_assets import validate_prepared_office_pack
+
+          archive = Path(os.environ["RUNNER_TEMP"]) / "office-input" / os.environ["OFFICE_ASSET_NAME"]
+          hasher = hashlib.sha256()
+          with archive.open("rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  hasher.update(chunk)
+          digest = hasher.hexdigest()
+          if digest != os.environ["OFFICE_ASSET_SHA256"]:
+              raise SystemExit("Office build input digest mismatch")
+          output = Path(os.environ["RUNNER_TEMP"]) / "office-pack"
+          with zipfile.ZipFile(archive) as bundle:
+              bundle.extractall(output)
+          validate_prepared_office_pack(output)
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as stream:
+              stream.write(f"OPENPROGRAM_OFFICE_PACK={output}\n")
+          PYTHON
+      - uses: actions/upload-artifact@v7
+        with:
+          name: office-build-input
+          path: ${{ runner.temp }}/office-input/*
+          compression-level: 0
       - name: Build developer Python distributions
         run: |
           scripts/release/stage-release-assets.sh
@@ -71,6 +121,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
@@ -81,15 +133,44 @@ jobs:
           version: "0.11.16"
       - name: Verify version
         if: matrix.platform != 'windows'
-        run: python3 scripts/release/verify-release-version.py --tag "${GITHUB_REF_NAME}"
+        run: python3 scripts/release/verify-release-version.py --tag "${RELEASE_TAG}"
       - name: Verify version on Windows
         if: matrix.platform == 'windows'
-        run: python scripts/release/verify-release-version.py --tag "${GITHUB_REF_NAME}"
+        run: python scripts/release/verify-release-version.py --tag "${RELEASE_TAG}"
       - name: Install Linux runtime test dependencies
         if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends --yes xvfb xauth libgl1 libglib2.0-0
+      - name: Prepare pinned Office resources
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release download "$OFFICE_ASSET_RELEASE" --repo "$GITHUB_REPOSITORY" \
+            --pattern "$OFFICE_ASSET_NAME" --dir "$RUNNER_TEMP/office-input"
+          python - <<'PYTHON'
+          import hashlib
+          import os
+          from pathlib import Path
+          import zipfile
+          from openprogram.office_assets import validate_prepared_office_pack
+
+          archive = Path(os.environ["RUNNER_TEMP"]) / "office-input" / os.environ["OFFICE_ASSET_NAME"]
+          hasher = hashlib.sha256()
+          with archive.open("rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  hasher.update(chunk)
+          digest = hasher.hexdigest()
+          if digest != os.environ["OFFICE_ASSET_SHA256"]:
+              raise SystemExit("Office build input digest mismatch")
+          output = Path(os.environ["RUNNER_TEMP"]) / "office-pack"
+          with zipfile.ZipFile(archive) as bundle:
+              bundle.extractall(output)
+          validate_prepared_office_pack(output)
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as stream:
+              stream.write(f"OPENPROGRAM_OFFICE_PACK={output}\n")
+          PYTHON
       - name: Build complete product runtime
         if: matrix.platform != 'windows'
         env:
@@ -149,6 +230,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
@@ -160,10 +243,10 @@ jobs:
           path: runtime-artifact
       - name: Verify version
         if: matrix.platform != 'win'
-        run: python3 scripts/release/verify-release-version.py --tag "${GITHUB_REF_NAME}"
+        run: python3 scripts/release/verify-release-version.py --tag "${RELEASE_TAG}"
       - name: Verify version on Windows
         if: matrix.platform == 'win'
-        run: python scripts/release/verify-release-version.py --tag "$env:GITHUB_REF_NAME"
+        run: python scripts/release/verify-release-version.py --tag "$env:RELEASE_TAG"
       - name: Install desktop dependencies
         run: npm ci --workspace apps/desktop --include-workspace-root
       - name: Prepare embedded runtime from release archive
@@ -287,6 +370,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: actions/download-artifact@v8
         with:
           name: product-runtime-${{ matrix.platform }}-${{ matrix.arch }}
@@ -295,7 +380,7 @@ jobs:
         if: matrix.platform != 'windows'
         shell: bash
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${RELEASE_TAG#v}"
           archive="$(find "$GITHUB_WORKSPACE/runtime-artifact" -name '*.tar.gz' -print -quit)"
           OPENPROGRAM_VERSION="$version" \
           OPENPROGRAM_RUNTIME_ARCHIVE="$archive" \
@@ -307,7 +392,7 @@ jobs:
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
-          $env:OPENPROGRAM_VERSION = $env:GITHUB_REF_NAME.Substring(1)
+          $env:OPENPROGRAM_VERSION = $env:RELEASE_TAG.Substring(1)
           $env:OPENPROGRAM_RUNTIME_ARCHIVE = (
             Get-ChildItem -LiteralPath "$env:GITHUB_WORKSPACE\runtime-artifact" -Filter "*.zip" |
             Select-Object -First 1
@@ -322,18 +407,20 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: actions/download-artifact@v8
         with:
           path: release-artifacts
       - name: Create release manifest
         run: |
           python scripts/release/create-release-manifest.py release-artifacts \
-            --version "$GITHUB_REF_NAME" \
+            --version "$RELEASE_TAG" \
             --output release-artifacts/release-manifest.json
       - name: Publish GitHub Release
         run: |
-          notes_file=".github/release-notes/$GITHUB_REF_NAME.md"
-          release_version="${GITHUB_REF_NAME#v}"
+          notes_file=".github/release-notes/$RELEASE_TAG.md"
+          release_version="${RELEASE_TAG#v}"
           test -s "$notes_file" || {
             echo "missing release notes: $notes_file" >&2
             exit 1
@@ -353,10 +440,20 @@ jobs:
               raise SystemExit(f"release notes must be English: {notes_path}")
           PY
           mapfile -d '' files < <(find release-artifacts -type f -print0)
-          gh release create "$GITHUB_REF_NAME" "${files[@]}" \
-            --verify-tag \
-            --title "OpenProgram $release_version Release" \
-            --notes-file "$notes_file"
+          if draft="$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null)"; then
+            test "$draft" = true || {
+              echo "refusing to overwrite a public release: $RELEASE_TAG" >&2
+              exit 1
+            }
+            gh release upload "$RELEASE_TAG" "${files[@]}" --clobber
+            gh release edit "$RELEASE_TAG" --draft=false --latest \
+              --title "OpenProgram $release_version Release" --notes-file "$notes_file"
+          else
+            gh release create "$RELEASE_TAG" "${files[@]}" \
+              --verify-tag \
+              --title "OpenProgram $release_version Release" \
+              --notes-file "$notes_file"
+          fi
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Verify public latest Release entry
@@ -374,7 +471,7 @@ jobs:
               draft="$(jq -r '.draft' latest.json)"
               prerelease="$(jq -r '.prerelease' latest.json)"
               manifest_count="$(jq '[.assets[] | select(.name == "release-manifest.json")] | length' latest.json)"
-              if [ "$tag" = "$GITHUB_REF_NAME" ] && \
+              if [ "$tag" = "$RELEASE_TAG" ] && \
                  [ "$draft" = false ] && [ "$prerelease" = false ] && \
                  [ "$manifest_count" = 1 ]; then
                 exit 0
@@ -382,7 +479,7 @@ jobs:
             fi
             sleep 5
           done
-          echo "public latest Release did not expose the complete $GITHUB_REF_NAME release" >&2
+          echo "public latest Release did not expose the complete $RELEASE_TAG release" >&2
           exit 1
         env:
           GH_TOKEN: ${{ github.token }}
