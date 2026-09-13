@@ -47,7 +47,7 @@ def _release_native_workspace(root: Path) -> None:
         shutdown_runner()
     if not stop_projection_worker():
         raise RuntimeError("execution projection worker did not stop before native workspace cleanup")
-    cached = getattr(ss_mod, "_default_store", None)
+    cached = ss_mod.shared._default_store
     if cached is not None and _is_under(getattr(cached, "root_path", None), root):
         cached.close()
         ss_mod.shared._default_store = None
