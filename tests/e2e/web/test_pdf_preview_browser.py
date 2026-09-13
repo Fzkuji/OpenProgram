@@ -22,8 +22,13 @@ def pdf_bundle(tmp_path_factory):
     return target.read_text()
 
 
-@pytest.fixture
-def pdf_page(pdf_bundle):
+# Chromium bundled with Electron can lag behind the browser used by CI.
+# Apply the missing APIs in both realms: main-page shims do not affect workers.
+DESKTOP_MISSING_APIS = "delete Uint8Array.prototype.toHex; delete Math.sumPrecise;"
+
+
+@pytest.fixture(params=["native", "desktop-missing-apis"])
+def pdf_page(pdf_bundle, request):
     from playwright.sync_api import sync_playwright
 
     asset_root = Path("apps/web/public/document-assets/pdfjs")
@@ -33,6 +38,9 @@ def pdf_page(pdf_bundle):
         browser = runtime.chromium.launch(headless=True)
         page = browser.new_page()
         page.set_default_timeout(8000)
+        compatibility = request.param == "desktop-missing-apis"
+        if compatibility:
+            page.add_init_script(DESKTOP_MISSING_APIS)
         errors = []
         page.on("pageerror", lambda error: errors.append(str(error)))
 
@@ -46,7 +54,11 @@ def pdf_page(pdf_bundle):
                 relative = path.removeprefix("/document-assets/pdfjs/")
                 candidate = asset_root / relative
                 if candidate.is_file():
-                    request.fulfill(path=str(candidate))
+                    if compatibility and relative == "pdf.worker.mjs":
+                        request.fulfill(content_type="text/javascript",
+                                        body=DESKTOP_MISSING_APIS + "\n" + candidate.read_text())
+                    else:
+                        request.fulfill(path=str(candidate))
                 else:
                     request.fulfill(status=404)
             else:
@@ -54,6 +66,9 @@ def pdf_page(pdf_bundle):
 
         page.route("**/*", route)
         page.goto("https://document.test/")
+        if compatibility:
+            assert page.evaluate("typeof Uint8Array.prototype.toHex") == "undefined"
+            assert page.evaluate("typeof Math.sumPrecise") == "undefined"
         try:
             yield page, errors
         finally:
@@ -84,6 +99,11 @@ def test_pdf_pages_pixels_zoom_and_text_search(pdf_page):
     search.fill("target")
     page.get_by_role("button", name="Find").click()
     expect(page.get_by_label("Search results")).to_contain_text("Page 2")
+    page.evaluate("hideFile()")
+    expect(page.locator("canvas")).to_have_count(0)
+    page.evaluate("body => showFile('reopened.pdf', body)", PDF_FIXTURE)
+    expect(page.get_by_text("1 / 2", exact=True)).to_be_visible()
+    expect(page.get_by_role("alert")).to_have_count(0)
     assert errors == []
 
 
