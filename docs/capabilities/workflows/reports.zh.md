@@ -21,4 +21,4 @@
 
 四个独立包位于 `openprogram/programs/workflow/weekly_report/`。在 Abilities 展开同名文件夹即可选择各入口。调用图显示总入口到路由 Agent 和三个子 Workflow 的可能调用关系；不代表每次全部执行。
 
-路由、小组请求解析和个人周报的模型调用继承 Runtime 超时配置（`OPENPROGRAM_EXEC_TIMEOUT_S`），不再单独限制为 90 秒。小组请求使用 schema 校验和 Runtime 已有的有限格式修正重试；格式修正耗尽后返回 `WAITING_MODEL` 和原始请求供恢复，不再误报为缺少用户输入。外部记录写入结果不确定时不自动重复执行。
+路由、小组请求解析和个人周报的模型调用继承 Runtime 超时配置（`OPENPROGRAM_EXEC_TIMEOUT_S`），不再单独限制为 90 秒。小组请求对未验证原生 schema 能力的提供商允许使用提示词兼容模式，并保留 schema 校验和 Runtime 已有的有限格式修正重试；格式修正耗尽后返回 `WAITING_MODEL` 和原始请求供恢复，不再误报为缺少用户输入。外部记录写入结果不确定时不自动重复执行。

@@ -68,7 +68,8 @@ and resume; the Workflow still performs collection and summarization. A window
 that does not permit capture returns `WINDOW_CAPTURE_UNAVAILABLE`. No screen or
 WeChat settings are changed.
 Each child retains its own interaction and recovery behavior. Group request
-parsing uses schema-validated model output and the Runtime's existing bounded
+parsing uses schema-validated model output, permits prompt fallback for providers
+without verified native schema support, and uses the Runtime's existing bounded
 repair retry. Exhausted model-format failures return `WAITING_MODEL` with the
 original request for resumption, rather than claiming that user input is missing.
 Routing, group request parsing, and personal report model calls inherit the
