@@ -14,7 +14,7 @@ import pytest
 
 from openprogram.agent.internals._revert import reapply_turn, revert_turn
 from openprogram.store.session.session_store import SessionStore
-from openprogram.store.snapshot.checkpoint import CheckpointStore, file_apply
+from openprogram.store.snapshot.checkpoint import CheckpointStore, file_apply, transactions
 
 
 @pytest.fixture
@@ -248,12 +248,9 @@ def test_missing_rollback_blob_is_unavailable_before_any_write(
 
 def test_history_lock_is_stable_for_overlapping_action_sets(tmp_path, monkeypatch):
     monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path / "state")
-    first_store = CheckpointStore(tmp_path / "sessions" / "one")
-    second_store = CheckpointStore(tmp_path / "sessions" / "two")
     path = str(tmp_path / "workspace" / "a" / "x.py")
     other = str(tmp_path / "workspace" / "b" / "y.py")
-    assert first_store._workspace_lock_path() == second_store._workspace_lock_path()
-    assert first_store._workspace_lock_path().name == "history.lock"
+    assert transactions._workspace_lock_path() == tmp_path / "state" / "mutation-locks" / "history.lock"
     assert path != other  # action-set shape does not enter lock identity
 
 
@@ -269,7 +266,7 @@ def test_plan_change_after_prepare_aborts_without_writing(
     journal = _record_mutation(
         store_with_session, session_id, turn_id, first, "first after\n",
     )
-    original_lock = journal._workspace_lock
+    original_lock = transactions._workspace_lock
 
     @contextmanager
     def add_mutation_before_replan(paths):
@@ -283,7 +280,7 @@ def test_plan_change_after_prepare_aborts_without_writing(
             )
             yield
 
-    monkeypatch.setattr(journal, "_workspace_lock", add_mutation_before_replan)
+    monkeypatch.setattr(transactions, "_workspace_lock", add_mutation_before_replan)
 
     result = journal.apply_history_operation(
         turn_id, "revert", idempotency_key="stale-plan",

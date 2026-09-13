@@ -9,9 +9,8 @@ import stat
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
-from openprogram._compat import is_link_metadata
 
-from . import capture, file_apply, file_state, manifest, planning
+from . import capture, documents, file_apply, file_state, manifest, planning, transactions
 from .capture import MutationJournalError
 from .recovery_records import (
     invalid_history_result, invalid_rewind_result, read_history_record, read_rewind_record,
@@ -255,40 +254,6 @@ class CheckpointStore:
             finally:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
-    def _workspace_lock_path(self) -> Path:
-        from openprogram.paths import get_state_dir
-
-        root = get_state_dir() / "mutation-locks"
-        root.mkdir(parents=True, exist_ok=True)
-        return root / "history.lock"
-
-    @contextmanager
-    def _workspace_lock(self, _paths: list[str]):
-        from openprogram import _compat as fcntl
-
-        with self._workspace_lock_path().open("a+") as handle:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-
-
-    @staticmethod
-    def _intent_result(intent: dict) -> dict:
-        committed = intent.get("status") == "committed"
-        return {
-            "status": intent.get("status", "error"),
-            "transaction_id": intent.get("transaction_id"),
-            "idempotency_key": intent.get("idempotency_key"),
-            "restored_paths": [
-                action["path"] for action in intent.get("actions", [])
-            ] if committed else [],
-            "conflicts": intent.get("conflicts", []),
-            "unavailable": intent.get("unavailable", []),
-            "error_code": intent.get("error_code"),
-            "error": intent.get("error"),
-        }
 
     @staticmethod
     def _rewind_intent_result(intent: dict, *, replayed: bool = False) -> dict:
@@ -355,7 +320,7 @@ class CheckpointStore:
         if initial is None:
             return invalid_rewind_result(intent_path)
         paths = [action["path"] for action in initial["actions"]]
-        with self._workspace_lock(paths):
+        with transactions._workspace_lock(paths):
             intent = read_rewind_record(intent_path)
             if intent is None:
                 return invalid_rewind_result(intent_path)
@@ -476,337 +441,24 @@ class CheckpointStore:
             intent["error_code"] = "RECOVERY_REQUIRED"
             intent["error"] = "incomplete history intent requires explicit recovery"
             manifest.save(path, intent)
-            results.append(self._intent_result(intent))
+            results.append(transactions._intent_result(intent))
         return results
 
-    def _validate_custom_history_actions(self, actions: list[dict]) -> dict:
-        conflicts = []
-        unavailable = []
-        for action in actions:
-            path = action.get("path") or ""
-            if not path:
-                unavailable.append(path)
-                continue
-            if not file_state._state_matches(
-                file_state._inspect_state(path), action.get("expected_current") or {},
-            ):
-                conflicts.append(path)
-                continue
-            for state in (action.get("target") or {}, action.get("rollback") or {}):
-                if not file_state._blob_is_exact(state):
-                    unavailable.append(path)
-                    break
-        if unavailable:
-            return {
-                "status": "unavailable", "actions": actions,
-                "conflicts": conflicts, "unavailable": sorted(set(unavailable)),
-                "error": "custom history target is unavailable",
-            }
-        if conflicts:
-            return {
-                "status": "blocked", "actions": actions,
-                "conflicts": sorted(set(conflicts)), "unavailable": [],
-                "error": "current workspace does not match the source branch",
-            }
-        return {
-            "status": "ready", "actions": actions,
-            "conflicts": [], "unavailable": [],
-        }
-
-    @staticmethod
-    def _plan_hash(actions: list[dict]) -> str:
-        return "sha256:" + hashlib.sha256(
-            json.dumps(actions, sort_keys=True).encode(),
-        ).hexdigest()
-
-    def _execute_history_intent(
-        self, intent: dict, intent_path: Path, backup_dir: Path, *, preflight=None,
-    ) -> dict:
-        """Apply a prepared file intent using the shared guarded transaction."""
-        paths = [action["path"] for action in intent.get("actions", [])]
-        with self._workspace_lock(paths):
-            if preflight is not None:
-                current_plan = preflight()
-                if current_plan.get("status") != "ready":
-                    intent.update({
-                        "status": "aborted",
-                        "conflicts": current_plan.get("conflicts", []),
-                        "unavailable": current_plan.get("unavailable", []),
-                        "error": current_plan.get("error"),
-                    })
-                    manifest.save(intent_path, intent)
-                    return self._intent_result(intent)
-                if self._plan_hash(current_plan["actions"]) != intent.get("plan_hash"):
-                    intent.update({"status": "aborted", "error": "stale_plan"})
-                    manifest.save(intent_path, intent)
-                    return self._intent_result(intent)
-            conflicts = []
-            unavailable = []
-            for action in intent["actions"]:
-                if not file_state._state_matches(
-                    file_state._inspect_state(action["path"]),
-                    action.get("expected_current") or {},
-                ):
-                    conflicts.append(action["path"])
-                for state in (action.get("target") or {}, action.get("rollback") or {}):
-                    if state.get("kind") != "regular":
-                        continue
-                    blob = Path(str(state.get("blob_path") or backup_dir / str(state.get("blob_ref") or "")))
-                    if not blob.is_file() or (state.get("digest") and file_state._digest(blob) != state.get("digest")):
-                        unavailable.append(action["path"])
-            current = {
-                "status": "unavailable" if unavailable else "blocked" if conflicts else "ready",
-                "conflicts": sorted(set(conflicts)), "unavailable": sorted(set(unavailable)),
-                "error": "custom history target is unavailable" if unavailable else "current file state does not match the recorded source",
-            }
-            if current.get("status") != "ready":
-                intent.update({
-                    "status": "aborted",
-                    "conflicts": current.get("conflicts", []),
-                    "unavailable": current.get("unavailable", []),
-                    "error": current.get("error"),
-                })
-                manifest.save(intent_path, intent)
-                return self._intent_result(intent)
-            intent["status"] = "applying"
-            manifest.save(intent_path, intent)
-            touched: list[dict] = []
-            try:
-                for action in intent["actions"]:
-                    touched.append(action)
-                    if not file_state._state_matches(
-                        file_state._inspect_state(action["path"]),
-                        action["expected_current"],
-                    ):
-                        raise OSError(f"stale current state for {action['path']}")
-                    guard_path = file_apply._apply_state(
-                        action["path"], action["target"], backup_dir,
-                        intent["transaction_id"], action["expected_current"],
-                    )
-                    if guard_path:
-                        action["guard_path"] = guard_path
-                    if not file_state._state_matches(
-                        file_state._inspect_state(action["path"]), action["target"],
-                    ):
-                        raise OSError(f"verification failed for {action['path']}")
-                    if guard_path and not file_state._state_matches(
-                        file_state._inspect_state(guard_path), action["rollback"],
-                    ):
-                        file_apply._restore_changed_guard(
-                            action, guard_path, intent["transaction_id"],
-                        )
-                        raise OSError(
-                            f"external writer changed moved inode for {action['path']}",
-                        )
-                    action["state"] = "verified"
-                    manifest.save(intent_path, intent)
-            except Exception as exc:
-                recovery_required = False
-                for action in reversed(touched):
-                    try:
-                        actual = file_state._inspect_state(action["path"])
-                        if file_state._state_matches(actual, action["rollback"]):
-                            action["state"] = "rolled_back"
-                            continue
-                        if not file_state._state_matches(actual, action["target"]):
-                            recovery_required = True
-                            action["error"] = "external change prevents rollback"
-                            continue
-                        rollback_guard = file_apply._apply_state(
-                            action["path"], action["rollback"], backup_dir,
-                            intent["transaction_id"] + "_rollback", action["target"],
-                        )
-                        if rollback_guard:
-                            action["rollback_guard_path"] = rollback_guard
-                        if not file_state._state_matches(
-                            file_state._inspect_state(action["path"]), action["rollback"],
-                        ):
-                            raise OSError("rollback verification failed")
-                        action["state"] = "rolled_back"
-                    except Exception as rollback_error:
-                        recovery_required = True
-                        action["error"] = str(rollback_error)
-                intent["status"] = (
-                    "recovery_required" if recovery_required else "rolled_back"
-                )
-                if recovery_required:
-                    intent["error_code"] = "RECOVERY_REQUIRED"
-                intent["error"] = str(exc)
-                manifest.save(intent_path, intent)
-                return self._intent_result(intent)
-            try:
-                intent["status"] = "committed"
-                manifest.save(intent_path, intent)
-            except Exception as exc:
-                # The target was changed, but durable completion was not recorded.
-                intent["status"] = "recovery_required"
-                intent["error_code"] = "RECOVERY_REQUIRED"
-                intent["error"] = f"history commit failed: {exc}"
-                try:
-                    manifest.save(intent_path, intent)
-                except Exception as save_error:
-                    intent["error"] = f"history commit failed: {exc}; state save failed: {save_error}"
-                return self._intent_result(intent)
-        return self._intent_result(intent)
-
-    def _manual_operation_path(self, operation_id: str) -> Path:
-        if self.recovery_root is None:
-            raise TypeError("recovery_root is required for manual document operations")
-        if (
-            not isinstance(operation_id, str)
-            or len(operation_id) != 32
-            or any(char not in "0123456789abcdef" for char in operation_id)
-        ):
-            raise ValueError("invalid operation_id")
-        return self.recovery_root / "operations" / operation_id
-
-
-    @staticmethod
-    def _manual_descriptor(state: dict) -> dict:
-        if state.get("kind") == "absent":
-            return {"kind": "absent", "sha256": None, "mode": None, "size": 0, "blob_ref": None}
-        return {
-            "kind": "regular", "blob_ref": state["blob_ref"],
-            "sha256": state["sha256"], "mode": state["mode"], "size": state["size"],
-        }
-
-    @contextmanager
-    def _manual_operation_lock(self, operation_id: str):
-        from openprogram import _compat as fcntl
-
-        operation_dir = self._manual_operation_path(operation_id)
-        operation_dir.mkdir(parents=True, exist_ok=True)
-        with (operation_dir / ".lock").open("a+") as handle:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
     def publish_document(
         self, operation_id: str, target_path: str | Path, source_path: str | Path,
         *, expected_revision: str | None = None, expected_mtime: int | float | None = None,
         fingerprint: str, metadata: dict | None = None,
     ) -> dict:
-        with self._manual_operation_lock(operation_id):
-            return self._publish_document_locked(
-                operation_id, target_path, source_path,
-                expected_revision=expected_revision, expected_mtime=expected_mtime,
-                fingerprint=fingerprint, metadata=metadata,
-            )
+        return documents.publish_document(
+            self.recovery_root, operation_id, target_path, source_path,
+            expected_revision=expected_revision, expected_mtime=expected_mtime,
+            fingerprint=fingerprint, metadata=metadata,
+        )
 
-    def _publish_document_locked(
-        self, operation_id: str, target_path: str | Path, source_path: str | Path,
-        *, expected_revision: str | None = None, expected_mtime: int | float | None = None,
-        fingerprint: str, metadata: dict | None = None,
-    ) -> dict:
-        """Durably publish one bounded ordinary file and return its receipt."""
-        operation_dir = self._manual_operation_path(operation_id)
-        intent_path = operation_dir / "intent.json"
-        if not isinstance(fingerprint, str) or not fingerprint:
-            raise ValueError("fingerprint is required")
-        if intent_path.exists():
-            existing = self.read_document_operation(operation_id)
-            if existing.get("fingerprint") != fingerprint:
-                raise ValueError("operation fingerprint conflict")
-            if existing.get("status") != "prepared":
-                return existing
-            return existing
-        target = Path(target_path)
-        source = Path(source_path)
-        if not target.is_absolute() or not source.is_absolute():
-            raise ValueError("document paths must be absolute")
-        operation_dir.mkdir(parents=True, exist_ok=True)
-        before = {"kind": "absent"}
-        try:
-            target_info = os.lstat(target)
-        except FileNotFoundError:
-            target_info = None
-        if target_info is not None:
-            if (not stat.S_ISREG(target_info.st_mode) or is_link_metadata(target_info)
-                    or target_info.st_nlink != 1 or target_info.st_size > 64 * 1024 * 1024):
-                raise MutationJournalError("document target must be an ordinary file of at most 64 MiB")
-            before = capture._capture_manual_blob(target, operation_dir / "before")
-        candidate = capture._capture_manual_blob(source, operation_dir / "candidate")
-        # A publication changes bytes while retaining the target's existing
-        # permissions.  Source permissions are relevant only when creating a
-        # previously absent target.
-        if before.get("kind") == "regular":
-            candidate["mode"] = before["mode"]
-        current_revision = before.get("sha256") if before["kind"] == "regular" else "absent"
-        if expected_revision is not None and expected_revision != current_revision:
-            raise MutationJournalError("document baseline does not match")
-        if expected_mtime is not None and target_info is not None and target_info.st_mtime != expected_mtime:
-            raise MutationJournalError("document mtime does not match")
-        parent_chain = file_state._capture_parent_chain(str(target))
-        if before.get("kind") == "regular":
-            before["blob_path"] = str(operation_dir / before["blob_ref"])
-        before_state = {**before, "parent_chain": parent_chain}
-        target_state = {**candidate, "parent_chain": parent_chain, "blob_path": str(operation_dir / candidate["blob_ref"])}
-        if before["kind"] == "absent":
-            before_state["parent_chain"] = parent_chain
-        intent = {
-            "version": 1, "status": "prepared", "operation_id": operation_id,
-            "transaction_id": f"document_{uuid.uuid4().hex}", "fingerprint": fingerprint,
-            "metadata": metadata or {}, "expected_revision": expected_revision,
-            "expected_mtime": expected_mtime, "target_path": str(target),
-            "actions": [{"path": str(target), "expected_current": before_state,
-                          "target": target_state, "rollback": before_state, "state": "pending", "error": None}],
-            "before": self._manual_descriptor(before), "after": self._manual_descriptor(candidate),
-        }
-        manifest.save(intent_path, intent)
-        result = self._execute_history_intent(intent, intent_path, operation_dir)
-        if result.get("status") == "committed":
-            intent["mtime"] = target.stat().st_mtime if target.exists() else None
-            manifest.save(intent_path, intent)
-        result.update({"fingerprint": fingerprint, "before": intent["before"], "after": intent["after"],
-                       "revision": candidate["sha256"], "mtime": intent.get("mtime")})
-        return result
 
     def read_document_operation(self, operation_id: str) -> dict:
-        path = self._manual_operation_path(operation_id) / "intent.json"
-        try:
-            value = json.loads(path.read_text(encoding="utf-8"))
-        except (FileNotFoundError, OSError, json.JSONDecodeError) as exc:
-            if isinstance(exc, FileNotFoundError):
-                return {"status": "not_found", "operation_id": operation_id}
-            return {"status": "recovery_required", "operation_id": operation_id,
-                    "error_code": "RECOVERY_REQUIRED", "error": "invalid document intent"}
-        if not isinstance(value, dict):
-            return {"status": "recovery_required", "operation_id": operation_id,
-                    "error_code": "RECOVERY_REQUIRED", "error": "invalid document intent"}
-        def valid_descriptor(descriptor: object) -> bool:
-            if not isinstance(descriptor, dict) or descriptor.get("kind") not in {"absent", "regular"}:
-                return False
-            if descriptor["kind"] == "absent":
-                return descriptor.get("size") == 0
-            return (
-                isinstance(descriptor.get("blob_ref"), str)
-                and bool(descriptor["blob_ref"])
-                and descriptor["blob_ref"] not in {".", ".."}
-                and Path(descriptor["blob_ref"]).name == descriptor["blob_ref"]
-                and isinstance(descriptor.get("sha256"), str)
-                and len(descriptor["sha256"]) == 64
-                and all(char in "0123456789abcdef" for char in descriptor["sha256"])
-                and isinstance(descriptor.get("mode"), str)
-                and isinstance(descriptor.get("size"), int)
-                and descriptor["size"] >= 0
-            )
-        invalid = (
-            value.get("operation_id") != operation_id
-            or not valid_descriptor(value.get("before"))
-            or not valid_descriptor(value.get("after"))
-        )
-        if invalid or value.get("status") in {"prepared", "applying"}:
-            value = {**value, "status": "recovery_required", "error_code": "RECOVERY_REQUIRED",
-                     "error": "invalid or incomplete document operation requires recovery"}
-        after = value.get("after")
-        revision = after.get("sha256") if isinstance(after, dict) else None
-        return {"status": value.get("status", "error"), "transaction_id": value.get("transaction_id"),
-                "operation_id": value.get("operation_id", operation_id), "fingerprint": value.get("fingerprint"),
-                "before": value.get("before"), "after": value.get("after"),
-                "revision": revision, "mtime": value.get("mtime"),
-                "error_code": value.get("error_code"), "error": value.get("error")}
+        return documents.read_document_operation(self.recovery_root, operation_id)
 
     @staticmethod
     def rewind_plan_hash(
@@ -846,8 +498,8 @@ class CheckpointStore:
             if existing["status"] in {
                 "committed", "rolled_back", "recovery_required", "aborted",
             }:
-                return self._intent_result(existing)
-            return self._intent_result({
+                return transactions._intent_result(existing)
+            return transactions._intent_result({
                 **existing,
                 "status": "recovery_required",
                 "error_code": "RECOVERY_REQUIRED",
@@ -866,7 +518,7 @@ class CheckpointStore:
             "idempotency_key": key,
             "turn_id": turn_id,
             "direction": direction,
-            "plan_hash": self._plan_hash(plan["actions"]),
+            "plan_hash": transactions._plan_hash(plan["actions"]),
             "status": "prepared",
             "actions": plan["actions"],
             "conflicts": [],
@@ -884,12 +536,12 @@ class CheckpointStore:
                 "error": current_plan.get("error"),
             })
             manifest.save(intent_path, intent)
-            return self._intent_result(intent)
-        if self._plan_hash(current_plan["actions"]) != intent["plan_hash"]:
+            return transactions._intent_result(intent)
+        if transactions._plan_hash(current_plan["actions"]) != intent["plan_hash"]:
             intent.update({"status": "aborted", "error": "stale_plan"})
             manifest.save(intent_path, intent)
-            return self._intent_result(intent)
-        return self._execute_history_intent(
+            return transactions._intent_result(intent)
+        return transactions._execute_history_intent(
             intent, intent_path, backup_dir,
             preflight=lambda: self.plan_history_operation(turn_id, direction),
         )
@@ -988,7 +640,7 @@ class CheckpointStore:
             )
 
         plan = (
-            self._validate_custom_history_actions(custom_actions)
+            transactions._validate_custom_history_actions(custom_actions)
             if custom_actions is not None
             else self.plan_rewind_operation(turn_ids)
         )
@@ -1043,13 +695,13 @@ class CheckpointStore:
         }
         manifest.save(intent_path, intent)
         paths = [action["path"] for action in intent["actions"]]
-        with self._workspace_lock(paths):
+        with transactions._workspace_lock(paths):
             if get_head() != expected_head_id:
                 intent.update({"status": "aborted", "error": "stale_head"})
                 manifest.save(intent_path, intent)
                 return self._rewind_intent_result(intent)
             current_plan = (
-                self._validate_custom_history_actions(custom_actions)
+                transactions._validate_custom_history_actions(custom_actions)
                 if custom_actions is not None
                 else self.plan_rewind_operation(turn_ids)
             )

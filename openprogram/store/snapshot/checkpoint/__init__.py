@@ -12,6 +12,8 @@ Modules:
 * ``file_apply`` — guarded publication and rollback.
 * ``capture`` — immutable snapshots and bounded content statistics.
 * ``planning`` — committed mutations, blob resolution and history plans.
+* ``transactions`` — shared workspace locks and guarded transaction execution.
+* ``documents`` — document preparation, publication and operation receipts.
 * ``store.CheckpointStore`` — mutation receipts, history transactions and recovery.
 * ``gc`` — evict old turn directories beyond a soft cap.
 

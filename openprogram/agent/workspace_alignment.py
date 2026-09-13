@@ -5,7 +5,7 @@ import time
 import uuid
 from typing import Any
 
-from openprogram.store.snapshot.checkpoint import file_state, planning
+from openprogram.store.snapshot.checkpoint import file_state, planning, transactions
 
 
 def get_workspace_alignment(session_id: str, *, store=None) -> dict[str, Any]:
@@ -267,7 +267,7 @@ def plan_branch_workspace_restore(session_id: str, *, store=None) -> dict[str, A
             "unavailable": unavailable,
             "error": "branch projection is incomplete",
         }
-    validated = journal._validate_custom_history_actions(actions)
+    validated = transactions._validate_custom_history_actions(actions)
     return {
         **validated,
         "source_head_id": source_head,

@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from openprogram.store.session.session_store import SessionStore
-from openprogram.store.snapshot.checkpoint import CheckpointStore, file_apply
+from openprogram.store.snapshot.checkpoint import CheckpointStore, file_apply, transactions
 from openprogram.store.snapshot.checkpoint import manifest
 
 
@@ -128,12 +128,12 @@ def test_stale_folded_plan_writes_no_planned_file_and_keeps_head(
     assistants, journal = _seed_three_turns(store, "s-stale", target)
     added = tmp_path / "work" / "late.py"
     added.write_text("late-before\n", encoding="utf-8")
-    original_lock = CheckpointStore._workspace_lock
+    original_lock = transactions._workspace_lock
     injected = {"done": False}
 
     @contextmanager
-    def add_receipt_before_replan(self, paths):
-        with original_lock(self, paths):
+    def add_receipt_before_replan(paths):
+        with original_lock(paths):
             if not injected["done"]:
                 injected["done"] = True
                 journal.backup_before_edit(assistants[-1], str(added))
@@ -143,7 +143,7 @@ def test_stale_folded_plan_writes_no_planned_file_and_keeps_head(
                 )
             yield
 
-    monkeypatch.setattr(CheckpointStore, "_workspace_lock", add_receipt_before_replan)
+    monkeypatch.setattr(transactions, "_workspace_lock", add_receipt_before_replan)
 
     result = rewind_to("s-stale", "u1", idempotency_key="rewind-stale")
 

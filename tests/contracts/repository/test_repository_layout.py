@@ -455,3 +455,22 @@ def test_checkpoint_planning_has_an_explicit_session_owner():
     for name in names - {"state_with_blob"}:
         assert len(methods[name].body) == 1
         assert isinstance(methods[name].body[0], ast.Return)
+
+
+def test_checkpoint_transactions_and_documents_have_direct_owners():
+    import ast
+
+    root = ROOT / "openprogram/store/snapshot/checkpoint"
+    ownership = {
+        "transactions": {"_workspace_lock", "_execute_history_intent", "_intent_result"},
+        "documents": {"_manual_operation_path", "_publish_document_locked", "publish_document", "read_document_operation"},
+    }
+    for owner, required in ownership.items():
+        path = root / f"{owner}.py"
+        assert path.exists(), f"missing checkpoint owner: {owner}"
+        module = ast.parse(path.read_text())
+        assert required <= {node.name for node in module.body if isinstance(node, ast.FunctionDef)}
+    module = ast.parse((root / "store.py").read_text())
+    store = next(node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "CheckpointStore")
+    methods = {node.name for node in store.body if isinstance(node, ast.FunctionDef)}
+    assert not {"_workspace_lock", "_execute_history_intent", "_manual_operation_path", "_publish_document_locked"} & methods
