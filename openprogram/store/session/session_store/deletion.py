@@ -71,6 +71,8 @@ def delete_nodes(store, session_id, node_id, *, descendants=False):
         if idx.head_id in seen:
             fallback = shared._node_conv_predecessor(root)
             meta["head_id"] = fallback if fallback not in seen else None
+        if meta.get("last_node_id") in seen:
+            meta.pop("last_node_id")
         shared.atomic_write_text(intent_path(git), json.dumps(
             {"version": 1, "nodes": identities, "meta": meta},
             ensure_ascii=False, default=str,

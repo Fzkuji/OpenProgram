@@ -140,3 +140,24 @@ def test_tail_selection_includes_child_appended_before_lock(stores, monkeypatch)
         assert store.delete_branch_tail("s", "target") == 2
     assert_deleted(store)
     assert_deleted(new())
+
+
+@pytest.mark.parametrize("method", ["drop_message", "delete_branch_tail"])
+@pytest.mark.parametrize("interrupted", [False, True])
+def test_deleting_last_node_clears_legacy_head(stores, monkeypatch, method, interrupted):
+    store, new = stores
+    store.append_message("s", {"id": "root", "role": "user", "content": "root"})
+    store.update_session("s", last_node_id="root")
+    if interrupted:
+        git, _ = store._open("s")
+        def fail_meta(*_args):
+            raise OSError("metadata unavailable")
+        with monkeypatch.context() as patch:
+            patch.setattr(git, "write_meta", fail_meta)
+            with pytest.raises(OSError, match="metadata unavailable"):
+                remove(store, method, "root")
+    else:
+        assert remove(store, method, "root")
+    for reader in (new(), store):
+        assert reader.get_nodes("s") == []
+        assert reader.get_session("s")["head_id"] is None
