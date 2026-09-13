@@ -123,3 +123,43 @@ def test_update_during_first_creation_preserves_initial_metadata(tmp_path, monke
         if fresh is not None:
             fresh.close()
         store.close()
+
+
+@pytest.mark.parametrize('outcome', ['reject', 'write_failure'])
+def test_pending_creation_callback_cannot_change_uncommitted_cache(tmp_path, monkeypatch, outcome):
+    store = SessionStore(tmp_path / 'sessions')
+    fresh = None
+    original = store._persist_meta
+    def interleave(git, index):
+        def change(current):
+            current['nested']['version'] = 2
+            return None if outcome == 'reject' else current
+        if outcome == 'reject':
+            assert store.update_session_dict('creating', 'custom', change) is None
+        else:
+            def fail(*_args, **_kwargs):
+                raise OSError('metadata unavailable')
+            with monkeypatch.context() as patch:
+                patch.setattr(git, 'write_meta', fail)
+                with pytest.raises(OSError, match='metadata unavailable'):
+                    store.update_session_dict('creating', 'custom', change)
+        original(git, index)
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(store, '_persist_meta', interleave)
+            store.create_session('creating', 'main', custom={'nested': {'version': 1}})
+        fresh = SessionStore(tmp_path / 'sessions')
+        for reader in (store, fresh):
+            assert reader._open('creating')[1].meta['custom'] == {'nested': {'version': 1}}
+    finally:
+        if fresh is not None:
+            fresh.close()
+        store.close()
+
+
+def test_dictionary_update_result_does_not_mutate_cache(stores):
+    first, _, new = stores
+    result = first.update_session_dict('meta', 'custom', lambda _: {'version': 1})
+    result['version'] = 2
+    for store in (first, new()):
+        assert store._open('meta')[1].meta['custom']['version'] == 1

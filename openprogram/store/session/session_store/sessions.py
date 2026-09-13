@@ -1,5 +1,6 @@
 """SessionStore sessions operations."""
 from __future__ import annotations
+import copy
 from . import shared
 
 
@@ -144,7 +145,7 @@ class SessionsOperations:
                 # create_session has installed its initial fields but has not
                 # persisted them yet. No durable record supersedes them.
                 with idx._lock:
-                    meta = dict(idx.meta)
+                    meta = copy.deepcopy(idx.meta)
                     meta["head_id"] = idx.head_id
             meta = transform(meta)
             if meta is None:
@@ -207,7 +208,7 @@ class SessionsOperations:
             return meta
 
         meta = self._transform_session_meta(session_id, transform)
-        return None if meta is None else meta[field]
+        return None if meta is None else copy.deepcopy(meta[field])
 
 
     def get_session(self, session_id: str) -> shared.Optional[dict[str, shared.Any]]:
