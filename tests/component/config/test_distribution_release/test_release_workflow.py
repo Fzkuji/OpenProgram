@@ -65,16 +65,20 @@ def test_release_workflow_publishes_structured_release_notes() -> None:
         "## 🔄 Upgrade guide",
     ):
         assert section in notes
-    assert "- **macOS**" in notes
-    assert "  - **Package installation**" in notes
-    assert "  - **Command-line installation**" in notes
-    assert "- **Linux**" in notes
-    assert "  - **Command-line / Server installation**" in notes
-    assert notes.count("  - **Development installation**") == 2
-    assert "share the same complete runtime and browser backend" in notes
-    assert "built-in Browser Pane are available only in the macOS Desktop App" in notes
-    assert "| User type |" not in notes
-    assert "curl -fsSL https://openprogram.io/install | sh" in notes
+    download_urls = re.findall(r"\]\((https://github\.com/Fzkuji/OpenProgram/releases/download/[^)]+)\)", notes)
+    release_prefix = f"https://github.com/Fzkuji/OpenProgram/releases/download/v{version}/"
+    assert download_urls
+    assert all(url.startswith(release_prefix) for url in download_urls)
+    for arch in ("arm64", "x64"):
+        for extension in ("dmg", "zip"):
+            assert f"{release_prefix}OpenProgram-{version}-mac-{arch}-unsigned.{extension}" in download_urls
+    for platform in ("macos", "linux"):
+        for arch in ("arm64", "x86_64"):
+            archive = f"{release_prefix}OpenProgram-{version}-runtime-{platform}-{arch}.tar.gz"
+            assert archive in download_urls
+            assert archive + ".sha256" in download_urls
+    assert "#development-checkout)" in notes
+    assert f"curl -fsSL https://openprogram.io/install | OPENPROGRAM_VERSION={version} sh" in notes
 
     workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
         encoding="utf-8"
