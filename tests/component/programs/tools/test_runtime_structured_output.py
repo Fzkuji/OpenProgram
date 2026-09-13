@@ -746,3 +746,38 @@ def test_llm_public_entry_uses_existing_structured_repair():
     finally:
         _current_runtime.reset(token)
     assert len(calls) == 2
+
+
+@pytest.mark.parametrize("repair,budget,iterations", [(False, 1, 6), (True, 3, 6), (True, 1, 6), (False, 3, 2)])
+def test_structured_agent_normal_tool_rounds_do_not_consume_retry_budget(repair, budget, iterations):
+    from openprogram.agentic_programming import agent
+    from openprogram.providers.types import ToolCall
+    calls, effects = [], []
+
+    async def stream(model, context, options=None):
+        calls.append(1)
+        n = len(calls)
+        message = AssistantMessage(
+            content=[ToolCall(id=f"lookup-{n}", name="lookup", arguments={})]
+            if n < 5 else [TextContent(text='invalid prose' if repair and n == 5 else '{"answer": 7}')],
+            api=model.api, provider=model.provider, model=model.id,
+            timestamp=n, stop_reason="toolUse" if n < 5 else "stop",
+        )
+        yield EventStart(partial=message)
+        yield EventDone(reason=message.stop_reason, message=message)
+
+    runtime = Runtime(call=lambda *a, **k: "unused", model="dummy", max_retries=budget)
+    runtime._stream_fn = stream
+    tools = [{"spec": {"name": "lookup", "description": "Read a source",
+                       "parameters": {"type": "object", "properties": {}}},
+              "execute": lambda: effects.append(1) or "evidence"}]
+    options = dict(tools=tools, max_iterations=iterations,
+                   response_format={"type": "json_schema", "schema": SCHEMA, "fallback": "prompt"})
+    if iterations == 2 or (repair and budget == 1):
+        with pytest.raises((LLMError, StructuredOutputValidationError)):
+            agent("Read four sources then answer", runtime=runtime, **options)
+        assert len(calls) == (2 if iterations == 2 else 5)
+        assert len(effects) == (2 if iterations == 2 else 4)
+    else:
+        assert agent("Read four sources then answer", runtime=runtime, **options) == {"answer": 7}
+        assert len(calls) == 5 + int(repair) and len(effects) == 4
