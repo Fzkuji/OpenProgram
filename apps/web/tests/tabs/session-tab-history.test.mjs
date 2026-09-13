@@ -308,3 +308,14 @@ test("choosing a page from New tab after cross-tab Back discards forward visits"
   state().openBuiltinTab("files");
   assert.equal(state().canNavigateHistory(1), false);
 });
+
+
+test("choosing an existing page from New tab after Back discards forward visits", () => {
+  reset(); state().openBuiltinTab("terminal"); const terminal = active().id;
+  state().openBuiltinTab("files"); const files = active().id;
+  state().openNewTabPage(); state().setActive(terminal); state().navigateHistory(-1);
+  state().openBuiltinTab("files");
+  assert.equal(active().id, files);
+  assert.equal(state().canNavigateHistory(1), false);
+  assert.equal(state().tabs.length, 2);
+});

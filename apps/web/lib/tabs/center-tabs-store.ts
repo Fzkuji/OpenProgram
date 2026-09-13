@@ -346,7 +346,11 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
       const tabs = updateExisting
         ? retained.map((tab) => tab.id === id ? updateExisting(tab) : tab)
         : retained;
-      return commitCenterTabsState(s, { tabs, activeId: id });
+      const navigationState = active?.kind === "ntp" && active.id !== id
+        ? { ...s, windowNavigationHistory: { ...s.windowNavigationHistory,
+            entries: s.windowNavigationHistory.entries.slice(0, s.windowNavigationHistory.index + 1) } }
+        : s;
+      return commitCenterTabsState(navigationState, { tabs, activeId: id });
     }
     const activeIdx = s.tabs.findIndex((t) => t.id === s.activeId);
     let tabs: CenterTab[];
