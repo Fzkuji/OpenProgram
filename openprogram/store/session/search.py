@@ -58,10 +58,16 @@ def search_messages(
     filters by the owning agent (applied via per-session meta lookup).
     """
     root = store.root_path
-    if not root.exists() or not query.strip():
+    if limit <= 0 or not root.exists() or not query.strip():
         return []
     # Where to search: one session subdir or the whole tree.
-    target_dir = root / session_id / "history" if session_id else root
+    if session_id is not None:
+        pair = store._open(session_id)
+        if pair is None:
+            return []
+        target_dir = pair[0].path / "history"
+    else:
+        target_dir = root
 
     hits: list[tuple[str, str]] = []
     if _have_rg():
@@ -107,7 +113,7 @@ def _rg_search(target_dir: Path, query: str, max_hits: int) -> list[tuple[str, s
         cp = subprocess.run(
             ["rg", "--files-with-matches", "--no-messages",
              "--glob", "*.json", "--max-count", "1",
-             "-i", query, str(target_dir)],
+             "-i", "--fixed-strings", "-e", query, "--", str(target_dir)],
             capture_output=True, text=True, timeout=10,
         )
     except (OSError, subprocess.TimeoutExpired):
