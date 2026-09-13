@@ -156,7 +156,9 @@ class DocumentHistory:
             if len(raw) > MAX_BYTES:
                 raise DocumentHistoryError("content exceeds 64 MiB", "PAYLOAD_TOO_LARGE")
             identity = lambda value: (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns)
-            if identity(opened) != identity(after) or identity(after) != identity(os.lstat(path)):
+            # Compare each stat API to its own earlier observation: Windows
+            # descriptor and pathname timestamps may use different representations.
+            if identity(opened) != identity(after) or identity(info) != identity(os.lstat(path)):
                 raise DocumentHistoryError("document changed while reading", "CONFLICT")
             return raw, stat.S_IMODE(after.st_mode)
         except FileNotFoundError as exc:

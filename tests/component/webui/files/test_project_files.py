@@ -702,7 +702,8 @@ def test_write_rejects_content_drift_when_mtime_is_restored(project_root):
     assert target.read_text(encoding="utf-8") == "external\n"
 
 
-def test_write_revision_covers_the_full_editable_read_limit(project_root):
+@pytest.mark.parametrize("descriptor_offset", [0, 1])
+def test_write_revision_covers_the_full_editable_read_limit(project_root, monkeypatch, descriptor_offset):
     target = project_root / "large-text.txt"
     target.write_bytes(b"x" * (ws_files._IDENTITY_DIGEST_MAX_BYTES + 1))
     read = _run(ws_files.handle_project_file_read, {
@@ -710,11 +711,65 @@ def test_write_revision_covers_the_full_editable_read_limit(project_root):
     })["data"]
     assert read["size"] < ws_files._READ_MAX_BYTES
     assert len(read["revision"]) == 64
+    original_fstat = os.fstat
+    identity = target.stat()
+
+    def descriptor_stat(fd):
+        info = original_fstat(fd)
+        if (info.st_dev, info.st_ino) == (identity.st_dev, identity.st_ino):
+            fields = {name: getattr(info, name) for name in dir(info) if name.startswith("st_")}
+            fields["st_mtime_ns"] += descriptor_offset
+            fields["st_ctime_ns"] += descriptor_offset
+            return types.SimpleNamespace(**fields)
+        return info
+
+    monkeypatch.setattr(os, "fstat", descriptor_stat)
     result = _write({
         "project_id": "p1", "path": "large-text.txt", "content": "y" * read["size"],
         "expected_mtime": read["mtime"], "baseline_revision": read["revision"],
     })
-    assert result["ok"] is True
+    assert result.get("ok") is True, result
+    assert target.read_bytes() == b"y" * read["size"]
+
+
+@pytest.mark.parametrize("changed_api", ["descriptor", "path"])
+def test_write_rejects_metadata_change_during_baseline_read(project_root, monkeypatch, changed_api):
+    target = project_root / "apple.txt"
+    read = _run(ws_files.handle_project_file_read, {
+        "project_id": "p1", "path": "apple.txt",
+    })["data"]
+    identity = target.stat()
+    original_fstat, original_lstat = os.fstat, os.lstat
+    reads = 0
+
+    def changed(info):
+        fields = {name: getattr(info, name) for name in dir(info) if name.startswith("st_")}
+        fields["st_mtime_ns"] += 1
+        return types.SimpleNamespace(**fields)
+
+    def descriptor_stat(fd):
+        nonlocal reads
+        info = original_fstat(fd)
+        if (info.st_dev, info.st_ino) == (identity.st_dev, identity.st_ino):
+            reads += 1
+            if changed_api == "descriptor" and reads >= 2:
+                return changed(info)
+        return info
+
+    def path_stat(path, *args, **kwargs):
+        info = original_lstat(path, *args, **kwargs)
+        if changed_api == "path" and reads >= 2 and Path(path) == target:
+            return changed(info)
+        return info
+
+    monkeypatch.setattr(os, "fstat", descriptor_stat)
+    monkeypatch.setattr(os, "lstat", path_stat)
+    result = _write({
+        "project_id": "p1", "path": "apple.txt", "content": "changed",
+        "expected_mtime": read["mtime"], "baseline_revision": read["revision"],
+    })
+    assert result.get("conflict") is True, result
+    assert target.read_bytes() == b"aaa"
 
 
 def test_write_conflict_does_not_write(project_root):

@@ -15,8 +15,9 @@ from openprogram.store.snapshot.checkpoint import CheckpointStore
 
 
 @pytest.fixture
-def store(tmp_path: Path, monkeypatch):
+def store(tmp_path: Path, monkeypatch, request):
     value = SessionStore(tmp_path / "sessions")
+    request.addfinalizer(value.close)
     monkeypatch.setattr(
         'openprogram.store.session.session_store.shared._default_store', value,
         raising=False,
