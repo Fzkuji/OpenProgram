@@ -25,7 +25,7 @@ import { ArrowLeft, ArrowRight, CirclePlus, Plus, SquareArrowOutUpRight } from "
 
 import { useCenterTabs, type CenterTab } from "@/lib/tabs/center-tabs-store";
 import { topLevelTabs } from "@/lib/browser/web-page-management";
-import { canNavigateTabPage } from "@/lib/tabs/tab-page-history";
+import { navigationTarget } from "@/lib/tabs/tab-navigation";
 import { centerTabStripEntries } from "@/lib/tabs/center-tab-groups";
 import { dragCoordinator } from "@/lib/tabs/tab-drag-coordinator";
 import { desktopBridge } from "@/lib/desktop/desktop-bridge";
@@ -59,17 +59,9 @@ const UNFREEZE_GRACE_MS = 400;
 export function CenterTabStrip() {
   const { t, text } = useTranslation();
 
-  const activeSessionTab = useCenterTabs(s => s.tabs.find(tab => tab.id === s.activeId));
-  const navigateSessionHistory = useCenterTabs(s => s.navigateSessionHistory);
-  const navigateFileHistory = useCenterTabs(s => s.navigateFileHistory);
-  const fileNavigationIndex = useCenterTabs(s => s.fileNavigationHistory.index);
-  const fileNavigationLength = useCenterTabs(s => s.fileNavigationHistory.entries.length);
-  const fileNavigationActive = activeSessionTab?.kind === "file"
-    || (activeSessionTab?.kind === "builtin" && activeSessionTab.page === "files");
-  const canGoBack = canNavigateTabPage(activeSessionTab, -1)
-    || (fileNavigationActive && fileNavigationIndex > 0 && fileNavigationIndex < fileNavigationLength);
-  const canGoForward = canNavigateTabPage(activeSessionTab, 1)
-    || (fileNavigationActive && fileNavigationIndex + 1 < fileNavigationLength);
+  const navigateHistory = useCenterTabs(s => s.navigateHistory);
+  const canGoBack = useCenterTabs(s => navigationTarget(s, -1) !== null);
+  const canGoForward = useCenterTabs(s => navigationTarget(s, 1) !== null);
   const groups = useCenterTabs((s) => s.groups);
   const activeId = useCenterTabs((s) => s.activeId);
 
@@ -335,11 +327,11 @@ export function CenterTabStrip() {
         unfreezeTimerRef.current = null;
       }}
     >
-      <div className={styles.sessionNavigation} role="group" aria-label={text("Session navigation", "会话导航")}>
+      <div className={styles.sessionNavigation} role="group" aria-label={text("Page navigation", "页面导航")}>
         <button type="button" disabled={!canGoBack} title={text("Back", "后退")}
-          aria-label={text("Back", "后退")} onClick={() => canNavigateTabPage(activeSessionTab, -1) ? navigateSessionHistory(-1) : navigateFileHistory(-1)}><ArrowLeft size={15} /></button>
+          aria-label={text("Back", "后退")} onClick={() => navigateHistory(-1)}><ArrowLeft size={15} /></button>
         <button type="button" disabled={!canGoForward} title={text("Forward", "前进")}
-          aria-label={text("Forward", "前进")} onClick={() => canNavigateTabPage(activeSessionTab, 1) ? navigateSessionHistory(1) : navigateFileHistory(1)}><ArrowRight size={15} /></button>
+          aria-label={text("Forward", "前进")} onClick={() => navigateHistory(1)}><ArrowRight size={15} /></button>
       </div>
       {/* tab 流容器：浏览器模式 display:contents 零影响；桌面模式限宽，
          让＋号既跟随 tab、又最深只顶到右栏图标轴线（见 module css）。 */}

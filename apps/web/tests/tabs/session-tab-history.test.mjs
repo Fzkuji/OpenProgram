@@ -35,7 +35,7 @@ const { useCenterTabs, sessionAckIsActive } = await import("../../lib/tabs/cente
 const { normalizeCenterTabsPayload, readCenterTabsPayload } = await import("../../lib/tabs/center-tabs-persistence.ts");
 const state = () => useCenterTabs.getState();
 const active = () => state().tabs.find(t => t.id === state().activeId);
-function reset() { useCenterTabs.setState({ tabs: [], activeId: null, groups: [], splitWebTabId: null }); }
+function reset() { useCenterTabs.setState({ tabs: [], activeId: null, groups: [], splitWebTabId: null, windowNavigationHistory: { entries: [], index: -1 }, fileNavigationHistory: { entries: [], index: -1 }, fileNavigationRestore: null }); }
 test("shared session opener reuses active session tab", () => {
   reset(); state().openSessionTab("A", "Alpha"); const id = active().id;
   state().openSessionTab("B", "Beta");
@@ -222,4 +222,64 @@ test("reopening an existing session preserves its graph view", () => {
   state().openSessionTab("A", "Alpha");
   assert.equal(active().id, first);
   assert.equal(active().dagView, true);
+});
+
+ test("window Back returns from Files and Forward revisits without duplicate tabs", () => {
+  reset(); state().openSessionTab("return-chat", "Chat"); const chat = active().id;
+  state().openBuiltinTab("files"); const files = active().id;
+  assert.equal(state().canNavigateHistory(-1), true);
+  state().navigateHistory(-1); assert.equal(active().id, chat);
+  assert.equal(state().canNavigateHistory(1), true);
+  state().navigateHistory(1); assert.equal(active().id, files);
+  assert.equal(state().tabs.length, 2);
+});
+
+test("window visits branch after Back, ignore duplicate activation and background updates", () => {
+  reset(); state().openSessionTab("visit-A", "A"); const chat = active().id;
+  state().openBuiltinTab("files"); const files = active().id;
+  state().openBuiltinTab("terminal");
+  state().navigateHistory(-1); assert.equal(active().id, files);
+  state().setActive(files); state().renameSessionTab("visit-A", "Renamed");
+  assert.equal(state().canNavigateHistory(1), true);
+  state().openBuiltinTab("bookmarks");
+  assert.equal(state().canNavigateHistory(1), false);
+  state().navigateHistory(-1); assert.equal(active().id, files);
+  state().navigateHistory(-1); assert.equal(active().id, chat);
+  assert.equal(active().title, "Renamed");
+});
+
+test("existing-tab jumps return and closed destinations are skipped", () => {
+  reset(); state().openSessionTab("visit-B", "B"); const chat = active().id;
+  state().openBuiltinTab("files"); const files = active().id;
+  state().openBuiltinTab("terminal"); const terminal = active().id;
+  state().setActive(chat); state().navigateHistory(-1); assert.equal(active().id, terminal);
+  state().closeTab(files);
+  state().navigateHistory(-1); assert.equal(active().id, chat);
+  state().navigateHistory(1); assert.equal(active().id, terminal);
+  assert.equal(state().tabs.some(tab => tab.id === files), false);
+});
+
+test("window navigation restores split focus and ignores background web creation", () => {
+  reset(); state().openSessionTab("visit-C", "C"); const chat = active().id;
+  state().openBuiltinTab("terminal"); const terminal = active().id;
+  state().groupTab(chat, terminal, 0, "navigation-group");
+  state().openBuiltinTab("files");
+  state().ensureWebTab("https://background.test");
+  state().navigateHistory(-1); assert.equal(active().id, chat);
+  assert.equal(state().groups[0].focusedId, chat);
+  state().navigateHistory(1); assert.equal(active().page, "files");
+});
+
+test("local session and file history remain ahead of cross-tab fallback", () => {
+  reset(); state().openSessionTab("local-A", "A"); state().openSessionTab("local-B", "B");
+  const chat = active().id;
+  state().openBuiltinTab("files");
+  state().recordFileNavigation({projectId:"p",path:"",selectedType:"dir",expanded:[],scroll:null});
+  state().recordFileNavigation({projectId:"p",path:"src",selectedType:"dir",expanded:[],scroll:null});
+  state().navigateHistory(-1); assert.equal(active().page, "files");
+  assert.equal(state().fileNavigationHistory.index, 0);
+  state().navigateHistory(-1); assert.equal(active().id, chat); assert.equal(active().sessionId, "local-B");
+  state().navigateHistory(-1); assert.equal(active().sessionId, "local-A");
+  state().navigateHistory(1); assert.equal(active().sessionId, "local-B");
+  state().navigateHistory(1); assert.equal(active().page, "files");
 });

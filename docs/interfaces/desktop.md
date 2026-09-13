@@ -1,5 +1,7 @@
 # Desktop App and built-in browser
 
+When the current page has no session, page, or file navigation step in the requested direction, the tab-strip Back and Forward buttons revisit previously active tabs in this window. Closed tabs are skipped. Opening another destination after Back discards forward visits. Cross-tab visits last for the current window lifetime.
+
 The macOS and Windows Desktop Apps present OpenProgram as a multi-pane workspace. Each pane can hold Files, a chat, the built-in Browser, or a Terminal, and panes can be split or moved between app windows without changing the underlying session or browser tab.
 
 Closing the last tab leaves both the tab bar and center content area empty. No tab or launcher is created automatically. Use the plus button to open a new tab.

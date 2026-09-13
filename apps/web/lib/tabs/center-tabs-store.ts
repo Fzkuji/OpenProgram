@@ -20,6 +20,7 @@
  * session store's currentSessionId / titles into this store.
  */
 import { create } from "zustand";
+import { navigationTarget, recordWindowNavigation, type WindowNavigationHistory } from "./tab-navigation";
 import { topLevelTabs } from "../browser/web-page-management";
 import { recordTabPage, tabPage, type TabPageHistory } from "./tab-page-history";
 import { sessionHistory, withSessionHistory, type SessionTabHistory } from "./session-tab-history";
@@ -186,6 +187,9 @@ export interface FileTabOptions {
 const closedSessionAckTombstones = new Set<string>();
 
 export interface CenterTabsState {
+  windowNavigationHistory: WindowNavigationHistory;
+  canNavigateHistory: (direction: -1 | 1) => boolean;
+  navigateHistory: (direction: -1 | 1) => void;
   tabs: CenterTab[];
   activeId: string | null;
   groups: CenterTabGroup[];
@@ -286,7 +290,8 @@ export interface CenterTabsState {
 function commitCenterTabsState(
   state: CenterTabsState,
   patch: Partial<CenterTabsPersistedState>,
-): CenterTabsPersistedState {
+  recordVisit = true,
+): CenterTabsPersistedState & { windowNavigationHistory: WindowNavigationHistory } {
   const payload = normalizeCenterTabsPayload({
     tabs: patch.tabs ?? state.tabs,
     activeId: patch.activeId === undefined ? state.activeId : patch.activeId,
@@ -297,7 +302,7 @@ function commitCenterTabsState(
     splitRatio: patch.splitRatio ?? state.splitRatio,
   });
   persistCenterTabsPayload(payload);
-  return persistedState(payload);
+  return { ...persistedState(payload), windowNavigationHistory: recordWindowNavigation(state, payload, recordVisit) };
 }
 
 function tabsForLayout(
@@ -368,6 +373,23 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
   }
 
   return {
+    windowNavigationHistory: { entries: initial.activeId ? [initial.activeId] : [], index: initial.activeId ? 0 : -1 },
+    canNavigateHistory: direction => navigationTarget(useCenterTabs.getState(), direction) !== null,
+    navigateHistory: direction => {
+      const target = navigationTarget(useCenterTabs.getState(), direction);
+      if (!target) return;
+      if (target.kind === "page") { useCenterTabs.getState().navigateSessionHistory(direction); return; }
+      if (target.kind === "file") { useCenterTabs.getState().navigateFileHistory(direction); return; }
+      if (target.kind !== "window") return;
+      set(s => {
+        const group = findCenterTabGroup(s.groups, target.tabId);
+        const layout = group ? focusCenterTabGroupMember({ tabIds: s.tabs.map(tab => tab.id), groups: s.groups }, group.id, target.tabId) : null;
+        return {
+          ...commitCenterTabsState(s, { activeId: target.tabId, groups: layout?.groups ?? s.groups }, false),
+          windowNavigationHistory: { ...s.windowNavigationHistory, index: target.index },
+        };
+      });
+    },
     tabs: initial.tabs,
     activeId: initial.activeId,
     groups: initial.groups,
@@ -584,13 +606,13 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
         const target = entries[pageIndex];
         const existing = s.tabs.find(tab => tab.id !== active.id && (tab.id === target.id
           || (target.kind === "session" && tab.kind === "session" && tab.sessionId === target.sessionId)));
-        if (existing) return commitCenterTabsState(s, { activeId: existing.id });
+        if (existing) return commitCenterTabsState(s, { activeId: existing.id }, false);
         if (active.kind === "session" && active.sessionId) closedSessionAckTombstones.add(active.sessionId);
         const next = { ...target, pageHistory: { entries, index: pageIndex } };
         return commitCenterTabsState(s, {
           tabs: s.tabs.map(tab => tab.id === active.id ? next : tab), activeId: next.id,
           groups: replaceGroupTabId(s.groups, active.id, next.id),
-        });
+        }, false);
       }
       const targetSessionId = history.entries[index].sessionId;
       const existing = s.tabs.find(tab => tab.id !== active.id
@@ -603,11 +625,11 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
         return commitCenterTabsState(s, {
           activeId: existing.id,
           groups: layout?.groups ?? s.groups,
-        });
+        }, false);
       }
       if (active.sessionId) closedSessionAckTombstones.add(active.sessionId);
       const next = withSessionHistory(active, { ...history, index });
-      return commitCenterTabsState(s, { tabs: s.tabs.map(tab => tab.id === active.id ? next : tab) });
+      return commitCenterTabsState(s, { tabs: s.tabs.map(tab => tab.id === active.id ? next : tab) }, false);
     }),
 
     navigateFileHistory: (direction) => set((s) => {
@@ -638,7 +660,7 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
         ? fileTabId(target.projectId, target.path)
         : filesTab?.id ?? builtinTabId("files"));
       return {
-        ...commitCenterTabsState(s, { ...opened, ...openedFiles, activeId }),
+        ...commitCenterTabsState(s, { ...opened, ...openedFiles, activeId }, false),
         fileNavigationHistory: { ...history, index },
         fileNavigationRestore: target,
       };

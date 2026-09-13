@@ -1,5 +1,7 @@
 # Web UI
 
+When the current page has no session, page, or file navigation step in the requested direction, the tab-strip Back and Forward buttons revisit previously active tabs in this window. Closed tabs are skipped. Opening another destination after Back discards forward visits. Cross-tab visits last for the current window lifetime.
+
 Selecting a conversation reuses the active session tab, including when another tab already shows that conversation. If a webpage is active, a new session tab opens. Back and Forward at the far left of the tab strip navigate each session tab’s own history. Opening a different conversation after going back replaces the forward history. History survives reloads; drafts retain their input when revisited, and deleted conversations are removed from history. Webpage navigation remains in the webpage controls.
 
 When Files or a file tab is active, Back and Forward revisit the folders and files you opened in the current project. Returning to Files restores its expanded folders and scroll position. Opening a new location after going back replaces the forward steps. This navigation keeps up to 100 locations for the current window lifetime and is separate from document version History. Refreshing a stale directory listing keeps existing rows visible while the loaded range is replaced.
