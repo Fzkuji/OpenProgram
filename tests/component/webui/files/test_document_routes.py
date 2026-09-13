@@ -182,12 +182,12 @@ def test_history_group_has_five_minute_upper_bound_and_external_edits_start_new_
 
 def test_prepare_failure_does_not_modify_target(documents, monkeypatch):
     client, root, _, _ = documents
-    from openprogram.store.snapshot.checkpoint.store import CheckpointStore
+    from openprogram.store.snapshot.checkpoint import capture
     target = root / "a.txt"
     target.write_bytes(b"old")
     def fail(*args, **kwargs):
         raise OSError("injected snapshot failure")
-    monkeypatch.setattr(CheckpointStore, "_capture_regular", fail)
+    monkeypatch.setattr(capture, "_capture_regular", fail)
     response = put(client, "a.txt", b"old", b"new")
     assert response.status_code == 503
     assert target.read_bytes() == b"old"
@@ -302,13 +302,13 @@ def test_outside_path_unknown_project_and_oversize_body_are_rejected(documents):
 
 def test_failed_autosave_keeps_previous_confirmed_version_visible(documents, monkeypatch):
     client, root, _, _ = documents
-    from openprogram.store.snapshot.checkpoint.store import CheckpointStore
+    from openprogram.store.snapshot.checkpoint import capture
     (root / "a.txt").write_bytes(b"old")
     assert put(client, "a.txt", b"old", b"confirmed").status_code == 200
     confirmed = history(client, "a.txt")[0]["version_id"]
     def fail(*args, **kwargs):
         raise OSError("snapshot unavailable")
-    monkeypatch.setattr(CheckpointStore, "_capture_regular", fail)
+    monkeypatch.setattr(capture, "_capture_regular", fail)
     assert put(client, "a.txt", b"confirmed", b"unconfirmed").status_code == 503
     entries = history(client, "a.txt")
     assert len(entries) == 2

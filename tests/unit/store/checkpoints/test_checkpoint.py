@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from openprogram.store.snapshot.checkpoint import CheckpointStore
-from openprogram.store.snapshot.checkpoint import store as checkpoint_store
+from openprogram.store.snapshot.checkpoint import file_state as checkpoint_store
 from openprogram.store.snapshot.checkpoint.manifest import entries, load
 from openprogram.store.snapshot.checkpoint.paths import turn_manifest_path
 

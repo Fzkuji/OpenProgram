@@ -5,6 +5,8 @@ import time
 import uuid
 from typing import Any
 
+from openprogram.store.snapshot.checkpoint import file_state
+
 
 def get_workspace_alignment(session_id: str, *, store=None) -> dict[str, Any]:
     if store is None:
@@ -184,7 +186,7 @@ def _branch_projection(journal, turn_ids: list[str]) -> tuple[dict, list[str]]:
         before = journal._state_with_blob(turn_id, before)
         after = journal._state_with_blob(turn_id, after)
         try:
-            chain = journal._capture_parent_chain(path)
+            chain = file_state._capture_parent_chain(path)
         except OSError:
             unavailable.append(path)
             continue
@@ -198,7 +200,7 @@ def _branch_projection(journal, turn_ids: list[str]) -> tuple[dict, list[str]]:
                 "turn_ids": [turn_id],
             }
             continue
-        if not journal._same_recorded_state(current["current"], before):
+        if not file_state._same_recorded_state(current["current"], before):
             unavailable.append(path)
         current["current"] = after
         current["turn_ids"].append(turn_id)
@@ -245,7 +247,7 @@ def plan_branch_workspace_restore(session_id: str, *, store=None) -> dict[str, A
         target_state = (
             target[path]["current"] if path in target else source[path]["initial"]
         )
-        if journal._same_recorded_state(source_state, target_state):
+        if file_state._same_recorded_state(source_state, target_state):
             continue
         actions.append({
             "path": path,
@@ -297,8 +299,8 @@ def _apply_branch_workspace_intent(
         if expected != target or expected != head_id:
             return False
         files_are_target = all(
-            journal._state_matches(
-                journal._inspect_state(action["path"]), action["target"],
+            file_state._state_matches(
+                file_state._inspect_state(action["path"]), action["target"],
             )
             for action in actions
         )

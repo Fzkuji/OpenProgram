@@ -54,7 +54,7 @@ def test_path_backend_detects_file_replacement_during_open(tmp_path, monkeypatch
 
 
 def test_checkpoint_rejects_junction_metadata_without_needing_link_privileges(tmp_path, monkeypatch):
-    from openprogram.store.snapshot.checkpoint import CheckpointStore
+    from openprogram.store.snapshot.checkpoint import file_state
     original_lstat = os.lstat
 
     def junction_lstat(path, *args, **kwargs):
@@ -65,4 +65,4 @@ def test_checkpoint_rejects_junction_metadata_without_needing_link_privileges(tm
 
     monkeypatch.setattr(os, "lstat", junction_lstat)
     with pytest.raises(OSError, match="unsafe parent"):
-        CheckpointStore._capture_parent_chain(str(tmp_path / "file.txt"))
+        file_state._capture_parent_chain(str(tmp_path / "file.txt"))

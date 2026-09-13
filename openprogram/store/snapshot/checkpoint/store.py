@@ -1,7 +1,6 @@
 """Per-session exact file-mutation journal and recovery snapshots."""
 from __future__ import annotations
 
-import difflib
 import hashlib
 import json
 import os
@@ -12,7 +11,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from openprogram._compat import is_link_metadata
 
-from . import manifest
+from . import capture, file_apply, file_state, manifest
+from .capture import MutationJournalError
 from .recovery_records import invalid_rewind_result, read_rewind_record
 from .paths import (
     path_basename,
@@ -20,80 +20,6 @@ from .paths import (
     turn_backup_dir,
     turn_manifest_path,
 )
-
-
-_STATS_MAX_BYTES = 1024 * 1024
-_DIR_FD_APPLY_SUPPORTED = (
-    hasattr(os, "O_DIRECTORY")
-    and hasattr(os, "O_NOFOLLOW")
-    and os.open in os.supports_dir_fd
-    and os.stat in os.supports_dir_fd
-    and os.stat in os.supports_follow_symlinks
-    and os.rename in os.supports_dir_fd
-    and os.link in os.supports_dir_fd
-    and os.link in os.supports_follow_symlinks
-    and os.unlink in os.supports_dir_fd
-)
-
-
-class MutationJournalError(RuntimeError):
-    """A trusted mutation could not be recorded safely."""
-
-
-def _digest(path: Path) -> str:
-    value = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            value.update(chunk)
-    return f"sha256:{value.hexdigest()}"
-
-
-def _digest_fd(descriptor: int) -> str:
-    value = hashlib.sha256()
-    os.lseek(descriptor, 0, os.SEEK_SET)
-    for chunk in iter(lambda: os.read(descriptor, 1024 * 1024), b""):
-        value.update(chunk)
-    return f"sha256:{value.hexdigest()}"
-
-
-def _file_kind(mode: int) -> str:
-    if stat.S_ISREG(mode):
-        return "regular"
-    if stat.S_ISLNK(mode):
-        return "symlink"
-    if stat.S_ISDIR(mode):
-        return "directory"
-    return "special"
-
-
-def _has_nul(path: Path) -> bool:
-    with path.open("rb") as handle:
-        return b"\0" in handle.read(8192)
-
-
-def _line_stats(before: Path | None, after: Path | None) -> tuple[dict, str]:
-    paths = [path for path in (before, after) if path is not None]
-    if any(path.stat().st_size > _STATS_MAX_BYTES for path in paths):
-        binary = any(_has_nul(path) for path in paths)
-        return {"added": None, "removed": None, "binary": binary}, (
-            "binary" if binary else "large"
-        )
-    raw_before = before.read_bytes() if before is not None else b""
-    raw_after = after.read_bytes() if after is not None else b""
-    if b"\0" in raw_before or b"\0" in raw_after:
-        return {"added": None, "removed": None, "binary": True}, "binary"
-    old = raw_before.decode("utf-8", errors="replace").splitlines()
-    new = raw_after.decode("utf-8", errors="replace").splitlines()
-    added = 0
-    removed = 0
-    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(
-        a=old, b=new, autojunk=False,
-    ).get_opcodes():
-        if tag in {"insert", "replace"}:
-            added += j2 - j1
-        if tag in {"delete", "replace"}:
-            removed += i2 - i1
-    return {"added": added, "removed": removed, "binary": False}, "available"
 
 
 class CheckpointStore:
@@ -105,52 +31,6 @@ class CheckpointStore:
         self.session_dir = Path(session_dir) if session_dir is not None else None
         self.recovery_root = Path(recovery_root) if recovery_root is not None else None
 
-    def _capture_regular(self, source: Path, destination: Path) -> dict:
-        """Publish a durable, immutable version before any manifest references it."""
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination = destination.with_name(f"{destination.name}.{uuid.uuid4().hex}")
-        try:
-            observed = os.lstat(source)
-            if (not stat.S_ISREG(observed.st_mode) or is_link_metadata(observed)
-                    or observed.st_nlink != 1):
-                raise OSError("snapshot source must be an ordinary non-linked file")
-            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
-            with os.fdopen(os.open(source, flags), "rb") as handle:
-                before = os.fstat(handle.fileno())
-                if (before.st_dev, before.st_ino) != (observed.st_dev, observed.st_ino):
-                    raise OSError("snapshot source changed before opening")
-                digest = hashlib.sha256()
-                size = 0
-                flags_out = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
-                with os.fdopen(os.open(destination, flags_out, 0o600), "wb") as output:
-                    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                        output.write(chunk)
-                        digest.update(chunk)
-                        size += len(chunk)
-                    output.flush()
-                    os.fsync(output.fileno())
-                after = os.fstat(handle.fileno())
-                current = os.lstat(source)
-                identity = lambda info: (info.st_dev, info.st_ino, info.st_size,
-                                         info.st_mtime_ns, info.st_ctime_ns, info.st_mode)
-                if identity(before) != identity(after) or identity(after) != identity(current):
-                    raise OSError("snapshot source changed while reading")
-                if size != after.st_size:
-                    raise OSError("snapshot size changed while reading")
-            if os.name != "nt":
-                directory = os.open(destination.parent, os.O_RDONLY)
-                try:
-                    os.fsync(directory)
-                finally:
-                    os.close(directory)
-            return {
-                "kind": "regular", "digest": f"sha256:{digest.hexdigest()}",
-                "blob_ref": destination.name,
-                "mode": f"{stat.S_IMODE(after.st_mode):04o}", "size": size,
-            }
-        except OSError as exc:
-            destination.unlink(missing_ok=True)
-            raise MutationJournalError(f"cannot snapshot {source}: {exc}") from exc
 
     def backup_before_edit(
         self,
@@ -174,7 +54,7 @@ class CheckpointStore:
 
         if target_stat is not None and not stat.S_ISREG(target_stat.st_mode):
             raise MutationJournalError(
-                f"unsafe file type for exact mutation: {_file_kind(target_stat.st_mode)}",
+                f"unsafe file type for exact mutation: {file_state._file_kind(target_stat.st_mode)}",
             )
         if target_stat is not None and target_stat.st_nlink != 1:
             raise MutationJournalError(
@@ -204,7 +84,7 @@ class CheckpointStore:
                 recoverability = "unavailable"
                 unavailable_reason = "missing_preimage"
             else:
-                before = self._capture_regular(source, backup_dir / backup_name)
+                before = capture._capture_regular(source, backup_dir / backup_name)
 
         manifest.record_prepared(
             manifest_path,
@@ -242,10 +122,10 @@ class CheckpointStore:
             after = {"kind": "absent"}
         elif stat.S_ISREG(target_stat.st_mode):
             after_blob = backup_dir / f"{backup_name}.after"
-            after = self._capture_regular(target, after_blob)
+            after = capture._capture_regular(target, after_blob)
             after_blob = backup_dir / after["blob_ref"]
         else:
-            after = {"kind": _file_kind(target_stat.st_mode)}
+            after = {"kind": file_state._file_kind(target_stat.st_mode)}
 
         before = entry.get("before") or {
             "kind": "regular" if entry.get("pre_existing") else "absent",
@@ -263,7 +143,7 @@ class CheckpointStore:
             canonical_operation = operation or "modify"
             if canonical_operation in {"write", "edit", "update", "add"}:
                 canonical_operation = "modify"
-        stats, diff_state = _line_stats(before_blob, after_blob)
+        stats, diff_state = capture._line_stats(before_blob, after_blob)
         mutation_sequence = self._next_mutation_sequence()
         manifest.commit(
             manifest_path,
@@ -339,7 +219,7 @@ class CheckpointStore:
             status = entry.get("status")
             if status == "aborted":
                 # Failure does not prove that the tool had no side effect.
-                if self._state_matches(self._inspect_state(entry["path"]), entry.get("before") or {}):
+                if file_state._state_matches(file_state._inspect_state(entry["path"]), entry.get("before") or {}):
                     continue
             elif status not in {"prepared", "committed"}:
                 continue
@@ -352,171 +232,6 @@ class CheckpointStore:
             rows.append(row)
         return rows
 
-    def _inspect_state(self, path: str) -> dict:
-        try:
-            chain = self._capture_parent_chain(path)
-            if not _DIR_FD_APPLY_SUPPORTED:
-                parent = self._verify_parent_path(path, chain)
-            else:
-                descriptor = self._open_verified_parent(path, chain)
-        except (FileNotFoundError, NotADirectoryError):
-            return {"kind": "absent"}
-        except OSError:
-            return {"kind": "unsafe_parent"}
-        if not _DIR_FD_APPLY_SUPPORTED:
-            return self._inspect_state_path(parent / Path(path).name)
-        try:
-            return self._inspect_state_at(descriptor, Path(path).name)
-        finally:
-            os.close(descriptor)
-
-    @staticmethod
-    def _capture_parent_chain(path: str) -> dict:
-        target = Path(path)
-        if not target.is_absolute() or not target.name:
-            raise OSError(f"history path must be an absolute file path: {path}")
-        parts = target.parent.parts
-        if not parts:
-            raise OSError(f"history path has no parent: {path}")
-        current = Path(parts[0])
-        root_info = os.lstat(current)
-        if not stat.S_ISDIR(root_info.st_mode) or is_link_metadata(root_info):
-            raise OSError(f"unsafe root for history path: {path}")
-        components = []
-        for name in parts[1:]:
-            current = current / name
-            info = os.lstat(current)
-            if not stat.S_ISDIR(info.st_mode) or is_link_metadata(info):
-                raise OSError(f"unsafe parent for history path: {current}")
-            components.append({"name": name, "dev": info.st_dev, "ino": info.st_ino})
-        return {
-            "root": parts[0],
-            "root_dev": root_info.st_dev,
-            "root_ino": root_info.st_ino,
-            "components": components,
-        }
-
-    @staticmethod
-    def _verify_parent_path(path: str, chain: dict) -> Path:
-        # Windows has no equivalent dir_fd primitive. This fallback rechecks each
-        # parent with lstat but cannot prevent symlink-swap races; that weaker
-        # guarantee is an accepted tradeoff for making restore available there.
-        current = Path(str(chain["root"]))
-        info = os.lstat(current)
-        if (
-            not stat.S_ISDIR(info.st_mode)
-            or is_link_metadata(info)
-            or (info.st_dev, info.st_ino) != (
-                chain.get("root_dev"), chain.get("root_ino"),
-            )
-        ):
-            raise OSError(f"history root changed before apply: {path}")
-        for component in chain.get("components", []):
-            current = current / component["name"]
-            info = os.lstat(current)
-            if (
-                not stat.S_ISDIR(info.st_mode)
-                or is_link_metadata(info)
-                or (info.st_dev, info.st_ino) != (
-                    component.get("dev"), component.get("ino"),
-                )
-            ):
-                raise OSError(f"history parent changed before apply: {path}")
-        return current
-
-    @staticmethod
-    def _open_verified_parent(path: str, chain: dict) -> int:
-        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-        nofollow = getattr(os, "O_NOFOLLOW", 0)
-        descriptor = os.open(str(chain["root"]), flags | nofollow)
-        try:
-            info = os.fstat(descriptor)
-            if (info.st_dev, info.st_ino) != (
-                chain.get("root_dev"), chain.get("root_ino"),
-            ):
-                raise OSError(f"history root changed before apply: {path}")
-            for component in chain.get("components", []):
-                child = os.open(
-                    component["name"], flags | nofollow, dir_fd=descriptor,
-                )
-                try:
-                    child_info = os.fstat(child)
-                    if (child_info.st_dev, child_info.st_ino) != (
-                        component.get("dev"), component.get("ino"),
-                    ):
-                        raise OSError(f"history parent changed before apply: {path}")
-                except BaseException:
-                    os.close(child)
-                    raise
-                os.close(descriptor)
-                descriptor = child
-            return descriptor
-        except BaseException:
-            os.close(descriptor)
-            raise
-
-    @staticmethod
-    def _inspect_state_path(path: Path) -> dict:
-        try:
-            info = os.lstat(path)
-        except FileNotFoundError:
-            return {"kind": "absent"}
-        if is_link_metadata(info):
-            return {"kind": "symlink"}
-        if not stat.S_ISREG(info.st_mode):
-            return {"kind": _file_kind(info.st_mode)}
-        if info.st_nlink != 1:
-            return {"kind": "hardlink", "links": info.st_nlink}
-        file_descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0))
-        try:
-            return {
-                "kind": "regular",
-                "digest": _digest_fd(file_descriptor),
-                "mode": f"{stat.S_IMODE(info.st_mode):04o}",
-                "size": info.st_size,
-            }
-        finally:
-            os.close(file_descriptor)
-
-    @staticmethod
-    def _inspect_state_at(descriptor: int, name: str) -> dict:
-        try:
-            info = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
-        except FileNotFoundError:
-            return {"kind": "absent"}
-        if not stat.S_ISREG(info.st_mode):
-            return {"kind": _file_kind(info.st_mode)}
-        if info.st_nlink != 1:
-            return {"kind": "hardlink", "links": info.st_nlink}
-        file_descriptor = os.open(
-            name, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
-            dir_fd=descriptor,
-        )
-        try:
-            return {
-                "kind": "regular",
-                "digest": _digest_fd(file_descriptor),
-                "mode": f"{stat.S_IMODE(info.st_mode):04o}",
-                "size": info.st_size,
-            }
-        finally:
-            os.close(file_descriptor)
-
-    @staticmethod
-    def _state_matches(actual: dict, expected: dict) -> bool:
-        if actual.get("kind") != expected.get("kind"):
-            return False
-        if expected.get("kind") == "regular":
-            return actual.get("digest") == expected.get("digest")
-        return expected.get("kind") == "absent"
-
-    @staticmethod
-    def _same_recorded_state(first: dict, second: dict) -> bool:
-        if first.get("kind") != second.get("kind"):
-            return False
-        if first.get("kind") == "regular":
-            return first.get("digest") == second.get("digest")
-        return first.get("kind") == "absent"
 
     def _state_with_blob(self, turn_id: str, state: dict) -> dict:
         value = dict(state)
@@ -527,17 +242,6 @@ class CheckpointStore:
             )
         return value
 
-    @staticmethod
-    def _blob_is_exact(state: dict) -> bool:
-        if state.get("kind") != "regular":
-            return state.get("kind") == "absent"
-        blob = Path(str(state.get("blob_path") or ""))
-        if not blob.is_file():
-            return False
-        try:
-            return _digest(blob) == state.get("digest")
-        except OSError:
-            return False
 
     def plan_history_operation(self, turn_id: str, direction: str) -> dict:
         if direction not in {"revert", "reapply"}:
@@ -564,7 +268,7 @@ class CheckpointStore:
                 unavailable.append(path)
                 continue
             try:
-                parent_chain = self._capture_parent_chain(path)
+                parent_chain = file_state._capture_parent_chain(path)
             except OSError:
                 unavailable.append(path)
                 continue
@@ -581,8 +285,8 @@ class CheckpointStore:
             if missing_blob:
                 unavailable.append(path)
                 continue
-            current = self._inspect_state(path)
-            if not self._state_matches(current, source):
+            current = file_state._inspect_state(path)
+            if not file_state._state_matches(current, source):
                 conflicts.append(path)
                 continue
             actions.append({
@@ -655,13 +359,13 @@ class CheckpointStore:
             before = self._state_with_blob(turn_id, before)
             after = self._state_with_blob(turn_id, after)
             try:
-                parent_chain = self._capture_parent_chain(path)
+                parent_chain = file_state._capture_parent_chain(path)
             except OSError:
                 unavailable.append(path)
                 continue
             before["parent_chain"] = parent_chain
             after["parent_chain"] = parent_chain
-            if not self._blob_is_exact(before) or not self._blob_is_exact(after):
+            if not file_state._blob_is_exact(before) or not file_state._blob_is_exact(after):
                 unavailable.append(path)
                 continue
             current = folded.get(path)
@@ -676,7 +380,7 @@ class CheckpointStore:
                     "error": None,
                 }
                 continue
-            if not self._same_recorded_state(current["expected_current"], before):
+            if not file_state._same_recorded_state(current["expected_current"], before):
                 discontinuous.append(path)
                 continue
             current["expected_current"] = after
@@ -706,8 +410,8 @@ class CheckpointStore:
                 action["rollback"] = source
         conflicts = [
             action["path"] for action in actions
-            if not self._state_matches(
-                self._inspect_state(action["path"]), action["expected_current"],
+            if not file_state._state_matches(
+                file_state._inspect_state(action["path"]), action["expected_current"],
             )
         ]
         if conflicts:
@@ -765,242 +469,6 @@ class CheckpointStore:
             finally:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
-    def _apply_state(
-        self,
-        path: str,
-        state: dict,
-        backup_dir: Path,
-        transaction_id: str,
-        expected_current: dict | None = None,
-    ) -> str | None:
-        target = Path(path)
-        tmp_name = f".{target.name}.{transaction_id}.tmp"
-        guard_name = f".{target.name}.{transaction_id}.guard"
-        expected = expected_current or self._inspect_state(path)
-        chain = expected.get("parent_chain") or self._capture_parent_chain(path)
-        if not _DIR_FD_APPLY_SUPPORTED:
-            return self._apply_state_without_dir_fd(
-                target,
-                state,
-                backup_dir,
-                expected,
-                chain,
-                tmp_name,
-                guard_name,
-            )
-        parent_descriptor = self._open_verified_parent(path, chain)
-        try:
-            if state.get("kind") == "regular":
-                blob = Path(str(state.get("blob_path"))) \
-                    if state.get("blob_path") else (
-                        backup_dir / str(state.get("blob_ref") or "")
-                    )
-                if not blob.is_file():
-                    raise OSError(f"missing recovery blob for {path}")
-                if state.get("digest") and _digest(blob) != state.get("digest"):
-                    raise OSError(f"recovery blob digest mismatch for {path}")
-                tmp_descriptor = os.open(
-                    tmp_name,
-                    os.O_WRONLY | os.O_CREAT | os.O_EXCL
-                    | getattr(os, "O_NOFOLLOW", 0),
-                    0o600,
-                    dir_fd=parent_descriptor,
-                )
-                try:
-                    with blob.open("rb") as source:
-                        for chunk in iter(lambda: source.read(1024 * 1024), b""):
-                            view = memoryview(chunk)
-                            while view:
-                                written = os.write(tmp_descriptor, view)
-                                view = view[written:]
-                    os.fchmod(
-                        tmp_descriptor,
-                        int(str(state.get("mode") or "0644"), 8),
-                    )
-                    os.fsync(tmp_descriptor)
-                finally:
-                    os.close(tmp_descriptor)
-
-            if expected.get("kind") == "regular":
-                os.rename(
-                    target.name, guard_name,
-                    src_dir_fd=parent_descriptor, dst_dir_fd=parent_descriptor,
-                )
-                moved = self._inspect_state_at(parent_descriptor, guard_name)
-                if not self._state_matches(moved, expected):
-                    try:
-                        os.rename(
-                            guard_name, target.name,
-                            src_dir_fd=parent_descriptor,
-                            dst_dir_fd=parent_descriptor,
-                        )
-                    except FileExistsError:
-                        pass
-                    raise OSError(f"stale current state for {path}")
-            elif expected.get("kind") != "absent":
-                raise OSError(f"unsafe current state for {path}")
-
-            if state.get("kind") == "regular":
-                try:
-                    os.link(
-                        tmp_name, target.name,
-                        src_dir_fd=parent_descriptor,
-                        dst_dir_fd=parent_descriptor,
-                        follow_symlinks=False,
-                    )
-                except FileExistsError as exc:
-                    raise OSError(f"external writer created {path}") from exc
-                os.unlink(tmp_name, dir_fd=parent_descriptor)
-            elif state.get("kind") != "absent":
-                raise OSError(f"unsupported target state for {path}")
-
-            os.fsync(parent_descriptor)
-            guard_exists = self._inspect_state_at(
-                parent_descriptor, guard_name,
-            ).get("kind") != "absent"
-            return str(target.parent / guard_name) if guard_exists else None
-        finally:
-            try:
-                try:
-                    os.unlink(tmp_name, dir_fd=parent_descriptor)
-                except FileNotFoundError:
-                    pass
-            finally:
-                os.close(parent_descriptor)
-
-    def _apply_state_without_dir_fd(
-        self,
-        target: Path,
-        state: dict,
-        backup_dir: Path,
-        expected: dict,
-        chain: dict,
-        tmp_name: str,
-        guard_name: str,
-    ) -> str | None:
-        parent = self._verify_parent_path(str(target), chain)
-        tmp_path = parent / tmp_name
-        guard_path = parent / guard_name
-        try:
-            if state.get("kind") == "regular":
-                blob = Path(str(state.get("blob_path"))) \
-                    if state.get("blob_path") else (
-                        backup_dir / str(state.get("blob_ref") or "")
-                    )
-                if not blob.is_file():
-                    raise OSError(f"missing recovery blob for {target}")
-                if state.get("digest") and _digest(blob) != state.get("digest"):
-                    raise OSError(f"recovery blob digest mismatch for {target}")
-                tmp_descriptor = os.open(
-                    tmp_path,
-                    os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
-                    0o600,
-                )
-                try:
-                    with blob.open("rb") as source:
-                        for chunk in iter(lambda: source.read(1024 * 1024), b""):
-                            view = memoryview(chunk)
-                            while view:
-                                written = os.write(tmp_descriptor, view)
-                                view = view[written:]
-                    os.chmod(tmp_path, int(str(state.get("mode") or "0644"), 8))
-                    os.fsync(tmp_descriptor)
-                finally:
-                    os.close(tmp_descriptor)
-
-            if expected.get("kind") == "regular":
-                os.rename(target, guard_path)
-                moved = self._inspect_state_path(guard_path)
-                if not self._state_matches(moved, expected):
-                    try:
-                        os.rename(guard_path, target)
-                    except FileExistsError:
-                        pass
-                    raise OSError(f"stale current state for {target}")
-            elif expected.get("kind") != "absent":
-                raise OSError(f"unsafe current state for {target}")
-
-            if state.get("kind") == "regular":
-                try:
-                    os.link(tmp_path, target)
-                except FileExistsError as exc:
-                    raise OSError(f"external writer created {target}") from exc
-                os.unlink(tmp_path)
-            elif state.get("kind") != "absent":
-                raise OSError(f"unsupported target state for {target}")
-
-            self._fsync_directory(parent)
-            guard_exists = self._inspect_state_path(guard_path).get("kind") != "absent"
-            return str(guard_path) if guard_exists else None
-        finally:
-            try:
-                os.unlink(tmp_path)
-            except FileNotFoundError:
-                pass
-
-    def _restore_changed_guard(
-        self,
-        action: dict,
-        guard_path: str,
-        transaction_id: str,
-    ) -> None:
-        target = Path(action["path"])
-        guard = Path(guard_path)
-        applied_name = f".{target.name}.{transaction_id}.applied"
-        chain = action["expected_current"].get("parent_chain") \
-            or self._capture_parent_chain(action["path"])
-        if not _DIR_FD_APPLY_SUPPORTED:
-            self._restore_changed_guard_without_dir_fd(
-                action, guard, applied_name, chain,
-            )
-            return
-        descriptor = self._open_verified_parent(action["path"], chain)
-        try:
-            if self._inspect_state_at(descriptor, target.name).get("kind") != "absent":
-                os.rename(
-                    target.name, applied_name,
-                    src_dir_fd=descriptor, dst_dir_fd=descriptor,
-                )
-                action["recovery_artifact"] = str(target.parent / applied_name)
-            if self._inspect_state_at(descriptor, target.name).get("kind") != "absent":
-                raise OSError(f"external writer recreated {target}")
-            os.rename(
-                guard.name, target.name,
-                src_dir_fd=descriptor, dst_dir_fd=descriptor,
-            )
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
-
-    def _restore_changed_guard_without_dir_fd(
-        self,
-        action: dict,
-        guard: Path,
-        applied_name: str,
-        chain: dict,
-    ) -> None:
-        target = Path(action["path"])
-        parent = self._verify_parent_path(action["path"], chain)
-        applied_path = parent / applied_name
-        guard_path = parent / guard.name
-        if self._inspect_state_path(target).get("kind") != "absent":
-            os.rename(target, applied_path)
-            action["recovery_artifact"] = str(applied_path)
-        if self._inspect_state_path(target).get("kind") != "absent":
-            raise OSError(f"external writer recreated {target}")
-        os.rename(guard_path, target)
-        self._fsync_directory(parent)
-
-    @staticmethod
-    def _fsync_directory(path: Path) -> None:
-        try:
-            descriptor = os.open(path, os.O_RDONLY)
-            try:
-                os.fsync(descriptor)
-            finally:
-                os.close(descriptor)
-        except OSError:
-            pass
 
     @staticmethod
     def _intent_result(intent: dict) -> dict:
@@ -1106,10 +574,10 @@ class CheckpointStore:
             target_head = intent.get("target_head_id")
             states = []
             for action in actions:
-                actual = self._inspect_state(action["path"])
-                if self._state_matches(actual, action["rollback"]):
+                actual = file_state._inspect_state(action["path"])
+                if file_state._state_matches(actual, action["rollback"]):
                     states.append("source")
-                elif self._state_matches(actual, action["target"]):
+                elif file_state._state_matches(actual, action["target"]):
                     states.append("target")
                 else:
                     states.append("external")
@@ -1140,15 +608,15 @@ class CheckpointStore:
                 try:
                     action["state"] = "rolling_back"
                     manifest.save(intent_path, intent)
-                    rollback_guard = self._apply_state(
+                    rollback_guard = file_apply._apply_state(
                         action["path"], action["rollback"], self.session_dir,
                         str(intent.get("transaction_id") or "recovery") + "_rollback",
                         action["target"],
                     )
                     if rollback_guard:
                         action["rollback_guard_path"] = rollback_guard
-                    if not self._state_matches(
-                        self._inspect_state(action["path"]), action["rollback"],
+                    if not file_state._state_matches(
+                        file_state._inspect_state(action["path"]), action["rollback"],
                     ):
                         raise OSError("rollback verification failed")
                     action["state"] = "rolled_back"
@@ -1224,13 +692,13 @@ class CheckpointStore:
             if not path:
                 unavailable.append(path)
                 continue
-            if not self._state_matches(
-                self._inspect_state(path), action.get("expected_current") or {},
+            if not file_state._state_matches(
+                file_state._inspect_state(path), action.get("expected_current") or {},
             ):
                 conflicts.append(path)
                 continue
             for state in (action.get("target") or {}, action.get("rollback") or {}):
-                if not self._blob_is_exact(state):
+                if not file_state._blob_is_exact(state):
                     unavailable.append(path)
                     break
         if unavailable:
@@ -1280,8 +748,8 @@ class CheckpointStore:
             conflicts = []
             unavailable = []
             for action in intent["actions"]:
-                if not self._state_matches(
-                    self._inspect_state(action["path"]),
+                if not file_state._state_matches(
+                    file_state._inspect_state(action["path"]),
                     action.get("expected_current") or {},
                 ):
                     conflicts.append(action["path"])
@@ -1289,7 +757,7 @@ class CheckpointStore:
                     if state.get("kind") != "regular":
                         continue
                     blob = Path(str(state.get("blob_path") or backup_dir / str(state.get("blob_ref") or "")))
-                    if not blob.is_file() or (state.get("digest") and _digest(blob) != state.get("digest")):
+                    if not blob.is_file() or (state.get("digest") and file_state._digest(blob) != state.get("digest")):
                         unavailable.append(action["path"])
             current = {
                 "status": "unavailable" if unavailable else "blocked" if conflicts else "ready",
@@ -1311,25 +779,25 @@ class CheckpointStore:
             try:
                 for action in intent["actions"]:
                     touched.append(action)
-                    if not self._state_matches(
-                        self._inspect_state(action["path"]),
+                    if not file_state._state_matches(
+                        file_state._inspect_state(action["path"]),
                         action["expected_current"],
                     ):
                         raise OSError(f"stale current state for {action['path']}")
-                    guard_path = self._apply_state(
+                    guard_path = file_apply._apply_state(
                         action["path"], action["target"], backup_dir,
                         intent["transaction_id"], action["expected_current"],
                     )
                     if guard_path:
                         action["guard_path"] = guard_path
-                    if not self._state_matches(
-                        self._inspect_state(action["path"]), action["target"],
+                    if not file_state._state_matches(
+                        file_state._inspect_state(action["path"]), action["target"],
                     ):
                         raise OSError(f"verification failed for {action['path']}")
-                    if guard_path and not self._state_matches(
-                        self._inspect_state(guard_path), action["rollback"],
+                    if guard_path and not file_state._state_matches(
+                        file_state._inspect_state(guard_path), action["rollback"],
                     ):
-                        self._restore_changed_guard(
+                        file_apply._restore_changed_guard(
                             action, guard_path, intent["transaction_id"],
                         )
                         raise OSError(
@@ -1341,22 +809,22 @@ class CheckpointStore:
                 recovery_required = False
                 for action in reversed(touched):
                     try:
-                        actual = self._inspect_state(action["path"])
-                        if self._state_matches(actual, action["rollback"]):
+                        actual = file_state._inspect_state(action["path"])
+                        if file_state._state_matches(actual, action["rollback"]):
                             action["state"] = "rolled_back"
                             continue
-                        if not self._state_matches(actual, action["target"]):
+                        if not file_state._state_matches(actual, action["target"]):
                             recovery_required = True
                             action["error"] = "external change prevents rollback"
                             continue
-                        rollback_guard = self._apply_state(
+                        rollback_guard = file_apply._apply_state(
                             action["path"], action["rollback"], backup_dir,
                             intent["transaction_id"] + "_rollback", action["target"],
                         )
                         if rollback_guard:
                             action["rollback_guard_path"] = rollback_guard
-                        if not self._state_matches(
-                            self._inspect_state(action["path"]), action["rollback"],
+                        if not file_state._state_matches(
+                            file_state._inspect_state(action["path"]), action["rollback"],
                         ):
                             raise OSError("rollback verification failed")
                         action["state"] = "rolled_back"
@@ -1397,17 +865,6 @@ class CheckpointStore:
             raise ValueError("invalid operation_id")
         return self.recovery_root / "operations" / operation_id
 
-    def _capture_manual_blob(self, source: Path, destination: Path) -> dict:
-        try:
-            info = os.lstat(source)
-        except FileNotFoundError as exc:
-            raise MutationJournalError(f"snapshot source is missing: {source}") from exc
-        if (not stat.S_ISREG(info.st_mode) or is_link_metadata(info)
-                or info.st_nlink != 1 or info.st_size > 64 * 1024 * 1024):
-            raise MutationJournalError("document source must be an ordinary file of at most 64 MiB")
-        state = self._capture_regular(source, destination)
-        state["sha256"] = state["digest"].removeprefix("sha256:")
-        return state
 
     @staticmethod
     def _manual_descriptor(state: dict) -> dict:
@@ -1474,8 +931,8 @@ class CheckpointStore:
             if (not stat.S_ISREG(target_info.st_mode) or is_link_metadata(target_info)
                     or target_info.st_nlink != 1 or target_info.st_size > 64 * 1024 * 1024):
                 raise MutationJournalError("document target must be an ordinary file of at most 64 MiB")
-            before = self._capture_manual_blob(target, operation_dir / "before")
-        candidate = self._capture_manual_blob(source, operation_dir / "candidate")
+            before = capture._capture_manual_blob(target, operation_dir / "before")
+        candidate = capture._capture_manual_blob(source, operation_dir / "candidate")
         # A publication changes bytes while retaining the target's existing
         # permissions.  Source permissions are relevant only when creating a
         # previously absent target.
@@ -1486,7 +943,7 @@ class CheckpointStore:
             raise MutationJournalError("document baseline does not match")
         if expected_mtime is not None and target_info is not None and target_info.st_mtime != expected_mtime:
             raise MutationJournalError("document mtime does not match")
-        parent_chain = self._capture_parent_chain(str(target))
+        parent_chain = file_state._capture_parent_chain(str(target))
         if before.get("kind") == "regular":
             before["blob_path"] = str(operation_dir / before["blob_ref"])
         before_state = {**before, "parent_chain": parent_chain}
@@ -1826,14 +1283,14 @@ class CheckpointStore:
             try:
                 for action in intent["actions"]:
                     touched.append(action)
-                    if not self._state_matches(
-                        self._inspect_state(action["path"]),
+                    if not file_state._state_matches(
+                        file_state._inspect_state(action["path"]),
                         action["expected_current"],
                     ):
                         raise OSError(f"stale current state for {action['path']}")
                     action["state"] = "applying"
                     manifest.save(intent_path, intent)
-                    guard_path = self._apply_state(
+                    guard_path = file_apply._apply_state(
                         action["path"], action["target"], self.session_dir,
                         transaction_id, action["expected_current"],
                     )
@@ -1842,14 +1299,14 @@ class CheckpointStore:
                     action["state"] = "applied"
                     action["applied_digest"] = action["target"].get("digest")
                     manifest.save(intent_path, intent)
-                    if not self._state_matches(
-                        self._inspect_state(action["path"]), action["target"],
+                    if not file_state._state_matches(
+                        file_state._inspect_state(action["path"]), action["target"],
                     ):
                         raise OSError(f"verification failed for {action['path']}")
-                    if guard_path and not self._state_matches(
-                        self._inspect_state(guard_path), action["rollback"],
+                    if guard_path and not file_state._state_matches(
+                        file_state._inspect_state(guard_path), action["rollback"],
                     ):
-                        self._restore_changed_guard(
+                        file_apply._restore_changed_guard(
                             action, guard_path, transaction_id,
                         )
                         raise OSError(
@@ -1861,8 +1318,8 @@ class CheckpointStore:
                     raise OSError("stale_head")
                 head_moved = True
                 for action in intent["actions"]:
-                    if not self._state_matches(
-                        self._inspect_state(action["path"]), action["target"],
+                    if not file_state._state_matches(
+                        file_state._inspect_state(action["path"]), action["target"],
                     ):
                         raise OSError(
                             f"external change after apply for {action['path']}",
@@ -1878,22 +1335,22 @@ class CheckpointStore:
                     recovery_required = True
                 for action in reversed(touched):
                     try:
-                        actual = self._inspect_state(action["path"])
-                        if self._state_matches(actual, action["rollback"]):
+                        actual = file_state._inspect_state(action["path"])
+                        if file_state._state_matches(actual, action["rollback"]):
                             action["state"] = "rolled_back"
                             continue
-                        if not self._state_matches(actual, action["target"]):
+                        if not file_state._state_matches(actual, action["target"]):
                             recovery_required = True
                             action["error"] = "external change prevents rollback"
                             continue
-                        rollback_guard = self._apply_state(
+                        rollback_guard = file_apply._apply_state(
                             action["path"], action["rollback"], self.session_dir,
                             transaction_id + "_rollback", action["target"],
                         )
                         if rollback_guard:
                             action["rollback_guard_path"] = rollback_guard
-                        if not self._state_matches(
-                            self._inspect_state(action["path"]), action["rollback"],
+                        if not file_state._state_matches(
+                            file_state._inspect_state(action["path"]), action["rollback"],
                         ):
                             raise OSError("rollback verification failed")
                         action["state"] = "rolled_back"

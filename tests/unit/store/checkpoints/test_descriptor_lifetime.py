@@ -5,7 +5,7 @@ import os
 import pytest
 
 from openprogram.store.snapshot.checkpoint import CheckpointStore
-from openprogram.store.snapshot.checkpoint import store as checkpoint_store
+from openprogram.store.snapshot.checkpoint import file_state as checkpoint_store
 
 pytestmark = pytest.mark.skipif(
     not checkpoint_store._DIR_FD_APPLY_SUPPORTED, reason="requires directory descriptors",

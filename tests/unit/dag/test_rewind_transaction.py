@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from openprogram.store.session.session_store import SessionStore
-from openprogram.store.snapshot.checkpoint import CheckpointStore
+from openprogram.store.snapshot.checkpoint import CheckpointStore, file_apply
 from openprogram.store.snapshot.checkpoint import manifest
 
 
@@ -96,17 +96,17 @@ def test_file_apply_failure_rolls_back_and_does_not_move_head(
     journal.backup_before_edit(assistants[-1], str(second))
     second.write_text("after\n", encoding="utf-8")
     journal.commit_after_edit(assistants[-1], str(second), operation="edit")
-    original_apply = CheckpointStore._apply_state
+    original_apply = file_apply._apply_state
 
-    def fail_second(self, path, state, backup_dir, transaction_id,
+    def fail_second(path, state, backup_dir, transaction_id,
                     expected_current=None):
         if Path(path) == second:
             raise OSError("injected multi-turn apply failure")
         return original_apply(
-            self, path, state, backup_dir, transaction_id, expected_current,
+            path, state, backup_dir, transaction_id, expected_current,
         )
 
-    monkeypatch.setattr(CheckpointStore, "_apply_state", fail_second)
+    monkeypatch.setattr(file_apply, "_apply_state", fail_second)
 
     result = rewind_to(
         "s-apply-fail", "u1", idempotency_key="rewind-apply-fail",
@@ -246,10 +246,10 @@ def test_parent_symlink_swap_cannot_redirect_rewind(store, tmp_path, monkeypatch
     plan = plan_rewind("s-parent-swap", "u1")
     detached = tmp_path / "work" / "detached"
     outside = tmp_path / "outside"
-    original_apply = CheckpointStore._apply_state
+    original_apply = file_apply._apply_state
     swapped = {"done": False}
 
-    def swap_parent(self, path, state, backup_dir, transaction_id,
+    def swap_parent(path, state, backup_dir, transaction_id,
                     expected_current=None):
         if not swapped["done"]:
             swapped["done"] = True
@@ -258,10 +258,10 @@ def test_parent_symlink_swap_cannot_redirect_rewind(store, tmp_path, monkeypatch
             (outside / target.name).write_text("v3\n", encoding="utf-8")
             parent.symlink_to(outside, target_is_directory=True)
         return original_apply(
-            self, path, state, backup_dir, transaction_id, expected_current,
+            path, state, backup_dir, transaction_id, expected_current,
         )
 
-    monkeypatch.setattr(CheckpointStore, "_apply_state", swap_parent)
+    monkeypatch.setattr(file_apply, "_apply_state", swap_parent)
     result = rewind_to(
         "s-parent-swap", "u1",
         idempotency_key=plan["idempotency_key"],

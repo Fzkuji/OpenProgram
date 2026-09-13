@@ -8,8 +8,10 @@ Modules:
 
 * ``paths`` — directory layout + checkpoint-filename hashing.
 * ``manifest`` — read/write the per-turn ``manifest.json``.
-* ``store.CheckpointStore`` — prepare/commit/inspect mutation receipts and
-  the legacy restore entry point used until the transactional planner lands.
+* ``file_state`` — file inspection, parent identities and digest comparison.
+* ``file_apply`` — guarded publication and rollback.
+* ``capture`` — immutable snapshots and bounded content statistics.
+* ``store.CheckpointStore`` — mutation receipts, history transactions and recovery.
 * ``gc`` — evict old turn directories beyond a soft cap.
 
 Typical usage::

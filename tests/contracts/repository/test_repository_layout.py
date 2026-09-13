@@ -413,3 +413,24 @@ def test_center_tab_styles_have_feature_owners():
         'panes/builtin-page', 'panes/files-page', 'panes/new-tab', 'panes/terminal',
     }
     assert all((directory / f'{owner}.module.css').is_file() for owner in expected)
+
+
+def test_checkpoint_filesystem_has_stateless_owners():
+    import ast
+
+    root = ROOT / "openprogram/store/snapshot/checkpoint"
+    owners = {
+        "file_state": {"_inspect_state", "_capture_parent_chain", "_state_matches"},
+        "file_apply": {"_apply_state", "_restore_changed_guard"},
+        "capture": {"_capture_regular", "_capture_manual_blob", "_line_stats"},
+    }
+    store = ast.parse((root / "store.py").read_text())
+    coordinator = next(n for n in store.body if isinstance(n, ast.ClassDef) and n.name == "CheckpointStore")
+    methods = {n.name for n in coordinator.body if isinstance(n, ast.FunctionDef)}
+    for owner, functions in owners.items():
+        path = root / f"{owner}.py"
+        assert path.exists(), f"missing filesystem owner: {owner}"
+        module = ast.parse(path.read_text())
+        definitions = {n.name for n in module.body if isinstance(n, ast.FunctionDef)}
+        assert functions <= definitions
+        assert not functions & methods, "store must call owners without forwarding methods"

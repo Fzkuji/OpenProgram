@@ -14,7 +14,7 @@ from openprogram.agent.workspace_alignment import (
 from openprogram.agent.job.store import save_job
 from openprogram.agent.job.types import Job, JobStatus
 from openprogram.store.session.session_store import SessionStore
-from openprogram.store.snapshot.checkpoint import CheckpointStore
+from openprogram.store.snapshot.checkpoint import CheckpointStore, file_apply
 
 
 @pytest.fixture
@@ -182,18 +182,18 @@ def test_concurrent_head_move_rolls_back_branch_workspace_restore(
     branch_workspace, monkeypatch,
 ):
     store, path = branch_workspace
-    original = CheckpointStore._apply_state
+    original = file_apply._apply_state
     moved = False
 
-    def apply_then_move_head(self, *args, **kwargs):
+    def apply_then_move_head(*args, **kwargs):
         nonlocal moved
-        result = original(self, *args, **kwargs)
+        result = original(*args, **kwargs)
         if not moved:
             moved = True
             store.set_head("s", "a0")
         return result
 
-    monkeypatch.setattr(CheckpointStore, "_apply_state", apply_then_move_head)
+    monkeypatch.setattr(file_apply, "_apply_state", apply_then_move_head)
 
     result = restore_branch_workspace(
         "s", store=store, idempotency_key="restore-head-race",

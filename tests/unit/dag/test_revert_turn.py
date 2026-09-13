@@ -14,7 +14,7 @@ import pytest
 
 from openprogram.agent.internals._revert import reapply_turn, revert_turn
 from openprogram.store.session.session_store import SessionStore
-from openprogram.store.snapshot.checkpoint import CheckpointStore
+from openprogram.store.snapshot.checkpoint import CheckpointStore, file_apply
 
 
 @pytest.fixture
@@ -169,20 +169,20 @@ def test_mid_apply_failure_rolls_back_every_file(
     journal = _record_mutation(
         store_with_session, session_id, turn_id, second, "second after\n",
     )
-    original_apply = CheckpointStore._apply_state
+    original_apply = file_apply._apply_state
     failed = {"value": False}
 
     def fail_second_once(
-        self, path, state, backup_dir, transaction_id, expected_current=None,
+        path, state, backup_dir, transaction_id, expected_current=None,
     ):
         if Path(path) == second and not failed["value"]:
             failed["value"] = True
             raise OSError("injected second-file failure")
         return original_apply(
-            self, path, state, backup_dir, transaction_id, expected_current,
+            path, state, backup_dir, transaction_id, expected_current,
         )
 
-    monkeypatch.setattr(CheckpointStore, "_apply_state", fail_second_once)
+    monkeypatch.setattr(file_apply, "_apply_state", fail_second_once)
 
     result = revert_turn(session_id, turn_id)
 
@@ -304,20 +304,20 @@ def test_external_write_at_final_mutation_point_is_preserved(
     target = tmp_path / "race.py"
     target.write_text("before\n", encoding="utf-8")
     _record_mutation(store_with_session, session_id, turn_id, target, "after\n")
-    original_apply = CheckpointStore._apply_state
+    original_apply = file_apply._apply_state
     injected = {"value": False}
 
     def inject_external_write(
-        self, path, state, backup_dir, transaction_id, expected_current=None,
+        path, state, backup_dir, transaction_id, expected_current=None,
     ):
         if not injected["value"]:
             injected["value"] = True
             Path(path).write_text("external-after-preflight\n", encoding="utf-8")
         return original_apply(
-            self, path, state, backup_dir, transaction_id, expected_current,
+            path, state, backup_dir, transaction_id, expected_current,
         )
 
-    monkeypatch.setattr(CheckpointStore, "_apply_state", inject_external_write)
+    monkeypatch.setattr(file_apply, "_apply_state", inject_external_write)
 
     result = revert_turn(session_id, turn_id)
 
