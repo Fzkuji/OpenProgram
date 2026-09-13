@@ -2901,28 +2901,28 @@ def _shared_remaining(ledger: UsageLedger, job_id: str) -> dict[str, Any]:
                SELECT * FROM ancestors""",
             (job_id,),
         ).fetchall()
-    token_remaining: list[int] = []
-    cost_remaining: list[int] = []
-    unknown_cost_events = 0
-    for scope in scopes:
-        usage = _scope_usage_breakdown(conn, scope["budget_scope_id"])
-        unknown_cost_events = max(
-            unknown_cost_events, usage["unknown_cost_events"],
-        )
-        if scope["max_total_tokens"] is not None:
-            token_remaining.append(max(
-                0,
-                int(scope["max_total_tokens"])
-                - usage["actual_tokens"]
-                - usage["reserved_tokens"],
-            ))
-        if scope["max_cost_microusd"] is not None:
-            cost_remaining.append(max(
-                0,
-                int(scope["max_cost_microusd"])
-                - usage["actual_cost_microusd"]
-                - usage["reserved_cost_microusd"],
-            ))
+        token_remaining: list[int] = []
+        cost_remaining: list[int] = []
+        unknown_cost_events = 0
+        for scope in scopes:
+            usage = _scope_usage_breakdown(conn, scope["budget_scope_id"])
+            unknown_cost_events = max(
+                unknown_cost_events, usage["unknown_cost_events"],
+            )
+            if scope["max_total_tokens"] is not None:
+                token_remaining.append(max(
+                    0,
+                    int(scope["max_total_tokens"])
+                    - usage["actual_tokens"]
+                    - usage["reserved_tokens"],
+                ))
+            if scope["max_cost_microusd"] is not None:
+                cost_remaining.append(max(
+                    0,
+                    int(scope["max_cost_microusd"])
+                    - usage["actual_cost_microusd"]
+                    - usage["reserved_cost_microusd"],
+                ))
     return {
         "tokens": min(token_remaining) if token_remaining else None,
         "cost_usd": (

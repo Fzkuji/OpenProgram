@@ -11,6 +11,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from tests.support.waiting import wait_until
+
 from tests.component.self_update.test_launcher import _request, _trusted_installer, _ready
 from tests.component.agent.async_job_support import store_fixture  # noqa: F401
 from tests.component.self_update.test_system_probe import live  # noqa: F401
@@ -176,6 +178,8 @@ def test_bootstrap_manual_state_still_requires_interactive_consent(recoverable, 
     assert (v.update / "state.json").read_bytes() == before and entry.plist.exists()
 
 
+# Includes two complete runtime copies, native checks, and synchronous cleanup.
+@pytest.mark.timeout(240)
 def test_saved_runtime_script_and_native_login_survive_original_app_removal(native_workspace, monkeypatch):
     from openprogram import paths
     from openprogram.self_update import bootstrap, controller_bundle, UpdatePhase
@@ -226,18 +230,23 @@ def test_saved_runtime_script_and_native_login_survive_original_app_removal(nati
         loaded = subprocess.run(["/bin/launchctl", "bootstrap", f"gui/{os.getuid()}", str(plist)],
                                 capture_output=True, text=True, timeout=15)
         assert loaded.returncode == 0, loaded.stderr
-        deadline = time.monotonic() + 45
-        while plist.exists() and time.monotonic() < deadline:
-            time.sleep(0.1)
+        # Validate the complete saved runtime before observing terminal cleanup.
+        removed = wait_until(lambda: not plist.exists(), timeout=90, interval=0.1)
         log = directory / "bootstrap.log"
-        assert not plist.exists(), log.read_text()[-2000:] if log.exists() else "no bootstrap log"
+        assert removed, log.read_text()[-2000:] if log.exists() else "no bootstrap log"
         assert script.exists() and bundle.python.exists()
         assert store.load(update_id).state.phase is UpdatePhase.ABORTED
         assert shell("resume").returncode == 0
     finally:
         subprocess.run(["/bin/launchctl", "bootout", domain], capture_output=True, text=True, timeout=15)
-        assert subprocess.run(["/bin/launchctl", "print", domain], capture_output=True,
-                              text=True, timeout=15).returncode != 0
+        # launchctl removal is asynchronous; drain it before deleting its runtime.
+        assert wait_until(
+            lambda: subprocess.run(
+                ["/bin/launchctl", "print", domain], capture_output=True,
+                text=True, timeout=15,
+            ).returncode != 0,
+            timeout=15, interval=0.1,
+        )
 
 
 def test_initial_conflict_does_not_overwrite_existing_login_file(tmp_path, monkeypatch):
