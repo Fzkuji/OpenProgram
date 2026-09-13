@@ -267,6 +267,7 @@ class StorageOperations:
         session_id = git.path.name
         with shared.session_interprocess_lock(
             session_id, root=self.root_path if self._explicit_root else None,
+            reentrant=True,
         ):
             if shared.is_deleted(self.root_path, session_id):
                 raise RuntimeError(f"session deleted: {session_id}")
