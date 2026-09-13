@@ -418,7 +418,7 @@ test("transfers include historical file drafts and preserve keys still used by a
   const normalized = validateTransferPayload({id:"source"}, payload).payload;
   assert.deepEqual(normalized.fileDrafts, payload.fileDrafts);
   const receipts = [];
-  await handleRemoveSource({webTabs:{syncVisible:async () => true}, tabTransfer:{
+  await handleRemoveSource({webTab:{syncVisible:async () => true}, tabTransfer:{
     journalOpened: async () => true,
     sourceRemoved: async (...args) => { receipts.push(args); return true; },
     journalFinalized: async () => true,
