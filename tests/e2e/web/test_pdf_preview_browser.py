@@ -30,6 +30,7 @@ DESKTOP_MISSING_APIS = "delete Uint8Array.prototype.toHex; delete Math.sumPrecis
 @pytest.fixture(params=["native", "desktop-missing-apis"])
 def pdf_page(pdf_bundle, request):
     from playwright.sync_api import sync_playwright
+    from openprogram.webui.owner_auth import _shell_content_security_policy
 
     asset_root = Path("apps/web/public/document-assets/pdfjs")
     if not (asset_root / "pdf.mjs").is_file():
@@ -47,7 +48,7 @@ def pdf_page(pdf_bundle, request):
         def route(request):
             path = urlsplit(request.request.url).path
             if path == "/":
-                request.fulfill(content_type="text/html", body='<div id="root"></div><script src="/bundle.js"></script>')
+                request.fulfill(content_type="text/html", headers={"Content-Security-Policy": _shell_content_security_policy().decode()}, body='<div id="root"></div><script src="/bundle.js"></script>')
             elif path == "/bundle.js":
                 request.fulfill(content_type="text/javascript", body=pdf_bundle)
             elif path.startswith("/document-assets/pdfjs/"):
@@ -125,4 +126,11 @@ def test_malformed_pdf_offers_original_download(pdf_page):
     page.evaluate("body => showFile('broken.pdf', body)", base64.b64encode(b"not a pdf").decode())
     expect(page.get_by_role("alert")).to_contain_text("PDF")
     expect(page.get_by_role("link", name="Download original", exact=True)).to_have_attribute("download", "broken.pdf")
+    assert errors == []
+
+
+def test_pdf_shell_policy_rejects_external_fetch(pdf_page):
+    page, errors = pdf_page
+    # The catch-all route would return 404 (a resolved fetch) if CSP allowed it.
+    assert page.evaluate("fetch('https://outside.invalid/data').then(() => false, () => true)")
     assert errors == []

@@ -464,7 +464,7 @@ def _shell_content_security_policy(
     script_sources = " ".join(("'self'", *hashes))
     return (
         f"object-src 'none'; base-uri 'none'; frame-ancestors {frame_ancestors}; "
-        f"script-src {script_sources}; connect-src 'self'"
+        f"script-src {script_sources}; connect-src 'self' blob:"
     ).encode("ascii")
 
 
