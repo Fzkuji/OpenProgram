@@ -111,3 +111,5 @@ material source must be configured separately before enabling a scheduled run.
 ## Source organization
 
 The four independent report Workflow packages are grouped under `openprogram/programs/workflow/weekly_report/`: `personal_weekly_report` (personal), `group_weekly_report` (group), `tencent_weekly_report` (Tencent), and `weekly_report` (routing). Shared internal helpers live in `workflow/_reports/`. The coordinator is named `weekly_report`; the personal entry is `personal_weekly_report`. Configured output paths are unchanged. A category directory organizes sources; it is not an additional Workflow.
+
+Personal field generation uses a read-only Agent to retrieve the requested week from memory and local notes. A JSON Schema validates complete fields or sparse edits, with prompt fallback and the existing format-repair attempt before any write. An unresolved model failure retains the original request; an uncertain remote write is not retried.
