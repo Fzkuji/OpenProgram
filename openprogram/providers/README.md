@@ -24,6 +24,7 @@ their provider packages (e.g. ``openprogram.providers.openai_codex``).
 - **`default_llm.py`** — Build a plain text-in/text-out callable on the default agent's model
 - **`enabled_models.py`** — Runtime model registry
 - **`env_api_keys.py`** — Provider API-key resolution
+- **`fast.py`** — Route-aware Fast capabilities shared by UI projection and dispatch
 - **`initialization.py`** — Explicit, process-wide provider runtime initialization
 - **`metadata.py`** — Provider-level metadata: display labels, env-var mappings, default
 - **`models.py`** — Model registry and utilities

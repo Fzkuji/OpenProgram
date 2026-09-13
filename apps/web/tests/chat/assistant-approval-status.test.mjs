@@ -15,7 +15,7 @@ await build({
   absWorkingDir: web, entryPoints: ['components/chat/messages/assistant-bubble.tsx'],
   bundle: true, platform: 'node', format: 'esm', packages: 'external', jsx: 'automatic', outfile: file,
   plugins: [{ name: 'bubble-services', setup(b) {
-    b.onResolve({ filter: /^(@\/|\.\/)/ }, a => a.importer.endsWith('assistant-bubble.tsx') ? { path: a.path, namespace: 'stub' } : null);
+    b.onResolve({ filter: /^(@\/|\.\/)/ }, a => a.importer.endsWith('assistant-bubble.tsx') && a.path !== '@/lib/format-utils/format' ? { path: a.path, namespace: 'stub' } : null);
     b.onLoad({ filter: /.*/, namespace: 'stub' }, a => ({ contents:
       a.path.includes('session-store') ? 'export const useSessionStore = selector => selector(globalThis.approvalState);' :
       a.path.includes('agent-style') ? 'export const agentColor=()=>"", agentInitial=()=>"", agentDisplayName=()=>"Agent", useAgentProfile=()=>({name:"Agent"});' :

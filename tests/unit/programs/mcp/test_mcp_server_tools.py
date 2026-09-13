@@ -935,7 +935,7 @@ def test_tool_call_missing_paired_capability_is_typed_and_does_not_invoke(
         (
             "memory_search",
             {"query": "x"},
-            None,
+            PermissionRules(ask=["memory_search"]),
             "APPROVAL_UNAVAILABLE_NON_INTERACTIVE",
             "[denied] approval unavailable for non-interactive MCP",
         ),
