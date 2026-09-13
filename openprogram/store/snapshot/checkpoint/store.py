@@ -1046,7 +1046,16 @@ class CheckpointStore:
         }
 
     def read_rewind_intent(self, key: str) -> dict | None:
-        return self._read_intent(self._rewind_intent_path(key))
+        path = self._rewind_intent_path(key)
+        try:
+            value = read_rewind_record(path)
+        except FileNotFoundError:
+            return None
+        if value is None:
+            return invalid_rewind_result(path)
+        if value["status"] == "recovery_required" and not value.get("error_code"):
+            value["error_code"] = "RECOVERY_REQUIRED"
+        return value
 
     @staticmethod
     def _read_intent(path: Path) -> dict | None:
@@ -1688,40 +1697,39 @@ class CheckpointStore:
         key = idempotency_key
         intent_path = self._rewind_intent_path(key)
         if intent_path.exists():
-            try:
-                existing = json.loads(intent_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                existing = None
-            if isinstance(existing, dict):
-                if (
-                    target_msg_id != existing.get("target_msg_id")
-                    or (
-                        expected_plan_hash
-                        and expected_plan_hash != existing.get("preview_plan_hash")
-                    )
-                ):
-                    return {
-                        "status": "idempotency_conflict",
-                        "transaction_id": existing.get("transaction_id"),
-                        "restored_paths": [],
-                        "conflicts": [],
-                        "unavailable": [],
-                        "error": "idempotency key is bound to another rewind request",
-                        "new_head_id": None,
-                        "head_changed": False,
-                    }
-                if existing.get("status") in {
-                    "committed", "rolled_back", "recovery_required", "aborted",
-                }:
-                    return self._rewind_intent_result(existing, replayed=True)
-                return self._recover_rewind_intent(
-                    intent_path,
-                    get_head=get_head,
-                    compare_and_set_head=(
-                        lambda _intent, expected, target:
-                        compare_and_set_head(expected, target)
-                    ),
+            existing = read_rewind_record(intent_path)
+            if existing is None:
+                return {**invalid_rewind_result(intent_path),
+                        "head_changed": False, "new_head_id": None, "replayed": True}
+            if (
+                target_msg_id != existing.get("target_msg_id")
+                or (
+                    expected_plan_hash
+                    and expected_plan_hash != existing.get("preview_plan_hash")
                 )
+            ):
+                return {
+                    "status": "idempotency_conflict",
+                    "transaction_id": existing.get("transaction_id"),
+                    "restored_paths": [],
+                    "conflicts": [],
+                    "unavailable": [],
+                    "error": "idempotency key is bound to another rewind request",
+                    "new_head_id": None,
+                    "head_changed": False,
+                }
+            if existing.get("status") in {
+                "committed", "rolled_back", "recovery_required", "aborted",
+            }:
+                return self._rewind_intent_result(existing, replayed=True)
+            return self._recover_rewind_intent(
+                intent_path,
+                get_head=get_head,
+                compare_and_set_head=(
+                    lambda _intent, expected, target:
+                    compare_and_set_head(expected, target)
+                ),
+            )
 
         plan = (
             self._validate_custom_history_actions(custom_actions)
