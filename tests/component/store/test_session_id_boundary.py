@@ -14,7 +14,7 @@ def snapshot(root):
 
 
 @pytest.mark.parametrize('method', ['create', 'append', 'delete', 'writer'])
-@pytest.mark.parametrize('identifier', ['../victim', 'absolute', '.locks', 'PROJECTS', '.git', '', '.', '..', 'a/b', 'a\\b', 'bad\x00id', None, []])
+@pytest.mark.parametrize('identifier', ['../victim', 'absolute', '.locks', 'PROJECTS', '.git', '', '.', '..', 'a/b', 'a\\b', 'bad\x00id', None, [], 'C:outside', 'C:'])
 def test_invalid_mutation_preserves_fixture_tree(tmp_path, monkeypatch, method, identifier):
     monkeypatch.setattr('openprogram.store.project.project_store.unbind_session', lambda *_: None)
     victim = tmp_path / 'victim'
@@ -36,7 +36,7 @@ def test_invalid_mutation_preserves_fixture_tree(tmp_path, monkeypatch, method, 
         assert snapshot(tmp_path) == before
 
 
-@pytest.mark.parametrize('identifier', ['../victim', '/absolute', '.locks', 'PROJECTS', '.git', '', '.', '..', 'a\\b', 'bad\x00id', None, []])
+@pytest.mark.parametrize('identifier', ['../victim', '/absolute', '.locks', 'PROJECTS', '.git', '', '.', '..', 'a\\b', 'bad\x00id', None, [], 'C:outside', 'C:'])
 def test_invalid_reads_remain_empty(tmp_path, identifier):
     with closing(SessionStore(tmp_path / 'sessions')) as store:
         before = snapshot(tmp_path)

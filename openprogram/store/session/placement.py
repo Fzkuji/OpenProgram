@@ -9,7 +9,7 @@ until journaled migration publishes them.
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Iterable, Iterator
 
 from openprogram.store.session.git_session import atomic_write_text, read_text_with_retry
@@ -32,6 +32,7 @@ def validate_session_id(session_id: str) -> str:
     if (not isinstance(session_id, str) or not session_id
             or session_id.startswith(".")
             or any(character in session_id for character in ("/", "\\", "\x00"))
+            or PureWindowsPath(session_id).drive
             or session_id.casefold() in RESERVED_ROOT_NAMES):
         raise ValueError("session_id must name a non-reserved directory component")
     return session_id
