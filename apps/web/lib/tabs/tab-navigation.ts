@@ -21,7 +21,10 @@ export function recordWindowNavigation(
   let index = history.index;
   const previousTab = state.tabs.find(tab => tab.id === state.activeId);
   const nextTab = next.tabs.find(tab => tab.id === activeId);
-  if (record && activeId === state.activeId && previousTab?.sessionId !== nextTab?.sessionId) {
+  const replacedPage = nextTab?.pageHistory;
+  const replacesCurrent = replacedPage && replacedPage.entries[replacedPage.index - 1]?.id === state.activeId;
+  if (record && ((activeId === state.activeId && previousTab?.sessionId !== nextTab?.sessionId)
+      || (activeId !== state.activeId && replacesCurrent))) {
     entries = entries.slice(0, index + 1);
   }
   // Replacement and local history navigation are one visit, not a tab switch.

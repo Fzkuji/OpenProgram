@@ -299,3 +299,12 @@ test("opening another folder after cross-tab Back discards forward visits", () =
   state().recordFileNavigation({projectId:"p",path:"src",selectedType:"dir",expanded:[],scroll:null});
   assert.equal(state().canNavigateHistory(1), false);
 });
+
+
+test("choosing a page from New tab after cross-tab Back discards forward visits", () => {
+  reset(); state().openBuiltinTab("terminal"); const terminal = active().id;
+  state().openNewTabPage(); state().setActive(terminal); state().navigateHistory(-1);
+  assert.equal(active().kind, "ntp");
+  state().openBuiltinTab("files");
+  assert.equal(state().canNavigateHistory(1), false);
+});
