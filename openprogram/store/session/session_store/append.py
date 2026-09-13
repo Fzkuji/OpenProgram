@@ -101,4 +101,3 @@ def append_node(store, session_id, node, *, create_if_missing=True, advance_head
             idx.head_id = meta["head_id"]
         node.seq = pending.seq
         node.metadata = copy.deepcopy(pending.metadata)
-        git.mark_synced()

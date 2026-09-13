@@ -78,7 +78,14 @@ class MessagesOperations:
                             shared._node_conv_predecessor, shared._node_caller,
                         )
                     git.mark_synced()
-                yield git, idx
+                git._synced_fingerprint = None
+                try:
+                    yield git, idx
+                except BaseException:
+                    git._synced_fingerprint = None
+                    raise
+                else:
+                    git.mark_synced()
 
     def _update_history_node(self, session_id, git, idx, node_id, fields):
         cached = idx.nodes_by_id.get(node_id)

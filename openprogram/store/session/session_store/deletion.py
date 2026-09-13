@@ -82,5 +82,4 @@ def delete_nodes(store, session_id, node_id, *, descendants=False):
             git.list_history(), git.read_meta(),
             shared._node_conv_predecessor, shared._node_caller,
         )
-        git.mark_synced()
         return len(selected)

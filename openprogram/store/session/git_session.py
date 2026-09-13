@@ -170,7 +170,7 @@ class GitSession:
         self._lock = threading.Lock()
         self._initialized: Optional[bool] = None
         # Disk fingerprint as of the last moment THIS process knew memory
-        # and disk agreed (rebuild or own write). @agentic_function runs
+        # and disk agreed (rebuild or completed index publication). @agentic_function runs
         # execute in a fork()'d subprocess that appends history and moves
         # HEAD on disk directly — the parent's cached SessionMemoryIndex
         # can't see that. SessionStore._open compares this against
@@ -254,8 +254,8 @@ class GitSession:
         self._synced_fingerprint = self.stat_fingerprint()
 
     def stale(self) -> bool:
-        """True when another process changed this session on disk since
-        we last synced (never-synced counts as stale)."""
+        """True when disk may differ from the last published index
+        (an unpublished local write also counts as stale)."""
         return self._synced_fingerprint != self.stat_fingerprint()
 
     # File ops
@@ -266,6 +266,7 @@ class GitSession:
 
         Returns the resulting Path. Caller decides when to commit.
         """
+        self._synced_fingerprint = None
         self._ensure_init()
         role_letter = (role or "x")[0]
         fname = f"{seq:04d}-{role_letter}-{node_id}.json"
@@ -280,18 +281,17 @@ class GitSession:
         # half-written node.
         atomic_write_text(
             fpath, json.dumps(payload, ensure_ascii=False, default=str))
-        self.mark_synced()
         return fpath
 
     def write_meta(self, meta: dict) -> Path:
         """Overwrite ``meta.json`` at repo root. Stores session-level
         fields (title, agent_id, head_id, created_at, ...).
         """
+        self._synced_fingerprint = None
         self._ensure_init()
         fpath = self.path / "meta.json"
         atomic_write_text(
             fpath, json.dumps(meta, ensure_ascii=False, default=str))
-        self.mark_synced()
         return fpath
 
     def read_meta(self) -> dict:

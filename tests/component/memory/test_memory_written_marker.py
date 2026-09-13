@@ -814,7 +814,7 @@ def test_merge_marker_preserves_updated_at_and_refreshes_one_stale_index(
     assert rebuilds == 1
 
 
-def test_batch_metadata_merge_rebuilds_each_store_once_after_the_batch(
+def test_batch_metadata_merge_reuses_writer_index_and_refreshes_external_reader(
     environment,
     monkeypatch: pytest.MonkeyPatch,
     request: pytest.FixtureRequest,
@@ -883,16 +883,16 @@ def test_batch_metadata_merge_rebuilds_each_store_once_after_the_batch(
 
     assert writer_rebuilds == 0
     assert reader_rebuilds == 0
-    assert mark_synced_calls == 0
+    assert mark_synced_calls == 1
     assert json.loads(meta_path.read_text(encoding="utf-8"))["updated_at"] == (
         updated_at_before
     )
     assert writer.list_sessions(limit=10)[0]["updated_at"] == registry_before
 
     written = writer.get_branch("batch-api")
-    assert writer_rebuilds == 1
+    assert writer_rebuilds == 0
     assert writer.get_branch("batch-api") == written
-    assert writer_rebuilds == 1
+    assert writer_rebuilds == 0
     assert [row[MARKER] for row in written] == [workspace_id] * 4
     assert [row["keep"] for row in written] == [
         f"original-{index}" for index in range(1, 5)
@@ -942,7 +942,7 @@ def test_write_session_marks_a_batch_without_internal_index_rebuilds(
     assert [row.get(MARKER) for row in db.get_branch("batch-write")] == [
         marker, marker, marker, marker,
     ]
-    assert rebuilds == 1
+    assert rebuilds == 0
 
 
 @pytest.mark.parametrize(
@@ -1168,7 +1168,7 @@ def test_migration_groups_one_sessions_markers_without_internal_rebuilds(
     assert [row.get(MARKER) for row in db.get_branch("batched-migration")] == [
         marker, marker, marker, marker,
     ]
-    assert rebuilds == 1
+    assert rebuilds == 0
     assert [
         row.get(MARKER) for row in reader.get_branch("batched-migration")
     ] == [marker, marker, marker, marker]
