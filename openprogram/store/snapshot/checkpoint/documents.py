@@ -57,7 +57,7 @@ def publish_document(
     fingerprint: str, metadata: dict | None = None,
 ) -> dict:
     with _manual_operation_lock(recovery_root, operation_id):
-        return _publish_document_locked(recovery_root, 
+        return _publish_document_locked(recovery_root,
             operation_id, target_path, source_path,
             expected_revision=expected_revision, expected_mtime=expected_mtime,
             fingerprint=fingerprint, metadata=metadata,
@@ -185,4 +185,3 @@ def read_document_operation(recovery_root: Path | None, operation_id: str) -> di
             "before": value.get("before"), "after": value.get("after"),
             "revision": revision, "mtime": value.get("mtime"),
             "error_code": value.get("error_code"), "error": value.get("error")}
-

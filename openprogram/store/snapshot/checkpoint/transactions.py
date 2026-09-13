@@ -220,4 +220,3 @@ def _execute_history_intent(
                 intent["error"] = f"history commit failed: {exc}; state save failed: {save_error}"
             return _intent_result(intent)
     return _intent_result(intent)
-

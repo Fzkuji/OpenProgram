@@ -241,4 +241,3 @@ def _fsync_directory(path: Path) -> None:
             os.close(descriptor)
     except OSError:
         pass
-

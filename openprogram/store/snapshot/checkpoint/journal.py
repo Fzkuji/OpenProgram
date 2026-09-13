@@ -151,8 +151,10 @@ def _next_mutation_sequence() -> int:
         try:
             try:
                 current = int(counter_path.read_text(encoding="ascii").strip())
-            except (FileNotFoundError, OSError, ValueError):
+            except FileNotFoundError:
                 current = 0
+            if current < 0:
+                raise ValueError("mutation sequence counter must be nonnegative")
             value = current + 1
             tmp = root / ".workspace-sequence.tmp"
             with tmp.open("w", encoding="ascii") as handle:

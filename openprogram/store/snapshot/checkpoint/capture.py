@@ -106,4 +106,3 @@ def _capture_manual_blob(source: Path, destination: Path) -> dict:
     state = _capture_regular(source, destination)
     state["sha256"] = state["digest"].removeprefix("sha256:")
     return state
-

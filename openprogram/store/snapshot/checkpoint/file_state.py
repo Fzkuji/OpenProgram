@@ -224,4 +224,3 @@ def _blob_is_exact(state: dict) -> bool:
         return _digest(blob) == state.get("digest")
     except OSError:
         return False
-

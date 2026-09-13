@@ -203,4 +203,3 @@ def plan_rewind_operation(
         "conflicts": [],
         "unavailable": [],
     }
-
