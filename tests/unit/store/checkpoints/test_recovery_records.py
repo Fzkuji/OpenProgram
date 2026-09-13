@@ -105,3 +105,82 @@ def test_recovery_does_not_swallow_operational_failure(tmp_path, monkeypatch, fa
             get_head=lambda: pytest.fail("unexpected HEAD access"),
             compare_and_set_head=lambda *_: pytest.fail("unexpected HEAD update"),
         )
+
+
+@pytest.mark.parametrize("owner, field, value", [
+    ("rollback", "mode", {}),
+    ("rollback", "mode", "invalid"),
+    ("rollback", "blob_path", {}),
+    ("rollback", "blob_path", "relative"),
+    ("rollback", "blob_ref", []),
+    ("rollback", "blob_ref", "../outside"),
+    ("target", "parent_chain", []),
+    ("target", "parent_chain", {"root": "/"}),
+    ("record", "transaction_id", {}),
+    ("record", "transaction_id", "../outside"),
+])
+def test_bad_execution_fields_do_not_execute_or_rewrite_record(
+    tmp_path, monkeypatch, owner, field, value,
+):
+    root = tmp_path.resolve()
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: root / "state")
+    session = root / "sessions" / "session"
+    journal = CheckpointStore(session)
+    target = root / "target.txt"
+    target.write_text("before")
+    journal.backup_before_edit("turn", str(target))
+    target.write_text("after")
+    journal.commit_after_edit("turn", str(target))
+    plan = journal.plan_rewind_operation(["turn"])
+    record = {**prepared(), "actions": plan["actions"]}
+    if owner == "record":
+        record[field] = value
+    else:
+        record["actions"][0][owner][field] = value
+    target.write_text("before")
+    directory = session_backup_root(session) / "intents"
+    directory.mkdir()
+    bad, valid = directory / "a.json", directory / "b.json"
+    raw = json.dumps(record).encode()
+    bad.write_bytes(raw)
+    valid.write_text(json.dumps(prepared()))
+    heads = []
+
+    def get_head():
+        heads.append("read")
+        return "old"
+
+    results = journal.recover_rewind_intents(
+        get_head=get_head, compare_and_set_head=lambda *_: pytest.fail("unexpected HEAD update"),
+    )
+    assert results[0]["status"] == "recovery_required"
+    assert results[0]["intent_path"] == str(bad)
+    assert results[1]["status"] == "rolled_back"
+    assert heads == ["read"]
+    assert bad.read_bytes() == raw
+    assert target.read_text() == "before"
+
+
+def test_generated_regular_file_record_still_recovers(tmp_path, monkeypatch):
+    root = tmp_path.resolve()
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: root / "state")
+    session = root / "sessions" / "session"
+    journal = CheckpointStore(session)
+    target = root / "target.txt"
+    target.write_text("before")
+    journal.backup_before_edit("turn", str(target))
+    target.write_text("after")
+    journal.commit_after_edit("turn", str(target))
+    plan = journal.plan_rewind_operation(["turn"])
+    record = {**prepared(), "actions": plan["actions"]}
+    directory = session_backup_root(session) / "intents"
+    directory.mkdir()
+    path = directory / "record.json"
+    path.write_text(json.dumps(record))
+    target.write_text("before")
+    result = journal.recover_rewind_intents(
+        get_head=lambda: "old", compare_and_set_head=lambda *_: pytest.fail("unexpected HEAD update"),
+    )
+    assert result[0]["status"] == "rolled_back"
+    assert target.read_text() == "after"
+    assert json.loads(path.read_text())["status"] == "rolled_back"
