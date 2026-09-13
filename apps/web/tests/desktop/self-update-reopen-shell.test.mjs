@@ -163,9 +163,7 @@ for (const [name, tabs, activeId] of [
 ]) test(`reopen restores origin once over persisted ${name} and ACKs only a loaded transcript`, async () => {
   await setup(tabs, activeId);
   await mounted(async (host, root, socket) => {
-    const expectedActiveId = tabs.some(tab => tab.kind === "session" && tab.sessionId === "origin")
-      ? tabs.find(tab => tab.kind === "session" && tab.sessionId === "origin").id
-      : activeId;
+    const expectedActiveId = activeId;
     assert.equal(window.location.pathname, "/s/origin");
     assert.deepEqual(ackRequests, []);
     // AppShell's route synchronization arrives after child effects on mount.
@@ -352,5 +350,44 @@ test("Back on /chat clears an acknowledged session and survives remount", async 
     assert.equal(useCenterTabs.getState().tabs[0].kind, "ntp");
     await act(async () => useCenterTabs.getState().navigateSessionHistory(1));
     assert.equal(useCenterTabs.getState().tabs[0].sessionId, "acknowledged");
+  });
+});
+
+test("returning from Files restores a sidebar route without launcher activation overriding it", async () => {
+  const home = { id: "ntp:route-origin", kind: "ntp", title: "" };
+  await setup([home], home.id, "detached");
+  useCenterTabs.setState({ navigationRoute: undefined });
+  await mounted(async () => {
+    await act(async () => {
+      useCenterTabs.getState().recordRouteNavigation("/skills");
+      navigate("/skills");
+    });
+    await act(async () => useCenterTabs.getState().openBuiltinTab("files"));
+    assert.equal(window.location.pathname, "/chat");
+    await act(async () => useCenterTabs.getState().navigateHistory(-1));
+    assert.equal(window.location.pathname, "/skills");
+    assert.equal(useCenterTabs.getState().navigationRoute, "/skills");
+    await act(async () => useCenterTabs.getState().navigateHistory(-1));
+    assert.equal(window.location.pathname, "/chat");
+    assert.equal(useCenterTabs.getState().activeId, home.id);
+    await act(async () => useCenterTabs.getState().navigateHistory(1));
+    assert.equal(window.location.pathname, "/skills");
+  });
+});
+
+
+test("clicking the current tab preserves its sidebar page; Back restores its conversation", async () => {
+  await setup([other], other.id, "detached");
+  useCenterTabs.setState({ navigationRoute: undefined });
+  await mounted(async () => {
+    await act(async () => {
+      useCenterTabs.getState().recordRouteNavigation("/skills");
+      navigate("/skills");
+    });
+    await act(async () => lifecycle.onTabClick(useCenterTabs.getState().tabs.find(tab => tab.id === other.id)));
+    assert.equal(window.location.pathname, "/skills");
+    assert.equal(useCenterTabs.getState().navigationRoute, "/skills");
+    await act(async () => useCenterTabs.getState().navigateHistory(-1));
+    assert.equal(window.location.pathname, "/s/other");
   });
 });

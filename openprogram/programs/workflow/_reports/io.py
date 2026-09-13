@@ -31,6 +31,11 @@ def decode_object(value: str, max_bytes: int = 300_000) -> dict:
     return result
 
 
+def model_object(value) -> dict:
+    """Accept Runtime-validated objects or decode a textual model response."""
+    return value if isinstance(value, dict) else decode_object(value)
+
+
 def encode(value) -> str:
     """Serialize Workflow state and model context without evaluating input."""
     return json.dumps(value, ensure_ascii=False, indent=2)

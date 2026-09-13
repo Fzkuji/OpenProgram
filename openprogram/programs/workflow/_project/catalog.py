@@ -31,6 +31,33 @@ def _workflow_projects_root() -> Path:
     return source_roots[0] / "workflow"
 
 
+def _project_directories(root: Path | None = None) -> list[Path]:
+    """List flat projects and one category level, without traversing symlinks."""
+    root = root or _workflow_projects_root()
+    if not root.is_dir() or root.is_symlink():
+        return []
+    result = []
+    for entry in sorted(root.iterdir()):
+        if entry.name.startswith((".", "_")) or entry.is_symlink() or not entry.is_dir():
+            continue
+        if (entry / ".git").exists():
+            result.append(entry)
+            continue
+        for child in sorted(entry.iterdir()):
+            if (not child.name.startswith((".", "_")) and child.is_dir()
+                    and not child.is_symlink() and (child / ".git").exists()):
+                result.append(child)
+    return result
+
+
+def _project_directory(project_id: str) -> Path:
+    project_id = _safe_project_id(project_id)
+    matches = [path for path in _project_directories() if path.name == project_id]
+    if len(matches) > 1:
+        raise InvalidWorkflow("duplicate workflow project identifiers across categories")
+    return matches[0] if matches else _workflow_projects_root() / project_id
+
+
 def _safe_project_id(value: object) -> str:
     project_id = str(value or "")
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,79}", project_id):
@@ -142,7 +169,10 @@ def _search_projects(task: str) -> list[dict]:
         return []
     query = _project_tokens(task)
     matches = []
-    for project_dir in root.iterdir():
+    projects = _project_directories(root)
+    for project_dir in projects:
+        if sum(path.name == project_dir.name for path in projects) != 1:
+            continue
         if not project_dir.is_dir() or project_dir.name.startswith("."):
             continue
         try:

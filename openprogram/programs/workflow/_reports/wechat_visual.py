@@ -22,8 +22,8 @@ import unicodedata
 import uuid
 from zoneinfo import ZoneInfo
 
-from openprogram.programs.workflow.report_io import encode, preflight, write_file
-from openprogram.programs.workflow.report_wechat import (
+from openprogram.programs.workflow._reports.io import encode, preflight, write_file
+from openprogram.programs.workflow._reports.wechat import (
     AccessibilityUnavailable,
     select_application,
 )

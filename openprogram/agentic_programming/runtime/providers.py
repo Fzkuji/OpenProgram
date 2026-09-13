@@ -339,8 +339,8 @@ class ProvidersOperations:
             _stream_fn = make_callable_stream_fn(self._call_fn, offload_sync=True)
         budget_context_transform = None
         if model_call_budget is not None:
-            def check_model_call_budget() -> None:
-                if model_call_budget["remaining"] < model_call_budget["limit"]:
+            def check_model_call_budget(messages) -> None:
+                if model_call_budget.get("started"):
                     deadline = model_call_budget["deadline"]
                     if deadline is not None and time.monotonic() >= deadline:
                         raise TimeoutError("structured output model-call deadline expired")
@@ -348,26 +348,38 @@ class ProvidersOperations:
                         CancelledError as _CE,
                         check_cancelled,
                     )
-
                     try:
                         check_cancelled()
                     except _CE:
                         from openprogram.providers.utils.errors import ExecInterrupt
-
                         raise ExecInterrupt("cancelled") from None
+                # A new trailing tool-result round permits the next normal
+                # Agent turn. Credit it once: retries see the same call ids
+                # and must still consume the shared failure allowance.
+                tool_ids = []
+                for message in reversed(messages):
+                    if getattr(message, "role", None) != "toolResult":
+                        break
+                    tool_ids.append(message.tool_call_id)
+                round_key = tuple(sorted(tool_ids))
+                credited = model_call_budget.setdefault("credited_tool_rounds", set())
+                if model_call_budget.get("started") and round_key and round_key not in credited:
+                    credited.add(round_key)
+                    model_call_budget["remaining"] += 1
                 if model_call_budget["remaining"] <= 0:
                     raise RuntimeError("structured output model-call budget exhausted")
+                model_call_budget["started"] = True
                 model_call_budget["remaining"] -= 1
 
             if _stream_fn is None:
                 async def budget_context_transform(messages, _cancel_event):
-                    check_model_call_budget()
+                    check_model_call_budget(messages)
                     return messages
             else:
                 unbudgeted_stream_fn = _stream_fn
 
                 async def budgeted_stream_fn(model, context, options=None):
-                    check_model_call_budget()
+                    check_model_call_budget(context.messages)
                     async for event in unbudgeted_stream_fn(model, context, options):
                         yield event
 
@@ -380,7 +392,7 @@ class ProvidersOperations:
         # here can widen what the caller was allowed to do.
         agent_tools = self._gate_inner_tools(agent_tools)
         session_max_iterations = loop_opts.get("max_iterations")
-        if model_call_budget is not None:
+        if model_call_budget is not None and not agent_tools:
             remaining = max(1, model_call_budget["remaining"])
             session_max_iterations = (
                 min(session_max_iterations, remaining)
@@ -592,6 +604,11 @@ class ProvidersOperations:
                 or f"Agent session ended with stop_reason='error' but no "
                 f"error_message (model={final.model!r})"
             )
+            if (model_call_budget is not None and session_max_iterations is not None
+                    and self.last_agent_iteration_count >= session_max_iterations):
+                # An explicit Agent iteration cap is not a transport failure;
+                # restarting the session would repeat already completed tools.
+                error.retryable = False  # type: ignore[attr-defined]
             if getattr(final, "error_transport_exhausted", False):
                 error.transport_exhausted = True  # type: ignore[attr-defined]
             raise error

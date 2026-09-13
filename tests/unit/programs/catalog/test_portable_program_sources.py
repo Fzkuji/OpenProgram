@@ -9,11 +9,12 @@ import openprogram.paths as paths
 from openprogram.programs import _programs
 
 
-def test_recorded_workflow_survives_checkout_relocation(tmp_path, monkeypatch):
+@pytest.mark.parametrize("category", ["", "reports"])
+def test_recorded_workflow_survives_checkout_relocation(tmp_path, monkeypatch, category):
     state = tmp_path / 'state'
     checkout = tmp_path / 'original'
     package = checkout / 'openprogram'
-    workflow = package / 'programs' / 'workflow' / 'weekly_report'
+    workflow = package / 'programs' / 'workflow' / category / 'weekly_report'
     workflow.mkdir(parents=True)
     monkeypatch.setattr(paths, 'get_state_dir', lambda: state)
     monkeypatch.setattr(openprogram, '__file__', str(package / '__init__.py'))
@@ -21,12 +22,12 @@ def test_recorded_workflow_survives_checkout_relocation(tmp_path, monkeypatch):
                                     kind='workflow-publish', base=str(workflow.parent))
     saved = json.loads((state / 'program-sources.json').read_text())['programs'][0]
     assert saved['scope'] == 'programs'
-    assert saved['path'] == 'workflow/weekly_report'
+    assert saved['path'] == '/'.join(part for part in ('workflow', category, 'weekly_report') if part)
 
     moved = tmp_path / 'moved'
     checkout.rename(moved)
     monkeypatch.setattr(openprogram, '__file__', str(moved / 'openprogram' / '__init__.py'))
-    relocated = moved / 'openprogram' / 'programs' / 'workflow' / 'weekly_report'
+    relocated = moved / 'openprogram' / 'programs' / 'workflow' / category / 'weekly_report'
     assert [row['path'] for row in _programs.owner_controlled_program_sources(str(relocated.parent))] == [str(relocated)]
     _programs.remove_program_source(relocated)
     assert _programs.owner_controlled_program_sources(str(relocated.parent)) == []

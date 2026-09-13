@@ -210,3 +210,85 @@ def test_parent_module_is_authenticated_and_uses_verified_pack(boundary_app):
         (pack.root / "npm/public-api.js").write_bytes(b"tampered")
         assert client.get(url, headers=auth).status_code == 503
         assert client.get("/api/documents/office-module/unknown.js", headers=auth).status_code == 404
+
+
+def test_missing_office_offers_install_without_downloading(boundary_app):
+    app, pack = boundary_app
+    pack.available = False
+    auth = {"authorization": "Bearer " + base64.urlsafe_b64encode(bytes(range(32))).decode().rstrip("=")}
+    with TestClient(app, base_url="http://127.0.0.1:18100", client=("127.0.0.1", 50000)) as client:
+        response = client.get('/api/documents/office-host?session_id=abc', headers=auth)
+        assert response.json()['installable'] is True
+        assert response.json()['downloadBytes'] == 732695641
+        assert client.post('/api/documents/office-install').status_code == 401
+
+
+def test_explicit_install_retries_and_activates_host_without_restart(boundary_app, monkeypatch):
+    from copy import copy
+    import openprogram.office_install as installer
+    app, pack = boundary_app
+    installed = copy(pack)
+    pack.available = False
+    app.office_assets = lambda: app.app.state.office_assets
+    calls = []
+    def download():
+        calls.append(True)
+        if len(calls) == 1: raise OSError('offline')
+        return installed
+    monkeypatch.setattr(installer, 'download_office_pack', download)
+    auth = {"authorization": "Bearer " + base64.urlsafe_b64encode(bytes(range(32))).decode().rstrip("="),
+            "origin": "http://127.0.0.1:18100"}
+    with TestClient(app, base_url="http://127.0.0.1:18100", client=("127.0.0.1", 50000)) as client:
+        assert client.get('/api/documents/office-host?session_id=abc', headers=auth).json()['installable']
+        assert not calls
+        assert client.post('/api/documents/office-install', headers=auth).status_code == 503
+        assert not app.app.state.office_assets.available
+        assert client.post('/api/documents/office-install', headers=auth).json()['installed']
+        assert client.post('/api/documents/office-install', headers=auth).json()['installed']
+        assert len(calls) == 2
+        assert client.get('/api/documents/office-host?session_id=abc', headers=auth).json()['available']
+        assert client.get('/office-host.html', headers={'host':'host-abc.office.localhost:18100'}).status_code == 200
+
+
+def test_concurrent_install_requests_download_once(boundary_app, monkeypatch):
+    import asyncio
+    from copy import copy
+    import httpx
+    import openprogram.office_install as installer
+    app, pack = boundary_app
+    installed = copy(pack)
+    pack.available = False
+    calls = []
+    def download():
+        calls.append(True)
+        return installed
+    monkeypatch.setattr(installer, 'download_office_pack', download)
+    auth = {"authorization": "Bearer " + base64.urlsafe_b64encode(bytes(range(32))).decode().rstrip("="),
+            "origin": "http://127.0.0.1:18100"}
+    async def requests():
+        transport = httpx.ASGITransport(app=app, client=('127.0.0.1', 50000))
+        async with httpx.AsyncClient(transport=transport, base_url='http://127.0.0.1:18100', headers=auth) as client:
+            responses = await asyncio.gather(*(client.post('/api/documents/office-install') for _ in range(3)))
+        assert all(response.json().get('installed') for response in responses)
+    asyncio.run(requests())
+    assert len(calls) == 1
+
+
+def test_install_rejects_authenticated_remote_origin(boundary_app, monkeypatch):
+    import openprogram.office_install as installer
+    app, _ = boundary_app
+    state = OwnerAuthState.from_raw_token(bytes(range(32)), owner_principal_id='owner/install/0123456789abcdef',
+        bind_host='127.0.0.1', port=18100, allowed_origins=('https://remote.example',))
+    app.auth_state = state
+    app.app.state.owner_auth = state
+    calls = []
+    monkeypatch.setattr(installer, 'download_office_pack', lambda: calls.append(True))
+    token = 'Bearer ' + base64.urlsafe_b64encode(bytes(range(32))).decode().rstrip('=')
+    try:
+        with TestClient(app, base_url='https://remote.example', client=('127.0.0.1', 50000)) as client:
+            response = client.post('/api/documents/office-install', headers={'origin':'https://remote.example','authorization':token})
+        assert response.status_code == 403
+        assert response.json()['reason'] == 'local_main_origin_required'
+        assert not calls
+    finally:
+        state.close()

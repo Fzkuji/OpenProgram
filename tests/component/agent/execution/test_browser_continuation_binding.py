@@ -4,18 +4,24 @@ from types import SimpleNamespace
 import pytest
 
 
-def test_public_continuation_binds_exact_turn_and_releases_on_error(monkeypatch):
+@pytest.mark.parametrize("save_fails", [False, True])
+def test_public_continuation_binds_exact_turn_and_releases_on_error(monkeypatch, save_fails):
     from openprogram.agent import dispatcher, surface_context
     from openprogram.agent.dispatcher.types import TurnRequest
     from openprogram.store import _current_turn_id
     from openprogram.agent.run_control import get_current_session_id
 
     request = TurnRequest(session_id="resume-session", agent_id="main", user_text="resume", source="component")
-    db = SimpleNamespace(get_session=lambda _: {}, message_exists=lambda *_: True)
+    db = SimpleNamespace(get_session=lambda _: {}, message_exists=lambda *_: True,
+                         get_branch=lambda *_: [])
     monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
     monkeypatch.setattr("openprogram.context.persistence.rendered_history", lambda *_a, **_k: [])
     # Keep the real binding implementation; unrelated persistence/provider setup is inert.
-    monkeypatch.setattr("openprogram.store.SessionNodeWriter", lambda *_: object())
+    def save(*_a, **_k):
+        if save_fails:
+            raise RuntimeError("discovery save failed")
+
+    monkeypatch.setattr("openprogram.store.SessionNodeWriter", lambda *_: SimpleNamespace(update=save))
     monkeypatch.setattr("openprogram.providers.registry.create_runtime", lambda: None)
     before = (_current_turn_id.get(), get_current_session_id())
 

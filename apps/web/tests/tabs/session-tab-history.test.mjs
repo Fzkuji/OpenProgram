@@ -35,7 +35,7 @@ const { useCenterTabs, sessionAckIsActive } = await import("../../lib/tabs/cente
 const { normalizeCenterTabsPayload, readCenterTabsPayload } = await import("../../lib/tabs/center-tabs-persistence.ts");
 const state = () => useCenterTabs.getState();
 const active = () => state().tabs.find(t => t.id === state().activeId);
-function reset() { useCenterTabs.setState({ tabs: [], activeId: null, groups: [], splitWebTabId: null }); }
+function reset() { useCenterTabs.setState({ tabs: [], activeId: null, groups: [], splitWebTabId: null, navigationRoute: undefined, fileNavigationHistory: { entries: [], index: -1 }, fileNavigationRestore: null }); }
 test("shared session opener reuses active session tab", () => {
   reset(); state().openSessionTab("A", "Alpha"); const id = active().id;
   state().openSessionTab("B", "Beta");
@@ -83,19 +83,21 @@ test("file navigation records folder and file steps and branches after back", ()
   assert.equal(state().canNavigateFile(1), false);
 });
 
-test("already open target activates its existing tab while unopened sessions keep navigation rules", () => {
+test("opening an existing session from another session preserves both tab instances", () => {
   reset(); state().openSessionTab("A", "Alpha"); const first = active().id;
   state().openWebTab("https://example.test"); const web = active().id;
   state().openSessionTab("A", "Alpha"); const second = active().id;
   assert.equal(first, second); assert.equal(state().tabs.length, 2);
   state().setActive(web); state().openSessionTab("B", "Beta");
   assert.equal(state().tabs.length, 3);
-  state().openSessionTab("A", "Alpha"); assert.equal(active().id, first);
+  const third = active().id;
+  state().openSessionTab("A", "Alpha"); assert.equal(active().id, third);
+  assert.equal(state().tabs.find(tab => tab.id === first).sessionId, "A");
   state().setActive(web); const before = state().tabs;
   state().navigateSessionHistory(-1); assert.equal(state().tabs, before);
 });
 
-test("history navigation activates a tab already showing the target session", () => {
+test("history navigation keeps its owner when another tab shows the same session", () => {
   reset(); state().openSessionTab("A", "Alpha"); const first = active().id;
   state().openSessionTab("B", "Beta");
   state().openWebTab("https://example.test");
@@ -104,11 +106,12 @@ test("history navigation activates a tab already showing the target session", ()
     sessionHistory: { entries: [{sessionId:"A",title:"Alpha",draft:false},{sessionId:"C",title:"Gamma",draft:false}], index: 0 } };
   useCenterTabs.setState({ tabs: [source, ...state().tabs.filter(t => t.id !== first)], activeId: source.id });
   state().navigateSessionHistory(1);
-  assert.equal(active().id, second);
-  assert.equal(state().tabs.find(t => t.id === source.id).sessionId, "A");
+  assert.equal(active().id, source.id);
+  assert.equal(active().sessionId, "C");
+  assert.equal(state().tabs.find(t => t.id === second).sessionId, "C");
 });
 
-test("restore removes duplicate session tabs and repairs groups and active references", () => {
+test("restore preserves independent tabs displaying the same session", () => {
   const payload = normalizeCenterTabsPayload({
     tabs: [
       { id: "s:A", kind: "session", sessionId: "A", title: "Alpha" },
@@ -118,7 +121,7 @@ test("restore removes duplicate session tabs and repairs groups and active refer
     activeId: "s:A:duplicate",
     groups: [{ id: "g", memberIds: ["s:A:duplicate", "w:1"], visibleIds: ["s:A:duplicate", "w:1"], focusedId: "s:A:duplicate" }],
   });
-  assert.deepEqual(payload.tabs.map(tab => tab.id), ["s:A:duplicate", "w:1"]);
+  assert.deepEqual(payload.tabs.map(tab => tab.id), ["s:A", "s:A:duplicate", "w:1"]);
   assert.equal(payload.activeId, "s:A:duplicate");
   assert.deepEqual(payload.groups, [{ id: "g", memberIds: ["s:A:duplicate", "w:1"], visibleIds: ["s:A:duplicate", "w:1"], focusedId: "s:A:duplicate" }]);
 });
@@ -222,4 +225,207 @@ test("reopening an existing session preserves its graph view", () => {
   state().openSessionTab("A", "Alpha");
   assert.equal(active().id, first);
   assert.equal(active().dagView, true);
+});
+
+test("explicit new tabs have no history belonging to their opener", () => {
+  reset(); state().openSessionTab("return-chat", "Chat"); const chat = structuredClone(active());
+  state().openBuiltinTab("files"); const files = active().id;
+  assert.equal(state().canNavigateHistory(-1), false);
+  state().navigateHistory(-1); assert.equal(active().id, files);
+  assert.deepEqual(state().tabs.find(tab => tab.id === chat.id), chat);
+});
+
+test("two launchers keep independent histories when selecting the same page", () => {
+  reset(); state().openNewTabPage(); const firstHome = active().id;
+  state().openBuiltinTab("files"); const first = structuredClone(active());
+  state().openNewTabPage(); const secondHome = active().id;
+  state().openBuiltinTab("files"); const second = structuredClone(active());
+  assert.notEqual(first.id, second.id);
+  assert.equal(state().tabs.length, 2);
+  state().navigateHistory(-1); assert.equal(active().id, secondHome);
+  state().navigateHistory(-1); assert.equal(active().id, secondHome);
+  assert.deepEqual(state().tabs.find(tab => tab.id === first.id), first);
+  state().setActive(first.id);
+  state().navigateHistory(-1); assert.equal(active().id, firstHome);
+  assert.equal(state().tabs.find(tab => tab.id === secondHome).pageHistory.index, 0);
+  state().navigateHistory(1); assert.equal(active().id, first.id);
+  state().setActive(secondHome); state().navigateHistory(1);
+  assert.deepEqual(active(), second);
+});
+
+test("branching one tab preserves another tab's forward history and background pages", () => {
+  reset(); state().openNewTabPage(); state().openSessionTab("branch-A", "A");
+  const first = active().id;
+  state().openSessionTab("branch-B", "B"); state().navigateHistory(-1);
+  const untouched = structuredClone(active());
+  state().openNewTabPage(); state().openBuiltinTab("files"); state().navigateHistory(-1);
+  state().openBuiltinTab("terminal");
+  state().ensureWebTab("https://background.test");
+  assert.equal(state().canNavigateHistory(1), false);
+  assert.deepEqual(state().tabs.find(tab => tab.id === first), untouched);
+  state().setActive(first); state().navigateHistory(1);
+  assert.equal(active().sessionId, "branch-B");
+});
+
+test("closing a different tab cannot change the current tab's history", () => {
+  reset(); state().openNewTabPage(); const other = active().id;
+  state().openNewTabPage(); state().openBuiltinTab("files"); const current = structuredClone(active());
+  state().closeTab(other); assert.deepEqual(active(), current);
+  state().navigateHistory(-1); assert.equal(active().kind, "ntp");
+  state().navigateHistory(1); assert.deepEqual(active(), current);
+});
+
+test("default launcher remains the origin when opening an existing destination", () => {
+  reset(); state().openBuiltinTab("files");
+  state().openNewTabPage(); const home = active().id;
+  state().openBuiltinTab("files");
+  state().navigateHistory(-1); assert.equal(active().id, home);
+  state().navigateHistory(1); assert.equal(active().page, "files");
+});
+
+test("page and session navigation returns to its own launcher", () => {
+  reset(); state().openNewTabPage(); const home = active().id;
+  state().openSessionTab("ordered-A", "A"); state().openSessionTab("ordered-B", "B");
+  state().recordRouteNavigation("/skills");
+  state().navigateHistory(-1); assert.equal(active().sessionId, "ordered-B");
+  assert.equal(state().navigationRoute, undefined);
+  state().navigateHistory(-1); assert.equal(active().sessionId, "ordered-A");
+  state().navigateHistory(-1); assert.equal(active().id, home);
+});
+
+test("tab switches restore each tab's sidebar route without adding visits", () => {
+  reset(); state().openNewTabPage(); const first = active().id;
+  state().recordRouteNavigation("/skills"); const before = structuredClone(active());
+  state().openNewTabPage(); const second = active().id;
+  state().recordRouteNavigation("/settings/general");
+  state().setActive(first); assert.equal(state().navigationRoute, "/skills");
+  assert.deepEqual(active(), before);
+  state().navigateHistory(-1); assert.equal(state().navigationRoute, undefined);
+  state().setActive(second); assert.equal(state().navigationRoute, "/settings/general");
+});
+
+test("sidebar routes also return to the launcher in visit order", () => {
+  reset(); state().openNewTabPage(); const home = active().id;
+  state().recordRouteNavigation("/skills"); state().recordRouteNavigation("/settings/general");
+  state().navigateHistory(-1); assert.equal(state().navigationRoute, "/skills");
+  state().navigateHistory(-1); assert.equal(active().id, home); assert.equal(state().navigationRoute, undefined);
+  state().navigateHistory(1); assert.equal(state().navigationRoute, "/skills");
+  state().openBuiltinTab("files"); assert.equal(state().canNavigateHistory(1), false);
+  state().navigateHistory(-1); assert.equal(state().navigationRoute, "/skills");
+});
+
+test("launcher round trip preserves a draft acknowledgement and title", () => {
+  reset(); state().openNewTabPage();
+  const draft = state().claimDraftSessionTab();
+  state().navigateHistory(-1); assert.equal(active().kind, "ntp");
+  state().markSessionReady(draft); state().renameSessionTab(draft, "Acknowledged");
+  state().navigateHistory(1);
+  assert.equal(active().sessionId, draft);
+  assert.equal(active().draft, false);
+  assert.equal(active().title, "Acknowledged");
+});
+
+
+test("acknowledgements cannot activate a session retained behind the launcher or closed", () => {
+  reset(); state().openNewTabPage(); state().openSessionTab("retained-ready", "Ready");
+  state().navigateHistory(-1);
+  assert.equal(sessionAckIsActive("retained-ready"), false);
+  state().closeTab(active().id);
+  assert.equal(sessionAckIsActive("retained-ready"), false);
+});
+
+
+test("switching tabs does not create return history in the selected tab", () => {
+  reset(); state().openNewTabPage(); state().openBuiltinTab("files"); const first=active().id;
+  state().openNewTabPage(); const second=active().id;
+  state().setActive(first); state().setActive(second);
+  const untouched=structuredClone(state().tabs.find(tab=>tab.id===first));
+  assert.equal(state().canNavigateHistory(-1), false);
+  state().navigateHistory(-1); assert.equal(active().id,second);
+  assert.deepEqual(state().tabs.find(tab=>tab.id===first),untouched);
+});
+
+
+test("native transfer preserves launcher, file view and isolated application histories", async () => {
+  const { createRequire } = await import("node:module");
+  const { validateTransferPayload } = createRequire(import.meta.url)("../../../desktop/tab-transfer-validation.js");
+  const { replaceCenterTabsPayload } = await import("../../lib/tabs/center-tabs-store.ts");
+  reset(); state().openNewTabPage(); const home = active().id;
+  state().openBuiltinTab("files");
+  state().recordFileNavigation({ projectId: "p", path: "src", selectedType: "dir", expanded: ["src"], scroll: {path: "src", offset: 12} });
+  state().openFileTab("p", "src/a.ts");
+  state().recordFileNavigation({ projectId: "p", path: "src/a.ts", selectedType: "file", expanded: ["src"], scroll: null });
+  const source = structuredClone(active());
+  const transfer = tab => validateTransferPayload({id: "main"}, { tabs: [tab], source: {kind: "tab"}, chats: [] }).payload.tabs[0];
+  const received = transfer(source);
+  assert.deepEqual(received.pageHistory, source.pageHistory);
+  replaceCenterTabsPayload({version: 2, tabs:[received], activeId:received.id, groups:[], splitWebTabId:null, splitRatio:0.5}, {persist:false});
+  state().navigateHistory(-1); assert.equal(active().fileNavigationSnapshot.path, "src");
+  state().navigateHistory(-1); assert.equal(active().id, home);
+  const instance = "a".repeat(64);
+  state().openApplicationTab("calculator", instance, "Calculator");
+  state().openNewTabPage(); state().openApplicationTab("calculator", instance, "Calculator");
+  assert.match(active().id, /:tab:/);
+  assert.equal(transfer(active()).id, active().id);
+  assert.throws(() => transfer({...active(), applicationInstanceId: "b".repeat(64)}), /identity/);
+  assert.throws(() => transfer({...source, pageHistory:{entries:[{...source}],index:0}}), /Nested page history/);
+});
+
+test("passive sidebar file-tree seeding does not replace a session or its history", () => {
+  reset(); state().openNewTabPage(); state().openSessionTab("sidebar-owner", "Owner");
+  const before = structuredClone(active());
+  for (const path of ["", "src"]) state().recordFileNavigation({projectId:"p",path,selectedType:"dir",expanded:[],scroll:null});
+  assert.deepEqual(active(), before);
+  state().navigateHistory(-1); assert.equal(active().kind, "ntp");
+  state().navigateHistory(1); assert.equal(active().sessionId, "sidebar-owner");
+});
+
+test("renaming a file preserves its launcher history and another same-target tab", () => {
+  reset(); state().openFileTab("p", "b.ts"); const other = structuredClone(active());
+  state().openNewTabPage(); const home = active().id;
+  state().openBuiltinTab("files"); state().openFileTab("p", "a.ts");
+  state().recordFileNavigation({projectId:"p",path:"a.ts",selectedType:"file",expanded:[],scroll:{path:"a.ts",offset:9}});
+  state().retargetFileTab(active().id, "p", "b.ts");
+  assert.notEqual(active().id, other.id);
+  assert.deepEqual(state().tabs.find(tab => tab.id === other.id), other);
+  assert.equal(active().path, "b.ts");
+  assert.equal(active().fileNavigationSnapshot.path, "b.ts");
+  assert.equal(active().fileNavigationSnapshot.scroll.path, "b.ts");
+  state().navigateHistory(-1); assert.equal(active().page, "files");
+  state().navigateHistory(-1); assert.equal(active().id, home);
+  state().navigateHistory(1); state().navigateHistory(1);
+  assert.equal(active().path, "b.ts");
+});
+
+test("transfers include historical file drafts and preserve keys still used by another tab", async () => {
+  window.location = { pathname: "/chat" };
+  const { buildTransferPayload, handleRemoveSource } = await import("../../lib/desktop/bridge-transfer.ts");
+  const { fileDrafts, fileDraftKey } = await import("../../lib/files/files-shared.ts");
+  const { createRequire } = await import("node:module");
+  const { validateTransferPayload } = createRequire(import.meta.url)("../../../desktop/tab-transfer-validation.js");
+  reset(); state().openNewTabPage();
+  const keys = [];
+  for (const path of ["a.ts", "b.ts", "c.ts", "d.ts"]) {
+    state().openFileTab("p", path);
+    const key = fileDraftKey("p", path); keys.push(key);
+    fileDrafts.set(key, {draft: `unsaved ${path}`, baselineContent: "before", baselineMtime: 1});
+  }
+  const moving = active().id;
+  state().openNewTabPage(); state().openFileTab("p", "a.ts");
+  const remaining = structuredClone(active());
+  const payload = buildTransferPayload({kind: "tab", tabIds:[moving]}, "source");
+  assert.deepEqual(payload.fileDrafts.map(draft => draft.key), keys);
+  const normalized = validateTransferPayload({id:"source"}, payload).payload;
+  assert.deepEqual(normalized.fileDrafts, payload.fileDrafts);
+  const receipts = [];
+  await handleRemoveSource({webTab:{syncVisible:async () => true}, tabTransfer:{
+    journalOpened: async () => true,
+    sourceRemoved: async (...args) => { receipts.push(args); return true; },
+    journalFinalized: async () => true,
+  }}, {token:"historical-file-drafts", payload});
+  assert.ok(receipts.some(([, ok]) => ok));
+  assert.deepEqual(active(), remaining);
+  assert.equal(fileDrafts.get(keys[0]).draft, "unsaved a.ts");
+  for (const key of keys.slice(1)) assert.equal(fileDrafts.has(key), false);
+  for (const key of keys) fileDrafts.delete(key);
 });

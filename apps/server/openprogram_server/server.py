@@ -621,7 +621,7 @@ def create_app(*, owner_auth=None, port: int = 18100):
     app.add_middleware(
         OwnerAuthMiddleware,
         auth_state=owner_auth,
-        office_assets=app.state.office_assets,
+        office_assets=lambda: app.state.office_assets,
     )
 
     # Auth v2 REST + SSE routes. Kept in a dedicated module so server.py

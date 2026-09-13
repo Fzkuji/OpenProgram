@@ -59,6 +59,7 @@
       "native-context-menu.js",
       "worker-recovery-state.js",
       "tab-transfer-validation.js",
+      "tab-transfer/page-history.js",
       "preload.js",
       "update-service.js",
       "terminal-command.js",

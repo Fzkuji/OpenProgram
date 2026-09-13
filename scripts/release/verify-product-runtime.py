@@ -218,7 +218,7 @@ def _probe(
 
     _probe_macos_window_control()
 
-    if product.get("office") or (root / "assets" / "office").is_dir():
+    if (product.get("office") and not product["office"].get("optional")) or (root / "assets" / "office").is_dir():
         _probe_office(root)
 
     if browser:

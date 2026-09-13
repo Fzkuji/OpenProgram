@@ -134,6 +134,7 @@ function isChatRoute(pathname: string) {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  useEffect(() => { useCenterTabs.getState().recordRouteNavigation(pathname); }, [pathname]);
   const pathnameRef = useRef(pathname);
   pathnameRef.current = pathname;
   const { t } = useTranslation();

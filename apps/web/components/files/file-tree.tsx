@@ -138,6 +138,7 @@ export function FileTree({
     restoreGeneration.current += 1;
     const scroll = pierreRef.current?.getScrollState() ?? null;
     useCenterTabs.getState().updateFileNavigationView?.({ expanded: [...expandedPaths].sort(), scroll });
+    if (type === "file") openFileTab(projectId, path);
     recordFileNavigation({
       projectId,
       path,
@@ -148,7 +149,6 @@ export function FileTree({
   };
   const openFile = (path: string) => {
     recordNavigation(path, "file");
-    openFileTab(projectId, path);
     // Preserve the conversation route: changing it reactivates its session tab.
     const pathname = typeof window === "undefined" ? "" : window.location?.pathname ?? "";
     if (pathname !== "/chat" && !pathname.startsWith("/s/")) navigate("/chat");
@@ -215,7 +215,10 @@ export function FileTree({
   const revealScrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    const history = useCenterTabs.getState().fileNavigationHistory;
+    const state = useCenterTabs.getState();
+    const active = state.tabs.find(tab => tab.id === state.activeId);
+    if (active?.kind !== "builtin" || active.page !== "files") return;
+    const history = state.fileNavigationHistory;
     const hasProjectHistory = history?.entries.some(entry => entry.projectId === projectId);
     if (!hasProjectHistory) recordNavigation("", "dir", new Set());
   // Seed only a new project; remounting Files must preserve the history cursor.

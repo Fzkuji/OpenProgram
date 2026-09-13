@@ -39,13 +39,13 @@ build({stdin:{contents:`
 import {setNavigate} from "./lib/navigate";
 setNavigate(path=>window.history.pushState(null,"",path));
 import React,{useEffect} from "react";import{createRoot}from"react-dom/client";
+import{PageNavigation}from"./components/center-tabs/page-navigation";
 import{FileTree}from"./components/files/file-tree";import{useCenterTabs}from"./lib/tabs/center-tabs-store";
 function App(){
  const active=useCenterTabs(s=>s.tabs.find(t=>t.id===s.activeId));
- const back=useCenterTabs(s=>s.navigateFileHistory), canBack=useCenterTabs(s=>s.canNavigateFile(-1));
- const forward=useCenterTabs(s=>s.navigateFileHistory), canForward=useCenterTabs(s=>s.canNavigateFile(1));
  useEffect(()=>{useCenterTabs.getState().openBuiltinTab("files")},[]);
- return <><button aria-label="Back" disabled={!canBack} onClick={()=>back(-1)}>Back</button><button aria-label="Forward" disabled={!canForward} onClick={()=>forward(1)}>Forward</button>
+ return <><button onClick={()=>{useCenterTabs.getState().openNewTabPage();useCenterTabs.getState().openSessionTab("sidebar-owner","Owner")}}>Open session sidebar</button><PageNavigation/>
+  {active?.kind==="session"?<main data-page="files"><FileTree projectId="project"/></main>:null}
   {active?.kind==="builtin"&&active.page==="files"?<main data-page="files"><FileTree projectId="project" central/></main>:null}
   {active?.kind==="file"?<main data-page="file"><output data-file-path="active">{active.path}</output></main>:null}
   <output data-active-kind="active">{active?.kind??"none"}</output></>;
@@ -120,6 +120,14 @@ createRoot(document.getElementById("root")).render(<App/>);`,resolveDir:process.
             expect(files).to_be_visible()
             page.get_by_role("button", name="Back", exact=True).click()
             expect(files).to_be_visible()
+            page.get_by_role("button", name="Open session sidebar", exact=True).click()
+            expect(page.get_by_role("treeitem", name="folder", exact=True)).to_be_visible()
+            expect(page.locator('[data-active-kind="active"]')).to_have_text("session")
+            page.get_by_role("treeitem", name="folder", exact=True).click()
+            expect(page.locator('[data-active-kind="active"]')).to_have_text("session")
+            page.get_by_role("button", name="Back", exact=True).click()
+            expect(page.locator('[data-active-kind="active"]')).to_have_text("ntp")
+            assert not errors, errors
         finally:
             server.shutdown()
             thread.join(timeout=5)

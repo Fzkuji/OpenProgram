@@ -673,7 +673,10 @@ def run_loop_blocking(
             return False
         durable_payload = dict(payload)
         from openprogram.programs._runtime import loaded_deferred_names
-        durable_payload["loaded_deferred_tools"] = loaded_deferred_names()
+        durable_payload["loaded_deferred_tools"] = [
+            name for name in loaded_deferred_names()
+            if name in {tool.name for tool in tools or []}
+        ]
         snapshot = durable_payload.get("resolved_snapshot")
         if isinstance(snapshot, dict):
             last_safe_point_snapshot = dict(snapshot)

@@ -119,6 +119,8 @@ def persist_assistant_message(
             usage.get("agent_iteration_count") or 0
         ),
     }
+    if hasattr(req, "_loaded_deferred_tools"):
+        assistant_msg["loaded_deferred_tools"] = list(req._loaded_deferred_tools)
     if req.structured_output_mode is not None:
         assistant_msg.update({
             "structured_output": req.structured_output,

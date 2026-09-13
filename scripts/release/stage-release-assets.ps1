@@ -19,8 +19,6 @@ $TargetDir = Join-Path $RepoRoot "apps\server\openprogram_server\_webui\_fronten
 $LegacyTargetDir = Join-Path $RepoRoot "openprogram\webui\_frontend"
 $DocsSourceDir = Join-Path $RepoRoot "docs\_site"
 $DocsTargetDir = Join-Path $TargetDir "docs"
-$OfficeSource = $env:OPENPROGRAM_OFFICE_SOURCE
-$OfficeOutput = Join-Path $RepoRoot "apps\desktop\build\office"
 
 $Npm = (Get-Command npm.cmd -ErrorAction SilentlyContinue).Source
 if (-not $Npm) {
@@ -43,19 +41,8 @@ if (-not $Python) {
     throw "python is required to validate staged release assets"
 }
 
-if ($OfficeSource) {
-    if (-not (Test-Path -LiteralPath $OfficeSource -PathType Container)) {
-        throw "Office source checkout was not found: $OfficeSource"
-    }
-    $OfficePrepare = Join-Path $RepoRoot "scripts\release\office\prepare.py"
-    $OfficeArgs = @($OfficePrepare, "--source", $OfficeSource, "--output", $OfficeOutput, "--npm", $Npm, "--node", (Get-Command node.exe).Source)
-    if ($env:OPENPROGRAM_OFFICE_FONT_PACK) { $OfficeArgs += @("--font-pack", $env:OPENPROGRAM_OFFICE_FONT_PACK) }
-    if ($env:OPENPROGRAM_OFFICE_FONT_INPUT) { $OfficeArgs += @("--font-input", $env:OPENPROGRAM_OFFICE_FONT_INPUT) }
-    Invoke-Native $Python @OfficeArgs
-}
-$OfficeStageArgs = @((Join-Path $RepoRoot "scripts/release/office/stage.py"), "--output", $OfficeOutput, "--web-root", (Join-Path $WebDir "public"))
-if ($env:OPENPROGRAM_OFFICE_PACK) { $OfficeStageArgs += @("--source", $env:OPENPROGRAM_OFFICE_PACK) }
-Invoke-Native $Python @OfficeStageArgs
+# Office is an optional runtime installation.
+Remove-Item -LiteralPath (Join-Path $WebDir "public/document-assets/office") -Recurse -Force -ErrorAction SilentlyContinue
 
 $SavedBuildEnvironment = @{}
 foreach ($Name in @("npm_config_workspace", "npm_config_workspaces", "NEXT_IGNORE_INCORRECT_LOCKFILE")) {

@@ -11,8 +11,16 @@ if (pkg.version !== "6.3.289") throw new Error("PDF asset version does not match
 const target = fileURLToPath(new URL("../../public/document-assets/pdfjs/", import.meta.url));
 rmSync(target, { recursive: true, force: true });
 mkdirSync(target, { recursive: true });
-for (const name of ["pdf.mjs", "pdf.worker.mjs"]) cpSync(join(source, "build", name), join(target, name));
+// Use the upstream compatibility build in both realms: the pinned desktop
+// Chromium lacks APIs such as Uint8Array.toHex used by the modern worker.
+const distribution = "legacy/build";
+for (const name of ["pdf.mjs", "pdf.worker.mjs"]) cpSync(join(source, distribution, name), join(target, name));
 for (const name of ["cmaps", "standard_fonts", "wasm", "LICENSE"]) cpSync(join(source, name), join(target, name), { recursive: true });
+for (const name of ["pdf_viewer.mjs", "pdf_viewer.css", "images"]) cpSync(join(source, "legacy/web", name), join(target, name), { recursive: true });
+// Upstream generic viewer styles include names shared by the application shell.
+// Scope both selectors and root variables to the mounted PDF reader.
+const viewerCss = readFileSync(join(target, "pdf_viewer.css"), "utf8");
+writeFileSync(join(target, "pdf_viewer.css"), `@scope ([data-pdf-reader]) {\n${viewerCss.replaceAll(":root", ":scope")}\n}\n`);
 function inventory(dir, prefix = "") {
   return readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)).flatMap((entry) => {
     const name = prefix + entry.name;
@@ -20,7 +28,7 @@ function inventory(dir, prefix = "") {
       sha256: createHash("sha256").update(readFileSync(join(dir, entry.name))).digest("hex") }];
   });
 }
-writeFileSync(join(target, "manifest.json"), JSON.stringify({ package: pkg.name, version: pkg.version, license: pkg.license, files: inventory(target) }, null, 2) + "\n");
+writeFileSync(join(target, "manifest.json"), JSON.stringify({ package: pkg.name, version: pkg.version, distribution, license: pkg.license, files: inventory(target) }, null, 2) + "\n");
 console.log(`Prepared local PDF decoder ${pkg.version}`);
 
 // Retain licenses for the two bundled layered-image decoders and their inflater.

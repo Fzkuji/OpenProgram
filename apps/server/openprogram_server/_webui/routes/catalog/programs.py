@@ -79,13 +79,13 @@ def _catalog_roots() -> list[Path]:
 
 
 def _safe_directory(relative: str) -> Path:
-    root = PROGRAMS_ROOT.resolve()
-    candidate = (root / relative).resolve()
-    if Path(relative).is_absolute() or not _inside_programs(candidate):
+    if Path(relative).is_absolute() or ".." in Path(relative).parts:
         raise ValueError("invalid programs path")
-    if not candidate.is_dir():
-        raise FileNotFoundError(relative)
-    return candidate
+    for root in _catalog_roots():
+        candidate = (root / relative).resolve()
+        if candidate.is_dir() and _inside_programs(candidate):
+            return candidate
+    raise FileNotFoundError(relative)
 
 
 def _program_kind(relative: str) -> str | None:
@@ -101,15 +101,13 @@ def _program_kind(relative: str) -> str | None:
 
 def _is_workflow_package(relative: str) -> bool:
     """True when the catalog path is a directory, not a single .py file."""
-    return any((root / relative).is_dir() for root in _catalog_roots())
+    directory = _workflow_package_directory(relative)
+    return directory is not None and not (directory / ".git").exists()
 
 
 def _workflow_package_directory(relative: str) -> Path | None:
-    for root in _catalog_roots():
-        candidate = root / relative
-        if candidate.is_dir():
-            return candidate
-    return None
+    candidates = [root / relative for root in _catalog_roots() if (root / relative).is_dir()]
+    return next((path for path in candidates if (path / ".git").exists()), candidates[0] if candidates else None)
 
 
 def _package_source_files(
@@ -334,9 +332,14 @@ def _registered_agentic_callables() -> dict[str, list[dict]]:
             source = None
         if source is None or not source.is_file() or not _inside_programs(source):
             continue
-        try:
-            relative_source = source.relative_to(PROGRAMS_ROOT.resolve())
-        except ValueError:
+        relative_source = None
+        for root in _catalog_roots():
+            try:
+                relative_source = source.relative_to(root.resolve())
+                break
+            except ValueError:
+                continue
+        if relative_source is None:
             continue
         source_path = (
             relative_source.parent
@@ -739,6 +742,15 @@ def _direct_calls(
         key=lambda item: len(item[0]),
         reverse=True,
     )
+    # Published workflows have import identities independent of catalog folders.
+    for path, rows in _registered_agentic_callables().items():
+        if path in entities:
+            for row in rows:
+                prefixes.extend((
+                    (f"workflows.{row['name']}", path),
+                    (f"openprogram.programs.workflow.{row['name']}", path),
+                ))
+    prefixes.sort(key=lambda item: len(item[0]), reverse=True)
     if symbols is None:
         symbols = _package_symbol_index(entities)
     if entry_name is _UNSET:

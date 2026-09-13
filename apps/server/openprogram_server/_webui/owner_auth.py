@@ -464,7 +464,7 @@ def _shell_content_security_policy(
     script_sources = " ".join(("'self'", *hashes))
     return (
         f"object-src 'none'; base-uri 'none'; frame-ancestors {frame_ancestors}; "
-        f"script-src {script_sources}; connect-src 'self'"
+        f"script-src {script_sources}; connect-src 'self' blob:"
     ).encode("ascii")
 
 
@@ -545,7 +545,8 @@ class OwnerAuthMiddleware:
                     await _websocket_response(send, 403, "office_asset_method_rejected", scope)
                     return
                 frame_ancestors = "'self' " + " ".join(sorted(self.auth_state.effective_origins))
-                await serve_asset(scope, receive, send, self.office_assets, self.auth_state.port, frame_ancestors)
+                pack = self.office_assets() if callable(self.office_assets) else self.office_assets
+                await serve_asset(scope, receive, send, pack, self.auth_state.port, frame_ancestors)
                 return
         headers = _headers(scope)
         # Sandboxed application module imports have Origin: null and no owner

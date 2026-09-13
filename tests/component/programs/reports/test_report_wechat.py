@@ -166,7 +166,7 @@ def native_processes(monkeypatch, pids, owners):
         "gui_harness.adapters.mac_window",
         NS(WindowUnavailable=RuntimeError),
     )
-    from openprogram.programs.workflow.report_wechat_visual import WeChatWindow
+    from openprogram.programs.workflow._reports.wechat_visual import WeChatWindow
 
     def native_window(window):
         selected.append(window.pid)

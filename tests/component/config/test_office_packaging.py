@@ -189,3 +189,60 @@ def test_symlink_pack_root_is_unavailable(tmp_path: Path):
     with pytest.raises(ValueError):
         install_office_pack(alias, tmp_path / 'target')
     assert not (tmp_path / 'target/current.json').exists()
+
+
+def test_optional_download_verifies_before_publish_and_cleans_temporary_files(tmp_path, monkeypatch):
+    import io
+    import zipfile
+    import openprogram.office_install as installer
+    source = make_office_pack(tmp_path / 'source')
+    content = io.BytesIO()
+    with zipfile.ZipFile(content, 'w') as archive:
+        for path in source.rglob('*'):
+            if path.is_file(): archive.writestr(path.relative_to(source).as_posix(), path.read_bytes())
+    data = content.getvalue()
+    cache = tmp_path / 'cache' / 'office'
+    monkeypatch.setattr(installer, 'prepared_office_cache', lambda: cache)
+    monkeypatch.setattr(installer, 'OFFICE_DOWNLOAD_BYTES', len(data))
+    monkeypatch.setattr(installer, 'OFFICE_ARCHIVE_SHA256', hashlib.sha256(data).hexdigest())
+    import httpx
+    monkeypatch.setattr(installer.safe_http, 'safe_client', lambda *a, **k: httpx.Client(transport=httpx.MockTransport(
+        lambda request: httpx.Response(200, content=data))))
+    assert installer.download_office_pack().available
+    previous = (cache / 'current.json').read_bytes()
+    monkeypatch.setattr(installer, 'OFFICE_ARCHIVE_SHA256', '0' * 64)
+    import pytest
+    with pytest.raises(ValueError, match='verification'):
+        installer.download_office_pack()
+    assert (cache / 'current.json').read_bytes() == previous
+    assert not list(cache.parent.glob('.office-install-*'))
+
+
+def test_optional_download_rejects_traversal_before_install(tmp_path, monkeypatch):
+    import io
+    import zipfile
+    import pytest
+    import openprogram.office_install as installer
+    content = io.BytesIO()
+    with zipfile.ZipFile(content, 'w') as archive:
+        archive.writestr('../escape', b'unsafe')
+    data = content.getvalue()
+    cache = tmp_path / 'cache' / 'office'
+    monkeypatch.setattr(installer, 'prepared_office_cache', lambda: cache)
+    monkeypatch.setattr(installer, 'OFFICE_DOWNLOAD_BYTES', len(data))
+    monkeypatch.setattr(installer, 'OFFICE_ARCHIVE_SHA256', hashlib.sha256(data).hexdigest())
+    import httpx
+    monkeypatch.setattr(installer.safe_http, 'safe_client', lambda *a, **k: httpx.Client(transport=httpx.MockTransport(
+        lambda request: httpx.Response(200, content=data))))
+    with pytest.raises(ValueError, match='path'):
+        installer.download_office_pack()
+    assert not cache.exists()
+    assert not list(cache.parent.glob('.office-install-*'))
+
+
+def test_managed_worker_requires_separately_installed_office(tmp_path, monkeypatch):
+    from openprogram.webui import office_assets as server
+    make_office_pack(tmp_path / 'runtime/assets/office')
+    monkeypatch.setattr(server, 'managed_runtime_root', lambda: tmp_path / 'runtime')
+    monkeypatch.setattr(server, 'prepared_office_cache', lambda: tmp_path / 'missing-cache')
+    assert not server.load_installed_office_pack().available

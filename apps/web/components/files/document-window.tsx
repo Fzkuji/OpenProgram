@@ -13,6 +13,7 @@ import { convertOfficeDocument } from "@/lib/documents/office-editor";
 import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import { OfficeSurface } from "./office-surface";
 import { convertRasterToPng } from "@/lib/documents/raster-format";
+import { PdfSurface } from "./pdf-surface";
 import { RasterSurface } from "./raster-surface";
 import type { RasterEditorInstance } from "@/lib/documents/raster-editor";
 
@@ -46,6 +47,7 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
   const [cropping, setCropping] = useState(false);
   const isText = fileCapabilities(path).textEditable && !state.snapshot?.binary;
   const office = officeCapability(path);
+  const isPdf = fileCapabilities(path).preview === "pdf";
   const isOffice = fileCapabilities(path).preview === "office";
   const isRaster = ["png", "jpg", "jpeg", "webp"].includes(fileCapabilities(path).preview === "image" ? path.split(".").pop()?.toLowerCase() ?? "" : "");
   const currentBytes = state.draft ?? state.snapshot?.bytes;
@@ -224,7 +226,7 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
         <RasterSurface key={state.editorRevision} controller={controller} bytes={currentBytes} path={path} readOnly={readOnly} mode={mode} onReady={(value) => { rasterEditor.current = value; setRasterReady(Boolean(value)); }} />
       </div>}
 
-      {isOffice && currentBytes ? <><div hidden={Boolean(selected)} style={{ height: "100%" }}><OfficeSurface key={state.editorRevision} controller={controller} bytes={currentBytes} path={path} readOnly={readOnly || !office?.editable} mode={mode} /></div>{selected && <OfficeSurface key={`${selected.version ?? "disk"}:${selected.side ?? "after"}`} controller={controller} bytes={selected.blob} path={path} readOnly={true} mode="preview" />}</> : selected ? <FileViewer projectId={projectId} path={path} sourceBlob={selected.blob}
+      {isPdf && currentBytes ? <><div hidden={Boolean(selected)} style={{ height: "100%" }}><PdfSurface saveStatus={state.status} key={state.editorRevision} controller={controller} bytes={currentBytes} path={path} readOnly={readOnly} /></div>{selected && <FileViewer projectId={projectId} path={path} sourceBlob={selected.blob} snapshot={{ project_id: projectId, path, binary: true, size: selected.blob.size, mtime: 0 }} />}</> : isOffice && currentBytes ? <><div hidden={Boolean(selected)} style={{ height: "100%" }}><OfficeSurface key={state.editorRevision} controller={controller} bytes={currentBytes} path={path} readOnly={readOnly || !office?.editable} mode={mode} /></div>{selected && <OfficeSurface key={`${selected.version ?? "disk"}:${selected.side ?? "after"}`} controller={controller} bytes={selected.blob} path={path} readOnly={true} mode="preview" />}</> : selected ? <FileViewer projectId={projectId} path={path} sourceBlob={selected.blob}
         snapshot={{ project_id: projectId, path, content: selected.content, binary: !isText, size: selected.blob.size, mtime: 0 }} /> : <>
       {!isRaster && editorOpened && <div hidden={mode !== "edit" || Boolean(selected)} style={{ height: "100%" }}>
         <fieldset disabled={state.restoring || state.renaming} style={{ border: 0, margin: 0, padding: 0, height: "100%" }}>

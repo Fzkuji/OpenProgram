@@ -40,7 +40,7 @@ class MacAccessibility:
     """Reuse the optional native dependencies used by system-access diagnostics."""
 
     def __init__(self):
-        from .report_wechat_visual import WeChatWindow, VisualUnavailable
+        from .wechat_visual import WeChatWindow, VisualUnavailable
 
         self.window = None
         try:
@@ -61,7 +61,7 @@ class MacAccessibility:
         return value if isinstance(value, str) else ""
 
     def check(self):
-        from .report_wechat_visual import VisualUnavailable
+        from .wechat_visual import VisualUnavailable
 
         try:
             self.window.check()

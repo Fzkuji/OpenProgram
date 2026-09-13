@@ -72,7 +72,7 @@ def office_window(tmp_path, monkeypatch, office_window_bundle):
 
     @app.get("/")
     async def index():
-        return HTMLResponse('''<style>html,body,#root{height:100%;margin:0}.fixture-pane{height:100%;min-height:0}.window{flex:1;min-width:0;width:100%;height:100%;display:flex;flex-direction:column}.body{flex:1;min-height:0;overflow:auto}.toolbar{min-height:40px;display:flex;gap:8px}.history{max-height:150px;overflow:auto}</style><div id="root"></div><script src="/_next/static/office-window.js"></script>''')
+        return HTMLResponse('<style>:root{--bg-primary:#1e1e20;--text-secondary:#a1a1aa;--text-tertiary:#71717a;--border-subtle:#333}</style><style>' + Path('apps/web/components/files/office-surface.module.css').read_text() + '</style>' + '''<style>html,body,#root{height:100%;margin:0}.fixture-pane{height:100%;min-height:0}.window{flex:1;min-width:0;width:100%;height:100%;display:flex;flex-direction:column}.body{flex:1;min-height:0;overflow:auto}.toolbar{min-height:40px;display:flex;gap:8px}.history{max-height:150px;overflow:auto}</style><div id="root"></div><script src="/_next/static/office-window.js"></script>''')
 
     @app.get("/_next/static/office-window.js")
     async def bundle():
@@ -329,3 +329,110 @@ def test_invalid_office_retains_original_download(office_window, oversize):
     assert actual is not None
     with open(actual, "rb") as stream, source.open("rb") as original:
         assert hashlib.file_digest(stream, "sha256").digest() == hashlib.file_digest(original, "sha256").digest()
+
+
+def test_office_loading_failure_can_retry(office_window):
+    from playwright.sync_api import expect
+    page, origin, _, errors = office_window
+    page.route("**/api/documents/office-host?*", lambda route: route.fulfill(status=503), times=1)
+    page.goto(origin + "/?file=baseline.pptx")
+    alert = page.get_by_role("alert")
+    expect(alert).to_contain_text("Unable to open document")
+    expect(page.get_by_role("status")).to_have_count(0)
+    page.get_by_role("button", name="Retry", exact=True).click()
+    expect(page.locator('[data-office-editor]')).to_be_visible(timeout=45000)
+    expect(alert).to_have_count(0)
+    expect(page.locator('[data-office-editor] > iframe')).to_have_count(1)
+    assert errors == []
+
+
+def test_office_loading_is_localized_centered_and_cancellable(office_window):
+    from playwright.sync_api import expect
+    page, origin, _, errors = office_window
+    page.add_init_script("localStorage.setItem('agentic_locale', 'zh')")
+    page.emulate_media(reduced_motion="reduce")
+    availability = []
+    modules = []
+    page.route("**/api/documents/office-host?*", lambda route: availability.append(route))
+    page.route("**/api/documents/office-module/*", lambda route: modules.append(route))
+    with page.expect_request("**/api/documents/office-host?*"):
+        page.goto(origin + "/?file=baseline.pptx", wait_until="domcontentloaded")
+    status = page.get_by_role("status")
+    expect(status).to_contain_text("正在准备文档预览")
+    assert len(availability) == 1
+    availability[0].continue_()
+    expect(status).to_contain_text("正在打开文档")
+    assert status.evaluate("e => getComputedStyle(e).position") == "absolute"
+    assert status.evaluate("e => getComputedStyle(e).alignItems") == "center"
+    assert status.locator("svg").evaluate("e => getComputedStyle(e).animationName") == "none"
+    expect(status).to_contain_text("baseline.pptx")
+    page.get_by_role("button", name="Close file", exact=True).click()
+    expect(status).to_have_count(0)
+    expect(page.get_by_text("File closed", exact=True)).to_be_visible()
+    for route in modules:
+        route.continue_()
+    expect(page.locator('[data-office-editor] iframe')).to_have_count(0)
+    assert errors == []
+
+
+def test_office_runtime_error_preserves_ready_editor(office_window):
+    from playwright.sync_api import expect
+    page, origin, _, errors = office_window
+    page.route("**/api/documents/office-module/*", lambda route: route.fulfill(
+        content_type="text/javascript", body='''
+        export function mountOfficeEditor(container, options) {
+          const button = document.createElement('button');
+          button.textContent = 'Simulate runtime error';
+          button.onclick = () => options.onError(new Error('Recoverable save failure'));
+          container.appendChild(button);
+          const editor = {
+            getState: () => ({status:'ready', readonly:true, dirty:false, destroyed:false}),
+            setReadonly: value => options.onStateChange({readonly:value}),
+            destroy: async () => button.remove(),
+            flushPendingSaves: async () => {},
+          };
+          return {activate: async () => {options.onReady(); return editor;}, destroy: editor.destroy};
+        }
+        '''))
+    page.goto(origin + "/?file=baseline.pptx")
+    trigger = page.get_by_role("button", name="Simulate runtime error")
+    expect(trigger).to_be_visible()
+    original = trigger.element_handle()
+    trigger.click()
+    expect(page.get_by_role("alert")).to_contain_text("Recoverable save failure")
+    expect(trigger).to_be_visible()
+    assert trigger.evaluate("(node, original) => node === original", original)
+    expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
+    assert errors == []
+
+
+def test_optional_office_consent_cancel_retry_and_open(office_window):
+    from playwright.sync_api import expect
+    page, origin, _, errors = office_window
+    attempts = []
+    def availability(route):
+        if len(attempts) < 2:
+            route.fulfill(json={"available": False, "installable": True, "downloadBytes": 732695641})
+        else:
+            route.continue_()
+    def install(route):
+        attempts.append(True)
+        route.fulfill(status=503 if len(attempts) == 1 else 200, json={"installed": len(attempts) > 1})
+    page.route('**/api/documents/office-host?*', availability)
+    page.route('**/api/documents/office-install', install)
+    page.goto(origin + '/?file=baseline.pptx')
+    expect(page.get_by_role('button', name='Install', exact=True)).to_be_visible()
+    assert not attempts
+    expect(page.locator('[data-office-editor] iframe')).to_have_count(0)
+    page.get_by_role('button', name='Cancel', exact=True).click()
+    expect(page.get_by_role('button', name='Install', exact=True)).to_have_count(0)
+    assert not attempts
+    page.get_by_role('button', name='Installation options', exact=True).click()
+    page.get_by_role('button', name='Install', exact=True).click()
+    expect(page.get_by_role('button', name='Retry', exact=True)).to_be_visible()
+    assert len(attempts) == 1
+    page.get_by_role('button', name='Retry', exact=True).click()
+    expect(page.locator('[data-office-editor] > iframe')).to_have_count(1, timeout=45000)
+    expect(page.locator('[data-office-editor]')).to_have_attribute('aria-busy', 'false', timeout=45000)
+    assert len(attempts) == 2
+    assert not errors

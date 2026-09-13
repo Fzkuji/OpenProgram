@@ -1,4 +1,4 @@
-import type { CenterTab } from "./center-tabs-store";
+import type { CenterTab } from "../store/types";
 
 export type SessionHistoryEntry = Pick<CenterTab, "sessionId" | "title" | "draft">;
 export interface SessionTabHistory {
@@ -34,6 +34,8 @@ export function normalizeSessionHistory(tab: CenterTab): CenterTab {
 }
 
 export function withSessionHistory(tab: CenterTab, history: SessionTabHistory): CenterTab {
-  return { ...tab, ...history.entries[history.index], draft: !!history.entries[history.index].draft,
-    dagView: false, sessionHistory: history };
+  return {
+    ...tab, ...history.entries[history.index], draft: !!history.entries[history.index].draft,
+    dagView: false, sessionHistory: history
+  };
 }

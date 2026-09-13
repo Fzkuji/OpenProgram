@@ -186,7 +186,10 @@ def _migrate_workflow_project_sources(root) -> None:
 
     if workflow_projects_migrated():
         return
-    for project_dir in sorted(root.iterdir()):
+    projects = catalog._project_directories(root)
+    for project_dir in projects:
+        if sum(path.name == project_dir.name for path in projects) != 1:
+            continue
         if not _is_workflow_project_candidate(project_dir):
             continue
         try:
@@ -197,7 +200,7 @@ def _migrate_workflow_project_sources(root) -> None:
                 project_dir,
                 source="workflow-migration",
                 kind="workflow-migration",
-                base=str(root),
+                base=str(project_dir.parent),
             )
         except Exception:
             continue
@@ -278,11 +281,14 @@ def _load_workflow_projects() -> None:
     _migrate_workflow_project_sources(root)
     allowed = {
         os.path.normcase(os.path.realpath(row["path"]))
-        for row in owner_controlled_program_sources(str(root))
+        for row in owner_controlled_program_sources()
     }
 
     sources = {}
-    for project_dir in sorted(root.iterdir()):
+    projects = catalog._project_directories(root)
+    for project_dir in projects:
+        if sum(path.name == project_dir.name for path in projects) != 1:
+            continue
         if (
             not _is_workflow_project_candidate(project_dir)
             or os.path.normcase(os.path.realpath(project_dir)) not in allowed
