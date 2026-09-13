@@ -15,14 +15,13 @@ yields head=None (empty session), never a rewound node.
 from __future__ import annotations
 
 import tempfile
-import time
 from pathlib import Path
 
 import pytest
 
 from openprogram.store.session.session_store import SessionStore
 import openprogram.store.session.session_store as ss_mod
-from openprogram.context.nodes import Call, ROLE_USER, ROLE_LLM
+from openprogram.context.nodes import ROLE_USER, ROLE_LLM
 
 
 @pytest.fixture
@@ -35,28 +34,20 @@ def store(monkeypatch):
 
 def _build_two_turns(store: SessionStore, sid: str) -> None:
     """ROOT → u1 → u1_reply → u2 → u2_reply, head at u2_reply."""
-    git, idx = store._open(sid, create_if_missing=True)
+    store.create_session(sid, 'main')
 
-    def add(nid, role, *, pred="", display=None, head=None):
-        meta = {}
-        if display:
-            meta["display"] = display
-        # The conv edge is the TOP-LEVEL ``predecessor`` field
-        # (dag/overview.md) — exactly what append_message writes.
-        node = Call(id=nid, role=role, output=nid,
-                    predecessor=pred or None, metadata=meta)
-        seq = idx.append(node, predecessor=pred, caller="")
-        git.write_history(seq, node.role, node.id, node.to_dict())
-        idx.set_meta(updated_at=time.time())
-        if head is not None:
-            idx.set_head(head)
+    def add(nid, role, *, pred="", display=None):
+        store.append_message(sid, {
+            'id': nid, 'role': role, 'content': nid,
+            'predecessor': pred or None,
+            **({'display': display} if display else {}),
+        })
 
     add("ROOT", ROLE_USER, display="root")
-    add("u1", ROLE_USER, pred="ROOT", head="u1")
-    add("u1_reply", ROLE_LLM, pred="u1", head="u1_reply")
-    add("u2", ROLE_USER, pred="u1_reply", head="u2")
-    add("u2_reply", ROLE_LLM, pred="u2", head="u2_reply")
-    store._persist_meta(git, idx)
+    add("u1", ROLE_USER, pred="ROOT")
+    add("u1_reply", ROLE_LLM, pred="u1")
+    add("u2", ROLE_USER, pred="u1_reply")
+    add("u2_reply", ROLE_LLM, pred="u2")
 
 
 def _head_is_rewound(store: SessionStore, sid: str) -> bool:

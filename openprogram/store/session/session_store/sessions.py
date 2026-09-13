@@ -68,12 +68,6 @@ class SessionsOperations:
                 shared._log.error("project resolution failed for %s: %s", session_id, e)
                 raise
 
-        pair = self._open(session_id, create_if_missing=True)
-        if pair is None:
-            return
-        git, idx = pair
-        if idx.meta.get("id") == session_id:
-            return  # Already created
         extra: dict[str, shared.Any] = {}
         if channel:
             extra["channel"] = channel
@@ -95,16 +89,23 @@ class SessionsOperations:
         if project_id:
             extra["project_id"] = project_id
 
-        idx.set_meta(
-            id=session_id,
-            agent_id=agent_id,
-            title=title,
-            source=source or "",
-            created_at=created_at,
-            updated_at=updated_at,
-            **extra,
-        )
-        self._persist_meta(git, idx)
+        def admit(meta, idx):
+            if meta.get("id") == session_id:
+                return None
+            meta.update(
+                id=session_id,
+                agent_id=agent_id,
+                title=title,
+                source=source or "",
+                created_at=created_at,
+                updated_at=updated_at,
+                **extra,
+            )
+            meta["head_id"] = idx.head_id
+            return shared.json.loads(shared.json.dumps(meta, ensure_ascii=False, default=str))
+
+        if self._transform_session_meta(session_id, admit) is None:
+            return
 
         # Write registry entry.
         _explicit = {"agent_id", "title", "source", "created_at",
@@ -145,12 +146,6 @@ class SessionsOperations:
                 return None
             git, idx = pair
             meta = git.read_meta()
-            if not meta and idx.meta.get("id") == session_id and not git.list_history():
-                # create_session has installed its initial fields but has not
-                # persisted them yet. No durable record supersedes them.
-                with idx._lock:
-                    meta = copy.deepcopy(idx.meta)
-                    meta["head_id"] = idx.head_id
             meta = transform(meta, idx)
             if meta is None:
                 return None

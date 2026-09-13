@@ -68,15 +68,10 @@ class MessagesOperations:
             with self._head_file_lock(git), idx._persist_lock:
                 if git.path != old_path or git.stale():
                     paths, meta = git.list_history(), git.read_meta()
-                    pending_creation = (
-                        create_if_missing and not paths and not meta
-                        and idx.meta.get("id") == session_id
+                    idx.rebuild_from_paths(
+                        paths, meta,
+                        shared._node_conv_predecessor, shared._node_caller,
                     )
-                    if not pending_creation:
-                        idx.rebuild_from_paths(
-                            paths, meta,
-                            shared._node_conv_predecessor, shared._node_caller,
-                        )
                     git.mark_synced()
                 git._synced_fingerprint = None
                 try:

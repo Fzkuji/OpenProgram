@@ -211,25 +211,13 @@ class StorageOperations:
                         # in-memory update.
                         disk_meta = git.read_meta()
                         disk_hist = git.list_history()
-                        # A concurrent reader can land here between
-                        # create_session's set_meta() and its _persist_meta()
-                        # — the repo exists (some other write initialized it)
-                        # but meta.json is still empty/absent on disk. Blindly
-                        # rebuilding then resets the index and throws away the
-                        # just-populated in-memory meta (source/channel/peer_*
-                        # silently vanished). Disk with nothing in it is never
-                        # a more truthful view than populated memory, so skip
-                        # the rebuild instead of destroying state.
-                        if not disk_meta and not disk_hist and (idx.meta or idx.head_id):
-                            pass
-                        else:
-                            idx.rebuild_from_paths(
-                                disk_hist,
-                                disk_meta,
-                                shared._node_conv_predecessor,
-                                shared._node_caller,
-                            )
-                            git.mark_synced()
+                        idx.rebuild_from_paths(
+                            disk_hist,
+                            disk_meta,
+                            shared._node_conv_predecessor,
+                            shared._node_caller,
+                        )
+                        git.mark_synced()
                 # A cached session may be the callback target of an active
                 # CheckpointStore transaction (its get_head/CAS callbacks
                 # re-enter SessionStore while the intent lock is held).  The
@@ -290,17 +278,6 @@ class StorageOperations:
             from .deletion import recover as recover_deletion
             recover_deletion(git)
             yield
-
-
-    def _persist_meta(self, git: shared.GitSession, idx: shared.SessionMemoryIndex) -> None:
-        """Sync the in-memory meta back to ``meta.json``. Called whenever
-        title / head_id / extra / branches change."""
-        with self._head_file_lock(git):
-            with idx._persist_lock:
-                with idx._lock:
-                    meta = dict(idx.meta)
-                    meta["head_id"] = idx.head_id
-                git.write_meta(meta)
 
 
     def session_workdir(self, session_id: str) -> shared.Optional[shared.Path]:
