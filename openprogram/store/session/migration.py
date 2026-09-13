@@ -18,6 +18,7 @@ from openprogram.store.session.placement import (
     legacy_project_session_dir,
     nested_session_dir,
     session_looks_present,
+    validate_session_id,
 )
 from openprogram.store.session.session_lock import (
     registry_file_lock,
@@ -35,11 +36,11 @@ def journal_path(root: Path) -> Path:
 
 
 def staging_dir(root: Path, session_id: str) -> Path:
-    return Path(root) / ".migration" / "staging" / session_id
+    return Path(root) / ".migration" / "staging" / validate_session_id(session_id)
 
 
 def hold_path(root: Path, session_id: str) -> Path:
-    return Path(root) / ".migration" / "holds" / session_id
+    return Path(root) / ".migration" / "holds" / validate_session_id(session_id)
 
 
 def load_journal(root: Path) -> dict[str, Any]:
@@ -335,7 +336,7 @@ def collect_legacy_candidates(store, project_id: str | None = None) -> list[dict
 
 def migrate_session(store, entry: dict[str, Any], *, timeout: float = 15.0) -> str:
     root = Path(store.root_path)
-    session_id = entry["session_id"]
+    session_id = validate_session_id(entry["session_id"])
     with registry_file_lock(root, f"migration-{session_id}", timeout=timeout):
         return _migrate_session_once(store, entry, timeout=timeout)
 
@@ -343,7 +344,7 @@ def migrate_session(store, entry: dict[str, Any], *, timeout: float = 15.0) -> s
 def _migrate_session_once(store, entry: dict[str, Any], *, timeout: float = 15.0) -> str:
     """Migrate one legacy session. Returns done|pending|deferred|failed."""
     root = Path(store.root_path)
-    session_id = entry["session_id"]
+    session_id = validate_session_id(entry["session_id"])
     project_id = entry["project_id"]
     journal = load_journal(root)
     durable = dict(journal.get("sessions", {}).get(session_id) or {})

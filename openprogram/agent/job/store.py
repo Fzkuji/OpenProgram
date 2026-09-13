@@ -71,9 +71,20 @@ def _session_file_lock(path: Path):
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
+def _valid_session_id(session_id: str) -> bool:
+    from openprogram.store.session.placement import validate_session_id
+    try:
+        validate_session_id(session_id)
+    except ValueError:
+        return False
+    return True
+
+
 def _jobs_path(session_id: str) -> Optional[Path]:
     """Path to the session's jobs.json, or None if the session repo
     doesn't exist (e.g. the session was deleted)."""
+    if not _valid_session_id(session_id):
+        return None
     from openprogram.store import default_store
     store = default_store()
     sdir = store._session_dir(session_id)  # noqa: SLF001 — re-read after session lock
@@ -221,6 +232,8 @@ def mirror_linked_job_to_caller(job: Job) -> None:
 
 
 def load_job(session_id: str, job_id: str) -> Optional[Job]:
+    if not _valid_session_id(session_id):
+        return None
     from openprogram.store.session.session_lock import session_interprocess_lock
     with session_interprocess_lock(session_id):
         path = _jobs_path(session_id)
@@ -245,6 +258,8 @@ def list_jobs(
     limit: Optional[int] = None,
 ) -> list[Job]:
     """Return jobs in this session, newest first (by created_at desc)."""
+    if not _valid_session_id(session_id):
+        return []
     from openprogram.store.session.session_lock import session_interprocess_lock
     with session_interprocess_lock(session_id):
         path = _jobs_path(session_id)

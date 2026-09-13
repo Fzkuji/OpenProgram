@@ -27,16 +27,26 @@ RESERVED_ROOT_NAMES = frozenset({
 })
 
 
+def validate_session_id(session_id: str) -> str:
+    """Require a visible, non-reserved single directory component."""
+    if (not isinstance(session_id, str) or not session_id
+            or session_id.startswith(".")
+            or any(character in session_id for character in ("/", "\\", "\x00"))
+            or session_id.casefold() in RESERVED_ROOT_NAMES):
+        raise ValueError("session_id must name a non-reserved directory component")
+    return session_id
+
+
 def nested_session_dir(root: Path, project_id: str, session_id: str) -> Path:
-    return Path(root) / "projects" / project_id / session_id
+    return Path(root) / "projects" / project_id / validate_session_id(session_id)
 
 
 def default_session_dir(root: Path, session_id: str) -> Path:
-    return Path(root) / session_id
+    return Path(root) / validate_session_id(session_id)
 
 
 def legacy_project_session_dir(project_path: str | Path, session_id: str) -> Path:
-    return Path(project_path).expanduser() / ".openprogram" / "sessions" / session_id
+    return Path(project_path).expanduser() / ".openprogram" / "sessions" / validate_session_id(session_id)
 
 
 def external_recovery_dir(session_dir: Path) -> Path:
@@ -49,7 +59,7 @@ def delete_intent_dir(root: Path) -> Path:
 
 
 def delete_intent_path(root: Path, session_id: str) -> Path:
-    return delete_intent_dir(root) / session_id
+    return delete_intent_dir(root) / validate_session_id(session_id)
 
 
 def session_looks_present(path: Path) -> bool:

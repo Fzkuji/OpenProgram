@@ -2,6 +2,7 @@
 from __future__ import annotations
 import copy
 from . import shared
+from ..placement import validate_session_id
 
 
 class SessionsOperations:
@@ -17,6 +18,7 @@ class SessionsOperations:
         peer_id: shared.Optional[str] = None,
         **other_fields: shared.Any,
     ) -> None:
+        validate_session_id(session_id)
         # Pull out the project hints BEFORE opening the repo, because
         # they decide WHERE the repo lives (home vs inside a project).
         project_id = other_fields.pop("project_id", None)
@@ -238,6 +240,7 @@ class SessionsOperations:
 
 
     def delete_session(self, session_id: str) -> None:
+        validate_session_id(session_id)
         with self._session_lock(session_id):
             with shared.session_interprocess_lock(
                 session_id, root=self.root_path if self._explicit_root else None,

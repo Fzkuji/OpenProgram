@@ -1,10 +1,12 @@
 """SessionStore storage operations."""
 from __future__ import annotations
 from . import shared
+from ..placement import validate_session_id
 
 
 class StorageOperations:
     def _session_lock(self, session_id: str):
+        validate_session_id(session_id)
         with self._lock:
             lock = self._session_locks.get(session_id)
             if lock is None:
@@ -47,6 +49,7 @@ class StorageOperations:
         caches are not rewritten into a replacement folder. Deleted
         sessions are not resurrected.
         """
+        validate_session_id(session_id)
         locations = self._load_locations()
         with self._lock:
             for key, value in locations.items():
@@ -126,13 +129,11 @@ class StorageOperations:
     def _open(self, session_id: str, *, create_if_missing: bool = False) -> shared.Optional[tuple[shared.GitSession, shared.SessionMemoryIndex]]:
         """Return (git, idx). Loads from disk on first access. None if
         session doesn't exist and ``create_if_missing`` is False."""
-        if not create_if_missing and (
-            not isinstance(session_id, str)
-            or not session_id
-            or session_id in {".", ".."}
-            or "/" in session_id
-            or "\\" in session_id
-        ):
+        try:
+            validate_session_id(session_id)
+        except ValueError:
+            if create_if_missing:
+                raise
             return None
         if create_if_missing and shared.is_deleted(self.root_path, session_id):
             return None
