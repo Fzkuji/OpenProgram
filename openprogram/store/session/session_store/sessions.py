@@ -136,9 +136,11 @@ class SessionsOperations:
                              session_id, project_id, e)
 
 
-    def _transform_session_meta(self, session_id, transform):
+    def _transform_session_meta(self, session_id, transform, *, create_if_missing=True):
         """Transform current durable metadata, publishing only after success."""
-        with self._session_write_scope(session_id, create_if_missing=True) as pair:
+        if not create_if_missing and self._open(session_id) is None:
+            return None
+        with self._session_write_scope(session_id, create_if_missing=create_if_missing) as pair:
             if pair is None:
                 return None
             git, idx = pair
@@ -149,7 +151,7 @@ class SessionsOperations:
                 with idx._lock:
                     meta = copy.deepcopy(idx.meta)
                     meta["head_id"] = idx.head_id
-            meta = transform(meta)
+            meta = transform(meta, idx)
             if meta is None:
                 return None
             git.write_meta(meta)
@@ -162,7 +164,7 @@ class SessionsOperations:
     def update_session(self, session_id: str, **fields: shared.Any) -> None:
         clean = {key: value for key, value in fields.items() if value is not None}
 
-        def transform(meta):
+        def transform(meta, _idx):
             meta.update(clean)
             return meta
 
@@ -201,7 +203,7 @@ class SessionsOperations:
         The callback must not perform I/O or re-enter the store. Returning
         None rejects the update without changing durable or cached state.
         """
-        def transform(meta):
+        def transform(meta, _idx):
             current = meta.get(field)
             value = update(current if isinstance(current, dict) else {})
             if value is None:

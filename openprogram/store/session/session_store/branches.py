@@ -105,22 +105,18 @@ class BranchesOperations:
 
 
     def set_head(self, session_id: str, head_id: shared.Optional[str]) -> None:
-        pair = self._open(session_id, create_if_missing=True)
-        if pair is None:
-            return
-        git, idx = pair
-        # A summary node is a stand-in, never a conversational tip: a
-        # head on it makes the active branch [summary] alone and hides
-        # the whole session (context/compaction.md §5). No caller has a
-        # legitimate reason; refuse loudly instead of storing it.
-        node = idx.nodes_by_id.get(head_id) if head_id else None
-        if node is not None and (node.metadata or {}).get("covers_ids"):
-            raise ValueError(
-                f"set_head: {head_id!r} is a compaction summary — "
-                "a stand-in cannot be the active branch tip"
-            )
-        idx.set_head(head_id)
-        self._persist_meta(git, idx)
+        def transform(meta, idx):
+            node = idx.nodes_by_id.get(head_id) if head_id else None
+            if node is not None and (node.metadata or {}).get("covers_ids"):
+                raise ValueError(
+                    f"set_head: {head_id!r} is a compaction summary — "
+                    "a stand-in cannot be the active branch tip"
+                )
+            meta["head_id"] = head_id
+            meta.pop("last_node_id", None)
+            return meta
+
+        self._transform_session_meta(session_id, transform)
 
 
     def compare_and_set_head(
@@ -406,15 +402,14 @@ class BranchesOperations:
 
 
     def delete_branch_name(self, session_id: str, head_msg_id: str) -> None:
-        pair = self._open(session_id)
-        if pair is None:
-            return
-        git, idx = pair
-        branches = dict(idx.meta.get("branches") or {})
-        if branches.pop(head_msg_id, None) is None:
-            return
-        idx.set_meta(branches=branches)
-        self._persist_meta(git, idx)
+        def transform(meta, _idx):
+            branches = dict(meta.get("branches") or {})
+            if branches.pop(head_msg_id, None) is None:
+                return None
+            meta["branches"] = branches
+            return meta
+
+        self._transform_session_meta(session_id, transform, create_if_missing=False)
 
 
     def delete_branch_tail(self, session_id: str, head_msg_id: str) -> int:

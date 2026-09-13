@@ -95,24 +95,22 @@ class SessionStore(IndexOperations, StorageOperations, SessionsOperations, Messa
         The DAG nodes stay intact (a checkout still works) but the
         head no longer surfaces as a standalone branch tip.
         """
-        pair = self._open(session_id)
-        if pair is None:
-            return
-        git, idx = pair
-        with idx._lock:
-            cur = list(idx.meta.get("merged_heads") or [])
+        def transform(meta, _idx):
+            cur = list(meta.get("merged_heads") or [])
             changed = False
-            for h in head_ids:
-                if not h:
+            for head in head_ids:
+                if not head:
                     continue
-                h = h.strip()
-                if h and h not in cur:
-                    cur.append(h)
+                head = head.strip()
+                if head and head not in cur:
+                    cur.append(head)
                     changed = True
-            if changed:
-                idx.meta["merged_heads"] = cur
-        if changed:
-            self._persist_meta(git, idx)
+            if not changed:
+                return None
+            meta["merged_heads"] = cur
+            return meta
+
+        self._transform_session_meta(session_id, transform, create_if_missing=False)
 
 
     def merged_heads(self, session_id: str) -> set[str]:
