@@ -40,6 +40,7 @@ __all__ = [
     "auto_trace_package",
     "Runtime",
     "LLMError",
+    "StructuredOutputError",
     "llm",
     "agent",
     "decision",
@@ -55,4 +56,7 @@ def __getattr__(name):
     if name == "LLMError":
         from openprogram.providers.utils.errors import LLMError
         return LLMError
+    if name == "StructuredOutputError":
+        from openprogram.providers.structured_output import StructuredOutputError
+        return StructuredOutputError
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

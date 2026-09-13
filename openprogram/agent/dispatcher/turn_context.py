@@ -48,6 +48,12 @@ class TurnBindings:
         self._sandbox_token = None
         self._req_session_id: Optional[str] = None
         self._execution_id_token = None
+        self._deferred_token = None
+        self._frozen_tools_token = None
+        self._deferred_names = set()
+        self._deferred_writer = None
+        self._assistant_msg_id = None
+        self._request = None
 
     @classmethod
     def bind(
@@ -60,6 +66,15 @@ class TurnBindings:
     ) -> "TurnBindings":
         self = cls()
         self._req_session_id = req.session_id
+        self._request = req
+        # Restore only the selected predecessor branch, never another session
+        # or a sibling execution. Names cannot widen the resolved tool policy.
+        for message in reversed(db.get_branch(req.session_id, req.user_msg_id or None)):
+            names = message.get("loaded_deferred_tools")
+            if (message.get("role") == "assistant" and isinstance(names, list)
+                    and all(isinstance(name, str) for name in names)):
+                self._deferred_names.update(names)
+                break
         # A normal foreground turn has no outer execution owner. Bind its
         # assistant reply id so every question emitted during this turn is
         # cancellable by exact execution identity. An outer job/subprocess
@@ -139,8 +154,11 @@ class TurnBindings:
         # Layer 6 (Claude Code's shouldDefer / ToolSearch): install a
         # session-scoped "loaded deferred tools" set so tool_search can
         # mutate it and subsequent turns see the updated set.
-        from openprogram.programs import install_loaded_deferred
-        install_loaded_deferred()
+        from openprogram.programs import _runtime as tool_runtime
+        self._deferred_token = tool_runtime.install_loaded_deferred(self._deferred_names)
+        self._frozen_tools_token = tool_runtime._frozen_turn_tools.set(None)
+        self._deferred_writer = _GraphStore(db, req.session_id)
+        self._assistant_msg_id = assistant_msg_id
 
         # Project auto-commit (entity layer): snapshot which paths are
         # already dirty in the session's bound project BEFORE the agent
@@ -219,6 +237,21 @@ class TurnBindings:
             _render_range_override as _render_range_var,
         )
         try:
+            if self._request is not None:
+                self._request._loaded_deferred_tools = sorted(self._deferred_names)
+            if self._deferred_writer is not None and self._assistant_msg_id:
+                try:
+                    self._deferred_writer.update(
+                        self._assistant_msg_id,
+                        loaded_deferred_tools=sorted(self._deferred_names),
+                    )
+                except Exception:
+                    _log.warning("could not persist deferred discoveries", exc_info=True)
+            from openprogram.programs import _runtime as tool_runtime
+            if self._deferred_token is not None:
+                tool_runtime._loaded_deferred.reset(self._deferred_token)
+            if self._frozen_tools_token is not None:
+                tool_runtime._frozen_turn_tools.reset(self._frozen_tools_token)
             if self._web_use_owner_id is not None:
                 from openprogram.programs.workflow.browser.web_use_runtime import (
                     release_owner_if_initialized as _release_web_use_owner,

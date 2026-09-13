@@ -67,7 +67,14 @@ unverified. If native search focus cannot be proved, open the requested group
 and resume; the Workflow still performs collection and summarization. A window
 that does not permit capture returns `WINDOW_CAPTURE_UNAVAILABLE`. No screen or
 WeChat settings are changed.
-Each child retains its own interaction and recovery behavior.
+Each child retains its own interaction and recovery behavior. Group request
+parsing uses schema-validated model output and the Runtime's existing bounded
+repair retry. Exhausted model-format failures return `WAITING_MODEL` with the
+original request for resumption, rather than claiming that user input is missing.
+Routing, group request parsing, and personal report model calls inherit the
+Runtime timeout (`OPENPROGRAM_EXEC_TIMEOUT_S`); they impose no separate 90-second
+limit. External record updates are not automatically repeated after an uncertain
+failure.
 
 Natural-language requests are interpreted by a routing agent. It selects one,
 two, or all three destinations according to meaning and negation, then code

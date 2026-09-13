@@ -729,3 +729,20 @@ def test_explicit_prompt_fallback_adds_schema_instruction():
     assert result == {"answer": 5}
     assert "Return only one complete JSON value" in seen["system"]
     assert '"additionalProperties":false' in seen["system"]
+
+
+def test_llm_public_entry_uses_existing_structured_repair():
+    from openprogram.agentic_programming import llm
+    from openprogram.agentic_programming.function import _current_runtime
+    calls = []
+
+    def call(content, **kwargs):
+        calls.append(content)
+        return 'I will prepare the report.' if len(calls) == 1 else '{"answer": 7}'
+
+    token = _current_runtime.set(Runtime(call=call, model="dummy", max_retries=3))
+    try:
+        assert llm("Extract the answer", response_format=SCHEMA) == {"answer": 7}
+    finally:
+        _current_runtime.reset(token)
+    assert len(calls) == 2

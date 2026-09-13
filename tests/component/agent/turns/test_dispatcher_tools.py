@@ -854,3 +854,60 @@ def test_agent_spawn_bypass_hard_constraint_is_installed_in_dispatcher(
     ]
     assert any("hard constraint" in text and "denied" in text
                for text in tool_results)
+
+
+def test_discovered_schema_survives_next_chat_turn_but_not_other_session(
+    tmp_db, collector, fresh_registry, monkeypatch,
+):
+    fresh_registry.register(fresh_registry.tool_search)
+
+    @function(name="weekly_probe", description="A report", defer=True)
+    def weekly_probe() -> str:
+        return "report"
+
+    monkeypatch.setattr(D, "_load_agent_profile", _stub_profile_with_tools(["tool_search", "weekly_probe"]))
+    phase = {"discover": True}
+    seen = []
+    from openprogram.programs import _runtime as tool_runtime
+    original_loaded = tool_runtime._loaded_deferred.get()
+    original_frozen = tool_runtime._frozen_turn_tools.get()
+
+    async def stream(model, context, options):
+        seen.append({t.name for t in context.tools or []})
+        if phase["discover"]:
+            phase["discover"] = False
+            message = _build_final_with_tool("discover", "tool_search", {"select": "select:weekly_probe"})
+            yield EventDone(reason="toolUse", message=message)
+        else:
+            yield EventDone(reason="stop", message=_build_final_text("done"))
+
+    with patch.object(D, "_run_loop_blocking", _patched_run_loop(stream)):
+        for sid in ("discover-session", "discover-session", "other-session"):
+            result = D.process_user_turn(
+                _owner_turn(session_id=sid, user_text="report", agent_id="main", source="tui", permission_mode="bypass"),
+                on_event=collector,
+            )
+            assert not result.failed
+            if sid == "discover-session":
+                loaded_branch = result.assistant_msg_id
+        result = D.process_user_turn(
+            _owner_turn(session_id="discover-session", user_text="fork", agent_id="main",
+                        source="tui", permission_mode="bypass", branch_from=None),
+            on_event=collector,
+        )
+        assert not result.failed
+        monkeypatch.setattr(D, "_load_agent_profile", _stub_profile_with_tools(["tool_search"]))
+        result = D.process_user_turn(
+            _owner_turn(session_id="discover-session", user_text="restricted", agent_id="main",
+                        source="tui", permission_mode="bypass", branch_from=loaded_branch),
+            on_event=collector,
+        )
+        assert not result.failed
+    assert "weekly_probe" not in seen[0]
+    assert "weekly_probe" in seen[1]
+    assert "weekly_probe" in seen[2]
+    assert "weekly_probe" not in seen[3]
+    assert "weekly_probe" not in seen[4]
+    assert "weekly_probe" not in seen[5]
+    assert tool_runtime._loaded_deferred.get() is original_loaded
+    assert tool_runtime._frozen_turn_tools.get() is original_frozen
