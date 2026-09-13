@@ -265,4 +265,3 @@ def list_mutations(session_dir: Path, turn_id: str) -> list[dict]:
                            diff_state="unavailable")
             rows.append(row)
     return rows
-
