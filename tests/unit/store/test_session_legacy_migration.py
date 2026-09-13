@@ -197,17 +197,22 @@ def test_migration_flushes_nested_files_without_following_symlinks(
     monkeypatch.setattr(migration.os, "fsync", record_fsync)
 
     assert migrate_session(store, collect_legacy_candidates(store)[0]) == "done"
-    staged = str(staging_dir(store.root_path, sid))
+    flushed_paths = [Path(path).as_posix() for path in flushed_paths]
+    staged = staging_dir(store.root_path, sid).as_posix()
     assert any(path.endswith("/session/history/0001-u-u1.json") for path in flushed_paths)
-    assert any(path.endswith("/session/history") for path in flushed_paths)
-    assert any(path.endswith("/session/file_backups/old") for path in flushed_paths)
-    assert any(path.endswith("/session/file_backups") for path in flushed_paths)
-    assert any(path.endswith(f"/{sid}.recovery/turn1") for path in flushed_paths)
+    assert any(path.endswith("/session/file_backups/old/x") for path in flushed_paths)
+    assert any(path.endswith(f"/{sid}.recovery/turn1/blob") for path in flushed_paths)
+    if os.name != "nt":
+        assert any(path.endswith("/session/history") for path in flushed_paths)
+        assert any(path.endswith("/session/file_backups/old") for path in flushed_paths)
+        assert any(path.endswith("/session/file_backups") for path in flushed_paths)
+        assert any(path.endswith(f"/{sid}.recovery/turn1") for path in flushed_paths)
     assert not any(path.endswith("/session/history/outside-link") for path in flushed_paths)
     assert staged not in flushed_paths
     assert outside.read_text(encoding="utf-8") == "do not open"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows has no directory file descriptors")
 def test_migration_keeps_source_when_nested_directory_fsync_fails(tmp_path, monkeypatch):
     store = _isolate(tmp_path, monkeypatch)
     project, sid, source, _recovery = _legacy_session(tmp_path, store)
