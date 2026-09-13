@@ -178,8 +178,10 @@ class StorageOperations:
                 ):
                     return None
             from .append import intent_path
+            from .deletion import intent_path as deletion_intent_path
             recovery_git = shared.GitSession(sdir)
-            if intent_path(recovery_git).exists():
+            if (intent_path(recovery_git).exists()
+                    or deletion_intent_path(recovery_git).exists()):
                 with self._head_file_lock(recovery_git):
                     pass
                 sdir = recovery_git.path
@@ -285,6 +287,8 @@ class StorageOperations:
                 git.path = current
             from .append import recover
             recover(self, git)
+            from .deletion import recover as recover_deletion
+            recover_deletion(git)
             yield
 
 

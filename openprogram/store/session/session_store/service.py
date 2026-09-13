@@ -196,38 +196,8 @@ class SessionStore(IndexOperations, StorageOperations, SessionsOperations, Messa
         is responsible for ``commit_turn`` if a git commit should
         record the deletion.
         """
-        pair = self._open(session_id)
-        if pair is None:
-            return False
-        git, idx = pair
-        if node_id not in idx.nodes_by_id:
-            return False
-        with idx._lock:
-            _removed = idx.nodes_by_id.pop(node_id, None)
-            idx.nodes_by_seq = [n for n in idx.nodes_by_seq if n.id != node_id]
-            if _removed is not None:
-                idx._taken_seqs.discard(_removed.seq)
-            for parent, kids in list(idx.children_by_predecessor.items()):
-                if node_id in kids:
-                    kids.remove(node_id)
-                    if not kids:
-                        del idx.children_by_predecessor[parent]
-            for parent, kids in list(idx.children_by_caller.items()):
-                if node_id in kids:
-                    kids.remove(node_id)
-                    if not kids:
-                        del idx.children_by_caller[parent]
-            for fpath in (git.path / "history").glob(f"*-{node_id}.json"):
-                try:
-                    fpath.unlink()
-                except OSError:
-                    pass
-        branches = dict(idx.meta.get("branches") or {})
-        if node_id in branches:
-            branches.pop(node_id, None)
-            idx.set_meta(branches=branches)
-        self._persist_meta(git, idx)
-        return True
+        from .deletion import delete_nodes
+        return bool(delete_nodes(self, session_id, node_id))
 
 
     def get_branch_token_stats(
