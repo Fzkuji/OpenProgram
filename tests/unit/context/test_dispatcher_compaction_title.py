@@ -53,7 +53,7 @@ def _stub_model(max_tokens: int = 200_000,
                 context_window: int | None = None) -> Model:
     return Model(id="stub", name="stub", api="completion",
                  provider="openai", base_url="https://x",
-                 max_tokens=max_tokens,
+                 max_tokens=min(4096, max_tokens // 8),
                  context_window=context_window or max_tokens)
 
 
@@ -381,10 +381,10 @@ def test_compaction_recommended_fires_when_branch_large(
     """With a tiny context_window stub + a few seeded messages, the
     signal should fire after the next turn."""
     monkeypatch.setattr(D, "_resolve_model",
-                        lambda profile, override=None: _stub_model(max_tokens=500))
+                        lambda profile, override=None: _stub_model(max_tokens=12000))
 
-    # Seed 50 large messages so the active branch easily crosses
-    # the 70% threshold of a 500-token window.
+    # Seed history; reported usage below drives the recommendation independently
+    # of the estimated preflight input budget.
     tmp_db.create_session("c1", "main")
     last = None
     for i in range(50):
@@ -398,10 +398,10 @@ def test_compaction_recommended_fires_when_branch_large(
     tmp_db.set_head("c1", last)
 
     captured: list[dict] = []
-    # Report 400 input tokens on the assistant turn — crosses 70% of
-    # the 500-token window stub so engine.after_turn emits the
+    # Report 10000 input tokens on the assistant turn — crosses 70% of
+    # the 12000-token window stub so engine.after_turn emits the
     # recommendation envelope.
-    fake = make_text_stream("ok", input_tokens=400)
+    fake = make_text_stream("ok", input_tokens=10000)
     orig = D._run_loop_blocking
 
     def _w(*, req, history, on_event, cancel_event, **_):
@@ -424,7 +424,7 @@ def test_compaction_recommended_fires_when_branch_large(
     # The legacy ``branch_messages`` field is gone — engine now reasons
     # in tokens, not message counts.
     assert recs[0]["data"]["budget_pct"] >= 0.70
-    assert recs[0]["data"]["context_window"] == 500
+    assert recs[0]["data"]["context_window"] == 12000
 
 
 def test_compaction_signal_silent_under_threshold(tmp_db: SessionDB) -> None:

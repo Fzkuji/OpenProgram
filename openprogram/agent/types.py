@@ -6,7 +6,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, AsyncGenerator, Awaitable, Callable, Literal, Protocol, Union
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import PrivateAttr, BaseModel, Field, model_validator
 
 from openprogram.providers.types import (
     AssistantMessageEvent,
@@ -141,6 +141,7 @@ class AgentContext(BaseModel):
     # §7). Empty string = nothing recalled. The dispatcher supplies it (it
     # also stamps it on the user node); the loop falls back to recalling it
     # itself for entry points that don't.
+    _request_compactor: Any = PrivateAttr(default=None)
     memory_prefetch: str | None = None
     # Resolved immutable runtime contract used by durable safe points.  This
     # is metadata only; executable tool callbacks never enter the context.
