@@ -32,12 +32,14 @@ def register(app):
                 return JSONResponse(content={"error": "GoalNotResumable"}, status_code=409)
             try:
                 goal_module.check_goal_preconditions(goal, payload.get("expected"))
-                invocation = goal_module._resume_invocation(goal, session_id)
+                from openprogram.programs.workflow.goal import chat
+                goal = chat.resume(session_id, payload.get("expected"))
+                execution = chat.start_from_controls(session_id)
             except ValueError as exc:
                 return JSONResponse(content={"error": str(exc)}, status_code=409)
             return JSONResponse(content={
                 "goal": goal,
-                "invoke": invocation,
+                "execution": execution,
             })
         try:
             goal = goal_module.apply_goal_action(
@@ -59,7 +61,9 @@ def register(app):
             and goal.get("phase") == "answer_received"
         ):
             try:
-                response["invoke"] = goal_module._resume_invocation(goal, session_id)
+                from openprogram.programs.workflow.goal import chat
+                response["goal"] = chat.resume(session_id)
+                response["execution"] = chat.start_from_controls(session_id)
             except goal_module.GoalConflictError as exc:
                 response["resume_error"] = str(exc)
         return JSONResponse(content=response)

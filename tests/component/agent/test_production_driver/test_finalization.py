@@ -319,6 +319,41 @@ def test_finish_repair_intent_replays_after_driver_restart(tmp_path):
 
 
 
+@pytest.mark.parametrize("fail_first", [False, True])
+def test_expired_finish_repair_notifies_goal_before_deleting_intent(tmp_path, monkeypatch, fail_first):
+    from openprogram.execution.control import RuntimeControlService
+    from openprogram.execution.driver import DriverRegistry
+    from openprogram.programs.workflow.goal import chat
+
+    store, execution = _admitted(tmp_path, execution_id="expired-goal-finish")
+    clock = [100.0]
+    attempts = AttemptStore(store, clock=lambda: clock[0])
+    attempt, leased = attempts.lease(execution.execution_id,
+                                    expected_version=execution.status_version,
+                                    owner_id="agent-owner", ttl_seconds=30)
+    active, running = attempts.activate(attempt.attempt_id, generation=attempt.generation,
+                                       expected_execution_version=leased.status_version)
+    store.upsert_finish_repair(execution_id=execution.execution_id, attempt_id=active.attempt_id,
+                              generation=active.generation, expected_version=running.status_version,
+                              target=ExecutionStatus.COMPLETED.value, outcome="completed", reason_code=None)
+    calls = []
+    def notify(_store, completed):
+        calls.append(completed.execution_id)
+        assert completed.status is ExecutionStatus.COMPLETED
+        if fail_first and len(calls) == 1:
+            raise RuntimeError("temporary Goal storage failure")
+    monkeypatch.setattr(chat, "after_terminal", notify)
+    clock[0] = 131.0
+    service = RuntimeControlService(store, attempts, DriverRegistry())
+    assert service.replay_finish_repairs() == (0 if fail_first else 1)
+    if fail_first:
+        assert len(store.list_finish_repairs()) == 1
+        assert service.replay_finish_repairs() == 1
+    assert len(calls) == (2 if fail_first else 1)
+    assert not store.list_finish_repairs()
+    assert service.replay_finish_repairs() == 0
+
+
 def test_finish_repair_replay_binds_current_cancel_command(tmp_path):
     from openprogram.execution.control import RuntimeControlService
     from openprogram.execution.driver import DriverRegistry
@@ -687,4 +722,3 @@ def test_iteration_exhaustion_finishes_canonical_execution_as_failed(tmp_path):
     assert result.failed
     assert "iteration limit" in result.error
     assert store.get_execution(execution.execution_id).status is ExecutionStatus.FAILED
-

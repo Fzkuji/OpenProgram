@@ -676,6 +676,55 @@ async def handle_chat(ws, cmd: dict):
         except Exception:
             _local_res = None
         if _local_res is not None:
+            _validated_surface = None
+            if surface_ref is not None:
+                _surface_window = surface_ref.get("window_id")
+                _surface_tab = surface_ref.get("tab_id")
+                from openprogram.webui.ws_actions import webtab
+                _surface_version_valid = (
+                    type(surface_ref.get("version")) is int
+                    and surface_ref.get("version") == 1
+                )
+                _surface_tab_valid = (
+                    _surface_tab is None
+                    or (
+                        isinstance(_surface_tab, str)
+                        and bool(_surface_tab)
+                    )
+                )
+                _surface_window_owned = (
+                    isinstance(_surface_window, str)
+                    and bool(_surface_window)
+                    and any(
+                        owner is ws and window_id == _surface_window
+                        for owner, window_id, _revision
+                        in webtab.registered_desktop_windows()
+                    )
+                )
+                if not (
+                    _surface_version_valid
+                    and _surface_tab_valid
+                    and _surface_window_owned
+                ):
+                    await ws.send_text(json.dumps({
+                        "type": "chat_response",
+                        "data": {
+                            "type": "error",
+                            "session_id": session_id,
+                            "code": "page_context_stale",
+                            "content": (
+                                "The submitted Page context is stale or "
+                                "belongs to another desktop window."
+                            ),
+                        },
+                    }))
+                    return
+                _validated_surface = {
+                    "version": 1,
+                    "window_id": _surface_window,
+                }
+                if _surface_tab:
+                    _validated_surface["tab_id"] = _surface_tab
             try:
                 _out = await asyncio.to_thread(
                     _local_res.local_handler,
@@ -712,55 +761,6 @@ async def handle_chat(ws, cmd: dict):
                 from openprogram.webui.routes.chat import (
                     run_agentic_function_call,
                 )
-                _validated_surface = None
-                if surface_ref is not None:
-                    _surface_window = surface_ref.get("window_id")
-                    _surface_tab = surface_ref.get("tab_id")
-                    from openprogram.webui.ws_actions import webtab
-                    _surface_version_valid = (
-                        type(surface_ref.get("version")) is int
-                        and surface_ref.get("version") == 1
-                    )
-                    _surface_tab_valid = (
-                        _surface_tab is None
-                        or (
-                            isinstance(_surface_tab, str)
-                            and bool(_surface_tab)
-                        )
-                    )
-                    _surface_window_owned = (
-                        isinstance(_surface_window, str)
-                        and bool(_surface_window)
-                        and any(
-                            owner is ws and window_id == _surface_window
-                            for owner, window_id, _revision
-                            in webtab.registered_desktop_windows()
-                        )
-                    )
-                    if not (
-                        _surface_version_valid
-                        and _surface_tab_valid
-                        and _surface_window_owned
-                    ):
-                        await ws.send_text(json.dumps({
-                            "type": "chat_response",
-                            "data": {
-                                "type": "error",
-                                "session_id": session_id,
-                                "code": "page_context_stale",
-                                "content": (
-                                    "The submitted Page context is stale or "
-                                    "belongs to another desktop window."
-                                ),
-                            },
-                        }))
-                        return
-                    _validated_surface = {
-                        "version": 1,
-                        "window_id": _surface_window,
-                    }
-                    if _surface_tab:
-                        _validated_surface["tab_id"] = _surface_tab
                 _run_options = {}
                 if _validated_surface:
                     _run_options["origin_window_id"] = _validated_surface[

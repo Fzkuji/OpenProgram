@@ -16,7 +16,7 @@ class _FakeWS:
         self.sent.append(json.loads(payload))
 
 
-def test_web_goal_set_dispatches_the_registered_goal_workflow(
+def test_web_goal_set_saves_chat_state_without_forced_workflow(
     tmp_path, monkeypatch,
 ) -> None:
     from openprogram.agent.session_db import SessionDB
@@ -49,6 +49,10 @@ def test_web_goal_set_dispatches_the_registered_goal_workflow(
         }
 
     monkeypatch.setattr(chat_routes, "run_agentic_function_call", fake_run)
+    async def fake_activate(self, admission, **kwargs):
+        old_chat_loop_started.set()
+        return None
+    monkeypatch.setattr("openprogram.agent.production_driver.CanonicalAgentAdapter.activate", fake_activate)
     monkeypatch.setattr(
         server,
         "_execute_in_context",
@@ -71,26 +75,11 @@ def test_web_goal_set_dispatches_the_registered_goal_workflow(
         },
     }))
 
-    assert calls == [(
-        "goal",
-        {
-            "prompt": "tests pass",
-            "context_mode": "session",
-        },
-        "web-goal",
-        {
-            "origin_window_id": "window-1",
-            "surface_ref": {
-                "version": 1,
-                "window_id": "window-1",
-                "tab_id": "tab-submitted",
-            },
-        },
-    )]
-    assert goal_pkg.load_goal("web-goal") is None
-    assert old_chat_loop_started.wait(0.2) is False
-    ack = [frame for frame in ws.sent if frame.get("type") == "chat_ack"]
-    assert ack and ack[-1]["data"]["function_run"] is True
+    assert calls == []
+    assert goal_pkg.load_goal("web-goal")["execution_mode"] == "chat"
+    assert goal_pkg.load_goal("web-goal")["text"] == "tests pass"
+    assert old_chat_loop_started.wait(2)
+    assert not any(frame.get("data", {}).get("function_run") for frame in ws.sent)
 
     calls.clear()
     asyncio.run(handle_chat(ws, {
@@ -140,6 +129,8 @@ def test_goal_http_answer_persists_and_returns_resume_invocation(
     })
     app = FastAPI()
     goal_routes.register(app)
+    monkeypatch.setattr("openprogram.programs.workflow.goal.chat.start_from_controls",
+                        lambda sid: {"execution_id": "chat-execution"})
     client = TestClient(app)
 
     shown = client.get("/api/sessions/web-goal/goal")
@@ -152,9 +143,10 @@ def test_goal_http_answer_persists_and_returns_resume_invocation(
     )
     assert answered.status_code == 200
     body = answered.json()
-    assert body["goal"]["status"] == "paused"
+    assert body["goal"]["status"] == "active"
     assert body["goal"]["pending_answers"][0]["answer"] == "Knowledge editing"
-    assert body["invoke"]["kwargs"]["resume"] is True
+    assert body["execution"]["execution_id"] == "chat-execution"
+    assert "invoke" not in body
 
 
 def test_goal_http_answer_resumes_newly_unblocked_work_with_other_questions_pending(
@@ -179,6 +171,8 @@ def test_goal_http_answer_resumes_newly_unblocked_work_with_other_questions_pend
     })
     app = FastAPI()
     goal_routes.register(app)
+    monkeypatch.setattr("openprogram.programs.workflow.goal.chat.start_from_controls",
+                        lambda sid: {"execution_id": "chat-execution"})
     client = TestClient(app)
 
     answered = client.post(
@@ -187,8 +181,9 @@ def test_goal_http_answer_resumes_newly_unblocked_work_with_other_questions_pend
     )
     assert answered.status_code == 200
     body = answered.json()
-    assert body["goal"]["status"] == "paused"
-    assert body["invoke"]["name"] == "goal"
+    assert body["goal"]["status"] == "active"
+    assert body["execution"]["execution_id"] == "chat-execution"
+    assert "invoke" not in body
     assert body["goal"]["questions"][1]["status"] == "pending"
 
 

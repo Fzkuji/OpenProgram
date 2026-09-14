@@ -99,7 +99,13 @@ class ExecutionOperations:
         token_token = _current_token.set(bound) if bound is not None else None
         job_tokens: list[shared.Any] = []
         worktree_token = None
+        from contextlib import ExitStack
+        goal_context = ExitStack()
         try:
+            if not isinstance(request, shared.ForcedToolActivation) and request.source in {"web", "tui", "acp"}:
+                from openprogram.programs.workflow.goal.chat import turn_context
+                goal_context.enter_context(turn_context(request.session_id, attempt.execution_id,
+                                                      getattr(request, "goal_context", None)))
             job_context = getattr(request, "_job_context", None)
             if isinstance(job_context, shared.Mapping):
                 from openprogram.agent.job.runner import (
@@ -297,6 +303,7 @@ class ExecutionOperations:
                 raise shared.AgentDriverError("invalid_runner", "Agent turn runner must be synchronous")
             return result
         finally:
+            goal_context.close()
             if worktree_token is not None:
                 from openprogram.worktree.context import reset_worktree
 
@@ -392,4 +399,3 @@ class ExecutionOperations:
             }})
         except Exception:
             shared._log.debug("failed to publish forced system access wait", exc_info=True)
-

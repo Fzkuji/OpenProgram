@@ -92,6 +92,9 @@ DEFAULT_TOOLS: list[str] = [
     "todo_create",
     "todo_update",
     "todo_list",
+    "create_goal",
+    "get_goal",
+    "update_goal",
     # The load verb for <available_skills>. The listing carries a capped
     # summary; this pulls the SKILL.md body when the model picks one.
     # Deferred (below) — the listing already names every skill, so the

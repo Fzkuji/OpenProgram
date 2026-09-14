@@ -52,7 +52,7 @@ def test_goal_records_execution_owner_not_function_call(tmp_path, monkeypatch, r
     assert owners and set(owners) == {owner}
 
 
-def test_goal_set_builds_the_single_workflow_call_without_writing_state(
+def test_goal_set_saves_state_and_returns_normal_chat_input(
     tmp_path, monkeypatch,
 ) -> None:
     from openprogram.agent.session_db import SessionDB
@@ -63,15 +63,9 @@ def test_goal_set_builds_the_single_workflow_call_without_writing_state(
     monkeypatch.setattr(goal_pkg, "_db", lambda: db)
     result = goal_pkg.handle_goal_command("s1", "tests pass")
 
-    assert goal_pkg.load_goal("s1") is None
-    assert result["invoke"] == {
-        "name": "goal",
-        "kwargs": {
-            "prompt": "tests pass",
-            "context_mode": "session",
-        },
-    }
-    assert result["send_text"] is None
+    assert goal_pkg.load_goal("s1")["text"] == "tests pass"
+    assert "invoke" not in result
+    assert result["send_text"] == "tests pass"
 
 
 def test_one_goal_function_selects_only_the_initial_context(

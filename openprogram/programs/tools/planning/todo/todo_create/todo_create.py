@@ -47,6 +47,8 @@ def _todo_create_impl(subject: str, description: str = "", blocked_by: str = "")
             return f"[todo_create error] blocked_by refers to unknown todo id(s): {', '.join(unknown)}"
         now = time.time()
         todo_id = shared.next_id(todos)
+        from openprogram.programs.workflow.goal import chat
+        goal_identity = chat.current_identity() or {}
         todos.append({
             "id": todo_id,
             "subject": subject,
@@ -56,6 +58,8 @@ def _todo_create_impl(subject: str, description: str = "", blocked_by: str = "")
             "blocked_by": deps,
             "created_at": now,
             "updated_at": now,
+            **({"goal_id": goal_identity["goal_id"],
+                "goal_revision": goal_identity["revision"]} if goal_identity else {}),
         })
         shared.save(sid, todos)
     return f"Todo #{todo_id} created: {subject}"

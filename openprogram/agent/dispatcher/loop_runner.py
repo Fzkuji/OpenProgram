@@ -266,6 +266,8 @@ def resolve_agent_runtime(
         else _dispatcher._load_agent_profile(req.agent_id)
     )
     tools = _resolve_tools(agent_profile, req.tools_override, source=req.source)
+    if req.source in {"web", "tui", "acp"} and saved_runtime_contract is None:
+        tools = [tool for tool in tools or [] if tool.name != "goal"]
     # Page inventory is transient. Keep this turn's browser-tool selection
     # through reconnects; each actual browser action still validates access.
     saved_web_use = None if saved_runtime_contract is None else any(
@@ -303,6 +305,9 @@ def resolve_agent_runtime(
         plan_mode=req.permission_mode == "plan" or _plan_mode.is_plan_mode(req.session_id),
     )
     system_prompt = recordable_prompt
+    if saved_system_prompt is None and req.source != "agent_spawn":
+        from openprogram.programs.workflow.goal.chat import instructions
+        system_prompt += instructions(req.session_id)
     surface_prompt = _render_surface_context(
         req.surface_context, web_use_enabled=web_use_enabled,
     )

@@ -360,7 +360,7 @@ def _emit_goal_update(on_event: Optional[Callable], session_id: str,
         "type": "goal_update",
         "session_id": session_id,
         "goal": {k: goal.get(k) for k in (
-            "schema_version", "goal_id", "run_id", "revision", "version",
+            "schema_version", "execution_mode", "goal_id", "run_id", "revision", "version",
             "text", "spec", "checklist", "status", "phase", "turns_used",
             "max_turns", "budget", "usage", "checkpoint", "execution_id",
             "recoverable", "pause_reason", "stop_requested", "last_reason", "last_question",

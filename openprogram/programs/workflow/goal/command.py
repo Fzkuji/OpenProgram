@@ -18,22 +18,15 @@ def _cancel_execution(session_id: str, goal: dict) -> None:
     _goal.request_goal_stop(goal, session_id)
 
 
-def _resume_invocation(goal: dict, session_id: str = "") -> dict:
-    _goal.require_goal_execution_finished(goal, session_id)
-    return {
-        "name": "goal",
-        "kwargs": {
-            "prompt": goal.get("text") or "",
-            "context_mode": "session",
-            "resume": True,
-            "expected_goal": {key: goal.get(key) for key in (
-                "goal_id", "revision", "run_id", "version",
-            )},
-        },
-    }
-
-
 def apply_goal_action(session_id: str, action: str, **values) -> dict:
+    from . import chat
+    if (goals_state := _goal.load_goal(session_id)) and goals_state.get("execution_mode") != "chat":
+        return _apply_goal_action(session_id, action, **values)
+    with chat.locked(session_id):
+        return _apply_goal_action(session_id, action, **values)
+
+
+def _apply_goal_action(session_id: str, action: str, **values) -> dict:
     """Apply one UI/TUI Goal action and return the committed projection."""
     goal = _goal.load_goal(session_id)
     if not goal:
@@ -205,7 +198,7 @@ def handle_goal_command(session_id: str, raw_args: str) -> dict:
     """Report unavailable storage without interpreting it as an absent Goal."""
     try:
         return _handle_goal_command(session_id, raw_args)
-    except (_goal.GoalStateUnavailable, _goal.GoalConflictError, _goal.GoalStopUnconfirmed) as exc:
+    except (_goal.GoalStateUnavailable, ValueError, _goal.GoalStopUnconfirmed) as exc:
         return {"text": str(exc), "send_text": None}
 
 
@@ -273,11 +266,10 @@ def _handle_goal_command(session_id: str, raw_args: str) -> dict:
         goal = _goal.load_goal(session_id)
         if not goal or goal.get("status") not in _goal.RESUMABLE_STATUSES:
             return {"text": "No resumable Goal.", "send_text": None}
-        return {
-            "text": "Resuming Goal from its latest checkpoint.",
-            "send_text": None,
-            "invoke": _resume_invocation(goal, session_id),
-        }
+        from . import chat
+        chat.resume(session_id)
+        return {"text": "Resuming Goal in this conversation.",
+                "send_text": "Continue the active Goal and its todo plan."}
     if head == "answer":
         answer_args = args[len(args.split()[0]):].strip()
         pending = [
@@ -301,8 +293,10 @@ def _handle_goal_command(session_id: str, raw_args: str) -> dict:
         }
         if answered.get("status") == "paused" and answered.get("phase") == "answer_received":
             try:
-                result["invoke"] = _resume_invocation(answered, session_id)
-            except _goal.GoalConflictError as exc:
+                from . import chat
+                chat.resume(session_id)
+                result["send_text"] = "Continue the active Goal using the saved user answer."
+            except (ValueError, _goal.GoalConflictError) as exc:
                 result["text"] = f"Goal answer saved. {exc}"
         elif answered.get("status") == "paused":
             result["text"] = "Goal answer saved; the user-paused Goal remains paused."
@@ -317,17 +311,9 @@ def _handle_goal_command(session_id: str, raw_args: str) -> dict:
             return {"text": str(exc), "send_text": None}
         return {"text": f"Goal revision {edited.get('revision')} saved. Use /goal resume to continue.", "send_text": None}
 
-    return {
-        "text": f"Starting Goal Workflow with session context: {args}",
-        "send_text": None,
-        "invoke": {
-            "name": "goal",
-            "kwargs": {
-                "prompt": args,
-                "context_mode": "session",
-            },
-        },
-    }
+    from . import chat
+    chat.create(session_id, args)
+    return {"text": "Goal saved; working in this conversation.", "send_text": args}
 
 
 def _command_options(parts, allowed):

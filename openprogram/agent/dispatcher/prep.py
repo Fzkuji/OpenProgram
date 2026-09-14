@@ -144,7 +144,7 @@ def prepare_turn(
     # the natural "You" message on that branch's HEAD path. On main,
     # the linear_history walk doesn't reach it (it's only on the sub
     # branch chain), so leaving it visible doesn't pollute main.
-    if req.source in {"job_followup", "merge_turn"}:
+    if req.source in {"job_followup", "merge_turn"} or req.goal_trigger:
         user_msg["display"] = "runtime"
     if memory_prefetch:
         # Replay reproduces the exact wire user message from the node.

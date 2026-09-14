@@ -231,6 +231,19 @@
 </aside>
 
 <main>
+  <section id="chat-goal-contract">
+    <h2>聊天 Goal 与工作计划</h2>
+    <p>Goal 是会话的持久目标。工作由当前聊天 agent 执行；harness 在普通回合结束、会话空闲时检查状态，并为 active Goal 提交下一轮普通聊天。长时间运行的 Goal Workflow 不再作为聊天入口。下述设计的实现状态集中记录在文末。</p>
+    <table><thead><tr><th>职责</th><th>行为</th><th>验收边界</th></tr></thead><tbody>
+      <tr><td>目标</td><td>create_goal/get_goal/update_goal 仅管理状态；用户可通过 /goal 和现有详情控制开始、暂停、恢复和取消。</td><td>开始和恢复不生成强制 goal 函数调用。</td></tr>
+      <tr><td>计划</td><td>当前 agent 用 todo_create/todo_update/todo_list 维护步骤。todo 关联 goal_id 和 revision；目标原文独立保存。</td><td>旧目标的 todo 不证明新目标完成；勾选不是完成证据。</td></tr>
+      <tr><td>完成</td><td>与 Codex 一样，由当前 agent 按完整目标审查实际证据后更新状态。harness 校验身份、状态、预算和未完成 todo。</td><td>不在每轮自动创建独立 judge；结构校验不能证明语义完成。</td></tr>
+      <tr><td>续轮</td><td>已提交的普通聊天结束后，active Goal 在 idle 时获得一个新的普通聊天 execution，沿用来源、权限和工具限制。</td><td>暂停、取消、错误、等待和预算用尽不自动续轮；重复结束通知不重复启动。</td></tr>
+      <tr><td>控制</td><td>Goal 修改与续轮准入使用共享会话互斥及版本检查。用户消息遵循现有 steer/queue 选择。</td><td>旧 execution 仅补记实际用量，不改变新 revision 的完成状态或续轮；恢复不重置累计用量。</td></tr>
+    </tbody></table>
+    <p>参考源码：<a href="https://github.com/openai/codex/blob/main/codex-rs/ext/goal/src/extension.rs">GoalExtension 生命周期</a>、<a href="https://github.com/openai/codex/blob/main/codex-rs/ext/goal/src/runtime.rs">空闲续轮与核算</a>、<a href="https://github.com/openai/codex/blob/main/codex-rs/ext/goal/src/spec.rs">状态工具</a>、<a href="https://github.com/openai/codex/blob/main/codex-rs/ext/goal/templates/goals/continuation.md">完成审查与计划提示</a>。采用普通聊天续轮和 agent 自审；保留 OpenProgram 的权限、CAS 和显式恢复机制；不复制 Rust extension 框架或另建通用 scheduler。</p>
+    <p>兼容边界：历史 Workflow 记录可阅读；现存 Python Workflow 在迁移期间保留原合同，聊天入口明确切换。外部事件自动唤醒、provider 工具协议修复和跨主机调度分别处理。</p>
+  </section>
   <details class="mobile-nav">
     <summary aria-label="打开文档目录"></summary>
     <nav class="mobile-links" aria-label="移动端文档目录">
@@ -267,7 +280,8 @@
     </section>
 
     <section id="control-loop">
-      <h2>Goal 总控制流程</h2>
+      <h2>兼容 Python Workflow 的控制流程</h2>
+      <p>本节描述保留的 Python <code>goal()</code> Workflow；普通聊天使用页首的聊天 Goal 合同，不经过以下 refine/work/judge 循环。</p>
       <p>四个原生实现都包含“工作完成后决定是否再开一轮”，差别集中在状态由谁保存、完成由谁判断，以及等待是否会暂停执行。</p>
       <div class="diagram-shell">
         <div class="diagram-head">
@@ -1362,7 +1376,8 @@
     </section>
 
     <section id="target-contract">
-      <h2>OpenProgram 当前合同与剩余扩展</h2>
+      <h2>兼容 Python Workflow 的合同与剩余扩展</h2>
+      <p>本节的独立判定器、角色配置和恢复检查点属于 Python Workflow。聊天入口使用同一状态存储及预算控制，但不调用此控制器。</p>
       <p>Goal 不新增第二套 agent loop。当前 controller 位于现有 session/dispatcher 之上，工作仍通过公开 <code>agent()</code> 执行；图中 <code>implemented</code> 是当前代码，<code>target</code> 是尚未实现的扩展。</p>
       <figure class="archify-figure">
         <div class="archify-surface"><svg class="archify-inline" viewBox="0 0 1240 800" role="img" lang="zh-CN" aria-labelledby="goal-runtime-archify-diagram-title archify-diagram-description" data-preset="classic" data-quality-profile="showcase">
@@ -1662,7 +1677,8 @@
     </section>
 
     <section id="surfaces">
-      <h2>Web 与 TUI 使用同一 Goal 操作合同</h2>
+      <h2>Goal 控制界面与 Workflow 兼容字段</h2>
+      <p>Web 与 TUI 的开始、恢复均提交普通聊天。下方角色字段仅用于兼容 Workflow 记录；聊天 Goal 隐藏角色配置，使用当前会话模型。</p>
       <p>底部 Goal 状态条是详情入口，不是静态标签。重载页面或 worker 重启后，它从持久化 projection 恢复目标文本、状态、checklist、用量与最后原因；若先前 execution 已丢失，则显示 <code>paused_recoverable</code>，不显示为仍在运行。</p>
       <figure class="archify-figure">
         <div class="archify-surface"><svg class="archify-inline" viewBox="0 0 1166 652" role="img" lang="zh-CN" aria-labelledby="goal-surfaces-archify-diagram-title goal-surfaces-archify-diagram-description" data-preset="classic" data-quality-profile="showcase">
@@ -1967,6 +1983,7 @@ Goal answer saved; resuming from the latest checkpoint.</pre>
 
     <section id="status">
       <h2>实现状态与证据边界</h2>
+      <p>聊天 Goal 与 todo 集成：设计已明确，代码、独立审查与安装版验收尚未完成。本文其他段落的 Workflow 实现记录描述迁移前代码，不作为新聊天行为的完成证据。</p>
       <div class="framework-grid">
         <div class="card"><h3>当前代码已经具备</h3><ul><li>单 prompt Goal、Working Agent 与独立 inspection judge。</li><li>schema v3 版本化 session 快照、goal/run ID、checkpoint、CAS 写入和旧数据规范化。</li><li>typed stop states、round/token/active-time/cost 预算、checklist stall 与 idle-spin 检测。</li><li>异步问题队列、逐项回答、边界消费、有人/无人值守判定策略。</li><li>Web Goal dialog、TUI 操作、页面重载 hydration 与 worker 重启后的可恢复暂停。</li><li>五张 Archify typed source 生成并以内联 SVG 写入本文档。</li></ul></div>
         <div class="card"><h3>仍未实现或尚未验收</h3><ul><li>deterministic gate executor、外部事件自动 wake handle 和 append-only evidence repository。</li><li>跨主机分布式 lease；同机共享目录的 Goal ownership 已实现。</li><li>默认 App 的已验收范围见上文；异步回答的完整界面操作与无障碍树尚未验收。</li><li>Goal 主体与运行修复已合入主分支并包含在默认 App；执行树摘要缺陷及通用跨进程启动恢复风险尚未修复。</li></ul></div>

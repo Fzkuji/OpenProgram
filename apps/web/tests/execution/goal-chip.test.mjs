@@ -385,8 +385,8 @@ test("a failed resume acknowledgement is shown in the dialog", async () => {
   runtimeState.conversations.s1.goal = snapshot(1, "paused");
   const mutate = api.mutateGoal;
   const run = api.runFunction;
-  api.mutateGoal = async () => ({ goal: snapshot(1, "paused"), invoke: { name: "goal", kwargs: {} } });
-  api.runFunction = async () => ({ error: "Execution could not start" });
+  api.mutateGoal = async () => { throw new Error("Execution could not start"); };
+  api.runFunction = async () => { throw new Error("Resume must not invoke a function"); };
   const view = await mount();
   try {
     await view.open();

@@ -157,8 +157,9 @@ def test_command_set_status_and_clear_use_the_workflow_state(
     db: SessionDB, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     invocation = G.handle_goal_command("s1", "tests pass")
-    assert invocation["invoke"]["name"] == "goal"
-    assert G.load_goal("s1") is None
+    assert "invoke" not in invocation
+    assert invocation["send_text"] == "tests pass"
+    assert G.load_goal("s1")["execution_mode"] == "chat"
 
     cancelled: list[tuple[str, str | None]] = []
     monkeypatch.setattr(
@@ -166,6 +167,7 @@ def test_command_set_status_and_clear_use_the_workflow_state(
         lambda goal, sid: cancelled.append((sid, goal.get("execution_id"))),
     )
     G.save_goal("s1", {
+        **G.load_goal("s1"),
         "text": "tests pass",
         "status": "active",
         "execution_id": "goal-call",
@@ -617,9 +619,11 @@ def test_tui_status_lists_all_pending_questions_and_can_answer_by_id(
     assert "venue: Which venue?" in status
 
     result = G.handle_goal_command("s1", "answer venue NeurIPS")
-    assert result["invoke"]["name"] == "goal"
+    assert result["send_text"]
+    assert "invoke" not in result
     stored = G.load_goal("s1")
-    assert stored["status"] == "paused"
+    assert stored["status"] == "active"
+    assert stored["execution_mode"] == "chat"
     assert stored["pending_answers"][0]["question_id"] == "venue"
 
 
@@ -1037,8 +1041,8 @@ def test_required_answer_waits_instead_of_stalling(
     question = stored["questions"][0]
     assert question["status"] == "pending"
     response = G.handle_goal_command("s1", f"answer {question['id']} yes")
-    assert response["invoke"]["name"] == "goal"
-    assert response["invoke"]["kwargs"]["resume"] is True
+    assert response["send_text"]
+    assert "invoke" not in response
 
 
 def test_tool_use_resets_the_idle_counter(

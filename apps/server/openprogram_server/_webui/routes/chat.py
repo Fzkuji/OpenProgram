@@ -355,6 +355,16 @@ def run_agentic_function_call(
             "status_code": 409,
         }
     msg_id = uuid.uuid4().hex[:8]
+    if name == "goal":
+        from openprogram.programs.workflow.goal import chat
+        try:
+            if kwargs.get("resume"):
+                chat.resume(session_id, kwargs.get("expected_goal"))
+            else:
+                chat.create(session_id, str(kwargs.get("prompt") or ""), kwargs.get("max_tokens"))
+            return chat.start_from_controls(session_id)
+        except ValueError as exc:
+            return {"error": str(exc), "status_code": 409}
     # Claim the same atomic session occupancy used by chat before mutating
     # the DAG. The reservation covers parent-side node creation; activation
     # below hands ownership to the direct function worker.

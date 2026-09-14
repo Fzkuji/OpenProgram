@@ -22,6 +22,7 @@ import { useTranslation } from "@/lib/i18n";
 import styles from "./goal-chip.module.css";
 
 export interface GoalState {
+  execution_mode?: string;
   schema_version?: number;
   roles?: Record<"work" | "judge", {
     provider: string;
@@ -263,10 +264,6 @@ function GoalDetails({ sessionId, goal }: { sessionId: string; goal: GoalState }
         if (mounted.current) setStopError(result.stop_error);
         return;
       }
-      if ((action === "resume" || action === "answer") && result.invoke && !unsaved) {
-        const response = await api.runFunction(result.invoke.name, { ...result.invoke.kwargs, session_id: sessionId });
-        if (response.error) throw new Error(response.error);
-      }
     } catch (cause) {
       if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause));
       if (cause instanceof HttpError && cause.status === 409) {
@@ -333,7 +330,7 @@ function GoalDetails({ sessionId, goal }: { sessionId: string; goal: GoalState }
             <div><span>{text("Active time", "执行时间")}</span><strong>{formatElapsed(goal.usage?.active_elapsed_s)}</strong></div>
           </div>
 
-          {goal.roles ? <section className={styles.roles} aria-label={text("Goal roles", "Goal 角色")}>
+          {goal.roles && goal.execution_mode !== "chat" ? <section className={styles.roles} aria-label={text("Goal roles", "Goal 角色")}>
             {(["work", "judge"] as const).map((name) => {
               const role = goal.roles![name];
               if (!role) return <div key={name}>{name}: {text("Unavailable", "不可用")}</div>;

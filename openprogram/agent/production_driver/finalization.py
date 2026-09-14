@@ -363,6 +363,17 @@ class FinalizationOperations:
 
 
     def _resolve_finish_retry(self, key: tuple[str, str, int]) -> None:
+        if self.executions is not None:
+            execution = self.executions.get_execution(key[0])
+            if execution is not None and execution.status in shared.TERMINAL_EXECUTION_STATUSES:
+                try:
+                    from openprogram.programs.workflow.goal.chat import after_terminal
+                    after_terminal(self.executions, execution)
+                except Exception:
+                    # Keep the durable finish intent until Goal accounting
+                    # and any eligible idle admission can be retried.
+                    shared._log.exception("Goal completion notification requires retry")
+                    return
         self._delete_persisted_finish(key)
         with self._handles_lock:
             self._pending_finishes.pop(key, None)
@@ -430,4 +441,3 @@ class FinalizationOperations:
                 registry=self._new_registry(),
             )
         return self.control_service
-

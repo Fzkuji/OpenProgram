@@ -403,7 +403,11 @@ class CanonicalAgentEntry:
         self.driver = driver
         self.control = driver._control_service()
 
-    def admit(
+    def admit(self, **kwargs) -> CanonicalAgentAdmission:
+        from openprogram.programs.workflow.goal.chat import admit
+        return admit(self, **kwargs)
+
+    def _admit_without_goal(
         self,
         *,
         session_id: str,
@@ -642,4 +646,3 @@ __all__ = [
     "normalize_agent_turn_payload",
     "AgentProductionDriver",
 ]
-

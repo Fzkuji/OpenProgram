@@ -1,9 +1,12 @@
-"""The single Goal Workflow and its ``/goal`` command adapter.
+"""Persistent chat Goals and the compatible Python Goal Workflow.
 
-Programs and Python call :func:`goal` with isolated pre-call context.
-``/goal <prompt>`` invokes the same function with the current session
-view as initial evidence. The function owns refinement, work rounds,
-judgment, the asynchronous question queue, state writes and terminal behavior.
+Interactive ``/goal`` and Goal controls save objective state and execute normal
+chat turns. ``chat`` integrates admission, terminal accounting and continuation;
+``chat_tools`` exposes short create/get/update operations. Existing todo items
+can carry the Goal identity and revision. The working chat verifies completion.
+
+Programs and Python may still call :func:`goal` with isolated pre-call context.
+That compatibility Workflow owns its refinement, work rounds and judgment.
 
 Evaluation is one decision agent turn: :func:`judge_goal` (prompt in
 its docstring) reads the session's compacted context view plus the
@@ -19,10 +22,8 @@ as completion. Deterministic responsibilities are split as
 * ``state``: goal meta read / write, stop-rule constants, event fan-out
 * ``notices``: transcript system rows, terminal finisher
 
-The judge is separate from the working model on purpose: agents that
-self-report completion (Codex / Cline style) systematically declare
-victory early, so the verdict must come from outside the working
-context. Design doc:
+The independent judge belongs only to the Python Workflow, not chat Goals.
+Design doc:
 docs/reference/design/runtime/goal-framework-implementation-comparison.html.
 
 Goal state is one versioned session snapshot. It contains the objective and
@@ -38,6 +39,8 @@ these re-exports are the single authoritative binding every internal
 call site resolves against.
 """
 from __future__ import annotations
+
+from . import chat_tools as _chat_tools  # noqa: F401
 
 from openprogram.programs.workflow.goal.goal import goal  # noqa: F401
 from openprogram.programs.workflow.goal.judge import (  # noqa: F401
@@ -102,7 +105,6 @@ from openprogram.programs.workflow.goal.loop import (  # noqa: F401
     next_work_prompt,
 )
 from openprogram.programs.workflow.goal.command import (  # noqa: F401
-    _resume_invocation,
     _status_text,
     apply_goal_action,
     goal_builtin_handler,

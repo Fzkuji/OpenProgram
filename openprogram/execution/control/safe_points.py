@@ -743,9 +743,11 @@ class SafePointsOperations:
         finally:
             if execution.status in TERMINAL_EXECUTION_STATUSES:
                 self._forget_cancel_delivery(execution.execution_id)
+        if execution.status in TERMINAL_EXECUTION_STATUSES:
+            from openprogram.programs.workflow.goal.chat import after_terminal
+            after_terminal(self.executions, execution)
         return AttemptCompletion(
             execution=execution,
             attempt=ended,
             command=command,
         )
-

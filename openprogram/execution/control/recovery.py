@@ -562,6 +562,12 @@ class RecoveryOperations:
                 generation = int(repair["generation"])
                 execution = self.executions.get_execution(execution_id)
                 attempt = self.attempts.get(attempt_id)
+                if execution is not None and execution.status in TERMINAL_EXECUTION_STATUSES:
+                    try:
+                        from openprogram.programs.workflow.goal.chat import after_terminal
+                        after_terminal(self.executions, execution)
+                    except Exception:
+                        continue  # Retain this intent for the next replay.
                 if (
                     execution is None
                     or attempt is None
@@ -616,7 +622,12 @@ class RecoveryOperations:
                         command_id=command_id,
                     )
                 try:
-                    if not self._replay_expired_finish_repair(execution_id, attempt_id, generation):
+                    if self._replay_expired_finish_repair(execution_id, attempt_id, generation):
+                        completed = self.executions.get_execution(execution_id)
+                        if completed is not None and completed.status in TERMINAL_EXECUTION_STATUSES:
+                            from openprogram.programs.workflow.goal.chat import after_terminal
+                            after_terminal(self.executions, completed)
+                    else:
                         self.finish_attempt(
                             attempt_id=attempt_id,
                             generation=generation,
@@ -646,4 +657,3 @@ class RecoveryOperations:
                 )
                 repaired += 1
         return repaired
-
