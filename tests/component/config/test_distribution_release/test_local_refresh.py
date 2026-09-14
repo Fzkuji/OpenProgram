@@ -315,7 +315,7 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
     tui.parent.mkdir(parents=True)
     tui.write_text("// staged Ink bundle\n", encoding="utf-8")
     (repo / "uv.lock").write_text("", encoding="utf-8")
-    for name in ("product-runtime.json", "verify-product-runtime.py", "build-macos-runtime-app.py", "mac-runtime-main.c"):
+    for name in ("product-runtime.json", "verify-product-runtime.py", "build-macos-runtime-app.py", "mac-runtime-main.c", "restore-asar-permissions.py"):
         (release_scripts / name).write_bytes((ROOT / "scripts/release" / name).read_bytes())
     (desktop / "build").mkdir(exist_ok=True)
     (desktop / "build/icon.icns").write_bytes(b"icns")

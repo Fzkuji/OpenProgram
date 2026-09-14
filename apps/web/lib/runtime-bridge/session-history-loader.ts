@@ -45,9 +45,9 @@ useSessionStore.subscribe((state,previous)=>{
 export function seedHistoryWindow(id: string, messages: HistoryRow[], history?: HistoryPage): void {
   windows.delete(id);
   if (!history?.snapshot) return;
-  const window = new HistoryWindow();
-  window.add(messages, history, 'latest');
-  windows.set(id, window);
+  const historyWindow = new HistoryWindow();
+  historyWindow.add(messages, history, 'latest');
+  windows.set(id, historyWindow);
   trimHistoryWindows(id);
 }
 export async function loadOlderSessionHistory(id: string): Promise<void> {
@@ -107,10 +107,10 @@ export async function loadSessionHistoryWindow(id: string, direction: HistoryDir
   const known = new Set(previous?.messages.map(m=>m.id) ?? (conv.messages ?? []).map(m=>m.id));
   let messages: HistoryRow[], history: HistoryPage;
   if (page.history.snapshot) {
-    const window = previous ?? new HistoryWindow();
-    window.add(page.messages,page.history,direction, direction === 'around' ? around : anchor?.id);
-    windows.delete(id); windows.set(id,window);
-    messages=window.messages; history=window.history!;
+    const historyWindow = previous ?? new HistoryWindow();
+    historyWindow.add(page.messages,page.history,direction, direction === 'around' ? around : anchor?.id);
+    windows.delete(id); windows.set(id,historyWindow);
+    messages=historyWindow.messages; history=historyWindow.history!;
   } else {
     // Compatibility with an older server: its before-only protocol has no eviction cursors.
     const incomingIds=new Set(page.messages.map(m=>m.id));
