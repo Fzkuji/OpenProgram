@@ -126,3 +126,6 @@ apps/web/public/document-assets/
 
 # Independent report Workflow repositories
 openprogram/programs/workflow/weekly_report/*/
+
+# Local verification evidence; authoritative design lives under docs/reference/design.
+/reports/durable-tool-results.md
