@@ -1,5 +1,8 @@
 # Desktop App and built-in browser
 
+
+Local App refresh preserves permissions of unpacked native dependencies and restores execute permission on the node-pty terminal helper when an earlier refresh removed it.
+
 Each tab keeps its own Back and Forward history, beginning with its default launcher. Navigation restores pages only inside the selected tab; switching tabs adds no history. Opening the same destination from another launcher preserves both tabs independently. Choosing a new destination after Back replaces only that tab’s forward history. History is saved with the tab. Browser controls handle navigation between webpage URLs.
 
 The macOS and Windows Desktop Apps present OpenProgram as a multi-pane workspace. Each pane can hold Files, a chat, the built-in Browser, or a Terminal, and panes can be split or moved between app windows without changing the underlying session or browser tab.

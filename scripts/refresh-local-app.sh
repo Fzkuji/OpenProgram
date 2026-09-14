@@ -310,6 +310,8 @@ PY
   desktop_stage="$attempt_dir/desktop"
   desktop_asar="$attempt_dir/app.asar"
   node "$asar_cli" extract "$installed_asar" "$desktop_stage"
+  "$local_python" "$repo_root/scripts/release/restore-asar-permissions.py" \
+    "$installed_asar" "$desktop_stage"
   while IFS= read -r desktop_file; do
     test -n "$desktop_file" || continue
     source_file="$repo_root/apps/desktop/$desktop_file"
