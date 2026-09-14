@@ -1082,12 +1082,26 @@ async def handle_load_session(ws, cmd: dict):
 
         tree_data = {}  # tree Context retired — execution trace lives in SessionDB DAG nodes
         from openprogram.webui.graph_builder import build_session_graph
-        # Graph construction repeatedly reads and parses persisted node
-        # records.  Keep it on the same captured HEAD as the message snapshot,
-        # but run the bounded builder off the asyncio loop.
-        graph = await asyncio.to_thread(
-            build_session_graph, conv["id"], head, messages=raw_msgs
+        bounded_history = getattr(ws, "_bounded_history", False)
+        # Plain transcripts need neither drawing geometry nor graph metadata.
+        # Compaction and spawn/attach cards still share the graph's semantic
+        # filtering, but only an actual DAG viewport needs its coordinates.
+        needs_graph_annotations = any(
+            m.get("covers_ids") or m.get("source") == "agent_spawn"
+            or m.get("function") == "attach"
+            for m in raw_msgs
         )
+        if not bounded_history:
+            graph = await asyncio.to_thread(
+                build_session_graph, conv["id"], head, messages=raw_msgs
+            )
+        elif needs_graph_annotations:
+            graph = await asyncio.to_thread(
+                build_session_graph, conv["id"], head, messages=raw_msgs,
+                include_layout=False,
+            )
+        else:
+            graph = []
 
         # Reverse-link each spawned sub-branch's root user msg back
         # to the main-lane turn that produced it, so the frontend

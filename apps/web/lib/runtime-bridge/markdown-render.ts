@@ -64,15 +64,21 @@ export function sanitizeHtml(html: string): string {
   return sanitized.innerHTML;
 }
 
-// ponytail: FIFO cap, LRU if a long scroll-back session evicts settled bubbles
+// Bound retained source and sanitized HTML, including large tool/file content.
 const MD_CACHE_MAX = 256;
+const MD_CACHE_BYTES = 8 * 1024 * 1024;
+let mdCacheBytes = 0;
 const mdCache = new Map<string, string>();
 
 export function renderMd(s: unknown): string {
   if (typeof s !== "string") s = String(s ?? "");
   const src = s as string;
   const hit = mdCache.get(src);
-  if (hit !== undefined) return hit;
+  if (hit !== undefined) {
+    mdCache.delete(src);
+    mdCache.set(src, hit);
+    return hit;
+  }
   let str = src;
   const mathBlocks: string[] = [];
   const stash = (m: string): string => {
@@ -90,11 +96,16 @@ export function renderMd(s: unknown): string {
     html = html.replace("%%MATH" + i + "%%", () => escHtml(mathBlocks[i]));
   }
   const out = '<span class="md-rendered">' + html + "</span>";
-  if (mdCache.size >= MD_CACHE_MAX) {
-    const oldest = mdCache.keys().next().value;
-    if (oldest !== undefined) mdCache.delete(oldest);
+  const cost = 2 * (src.length + out.length);
+  if (cost <= MD_CACHE_BYTES) {
+    while (mdCache.size && (mdCache.size >= MD_CACHE_MAX || mdCacheBytes + cost > MD_CACHE_BYTES)) {
+      const oldest = mdCache.keys().next().value!;
+      mdCacheBytes -= 2 * (oldest.length + mdCache.get(oldest)!.length);
+      mdCache.delete(oldest);
+    }
+    mdCache.set(src, out);
+    mdCacheBytes += cost;
   }
-  mdCache.set(src, out);
   return out;
 }
 

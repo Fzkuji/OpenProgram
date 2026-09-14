@@ -249,3 +249,34 @@ def test_hydration_snapshot_keeps_its_summary_after_recompaction(store):
     assert _row(after, "sum1")["covers_ids"] == ids[:2]
     assert not any(row["id"] == "sum2" for row in after)
     assert _row(build_session_graph("s1", ids[-1]), "sum2")["covers_ids"] == ids[:4]
+
+
+def test_transcript_graph_preserves_semantics_without_computing_geometry(store, monkeypatch):
+    ids = _seed(store, 's1', 4)
+    _summarize(store, 's1', ids[:4])
+    store.append_message('s1', {
+        'id': 'spawn-root', 'role': 'user', 'content': 'subtask',
+        'caller': ids[1], 'extra': {'source': 'agent_spawn'},
+    })
+    store.append_message('s1', {
+        'id': 'spawn-tail', 'role': 'assistant', 'content': 'result',
+        'predecessor': 'spawn-root',
+    })
+    store.append_message('s1', {
+        'id': 'attach', 'role': 'tool', 'content': '', 'function': 'attach',
+        'predecessor': ids[1], 'extra': {'attach': {'head_id': 'spawn-tail'}},
+    })
+    full = build_session_graph('s1', ids[-1])
+    from openprogram.webui import graph_layout
+    def forbidden(*args, **kwargs):
+        raise AssertionError('transcript-only graph must not compute drawing geometry')
+    monkeypatch.setattr(graph_layout, 'compute_depth', forbidden)
+    semantic = build_session_graph('s1', ids[-1], include_layout=False)
+    assert semantic == [{k:v for k,v in row.items() if k not in ('_depth','_lane','_tier')} for row in full]
+    from openprogram.webui.ws_actions.session import _annotate_spawn_origin, splice_compaction_event_rows
+    _annotate_spawn_origin(full)
+    _annotate_spawn_origin(semantic)
+    assert _row(semantic, 'spawn-root')['spawned_from']['caller_id'] == ids[1]
+    assert {m['id']:m.get('spawned_from') for m in semantic} == {m['id']:m.get('spawned_from') for m in full}
+    messages=store.get_messages('s1')
+    assert splice_compaction_event_rows(messages, semantic, messages) == splice_compaction_event_rows(messages, full, messages)

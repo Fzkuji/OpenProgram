@@ -15,11 +15,13 @@ def build_session_graph(
     head_id: Optional[str] = None,
     *,
     messages: list[dict[str, Any]] | None = None,
+    include_layout: bool = True,
 ) -> list[dict[str, Any]]:
     """Build the annotated DAG graph for a session.
 
     Returns a list of graph node dicts with ``_tier``, ``_depth``,
-    ``_lane`` computed by ``graph_layout.annotate_graph``.
+    ``_lane`` computed by ``graph_layout.annotate_graph``. Transcript-only
+    callers can skip geometry while retaining the same semantic filtering.
     """
     from openprogram.agent.session_db import default_db
     from openprogram.webui.ws_actions.branch import (
@@ -298,4 +300,4 @@ def build_session_graph(
                     n["spawn_remote_id"] = caller
                 n["caller"] = rid
 
-    return annotate_graph(graph, head_id)
+    return annotate_graph(graph, head_id, include_layout=include_layout)

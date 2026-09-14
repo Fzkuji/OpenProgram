@@ -24,9 +24,12 @@ from .lane import compute_lane
 def annotate_graph(
     graph_entries: list[dict],
     head_id: Optional[str],
+    *, include_layout: bool = True,
 ) -> list[dict]:
     normalize_followup(graph_entries)
     visible = filter_visible(graph_entries)
+    if not include_layout:
+        return visible
     by_id: dict[str, dict] = {m["id"]: m for m in visible}
 
     call_children, fork_siblings = build_children(by_id)
