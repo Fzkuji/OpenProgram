@@ -354,3 +354,14 @@ export function decideLiveRows(opts: {
   }
   return live;
 }
+
+/** Drop measurements when data pages are evicted, not just DOM rows. */
+export function retainRowHeights(chatKey: string, ids: ReadonlySet<string>): void {
+  heightsFor(chatKey);
+  const heights = byChat.get(chatKey);
+  if (!heights) return;
+  for (const key of heights.keys()) {
+    if (!ids.has(key) && !(key.startsWith("fold:") && ids.has(key.slice(5)))) heights.delete(key);
+  }
+  dirty.add(chatKey);
+}

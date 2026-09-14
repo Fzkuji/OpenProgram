@@ -39,7 +39,9 @@ import { createPortal } from "react-dom";
 import { Maximize2, Minus, Plus, Shapes } from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
-import { enterExclusiveCoverageMode } from "@/lib/runtime-bridge/dag";
+import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
+import { useSessionStore } from "@/lib/session-store";
+import { enterExclusiveCoverageMode, renderHistoryGraph } from "@/lib/runtime-bridge/dag";
 import { fitCanvas, resetZoom, zoomStep } from "@/lib/runtime-bridge/dag/interaction/canvas";
 import { MENU_PANEL } from "@/components/chat/top-bar/menu-styles";
 
@@ -222,6 +224,32 @@ function DagHud({ active }: { active: boolean }) {
 }
 
 export function DagView({ visible }: { visible: boolean }) {
+  const sessionId=useSessionStore(s=>s.currentSessionId);
+  useEffect(()=>{
+    const send=()=>{
+      const sock=getSocket();
+      if(!sessionId || !sock || sock.readyState!==WebSocket.OPEN)return;
+      sock.send(JSON.stringify({action:"list_branches",session_id:sessionId,graph_visible:visible,include_graph:visible}));
+      if(!visible){
+        renderHistoryGraph([],null);
+        const conv=runtimeState.conversations[sessionId];
+        if(conv)conv.graph=[];
+      }
+    };
+    let stopped=false;
+    const connected=()=>queueMicrotask(()=>{if(!stopped)send();});
+    window.addEventListener("op:browser-connection",connected);
+    send();
+    return ()=>{
+      stopped=true;window.removeEventListener("op:browser-connection",connected);
+      const sock=getSocket();
+      if(visible && sessionId && sock?.readyState===WebSocket.OPEN){
+        sock.send(JSON.stringify({action:"list_branches",session_id:sessionId,graph_visible:false}));
+        renderHistoryGraph([],null);
+        const conv=runtimeState.conversations[sessionId];if(conv)conv.graph=[];
+      }
+    };
+  },[visible,sessionId]);
   useEffect(() => {
     if (visible) enterExclusiveCoverageMode();
   }, [visible]);

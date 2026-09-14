@@ -264,8 +264,9 @@ async def _handle_ws_command(ws, cmd: dict):
 
         raise OperationError("invalid_request", scope="system")
     state._validate_file_request(cmd, action)
-    if action == "list_sessions" and cmd.get("history_version") == 1:
+    if action == "list_sessions" and cmd.get("history_version") in (1, 2):
         ws._history_protocol = 1
+        ws._bounded_history = cmd.get("history_version") == 2
     print(f"[ws] command received: action={action}")
 
     h = state.WS_ACTIONS.get(action)

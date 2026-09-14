@@ -293,3 +293,34 @@ def test_ten_thousand_node_session_loads_recent_page_without_recursion(
         assert [m['id'] for m in older['messages']] == [str(i) for i in range(count - 100, count - 50)]
     finally:
         server._sessions.pop(sid, None)
+
+
+def test_indexed_pages_reuse_snapshot_without_full_hydration(session_with_tool_outputs, monkeypatch):
+    from openprogram.webui.session_history import close_snapshots
+    store, _ = session_with_tool_outputs
+    previous = 'assistant-1'
+    for i in range(120):
+        mid = f'page-{i}'
+        store.append_message('session-1', {'id':mid,'role':'user','content':str(i),'predecessor':previous})
+        previous=mid
+    store.update_session('session-1',head_id=previous)
+    ws=FakeWS();ws._history_protocol=1
+    async def scenario():
+        await ws_session.handle_load_session(ws,{'session_id':'session-1'})
+        first=next(f['data'] for f in ws.frames if f['type']=='session_loaded')
+        def forbidden(*args,**kwargs):
+            raise AssertionError('Paging must not rebuild the transcript or graph')
+        monkeypatch.setattr(store,'get_messages',forbidden)
+        import openprogram.webui.graph_builder as graph_builder
+        monkeypatch.setattr(graph_builder,'build_session_graph',forbidden)
+        ws.frames.clear()
+        await ws_session.handle_load_session(ws,{'session_id':'session-1','history_before':first['history']['before'],'history_snapshot':first['history']['snapshot'],'history_head':first['history']['head_id']})
+        older=ws.frames[0]['data']
+        assert older['history']['end']==first['history']['start']
+        ws.frames.clear()
+        await ws_session.handle_load_session(ws,{'session_id':'session-1','history_after':older['history']['after'],'history_snapshot':older['history']['snapshot'],'history_head':older['history']['head_id']})
+        assert ws.frames[0]['data']['messages']==first['messages']
+    try:
+        asyncio.run(scenario())
+    finally:
+        close_snapshots(ws)

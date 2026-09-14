@@ -1,6 +1,6 @@
-import { flushSync } from "react-dom";
-import { registerSessionHistory, updateSessionHistory, useSessionHistory, type HistoryPage } from "@/lib/chat/session-history";
-import { wsRequest } from "@/lib/net/ws-request";
+import { registerSessionHistory, type HistoryPage } from "@/lib/chat/session-history";
+import { seedHistoryWindow } from "./session-history-loader";
+export { loadOlderSessionHistory } from "./session-history-loader";
 /**
  * Conversation / branch / channel data layer.
  *
@@ -329,7 +329,7 @@ export function fetchBranches(
     branchesPending[sessionId] = res;
     const sock = getSocket();
     if (sock && sock.readyState === WebSocket.OPEN) {
-      sock.send(JSON.stringify({ action: "list_branches", session_id: sessionId }));
+      sock.send(JSON.stringify({ action: "list_branches", session_id: sessionId, include_graph: false }));
     } else {
       delete branchesPending[sessionId];
       res([]);
@@ -375,7 +375,7 @@ export function onBranchesListMessage(payload: BranchesListPayload): void {
   if (sid === runtimeState.currentSessionId) {
     refreshBranchBadge();
     renderBranchesPanel();
-    if (Array.isArray(payload.graph)) {
+    if (Array.isArray(payload.graph) && (typeof document === "undefined" || document.getElementById("historyPanel")?.getAttribute("aria-hidden") !== "true")) {
       renderHistoryGraph(payload.graph as never[], payload.active || null);
       refreshHistoryContextRange(sid);
       const conv = convs()[sid];
@@ -566,6 +566,7 @@ export function loadSessionData(data: LegacyConv): void {
   // Graph previews for unloaded pages must not shadow those rows by ID.
   if (!data.history) data.messages = spliceCompactionFromGraph(data.messages, data.graph);
   const id = data.id as string;
+  seedHistoryWindow(id, data.messages, data.history as HistoryPage | undefined);
   registerSessionHistory(id, data.history as HistoryPage | undefined);
   const map = convs();
   // Merge data into existing conv. data 里没有的字段 (例如 created_at)
@@ -763,49 +764,3 @@ export function renderSessionMessages(conv: LegacyConv): void {
 
 // Still read through `window` by components/page-shell.tsx, which paints a
 // cached transcript before this module's importers have run.
-
-
-/** Append historical pages without replacing any newer streamed message. */
-export async function loadOlderSessionHistory(id: string): Promise<void> {
-  const expected = useSessionHistory.getState().pages[id];
-  if (!expected?.before || expected.loading) return;
-  const socket = getSocket();
-  updateSessionHistory(id, expected.generation, { loading: true, error: false });
-  const page = await wsRequest<{ id: string; messages: LegacyMessage[]; history: HistoryPage }>(
-    "load_session", { session_id: id, history_before: expected.before, history_head: expected.head_id },
-    "session_history_page", { requestId: true }, 15000,
-  );
-  if (getSocket() !== socket || !updateSessionHistory(id, expected.generation, { loading: false, error: !page })) return;
-  if (!page || page.id !== id || !page.history || !Array.isArray(page.messages)
-      || page.history.head_id !== expected.head_id) {
-    updateSessionHistory(id, expected.generation, { error: true });
-    return;
-  }
-  const conv = convs()[id];
-  if (!conv) return;
-  const area = runtimeState.currentSessionId === id ? document.getElementById("chatArea") : null;
-  const oldHeight = area?.scrollHeight ?? 0;
-  const oldTop = area?.scrollTop ?? 0;
-  const top = area?.getBoundingClientRect().top ?? 0;
-  const anchor = area ? Array.from(area.querySelectorAll<HTMLElement>("[data-msg-slot], [data-msg-id]"))
-    .find(el => el.getBoundingClientRect().bottom > top) : undefined;
-  const anchorTop = anchor?.getBoundingClientRect().top;
-  const currentIds = new Set((conv.messages ?? []).map(m => m.id));
-  conv.messages = [...page.messages.filter(m => !currentIds.has(m.id)), ...(conv.messages ?? [])];
-  const store = useSessionStore.getState();
-  const current = (store.messageOrder[id] ?? []).map(mid => store.messagesById[mid]).filter(Boolean);
-  const ids = new Set(current.map(m => m.id));
-  const older = convToChatMsgs(page.messages as never[]).filter(m => !ids.has(m.id));
-  // Commit and compensate before paint. A later streaming resize below the
-  // anchor must not be counted as prepended history.
-  flushSync(() => {
-    store.setMessages(id, [...older, ...current]);
-    updateSessionHistory(id, expected.generation, { before: page.history.before });
-  });
-  if (area && runtimeState.currentSessionId === id) {
-    area.scrollTop = anchor?.isConnected && anchorTop != null
-      ? area.scrollTop + anchor.getBoundingClientRect().top - anchorTop
-      : oldTop + area.scrollHeight - oldHeight;
-    area.dispatchEvent(new Event("scroll"));
-  }
-}

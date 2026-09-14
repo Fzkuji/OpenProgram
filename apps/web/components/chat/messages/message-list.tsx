@@ -23,9 +23,9 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { startHistoryAutoload } from "@/lib/chat/history-autoload";
-import { useSessionHistory } from "@/lib/chat/session-history";
-import { loadOlderSessionHistory } from "@/lib/runtime-bridge/conversations";
+import { useMessageViewport } from "./use-message-viewport";
+import { useHistoryWindow } from "./use-history-window";
+import { useChatAreaStick } from "./use-chat-area-stick";
 import { ArrowDown } from "lucide-react";
 
 import {
@@ -35,18 +35,9 @@ import {
   type ChatMsg,
 } from "@/lib/session-store";
 
-import { useTranslation, translateText } from "@/lib/i18n";
+import { useTranslation } from "@/lib/i18n";
 import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
 import { useAgentProfile } from "@/lib/format-utils/agent-style";
-import {
-  animateJumpToLatest,
-  isChatAtBottom,
-  readBottomPadding,
-  readComposerHeight,
-  readChatScroll,
-  resolveChatScrollTop,
-  writeChatScroll,
-} from "@/lib/chat/chat-scroll";
 import {
   RECYCLE_MIN_ROWS,
   collectAlwaysLive,
@@ -60,7 +51,6 @@ import {
 } from "@/lib/chat/message-window";
 import { Avatar } from "@/components/avatar";
 import { showToast } from "@/lib/format-utils/toast";
-import { renderMathInChat } from "@/lib/runtime-bridge/markdown-render";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
 
 const JUMP_LATEST_FADE_MS = 280;
@@ -595,173 +585,6 @@ export const RecyclableRow = memo(function RecyclableRow({
  *  place. Their own send always follows — that is an explicit gesture,
  *  not something arriving at them.
  */
-function useChatAreaStick(
-  chatKey: string | null,
-  newTurnSeed: string | null,
-  ownTurn: boolean,
-  paintRows: boolean,
-) {
-  const activeKeyRef = useRef<string | null>(chatKey);
-  const previousKeyRef = useRef<string | null>(null);
-  const previousSeedRef = useRef(newTurnSeed);
-  const previousPaintRef = useRef(paintRows);
-  const stuckRef = useRef(true);
-  const jumpingRef = useRef(false);
-  const cancelJumpRef = useRef<(() => void) | null>(null);
-  const lastPointerRef = useRef(0);
-  const scrollTopRef = useRef(0);
-  // The ref drives the scroll math on every event; this mirrors it into
-  // render state so the "jump to latest" affordance can appear. Set only
-  // on transitions, so ordinary scrolling doesn't re-render per frame.
-  const [detached, setDetached] = useState(false);
-
-  useEffect(() => {
-    if (!paintRows) return;
-    const area = document.getElementById("chatArea");
-    const msgs = document.getElementById("chatMessages");
-    if (!area || !msgs) return;
-    // A click that expands/collapses something (execution strip, thinking
-    // row) resizes the container; pinning then yanks the clicked element
-    // upward. Suppress the pin briefly after any pointer interaction so
-    // user-initiated growth expands downward in place.
-    const syncDetached = () => {
-      const atBottom = isChatAtBottom(
-        area,
-        readBottomPadding(msgs),
-        readComposerHeight(),
-      );
-      if (jumpingRef.current) {
-        // Stay visible until the ease-in-out ride finishes.
-        stuckRef.current = true;
-        return atBottom;
-      }
-      stuckRef.current = atBottom;
-      setDetached((was) => (was === !atBottom ? was : !atBottom));
-      return atBottom;
-    };
-    const onScroll = () => {
-      if (area.clientHeight <= 0) return;
-      syncDetached();
-      scrollTopRef.current = area.scrollTop;
-      const key = activeKeyRef.current;
-      if (key && !area.hasAttribute("data-self-update-verification")) writeChatScroll(window.sessionStorage, key, area.scrollTop);
-    };
-    const pin = () => {
-      renderMathInChat();
-      // A Jump-to-latest click is already smoothing down; snapping
-      // scrollTop here fights that and flashes the transcript.
-      if (area.clientHeight <= 0) return;
-      if (
-        stuckRef.current
-        && !jumpingRef.current
-        && performance.now() - lastPointerRef.current > 600
-      ) {
-        area.scrollTop = area.scrollHeight;
-        scrollTopRef.current = area.scrollTop;
-        const key = activeKeyRef.current;
-        if (key && !area.hasAttribute("data-self-update-verification")) writeChatScroll(window.sessionStorage, key, area.scrollTop);
-      }
-      // Composer / pad growth must re-evaluate "at latest" even when
-      // we do not pin — otherwise the button stays up after the last
-      // bubble is already above the input.
-      syncDetached();
-    };
-    const onPointer = () => {
-      lastPointerRef.current = performance.now();
-      if (jumpingRef.current) {
-        cancelJumpRef.current?.();
-        cancelJumpRef.current = null;
-        jumpingRef.current = false;
-      }
-    };
-    area.addEventListener("scroll", onScroll, { passive: true });
-    area.addEventListener("pointerdown", onPointer, { passive: true });
-    const ro = new ResizeObserver(pin);
-    ro.observe(msgs);
-    return () => {
-      cancelJumpRef.current?.();
-      cancelJumpRef.current = null;
-      jumpingRef.current = false;
-      area.removeEventListener("scroll", onScroll);
-      area.removeEventListener("pointerdown", onPointer);
-      ro.disconnect();
-    };
-  }, [paintRows]);
-
-  // Save the outgoing position and restore the incoming one before paint.
-  // `chatKey` is part of the dependency so equal-length conversations still
-  // switch correctly. Whether a new turn in the same chat returns to the
-  // bottom depends on where the reader was — see `resolveChatScrollTop`.
-  useLayoutEffect(() => {
-    const area = document.getElementById("chatArea");
-    if (!area) return;
-    if (!paintRows) {
-      previousPaintRef.current = false;
-      return;
-    }
-    const becameVisible = previousPaintRef.current === false;
-    previousPaintRef.current = true;
-    const keyChanged = previousKeyRef.current !== chatKey;
-    const seedChanged = previousSeedRef.current !== newTurnSeed;
-    if (previousKeyRef.current && keyChanged) {
-      writeChatScroll(
-        window.sessionStorage,
-        previousKeyRef.current,
-        scrollTopRef.current,
-      );
-    }
-    activeKeyRef.current = chatKey;
-    previousKeyRef.current = chatKey;
-    previousSeedRef.current = newTurnSeed;
-
-    const saved = (keyChanged || becameVisible) && chatKey
-      ? readChatScroll(window.sessionStorage, chatKey)
-      : null;
-    // Reveal after a hide must use the same follow/stay rule as a new
-    // turn. Preferring `saved` here left a following reader on a stale
-    // pixel after the transcript grew in DAG / another pane.
-    area.scrollTop = resolveChatScrollTop({
-      keyChanged,
-      seedChanged: seedChanged || becameVisible,
-      saved,
-      scrollHeight: area.scrollHeight,
-      currentTop: becameVisible
-        ? (saved ?? scrollTopRef.current)
-        : area.scrollTop,
-      atBottom: stuckRef.current,
-      ownTurn,
-    });
-    scrollTopRef.current = area.scrollTop;
-    // Recompute rather than assume: after a follow we are at the bottom,
-    // and after a deliberate stay-put we are not — and it is this flag
-    // that decides whether the streaming deltas keep pinning.
-    if (!jumpingRef.current) {
-      stuckRef.current = isChatAtBottom(
-        area,
-        readBottomPadding(document.getElementById("chatMessages")),
-        readComposerHeight(),
-      );
-      setDetached(!stuckRef.current);
-    }
-  }, [chatKey, newTurnSeed, ownTurn, paintRows]);
-
-  const jumpToLatest = useCallback(() => {
-    const area = document.getElementById("chatArea");
-    if (!area) return;
-    cancelJumpRef.current?.();
-    jumpingRef.current = true;
-    stuckRef.current = true;
-    cancelJumpRef.current = animateJumpToLatest(area, () => {
-      cancelJumpRef.current = null;
-      jumpingRef.current = false;
-      stuckRef.current = true;
-      setDetached(false);
-    });
-  }, []);
-
-  return { detached, jumpToLatest };
-}
-
 /** Breathing "<Agent> is thinking…" indicator shown between a user
  *  msg and the (yet-to-arrive) assistant reply (or an assistant
  *  bubble that exists but is still empty).
@@ -895,6 +718,7 @@ export const MessageList = memo(function MessageList({
   const { text } = useTranslation();
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const chatKey = useSessionStore((s) => s.activeChatKey);
+  useHistoryWindow(sessionId, paintRows);
   const ids = useMessageIds(sessionId);
   const [, setOrigTick] = useState(0);
   useEffect(() => {
@@ -948,49 +772,7 @@ export const MessageList = memo(function MessageList({
     (id) => snap.messagesById[id],
     [pendingAnchor, railTarget],
   );
-  const [view, setView] = useState({ top: 0, h: 800 });
-  const measureGate = useRef(false);
-  const [, setMeasureGen] = useState(0);
-  const notifyMeasured = useCallback(() => {
-    if (measureGate.current) return;
-    measureGate.current = true;
-    requestAnimationFrame(() => {
-      measureGate.current = false;
-      setMeasureGen((n) => n + 1);
-    });
-  }, []);
-  useLayoutEffect(() => {
-    if (!paintRows) return;
-    const area = document.getElementById("chatArea");
-    if (!area) return;
-    const next = { top: area.scrollTop, h: area.clientHeight };
-    setView((prev) => (prev.top === next.top && prev.h === next.h ? prev : next));
-  }, [chatKey, ids.length, paintRows]);
-  useEffect(() => {
-    if (!paintRows) return;
-    const area = document.getElementById("chatArea");
-    if (!area) return;
-    let raf = 0;
-    const sync = () => {
-      raf = 0;
-      if (chatKey && area.clientWidth > 0 && noteChatWidth(chatKey, area.clientWidth)) {
-        setMeasureGen((n) => n + 1);
-      }
-      const next = { top: area.scrollTop, h: area.clientHeight };
-      setView((prev) => (prev.top === next.top && prev.h === next.h ? prev : next));
-    };
-    const onScroll = () => {
-      if (!raf) raf = requestAnimationFrame(sync);
-    };
-    area.addEventListener("scroll", onScroll, { passive: true });
-    const ro = new ResizeObserver(sync);
-    ro.observe(area);
-    return () => {
-      area.removeEventListener("scroll", onScroll);
-      ro.disconnect();
-      if (raf) cancelAnimationFrame(raf);
-    };
-  }, [chatKey, paintRows]);
+  const {view, notifyMeasured} = useMessageViewport(chatKey, ids.length, paintRows);
   const windowNodes: WindowNode[] = [];
   {
     let i = 0;
@@ -1016,6 +798,7 @@ export const MessageList = memo(function MessageList({
         heights: heightsFor(chatKey),
         scrollTop: view.top,
         viewH: view.h,
+        overscan: view.overscan,
         always: alwaysLive,
         listLen: ids.length,
         recycleMin: RECYCLE_MIN_ROWS,
@@ -1133,7 +916,6 @@ export const MessageList = memo(function MessageList({
 
   return (
     <>
-      <AutomaticHistory sessionId={sessionId} enabled={paintRows} />
       <AgentBranchBanner />
       <WorkspaceAlignmentBanner sessionId={sessionId} />
       {paintRows ? (
@@ -1227,18 +1009,3 @@ export const MessageList = memo(function MessageList({
     </>
   );
 });
-
-
-function AutomaticHistory({ sessionId, enabled }: { sessionId: string | null; enabled: boolean }) {
-  useEffect(() => {
-    if (!sessionId || !enabled) return;
-    const area = document.getElementById("chatArea");
-    if (!area) return;
-    return startHistoryAutoload(area, {
-      read: () => useSessionHistory.getState().pages[sessionId],
-      subscribe: useSessionHistory.subscribe,
-      load: () => loadOlderSessionHistory(sessionId),
-    });
-  }, [sessionId, enabled]);
-  return null;
-}

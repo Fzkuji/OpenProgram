@@ -276,7 +276,13 @@ def build_branches_payload(session_id: str | None) -> dict:
 
 
 async def handle_list_branches(ws, cmd: dict):
+    if "graph_visible" in cmd:
+        ws._history_graph_session = cmd.get("session_id") if cmd["graph_visible"] else None
+        if not cmd["graph_visible"]:
+            return
     payload = await asyncio.to_thread(build_branches_payload, cmd.get("session_id"))
+    if cmd.get("include_graph") is False:
+        payload.pop("graph", None)
     await ws.send_text(json.dumps(
         {"type": "branches_list", "data": payload}, default=str))
 

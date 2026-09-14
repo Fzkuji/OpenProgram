@@ -922,7 +922,7 @@ export function useWS(): void {
             action: "webtab_register", window_id: desktopWindowId,
           }));
         }
-        socket?.send(JSON.stringify({ action: "list_sessions", history_version: 1 }));
+        socket?.send(JSON.stringify({ action: "list_sessions", history_version: 2 }));
         for (const cursor of loadExecutionCursors()) {
           socket?.send(JSON.stringify({
             action: "execution.replay", execution_id: cursor.execution_id,

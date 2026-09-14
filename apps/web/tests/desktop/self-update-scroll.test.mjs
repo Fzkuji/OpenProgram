@@ -5,7 +5,7 @@ import vm from "node:vm";
 import ts from "typescript";
 
 test("verification scroll updates visible state without persisting temporary position", () => {
-  const source = readFileSync(new URL("../../components/chat/messages/message-list.tsx", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../../components/chat/messages/use-chat-area-stick.ts", import.meta.url), "utf8");
   const file = ts.createSourceFile("message-list.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const owner = file.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "useChatAreaStick");
   let callback;

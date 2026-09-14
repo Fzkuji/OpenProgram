@@ -239,6 +239,16 @@ class QueuedWebSocket:
             )
 
     async def send_text(self, payload: str) -> None:
+        if getattr(self, "_bounded_history", False):
+            try:
+                envelope = json.loads(payload)
+                data = envelope.get("data") or {}
+                if (envelope.get("type") == "branches_list" and isinstance(data, dict)
+                        and data.get("session_id") != getattr(self, "_history_graph_session", None)):
+                    data.pop("graph", None)
+                    payload = json.dumps(envelope, ensure_ascii=False, default=str)
+            except (ValueError, AttributeError):
+                pass
         if (getattr(self, "_history_protocol", 0) == 1
                 and len(payload.encode("utf-8")) > 128 * 1024):
             try:
@@ -455,6 +465,8 @@ class QueuedWebSocket:
             return
 
     async def stop(self) -> None:
+        from openprogram.webui.session_history import close_snapshots
+        close_snapshots(self)
         self._closing = True
         for frame in self._queue:
             self._reject(frame, 1001)

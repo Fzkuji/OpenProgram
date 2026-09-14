@@ -21,7 +21,7 @@ import {
   setRowHeight,
 } from "../../lib/chat/message-window.ts";
 
-const listSrc = readFileSync(
+const listSrc = readFileSync(new URL("../../components/chat/messages/use-message-viewport.ts", import.meta.url), "utf8") + readFileSync(
   new URL("../../components/chat/messages/message-list.tsx", import.meta.url),
   "utf8",
 );

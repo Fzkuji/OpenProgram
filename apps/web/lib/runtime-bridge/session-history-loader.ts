@@ -1,0 +1,135 @@
+import { flushSync } from 'react-dom';
+import { convToChatMsgs } from '@/lib/chat/conv-mapper';
+import { useSessionHistory, updateSessionHistory, type HistoryPage } from '@/lib/chat/session-history';
+import { HistoryWindow, type HistoryDirection, type HistoryRow } from '@/lib/chat/history-window';
+import { captureHistoryAnchor, restoreHistoryAnchor } from '@/lib/chat/history-viewport';
+import { clearHeights, retainRowHeights } from '@/lib/chat/message-window';
+import { useSessionStore } from '@/lib/session-store';
+import { wsRequest } from '@/lib/net/ws-request';
+import { getSocket, runtimeState } from './state';
+
+const windows = new Map<string, HistoryWindow>();
+const viewports = new Map<string, Map<HTMLElement, string>>();
+const MAX_CACHED_SESSIONS = 4;
+
+export function registerHistoryViewport(id: string, area: HTMLElement, chatKey: string): () => void {
+  const areas = viewports.get(id) ?? new Map<HTMLElement, string>();
+  areas.set(area,chatKey); viewports.set(id,areas);
+  return () => { areas.delete(area); if (!areas.size) viewports.delete(id); trimHistoryWindows(); };
+}
+
+function trimHistoryWindows(protectedId?: string): void {
+  for (const id of windows.keys()) {
+    if (windows.size <= MAX_CACHED_SESSIONS) break;
+    if (id===protectedId || viewports.has(id) || id===useSessionStore.getState().currentSessionId
+        || useSessionHistory.getState().pages[id]?.loading) continue;
+    windows.delete(id);
+    const conv=runtimeState.conversations[id];
+    if(conv){delete conv.messages;delete conv.graph;}
+    const state=useSessionStore.getState();
+    const live=(state.messageOrder[id]??[]).map(mid=>state.messagesById[mid]).filter(m=>m && ['running','streaming','pending','cancelling'].includes(m.status??''));
+    state.setMessages(id,live);
+    clearHeights(id);clearHeights(`peer:${id}`);
+  }
+}
+
+// Removing a conversation or clearing the store releases every retained page.
+useSessionStore.subscribe((state,previous)=>{
+  for(const id of windows.keys()){
+    if(previous.messageOrder[id] && !state.messageOrder[id]){
+      windows.delete(id);clearHeights(id);clearHeights(`peer:${id}`);
+      useSessionHistory.setState(s=>{const pages={...s.pages};delete pages[id];return {pages};});
+    }
+  }
+});
+export function seedHistoryWindow(id: string, messages: HistoryRow[], history?: HistoryPage): void {
+  windows.delete(id);
+  if (!history?.snapshot) return;
+  const window = new HistoryWindow();
+  window.add(messages, history, 'latest');
+  windows.set(id, window);
+  trimHistoryWindows(id);
+}
+export function loadOlderSessionHistory(id: string): Promise<void> {
+  return loadSessionHistoryWindow(id, 'older');
+}
+
+/** Network and data coordination. All viewport operations live in history-viewport. */
+export async function loadSessionHistoryWindow(id: string, direction: HistoryDirection, around?: string): Promise<void> {
+  const expected = useSessionHistory.getState().pages[id];
+  if (expected?.loading && (direction === 'latest' || direction === 'around')) {
+    await new Promise<void>(resolve => {
+      const unsubscribe = useSessionHistory.subscribe(state => {
+        if (!state.pages[id]?.loading || state.pages[id]?.generation !== expected.generation) {
+          unsubscribe();
+          queueMicrotask(resolve);
+        }
+      });
+    });
+    return loadSessionHistoryWindow(id, direction, around);
+  }
+  if (!expected || expected.loading || (direction === 'older' && !expected.before)
+      || (direction === 'newer' && !expected.after)) return;
+  const socket = getSocket();
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    updateSessionHistory(id, expected.generation, {error: true});
+    return;
+  }
+  updateSessionHistory(id, expected.generation, { loading: true, error: false });
+  const field = direction === 'older' ? {history_before: expected.before}
+    : direction === 'newer' ? {history_after: expected.after}
+    : direction === 'around' ? {history_around: around} : {history_latest: true};
+  const page = await wsRequest<{id: string; messages: HistoryRow[]; history: HistoryPage}>(
+    'load_session', {session_id:id, history_head:expected.head_id, history_snapshot:expected.snapshot, ...field},
+    'session_history_page', {requestId:true}, 15000,
+  );
+  if (useSessionHistory.getState().pages[id]?.generation !== expected.generation) return;
+  if (getSocket() !== socket || !page || page.id !== id || !page.history || !Array.isArray(page.messages)
+      || (direction !== 'latest' && page.history.head_id !== expected.head_id)) {
+    updateSessionHistory(id, expected.generation, {loading:false,error:true});
+    return;
+  }
+  const conv = runtimeState.conversations[id] as {messages?: HistoryRow[]} | undefined;
+  if (!conv) { updateSessionHistory(id, expected.generation, {loading:false}); return; }
+  const registered=viewports.get(id);
+  const area = registered?.keys().next().value
+    ?? (runtimeState.currentSessionId === id ? document.getElementById('chatArea') : null);
+  const anchor = area ? captureHistoryAnchor(area) : null;
+  const oldHeight = area?.scrollHeight ?? 0, oldTop = area?.scrollTop ?? 0;
+  const store = useSessionStore.getState();
+  const current = (store.messageOrder[id] ?? []).map(mid=>store.messagesById[mid]).filter(Boolean);
+  const previous = windows.get(id);
+  const known = new Set(previous?.messages.map(m=>m.id) ?? (conv.messages ?? []).map(m=>m.id));
+  let messages: HistoryRow[], history: HistoryPage;
+  if (page.history.snapshot) {
+    const window = previous ?? new HistoryWindow();
+    window.add(page.messages,page.history,direction, direction === 'around' ? around : anchor?.id);
+    windows.delete(id); windows.set(id,window);
+    messages=window.messages; history=window.history!;
+  } else {
+    // Compatibility with an older server: its before-only protocol has no eviction cursors.
+    const incomingIds=new Set(page.messages.map(m=>m.id));
+    messages=[...page.messages,...(conv.messages ?? []).filter(m=>!incomingIds.has(m.id))];
+    history=page.history;
+  }
+  const mapped=convToChatMsgs(messages as never[]);
+  const selected=new Set(mapped.map(m=>m.id));
+  const live = current.filter(m=>!selected.has(m.id) && (!known.has(m.id)
+    || ['running','streaming','pending','cancelling'].includes(m.status ?? ''))).slice(-50);
+  const currentById=new Map(current.map(m=>[m.id,m]));
+  const merged=[...mapped.map(m=>currentById.get(m.id) ?? m),...live];
+  conv.messages=messages as typeof conv.messages;
+  flushSync(()=>{
+    store.setMessages(id,merged);
+    updateSessionHistory(id,expected.generation,{...history,loading:false,error:false});
+  });
+  const chatKey=(area ? registered?.get(area) : undefined) ?? (store.currentSessionId===id ? store.activeChatKey : id);
+  if (chatKey) retainRowHeights(chatKey,new Set(merged.map(m=>m.id)));
+  if (area && (registered?.has(area) || runtimeState.currentSessionId===id)) {
+    if (direction==='latest') area.scrollTop=area.scrollHeight;
+    else if (direction==='around' && around) restoreHistoryAnchor(area,{id:around,offset:0});
+    else if (!anchor || !restoreHistoryAnchor(area,anchor)) area.scrollTop=oldTop+area.scrollHeight-oldHeight;
+    area.dispatchEvent(new Event('scroll'));
+  }
+  trimHistoryWindows(id);
+}

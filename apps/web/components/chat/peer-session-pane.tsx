@@ -37,6 +37,7 @@ import { Composer } from "./composer";
 import { SessionScopeProvider } from "@/lib/session-store/session-scope";
 import { useTranslation } from "@/lib/i18n";
 
+import { useHistoryWindow } from "./messages/use-history-window";
 import { MessageRow, RecyclableRow } from "./messages/message-list";
 
 export function PeerSessionPane({
@@ -54,6 +55,7 @@ export function PeerSessionPane({
   const ids = useMessageIds(sessionId);
   const areaRef = useRef<HTMLDivElement | null>(null);
   const scrollKey = sessionId ? `peer:${sessionId}` : null;
+  useHistoryWindow(sessionId, true, areaRef, scrollKey);
 
   // Interacting with a pane makes it the focused one for bookkeeping
   // purposes (URL, tab highlight, right rail, DAG). Silent: no layout

@@ -12,7 +12,7 @@ const source = (path) => readFileSync(new URL(path, root), "utf8");
 
 const welcome = source("components/chat/welcome-screen.tsx");
 const welcomeCss = source("components/chat/welcome-screen.module.css");
-const messageList = source("components/chat/messages/message-list.tsx");
+const messageList = source("components/chat/messages/use-chat-area-stick.ts") + source("components/chat/messages/message-list.tsx");
 const messageActions = source("components/chat/messages/message-actions.tsx");
 // The strip is split across center-tab-strip.tsx and its submodules;
 // read them as one text so the assertions below are unchanged.

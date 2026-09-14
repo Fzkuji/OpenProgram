@@ -707,7 +707,33 @@ async def handle_load_session(ws, cmd: dict):
     # Record which session this connection is now viewing, so a finishing
     # background run can tell whether to mark *other* sessions unread.
     history_before = cmd.get("history_before")
-    is_history_page = history_before is not None
+    history_after = cmd.get("history_after")
+    history_around = cmd.get("history_around")
+    is_history_page = any(key in cmd for key in ("history_before", "history_after", "history_around", "history_latest"))
+    if is_history_page:
+        from openprogram.webui.ws_errors import OperationError
+        from openprogram.agent.session_db import default_db
+        from openprogram.webui.session_history import HistorySnapshot
+        if sum(key in cmd for key in ("history_before", "history_after", "history_around", "history_latest")) != 1:
+            raise OperationError("invalid_request", scope="session")
+        for value in (history_before, history_after, history_around):
+            if value is not None and not isinstance(value, str):
+                raise OperationError("invalid_request", scope="session")
+        cached = getattr(ws, "_history_snapshots", {}).get(session_id)
+        if (not cmd.get("history_latest") and isinstance(cached, HistorySnapshot) and cached.token == cmd.get("history_snapshot")
+                and cached.head_id == cmd.get("history_head")):
+            if not await _session_io(default_db().get_session, session_id):
+                raise OperationError("invalid_request", scope="session")
+            ws._history_snapshots.move_to_end(session_id)
+            try:
+                messages, history = await _session_io(cached.page, before=history_before, after=history_after, around=history_around)
+            except ValueError as exc:
+                raise OperationError("invalid_request", scope="session") from exc
+            await ws.send_text(json.dumps({"type": "session_history_page", "data": {
+                "id": session_id, "messages": messages, "history": history,
+                "request_id": cmd.get("request_id"), "action": "load_session",
+            }}, ensure_ascii=False, default=str))
+            return
     if not is_history_page:
         ws._focused_session_id = session_id
     with _s._sessions_lock:
@@ -804,10 +830,10 @@ async def handle_load_session(ws, cmd: dict):
             all_msgs = conv_snapshot["messages"]
             raw_msgs = all_msgs
         head = _persisted_head or head_or_tip(conv_snapshot, all_msgs)
-        if is_history_page:
+        if is_history_page and not cmd.get("history_latest"):
             from openprogram.webui.ws_errors import OperationError
             requested_head = cmd.get("history_head")
-            if (not isinstance(history_before, str) or not isinstance(requested_head, str)
+            if (not isinstance(requested_head, str)
                     or requested_head not in {m.get("id") for m in all_msgs}):
                 raise OperationError("invalid_request", scope="session", retryable=True)
             head = requested_head
@@ -1082,15 +1108,14 @@ async def handle_load_session(ws, cmd: dict):
         shown = _truncate_tool_outputs_for_wire(shown)
         history = None
         if getattr(ws, "_history_protocol", 0) == 1:
-            from openprogram.webui.session_history import history_page
             from openprogram.webui.ws_errors import OperationError
             try:
-                shown, next_cursor = await _session_io(
-                    history_page, shown, {m.get("id") for m in chain}, history_before,
-                )
+                from openprogram.webui.session_history import HistorySnapshot, install_snapshot
+                snapshot = await _session_io(HistorySnapshot, session_id, head, shown, {m.get("id") for m in chain})
+                install_snapshot(ws, snapshot)
+                shown, history = await _session_io(snapshot.page, before=history_before, after=history_after, around=history_around)
             except ValueError as exc:
                 raise OperationError("invalid_request", scope="session", retryable=True) from exc
-            history = {"head_id": head, "before": next_cursor}
             if is_history_page:
                 await ws.send_text(json.dumps({"type": "session_history_page", "data": {
                     "id": session_id, "messages": shown, "history": history,
@@ -1123,7 +1148,7 @@ async def handle_load_session(ws, cmd: dict):
                 "title": _db_sess.get("title", ""),
                 "messages": shown,
                 **({"history": history} if history is not None else {}),
-                "graph": graph,
+                "graph": [] if getattr(ws, "_bounded_history", False) else graph,
                 "head_id": head,
                 "context_tree": tree_data,
                 "provider_info": _s._get_provider_info(session_id),

@@ -137,9 +137,11 @@ def test_handle_load_session_offloads_slow_history_and_keeps_new_head(
         module_name, name = {
             "aggregate": ("openprogram.webui.persistence", "aggregate_tool_messages"),
             "runtime": ("openprogram.webui.ws_actions.session", "_rebuild_runtime_cards"),
-            "page": ("openprogram.webui.session_history", "history_page"),
+            "page": ("openprogram.webui.session_history", "page"),
         }[phase]
         module = import_module(module_name)
+        if phase == "page":
+            module = module.HistorySnapshot
         original_phase = getattr(module, name)
 
         def slow_phase(*args, **kwargs):

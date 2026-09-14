@@ -10,7 +10,7 @@ import {
   remainingScroll,
 } from "../../lib/chat/chat-scroll.ts";
 
-const messageList = readFileSync(
+const messageList = readFileSync(new URL("../../components/chat/messages/use-chat-area-stick.ts", import.meta.url), "utf8") + readFileSync(
   new URL("../../components/chat/messages/message-list.tsx", import.meta.url),
   "utf8",
 );

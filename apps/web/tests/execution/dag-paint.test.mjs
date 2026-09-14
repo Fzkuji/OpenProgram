@@ -532,7 +532,7 @@ test("branches_list does not repaint tags before a payload graph", () => {
   );
   assert.match(
     src,
-    /if \(Array\.isArray\(payload\.graph\)\) \{[\s\S]*?renderHistoryGraph[\s\S]*?\} else \{\s*repaintBranchTags\(\);/,
+    /if \(Array\.isArray\(payload\.graph\) &&[^\n]+\) \{[\s\S]*?renderHistoryGraph[\s\S]*?\} else \{\s*repaintBranchTags\(\);/,
   );
   assert.doesNotMatch(src, /repaintBranchTags\(\);\s*renderBranchesPanel/);
 });
