@@ -242,7 +242,7 @@
       <tr><td>控制</td><td>Goal 修改与续轮准入使用共享会话互斥及版本检查。用户消息遵循现有 steer/queue 选择。</td><td>旧 execution 仅补记实际用量，不改变新 revision 的完成状态或续轮；恢复不重置累计用量。</td></tr>
     </tbody></table>
     <p>参考源码：<a href="https://github.com/openai/codex/blob/main/codex-rs/ext/goal/src/extension.rs">GoalExtension 生命周期</a>、<a href="https://github.com/openai/codex/blob/main/codex-rs/ext/goal/src/runtime.rs">空闲续轮与核算</a>、<a href="https://github.com/openai/codex/blob/main/codex-rs/ext/goal/src/spec.rs">状态工具</a>、<a href="https://github.com/openai/codex/blob/main/codex-rs/ext/goal/templates/goals/continuation.md">完成审查与计划提示</a>。采用普通聊天续轮和 agent 自审；保留 OpenProgram 的权限、CAS 和显式恢复机制；不复制 Rust extension 框架或另建通用 scheduler。</p>
-    <p>兼容边界：历史 Workflow 记录可阅读；现存 Python Workflow 在迁移期间保留原合同，聊天入口明确切换。外部事件自动唤醒、provider 工具协议修复和跨主机调度分别处理。</p>
+    <p>兼容边界：历史 Workflow 记录可阅读；现存 Python Workflow 在迁移期间保留原合同，聊天入口明确切换。审批恢复沿用已保存的工具合同：新聊天没有旧 goal 工具，恢复也不能重新加入；只有旧 checkpoint 明确包含该工具时才保留。外部事件自动唤醒、provider 工具协议修复和跨主机调度分别处理。</p>
   </section>
   <details class="mobile-nav">
     <summary aria-label="打开文档目录"></summary>

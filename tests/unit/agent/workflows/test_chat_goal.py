@@ -3,6 +3,38 @@ from __future__ import annotations
 import pytest
 
 
+@pytest.mark.parametrize("source", ["web", "tui", "acp"])
+@pytest.mark.parametrize("legacy", [False, True])
+def test_chat_runtime_keeps_goal_tool_membership_on_approval_resume(monkeypatch, source, legacy):
+    from openprogram.agent import dispatcher
+    from openprogram.agent.continuation import runtime_contract_snapshot, validate_runtime_contract
+    from openprogram.agent.dispatcher import loop_runner
+    from openprogram.agent.dispatcher.types import TurnRequest
+    from openprogram.agent.types import AgentTool
+    from openprogram.providers.types import Model
+
+    model = Model(id="fake", name="fake", api="openai-completions", provider="openai",
+                  base_url="https://example.invalid/v1")
+    tools = [AgentTool(name=name, label=name, description=name,
+                       parameters={"type": "object"}, execute=lambda *args: None)
+             for name in ("goal", "todo_create", "update_goal")]
+    monkeypatch.setattr(dispatcher, "_load_agent_profile", lambda *a: {})
+    monkeypatch.setattr(dispatcher, "_resolve_model", lambda *a: model)
+    monkeypatch.setattr(loop_runner, "_resolve_tools", lambda *a, **k: tools)
+    monkeypatch.setattr(loop_runner, "_wrap_with_approval", lambda tool, *a: tool)
+    monkeypatch.setattr("openprogram.context.components.build_system_prompt", lambda *a, **k: "system")
+    monkeypatch.setattr("openprogram.programs.workflow.goal.chat.instructions", lambda *a: "")
+    request = TurnRequest("approval-goal", "calculate", "main", source)
+    request._execution_revision_id = "test-revision"
+    initial = loop_runner.resolve_agent_runtime(request)[-1]
+    assert "goal" not in {tool["name"] for tool in initial["tools"]}
+    saved = runtime_contract_snapshot(model=model, system_prompt="system", tools=tools,
+                                      request=request) if legacy else initial
+    resumed = loop_runner.resolve_agent_runtime(request, saved_runtime_contract=saved)[-1]
+    assert ("goal" in {tool["name"] for tool in resumed["tools"]}) is legacy
+    validate_runtime_contract(saved, resumed)
+
+
 @pytest.fixture
 def session(tmp_path, monkeypatch):
     from openprogram.agent.session_db import SessionDB

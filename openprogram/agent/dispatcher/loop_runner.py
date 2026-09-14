@@ -266,7 +266,10 @@ def resolve_agent_runtime(
         else _dispatcher._load_agent_profile(req.agent_id)
     )
     tools = _resolve_tools(agent_profile, req.tools_override, source=req.source)
-    if req.source in {"web", "tui", "acp"} and saved_runtime_contract is None:
+    saved_legacy_goal = saved_runtime_contract is not None and any(
+        tool["name"] == "goal" for tool in saved_runtime_contract["tools"]
+    )
+    if req.source in {"web", "tui", "acp"} and not saved_legacy_goal:
         tools = [tool for tool in tools or [] if tool.name != "goal"]
     # Page inventory is transient. Keep this turn's browser-tool selection
     # through reconnects; each actual browser action still validates access.
