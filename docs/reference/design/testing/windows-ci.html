@@ -8,6 +8,7 @@
 <h2>Document reads and test resource ownership</h2>
 <p>Document publication binds file identity by device and inode at open and compares metadata stability independently within descriptor and pathname stat APIs. Windows may represent their timestamps differently; stable representation differences must not produce a conflict. Changes within either API still reject publication and preserve the original bytes, as do content revision mismatches.</p>
 <p>History ownership test fixtures register SessionStore.close immediately after construction. Closing cancels and joins deferred index writers before the production-thread teardown guard runs, including when setup or assertions fail. The guard remains unchanged.</p>
+<p>Tracked-dispatch test fixtures retain their JobRunner and register cleanup immediately after acquiring it. They request the existing non-waiting singleton shutdown, then join its dispatcher, reconciler, and budget threads before closing the SessionStore. A bounded production shutdown is not evidence that test-owned resources have finished.</p>
 <h2>Acceptance</h2>
 <p>Both native architectures must complete the full unit suite and platform contracts. An intentionally blocked diagnostic process must emit its Python stack and exit unsuccessfully. Ordinary failed tests must emit their details and exit unsuccessfully.</p>
 <h2>Implementation status</h2>

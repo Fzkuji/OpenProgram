@@ -79,14 +79,23 @@ def parent_turn(tmp_path, monkeypatch, request):
 
     # Build the runner NOW (empty store) so its one-shot orphan
     # reconciliation doesn't flip tasks the tests save later.
-    from openprogram.agent.job import get_runner
-    get_runner()
+    from openprogram.agent.job import runner as runner_mod
+    runner = runner_mod.get_runner()
+
+    def close_runner():
+        runner_mod.shutdown_runner()
+        # The singleton shutdown is deliberately non-waiting. Drain this
+        # fixture's management threads before its store and monkeypatches end.
+        for thread in (
+            runner._dispatcher_thread, runner._reconciler_thread, runner._budget_thread,
+        ):
+            thread.join()
+
+    request.addfinalizer(close_runner)
 
     yield s
     run_control._current_session_id.reset(sid_tok)
     store_mod._current_turn_id.reset(turn_tok)
-    import openprogram.agent.job.runner as runner_mod
-    runner_mod.shutdown_runner()
 
 
 # --- to= dispatch, idle target ---
