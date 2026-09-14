@@ -1,0 +1,9 @@
+{
+ "id": "atlascloud",
+ "endpoints": {
+  "default": {
+   "api": "openai-completions",
+   "base_url": "https://api.atlascloud.ai/v1"
+  }
+ }
+}

@@ -6,6 +6,11 @@ def test_single_wire_meta():
     assert provider_base_url("deepseek") == "https://api.deepseek.com/v1"
 
 
+def test_atlascloud_meta():
+    assert provider_apis("atlascloud") == {"openai-completions"}
+    assert provider_base_url("atlascloud") == "https://api.atlascloud.ai/v1"
+
+
 def test_multi_wire_meta():
     apis = provider_apis("opencode")
     assert "anthropic-messages" in apis and "openai-completions" in apis

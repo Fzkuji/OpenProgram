@@ -128,11 +128,15 @@ def test_fresh_install_lists_shipped_providers(mem_cfg, _offline, monkeypatch):
     # Subscription providers models.dev doesn't list MUST still be present.
     assert {"openai-codex", "claude-code", "gemini-subscription"} <= ids
     # Regular shipped key providers too.
-    assert {"openai", "anthropic", "deepseek"} <= ids
+    assert {"openai", "anthropic", "deepseek", "atlascloud"} <= ids
     # Alias dirs never surface as their own row.
     assert "chatgpt-subscription" not in ids
     # Wire-format metadata dirs are not providers.
     assert "openai-completions" not in ids and "openai-responses" not in ids
+
+    atlascloud = next(p for p in listing.list_providers() if p["id"] == "atlascloud")
+    assert atlascloud["api_key_env"] == "ATLASCLOUD_API_KEY"
+    assert atlascloud["supports_fetch"] is True
 
 
 # ---------------------------------------------------------------------------
