@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 
 AGENT_CHECKPOINT_SCHEMA_VERSION = 1
 MAX_AGENT_CHECKPOINT_BYTES = 256 * 1024
+# Display page target; full result blobs are not subject to this threshold.
 MAX_AGENT_STATE_BLOB_BYTES = 1024 * 1024
 MAX_AGENT_STATE_REFS = 32
 MAX_AGENT_PENDING_MESSAGES = 64
@@ -325,8 +326,6 @@ def validate_runtime_contract(
 
 
 def _descriptor(payload: bytes, *, media_type: str = "application/json", schema_version: int = 1) -> dict[str, Any]:
-    if len(payload) > MAX_AGENT_STATE_BLOB_BYTES:
-        raise AgentCheckpointError("state_blob_too_large", "Agent state blob exceeds the size limit")
     if not media_type or type(schema_version) is not int or schema_version < 1:
         raise AgentCheckpointError("state_ref_invalid", "state blob media type and schema version are required")
     digest = hashlib.sha256(payload).hexdigest()
@@ -354,7 +353,6 @@ def _validate_descriptor(value: Any) -> dict[str, Any]:
         or any(char not in "0123456789abcdef" for char in digest)
         or type(value["byte_length"]) is not int
         or value["byte_length"] < 0
-        or value["byte_length"] > MAX_AGENT_STATE_BLOB_BYTES
         or value["media_type"] != "application/json"
         or value["schema_version"] != 1
     ):
@@ -376,8 +374,8 @@ def _store_turn_display(
     """Persist display cards without blocking the resume-cursor checkpoint.
 
     Small traces stay on ``turn_display_ref`` under the 64KiB delta cap.
-    Native observe traces that exceed that cap use the existing 1MiB state-blob
-    primitive, then page at 1MiB when needed. Display refs are optional.
+    Larger traces use pages targeting 1MiB, with full-size result blobs
+    referenced by oversized cards. Display refs are optional.
     """
     if cards is None:
         return {}
@@ -410,7 +408,6 @@ def _store_turn_display(
                 item["result_ref"] = add(
                     f"turn_display_result.{index}",
                     result,
-                    cap=MAX_AGENT_STATE_BLOB_BYTES,
                 )
         slim.append(item)
     pages: list[list[dict[str, Any]]] = []
@@ -701,7 +698,7 @@ class AgentCheckpointV1:
 
         assistant_ref = add("assistant_message_delta", assistant_message, cap=MAX_AGENT_DELTA_BYTES)
         snapshot_ref = add("resolved_model_system_tool_snapshot", resolved_snapshot)
-        tool_refs = [add(f"tool_result_delta.{index}", result, cap=MAX_AGENT_DELTA_BYTES) for index, result in enumerate(tool_results)]
+        tool_refs = [add(f"tool_result_delta.{index}", result) for index, result in enumerate(tool_results)]
 
         receipt_values: list[dict[str, Any]] = []
         for index, receipt in enumerate(terminal_effect_receipts):
@@ -753,7 +750,7 @@ class AgentCheckpointV1:
                 raise AgentCheckpointError("checkpoint_schema_invalid", "completed action input hash is invalid")
             if "result" in action:
                 result_ref, raw_result = _json_value(
-                    action["result"], name="completed action result", cap=MAX_AGENT_DELTA_BYTES,
+                    action["result"], name="completed action result",
                 )
                 if result_ref["ref"] not in blobs:
                     refs[f"completed_action_result.{len(actions)}"] = result_ref

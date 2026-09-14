@@ -75,6 +75,7 @@ _AGENT_TURN_INPUT_KEYS = frozenset({
 })
 _STATE_REF_PREFIX = "execstate://sha256/"
 _STATE_HASH_LENGTH = 64
+# Preferred chunk size for producers such as the GUI broker, not a storage cap.
 MAX_AGENT_STATE_BLOB_BYTES = 1024 * 1024
 RESOURCE_INTENT_KINDS = frozenset({
     "execution.admission.intent", "resource.admission.intent",

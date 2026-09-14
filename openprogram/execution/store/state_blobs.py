@@ -26,7 +26,6 @@ from ..model import TERMINAL_EXECUTION_STATUSES
 from .shared import (
     ExecutionConflict,
     ExecutionStoreError,
-    MAX_AGENT_STATE_BLOB_BYTES,
     _STATE_HASH_LENGTH,
     _STATE_REF_PREFIX,
 )
@@ -200,8 +199,6 @@ class StateBlobsOperations:
             payload = payload.encode("utf-8")
         if not isinstance(payload, bytes):
             raise ExecutionConflict("state_ref_invalid", "state blob payload must be bytes or UTF-8 text")
-        if len(payload) > MAX_AGENT_STATE_BLOB_BYTES:
-            raise ExecutionConflict("state_blob_too_large", "Agent state blob exceeds the size limit")
         if not media_type or not isinstance(media_type, str) or type(schema_version) is not int or schema_version < 1:
             raise ExecutionConflict("state_ref_invalid", "state blob media type and schema version are required")
         self._require_execution(connection, execution_id)

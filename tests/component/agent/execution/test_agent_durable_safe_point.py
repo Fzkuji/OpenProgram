@@ -267,8 +267,8 @@ def _agent_execution(
     return store, attempts, active, running
 
 
-def test_agent_state_blob_enforces_caps_and_content_addressed_metadata(tmp_path):
-    """Agent state refs must be bounded, canonical, and self-describing."""
+def test_agent_state_blob_preserves_large_payloads_and_content_addressed_metadata(tmp_path):
+    """Agent state refs preserve payloads and validate ownership and metadata."""
 
     store, _attempts, _active, execution = _agent_execution(tmp_path)
     from openprogram.execution.state_blobs import (
@@ -294,16 +294,16 @@ def test_agent_state_blob_enforces_caps_and_content_addressed_metadata(tmp_path)
     assert record.media_type == "application/json"
     assert record.schema_version == 1
 
-    with pytest.raises(StateBlobConflict) as too_large:
-        blobs.put(
-            execution_id=execution.execution_id,
-            attempt_id=execution.current_attempt_id,
-            name="oversized",
-            payload=b"x" * (MAX_AGENT_STATE_BLOB_BYTES + 1),
-            media_type="application/octet-stream",
-            schema_version=1,
-        )
-    assert too_large.value.code == "state_blob_too_large"
+    large_payload = b"x" * (MAX_AGENT_STATE_BLOB_BYTES + 1)
+    large = blobs.put(
+        execution_id=execution.execution_id,
+        attempt_id=execution.current_attempt_id,
+        name="large-result",
+        payload=large_payload,
+        media_type="application/octet-stream",
+        schema_version=1,
+    )
+    assert store.get_state_blob(execution.execution_id, large.ref)["payload"] == large_payload
 
     with pytest.raises(StateBlobConflict) as invalid_ref:
         blobs.attach_ref(
