@@ -174,6 +174,8 @@ def test_blocked_non_page_event_does_not_report_page_cleanup_failure(monkeypatch
 
     callback_started = threading.Event()
     release_callback = threading.Event()
+    callback_finished = threading.Event()
+    callback_threads = []
 
     class FakeProcess:
         exitcode = 0
@@ -190,7 +192,7 @@ def test_blocked_non_page_event_does_not_report_page_cleanup_failure(monkeypatch
 
         def join(self, timeout=None):
             del timeout
-            assert callback_started.wait(1)
+            assert callback_started.wait(30)
 
         def is_alive(self):
             return False
@@ -202,12 +204,15 @@ def test_blocked_non_page_event_does_not_report_page_cleanup_failure(monkeypatch
             return FakeProcess(**kwargs)
 
     def on_event(_event):
+        callback_threads.append(threading.current_thread())
         callback_started.set()
-        release_callback.wait(2)
+        try:
+            release_callback.wait(30)
+        finally:
+            callback_finished.set()
 
     monkeypatch.setattr(process_runner.mp, "get_context", lambda _kind: FakeContext())
 
-    started_at = time.monotonic()
     try:
         result = process_runner.run_agentic_in_subprocess(
             tool_name="demo",
@@ -216,11 +221,14 @@ def test_blocked_non_page_event_does_not_report_page_cleanup_failure(monkeypatch
             anchor_msg_id="m",
             on_event=on_event,
         )
+        # Verify the cleanup ordering, not sandbox setup or host scheduling time.
+        assert callback_started.is_set()
+        assert not callback_finished.is_set()
     finally:
-        elapsed = time.monotonic() - started_at
         release_callback.set()
-
-    assert elapsed < 1.5
+        for thread in callback_threads:
+            thread.join(timeout=30)
+            assert not thread.is_alive()
     assert result == {"status": "succeeded", "success": True}
     assert "page_cleanup_failed" not in result
 
