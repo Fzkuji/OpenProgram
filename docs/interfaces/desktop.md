@@ -100,7 +100,7 @@ You may click, scroll, type, navigate, or close built-in pages while an Agent wo
 
 When a task page disappears, the Agent reacquires the page or reopens its last known address if it has closed, then reads its current state. Previous clicks and submissions are not replayed automatically. Lost authentication or unsaved content is reported when it cannot be restored.
 
-Conversation history loads the latest page first. Use **Load earlier messages** above the transcript to retrieve older pages without losing new streamed output. Pages follow the same conversation branch. Reconnecting reloads the recent page; stored history and model context are unchanged.
+Conversation history loads the latest page first. Scrolling toward the top automatically retrieves earlier messages while keeping your reading position and new streamed output. No loading button is needed; failed requests retry automatically. Distant message components unload and return as you scroll. Pages follow the same conversation branch. Reconnecting reloads the recent page; stored history and model context are unchanged.
 
 ## Continuing after a restart
 

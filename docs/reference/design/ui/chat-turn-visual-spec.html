@@ -958,5 +958,9 @@ document.getElementById('reset-subagent').addEventListener('click',resetSubagent
 <p class="rule">Acceptance: the sample <code>\(d_t\)</code> / <code>\(v_t = (d_t - d_{t+1}) / d_t\)</code> produces KaTeX HTML on the assistant bubble; display <code>\[</code>/<code>$$</code> and inline <code>$</code> do too; prose without math and incomplete openers do not typeset; invalid math does not throw.</p>
 </section>
 <p>Assistant replies omit the token and service-tier usage footer. Only an execution segment containing the final content block may shimmer while the reply is running. Earlier segments remain static; a trailing text block stops execution-summary animation.</p>
+<section id="automatic-history"><h2>Automatic transcript history</h2>
+<p>The visible transcript prefetches the previous page within one viewport (at least 600px) of the top. Pagination has no button or label. Only one request runs at a time. Hidden panes stop requesting; failures retry automatically with bounded exponential backoff. Requests retain the existing session generation and branch-head checks.</p>
+<p>Prepending a page preserves the visible message and its offset before paint. Only a changed final message triggers new-turn following. The existing measured row window unmounts distant message components, retains their measured height, and remounts them on return. Message data remains cached for navigation and live updates; this does not delete persisted history.</p>
+<p>Acceptance: scroll up without clicking to reveal earlier messages; no pagination text; viewport stays on the same message; offscreen components unload and return while active turns remain live; hidden panes and exhausted cursors stop fetching; failures recover without duplicate requests.</p></section>
 </body>
 </html>

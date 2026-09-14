@@ -73,6 +73,7 @@ const messages=convToChatMsgs(SAVED_MESSAGES);createRoot(document.getElementById
             page = browser.new_page()
             page.goto(shell.as_uri())
             page.add_script_tag(path=str(bundle))
-            expect(page.locator('.usage-footer-label')).to_contain_text('Standard served: 1')
+            expect(page.locator('.chat-text')).to_contain_text('Reply')
+            expect(page.locator('.usage-footer-label')).to_have_count(0)
         finally:
             browser.close()

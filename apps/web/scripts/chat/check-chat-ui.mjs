@@ -330,7 +330,7 @@ assert.match(messageList, /const chatKey = useSessionStore\(\(s\) => s\.activeCh
 // without it a reader who scrolls up has no way back to the tail.
 assert.match(
   messageList,
-  /useChatAreaStick\(\s*chatKey,\s*ids\.length,\s*lastRole === "user",\s*paintRows,?\s*\)/,
+  /useChatAreaStick\(\s*chatKey,\s*lastId,\s*lastRole === "user",\s*paintRows,?\s*\)/,
 );
 assert.match(messageList, /const \{ detached, jumpToLatest \} = useChatAreaStick/);
 assert.match(messageList, /className="jump-latest"/);

@@ -43,7 +43,7 @@ test("true flush bottom is at bottom even with no pad", () => {
 test("jump button is portaled onto #chatView, not the scroller", () => {
   assert.match(messageList, /createPortal/);
   assert.match(messageList, /getElementById\("chatView"\)/);
-  assert.doesNotMatch(messageList, /createPortal\([\s\S]*chatArea/);
+  assert.doesNotMatch(messageList.slice(0, messageList.indexOf("function AutomaticHistory")), /createPortal\([\s\S]*chatArea/);
   assert.match(messageList, /isChatAtBottom/);
   assert.match(messageList, /readComposerHeight/);
   assert.doesNotMatch(messageList, /clientHeight < 80/);

@@ -23,6 +23,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import { startHistoryAutoload } from "@/lib/chat/history-autoload";
 import { useSessionHistory } from "@/lib/chat/session-history";
 import { loadOlderSessionHistory } from "@/lib/runtime-bridge/conversations";
 import { ArrowDown } from "lucide-react";
@@ -588,7 +589,7 @@ export const RecyclableRow = memo(function RecyclableRow({
  *  page refresh, ...) triggered the legacy hook. Fire it on every
  *  container resize so React-side updates show math live.
  *
- *  ``newTurnSeed`` (changes when message count grows) marks a new turn.
+ *  ``newTurnSeed`` (the final message ID; unchanged by older pages) marks a new turn.
  *  Following it is conditional: a reader parked at the bottom is carried
  *  along, a reader who scrolled up to re-read something keeps their
  *  place. Their own send always follows — that is an explicit gesture,
@@ -596,7 +597,7 @@ export const RecyclableRow = memo(function RecyclableRow({
  */
 function useChatAreaStick(
   chatKey: string | null,
-  newTurnSeed: number,
+  newTurnSeed: string | null,
   ownTurn: boolean,
   paintRows: boolean,
 ) {
@@ -937,7 +938,7 @@ export const MessageList = memo(function MessageList({
   // agent row, which only follows if they were already down there.
   const { detached, jumpToLatest } = useChatAreaStick(
     chatKey,
-    ids.length,
+    lastId,
     lastRole === "user",
     paintRows,
   );
@@ -1132,7 +1133,7 @@ export const MessageList = memo(function MessageList({
 
   return (
     <>
-      <OlderHistory sessionId={sessionId} />
+      <AutomaticHistory sessionId={sessionId} enabled={paintRows} />
       <AgentBranchBanner />
       <WorkspaceAlignmentBanner sessionId={sessionId} />
       {paintRows ? (
@@ -1228,12 +1229,16 @@ export const MessageList = memo(function MessageList({
 });
 
 
-function OlderHistory({ sessionId }: { sessionId: string | null }) {
-  const history = useSessionHistory(s => sessionId ? s.pages[sessionId] : undefined);
-  useTranslation();
-  if (!sessionId || !history?.before) return null;
-  return <button type="button" className="text-sm text-muted-foreground py-2" disabled={history.loading}
-    onClick={() => void loadOlderSessionHistory(sessionId)}>
-    {history.loading ? translateText("Loading…", "加载中…") : history.error ? translateText("Retry loading earlier messages", "重试加载更早消息") : translateText("Load earlier messages", "加载更早消息")}
-  </button>;
+function AutomaticHistory({ sessionId, enabled }: { sessionId: string | null; enabled: boolean }) {
+  useEffect(() => {
+    if (!sessionId || !enabled) return;
+    const area = document.getElementById("chatArea");
+    if (!area) return;
+    return startHistoryAutoload(area, {
+      read: () => useSessionHistory.getState().pages[sessionId],
+      subscribe: useSessionHistory.subscribe,
+      load: () => loadOlderSessionHistory(sessionId),
+    });
+  }, [sessionId, enabled]);
+  return null;
 }

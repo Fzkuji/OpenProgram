@@ -1,3 +1,4 @@
+import { flushSync } from "react-dom";
 import { registerSessionHistory, updateSessionHistory, useSessionHistory, type HistoryPage } from "@/lib/chat/session-history";
 import { wsRequest } from "@/lib/net/ws-request";
 /**
@@ -785,15 +786,26 @@ export async function loadOlderSessionHistory(id: string): Promise<void> {
   const area = runtimeState.currentSessionId === id ? document.getElementById("chatArea") : null;
   const oldHeight = area?.scrollHeight ?? 0;
   const oldTop = area?.scrollTop ?? 0;
+  const top = area?.getBoundingClientRect().top ?? 0;
+  const anchor = area ? Array.from(area.querySelectorAll<HTMLElement>("[data-msg-slot], [data-msg-id]"))
+    .find(el => el.getBoundingClientRect().bottom > top) : undefined;
+  const anchorTop = anchor?.getBoundingClientRect().top;
   const currentIds = new Set((conv.messages ?? []).map(m => m.id));
   conv.messages = [...page.messages.filter(m => !currentIds.has(m.id)), ...(conv.messages ?? [])];
   const store = useSessionStore.getState();
   const current = (store.messageOrder[id] ?? []).map(mid => store.messagesById[mid]).filter(Boolean);
   const ids = new Set(current.map(m => m.id));
   const older = convToChatMsgs(page.messages as never[]).filter(m => !ids.has(m.id));
-  store.setMessages(id, [...older, ...current]);
-  updateSessionHistory(id, expected.generation, { before: page.history.before });
-  if (area) requestAnimationFrame(() => {
-    if (runtimeState.currentSessionId === id) area.scrollTop = oldTop + area.scrollHeight - oldHeight;
+  // Commit and compensate before paint. A later streaming resize below the
+  // anchor must not be counted as prepended history.
+  flushSync(() => {
+    store.setMessages(id, [...older, ...current]);
+    updateSessionHistory(id, expected.generation, { before: page.history.before });
   });
+  if (area && runtimeState.currentSessionId === id) {
+    area.scrollTop = anchor?.isConnected && anchorTop != null
+      ? area.scrollTop + anchor.getBoundingClientRect().top - anchorTop
+      : oldTop + area.scrollHeight - oldHeight;
+    area.dispatchEvent(new Event("scroll"));
+  }
 }
