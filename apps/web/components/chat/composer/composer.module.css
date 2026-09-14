@@ -623,18 +623,18 @@
   display: inline-flex;
 }
 .fastIndicator {
-  display: inline-flex;
+  display: inline-grid;
   align-items: center;
   flex-shrink: 0;
-  width: 0;
+  grid-template-columns: 0fr;
   opacity: 0;
   overflow: hidden;
   transform: translateX(-3px);
   pointer-events: none;
-  transition: width 180ms ease-out, opacity 180ms ease-out, transform 180ms ease-out;
+  transition: grid-template-columns 180ms ease-out, opacity 180ms ease-out, transform 180ms ease-out;
 }
 .fastIndicator[data-active="true"] {
-  width: 22px;
+  grid-template-columns: 1fr;
   opacity: 1;
   transform: translateX(0);
 }

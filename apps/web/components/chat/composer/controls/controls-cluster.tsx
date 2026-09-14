@@ -470,7 +470,9 @@ export function ControlsCluster({
                         aria-hidden="true"
                       />
                       <span className={styles.fastIndicator} data-active={fastEnabled && fastSupported} aria-hidden="true">
-                        <GaugeIcon size={14} active className="shrink-0" />
+                        <span className="min-w-0 overflow-hidden flex">
+                          <GaugeIcon size={14} active className="shrink-0 mr-[4px]" />
+                        </span>
                       </span>
                       <span className={styles.effortValue}>
                         {thinking ? thinking[0].toUpperCase() + thinking.slice(1) : text("Model settings", "模型设置")}
