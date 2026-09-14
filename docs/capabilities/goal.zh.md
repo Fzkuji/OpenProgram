@@ -29,6 +29,8 @@ agent 调用 `update_goal(status="complete")` 前，必须用当前实际证据�
 
 ## Python Workflow 兼容
 
+聊天表单保留显式的轮数、token、活跃时间和费用限额；独立 Workflow 角色参数和隔离上下文会明确报错，聊天工作应通过会话设置配置。Rich REPL 的 `/goal` 启动普通 canonical chat，并显示 execution ID。
+
 直接 Python 调用和组合 Workflow 中的 `goal()` 保留已有 work/refinement/judge 合同。这个兼容路径与聊天 Goal 分开，仍接受 `context_mode`、work/judge 模型设置和执行上限。聊天模式使用会话工作模型，不使用单独角色设置。
 
 迁移及实现证据见[工程设计](../reference/design/runtime/goal.zh.md)。

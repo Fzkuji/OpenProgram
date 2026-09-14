@@ -1983,7 +1983,7 @@ Goal answer saved; resuming from the latest checkpoint.</pre>
 
     <section id="status">
       <h2>实现状态与证据边界</h2>
-      <p>聊天 Goal 与 todo 集成：设计已明确，代码、独立审查与安装版验收尚未完成。本文其他段落的 Workflow 实现记录描述迁移前代码，不作为新聊天行为的完成证据。</p>
+      <p data-implementation-state="baseline-failed">聊天 Goal 与 todo 集成：普通聊天续轮、短状态工具、todo 关联、Web/TUI 入口和预算核算已有实现，并通过独立规格与质量审查。完整验收尚未通过：主分支的请求压缩逻辑在不含 Goal 改动的基线上仍使五项 provider 预算测试失败。安装版验收未执行，不作为已部署能力。其余 Workflow 实现记录仅证明保留的 Python 兼容路径，不证明聊天模式完成验收。</p>
       <div class="framework-grid">
         <div class="card"><h3>当前代码已经具备</h3><ul><li>单 prompt Goal、Working Agent 与独立 inspection judge。</li><li>schema v3 版本化 session 快照、goal/run ID、checkpoint、CAS 写入和旧数据规范化。</li><li>typed stop states、round/token/active-time/cost 预算、checklist stall 与 idle-spin 检测。</li><li>异步问题队列、逐项回答、边界消费、有人/无人值守判定策略。</li><li>Web Goal dialog、TUI 操作、页面重载 hydration 与 worker 重启后的可恢复暂停。</li><li>五张 Archify typed source 生成并以内联 SVG 写入本文档。</li></ul></div>
         <div class="card"><h3>仍未实现或尚未验收</h3><ul><li>deterministic gate executor、外部事件自动 wake handle 和 append-only evidence repository。</li><li>跨主机分布式 lease；同机共享目录的 Goal ownership 已实现。</li><li>默认 App 的已验收范围见上文；异步回答的完整界面操作与无障碍树尚未验收。</li><li>Goal 主体与运行修复已合入主分支并包含在默认 App；执行树摘要缺陷及通用跨进程启动恢复风险尚未修复。</li></ul></div>

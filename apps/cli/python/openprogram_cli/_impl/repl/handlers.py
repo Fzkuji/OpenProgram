@@ -333,7 +333,7 @@ _LOCAL_ACTIONS = {
 
 
 def _handle_goal(args: list[str], console, rt, session_id: str) -> bool:
-    """Run the same public Goal Workflow used by Programs and Web chat."""
+    """Start ordinary Goal chat work through canonical admission."""
     if not session_id:
         console.print("[yellow]No active session.[/]")
         return False
@@ -341,26 +341,12 @@ def _handle_goal(args: list[str], console, rt, session_id: str) -> bool:
     out = handle_goal_command(session_id, " ".join(args))
     if out.get("text"):
         console.print(out["text"], markup=False)
-    invocation = out.get("invoke")
-    if not isinstance(invocation, dict):
-        return False
-    if rt is None:
-        console.print("[yellow]No active Runtime — Goal was not started.[/]")
+    if not out.get("send_text"):
         return False
     try:
-        from openprogram.agent.run_control import (
-            reset_current_session_id,
-            set_current_session_id,
-        )
-        from openprogram.programs.workflow.goal import goal
-
-        token = set_current_session_id(session_id)
-        try:
-            result = goal(**dict(invocation.get("kwargs") or {}), runtime=rt)
-        finally:
-            reset_current_session_id(token)
-        if result:
-            console.print(result, markup=False)
+        from openprogram.programs.workflow.goal import chat
+        result = chat.start_from_controls(session_id, source="tui")
+        console.print(f"Goal chat started: {result['execution_id']}", markup=False)
     except Exception as e:  # noqa: BLE001 — surface, don't kill the REPL
         console.print(f"\n[red]Goal failed: {type(e).__name__}: {e}[/]")
     return False

@@ -54,7 +54,9 @@ def publish(session_id: str, goal: dict) -> dict:
 
 
 @serialized
-def create(session_id: str, objective: str, token_budget: int | None = None) -> dict:
+def create(session_id: str, objective: str, token_budget: int | None = None, *,
+           max_rounds: int | None = None, max_elapsed_s: float | None = None,
+           max_cost_usd: float | None = None) -> dict:
     objective = objective.strip()
     if not objective:
         raise ValueError("Goal objective is required")
@@ -63,6 +65,11 @@ def create(session_id: str, objective: str, token_budget: int | None = None) -> 
     previous = goals.load_goal(session_id)
     if previous and previous.get("status") not in {"achieved", "cancelled", "cleared", "impossible"}:
         raise goals.GoalConflictError("An unfinished Goal exists; resume or cancel it first")
+    from .goal import _positive_float, _positive_int
+    round_limit = goals.default_max_turns() if max_rounds is None else _positive_int(max_rounds, name="max_rounds")
+    budget = {"max_turns": round_limit, "max_tokens": token_budget,
+              "max_elapsed_s": _positive_float(max_elapsed_s, name="max_elapsed_s"),
+              "max_cost_usd": _positive_float(max_cost_usd, name="max_cost_usd")}
     from openprogram.agent.run_control import get_current_execution_id
     now = time.time()
     goal = {
@@ -72,8 +79,7 @@ def create(session_id: str, objective: str, token_budget: int | None = None) -> 
         "text": objective, "status": "active", "phase": "idle",
         "execution_id": get_current_execution_id(),
         "created_at": now, "turns_used": 0, "run_turns": 0,
-        "max_turns": goals.default_max_turns(),
-        "budget": {"max_turns": goals.default_max_turns(), "max_tokens": token_budget},
+        "max_turns": round_limit, "budget": budget,
         "usage": {"total_tokens": 0, "cost_usd": 0.0, "cost_known": True, "active_elapsed_s": 0.0},
         "active_started_at": now if get_current_execution_id() else None,
         "questions": [], "pending_answers": [], "checklist": [],
@@ -318,7 +324,7 @@ def start_next(store, previous_execution_id: str, *, expected: dict):
         raise
 
 
-def start_from_controls(session_id: str) -> dict:
+def start_from_controls(session_id: str, *, source: str = "web") -> dict:
     """Owner-facing controls start an ordinary chat with current session settings."""
     import asyncio
     import threading
@@ -337,7 +343,7 @@ def start_from_controls(session_id: str) -> dict:
     msg_id = uuid.uuid4().hex
     request = TurnRequest(
         session_id=session_id, user_text=goal["text"],
-        agent_id=session.get("agent_id") or "main", source="web",
+        agent_id=session.get("agent_id") or "main", source=source,
         user_msg_id=msg_id, permission_mode=permission_from_config(config),
         tools_override=tools_override_from_config(config), thinking_effort=config.thinking_effort,
         permission_rules=load_merged_rules(session_id),

@@ -72,18 +72,22 @@ def test_conflicted_action_does_not_cancel_or_resolve(action_goal, monkeypatch, 
 
 def test_tui_resume_is_bound_to_the_observed_goal(action_goal, monkeypatch):
     package, _client = action_goal
-    function = importlib.import_module("openprogram.agentic_programming.function")
-    monkeypatch.setattr(function, "current_session_id", lambda: "actions")
-    invocation = package.handle_goal_command("actions", "resume")["invoke"]
+    from openprogram.agent.dispatcher.types import TurnRequest
+    from openprogram.agent.production_driver import CanonicalAgentAdapter
+    from openprogram.programs.workflow.goal import chat
+    result = package.handle_goal_command("actions", "resume")
+    assert result["send_text"] and "invoke" not in result
+    observed = package.load_goal("actions")
+    request = TurnRequest("actions", result["send_text"], "main", "tui",
+                          goal_context=chat.identity(observed), goal_trigger=True,
+                          goal_previous_execution=observed["execution_id"])
     package.apply_goal_action("actions", "edit", prompt="a different article")
     before = package.load_goal("actions")
-    calls = []
-    monkeypatch.setattr(package, "refine_goal_spec_candidate", lambda *_a, **_k: calls.append("work"))
     monkeypatch.setattr(package, "reset_goal_usage_cursor",
                         lambda *_a: pytest.fail("stale resume started processing"))
     with pytest.raises(package.GoalConflictError):
-        package.goal(**invocation["kwargs"])
-    assert calls == []
+        CanonicalAgentAdapter().admit(request, trusted_actor={},
+                                      user_message_id="stale", config_snapshot_ref="session:actions")
     assert package.load_goal("actions") == before
 
 

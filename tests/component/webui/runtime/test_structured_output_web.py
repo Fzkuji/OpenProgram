@@ -47,7 +47,7 @@ def test_invalid_schema_is_rejected_before_web_dispatch(monkeypatch):
 
 
 def test_web_chat_threads_normalized_response_format_to_existing_dispatch(
-    monkeypatch,
+    monkeypatch, tmp_path,
 ):
     from openprogram.agent import run_control
     from openprogram.webui import server as web_server
@@ -87,7 +87,7 @@ def test_web_chat_threads_normalized_response_format_to_existing_dispatch(
     )
     monkeypatch.setattr(
         "openprogram.agent.session_db.default_db",
-        lambda: type("DB", (), {"get_session": lambda self, _sid: {"extra_meta": {}}, "update_session": lambda *args, **kwargs: None})(),
+        lambda: type("DB", (), {"root_path": tmp_path, "get_session": lambda self, _sid: {"extra_meta": {}}, "update_session": lambda *args, **kwargs: None})(),
     )
 
     asyncio.run(handle_chat(ws, {

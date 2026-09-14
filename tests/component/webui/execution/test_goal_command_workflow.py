@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
+import pytest
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -14,6 +15,38 @@ class _FakeWS:
 
     async def send_text(self, payload: str) -> None:
         self.sent.append(json.loads(payload))
+
+
+@pytest.mark.parametrize("unsupported", [None, {"judge_model": "reviewer:model"}, {"context_mode": "isolated"}])
+def test_goal_form_preserves_budgets_and_rejects_workflow_only_options(tmp_path, monkeypatch, unsupported):
+    from openprogram.agent.session_db import SessionDB
+    from openprogram.webui import server
+    from openprogram.webui.routes.chat import run_agentic_function_call
+    import openprogram.programs.workflow.goal as goals
+    from openprogram.programs.workflow.goal import chat
+    db = SessionDB(tmp_path / "sessions")
+    db.create_session("form-goal", "main")
+    monkeypatch.setattr(goals, "_db", lambda: db)
+    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
+    monkeypatch.setattr(server, "_get_or_create_session", lambda sid: {"id": sid})
+    monkeypatch.setattr(server._runtime_management, "_enabled_model_keys", lambda: ["test:model"])
+    monkeypatch.setattr(goals, "_emit_goal_update", lambda *a: None)
+    started = []
+    monkeypatch.setattr(chat, "start_from_controls", lambda sid:
+                        started.append(goals.load_goal(sid)) or {"execution_id": "chat-form"})
+    try:
+        result = run_agentic_function_call("goal", {"prompt": "test", "max_rounds": 2,
+            "max_tokens": 1000, "max_elapsed_s": 30, "max_cost_usd": 0.1,
+            **(unsupported or {})}, session_id="form-goal")
+        if unsupported:
+            assert result["status_code"] == 409
+            assert not started and goals.load_goal("form-goal") is None
+        else:
+            assert result["execution_id"] == "chat-form"
+            assert started[0]["budget"] == {"max_turns": 2, "max_tokens": 1000,
+                                            "max_elapsed_s": 30.0, "max_cost_usd": 0.1}
+    finally:
+        db.close()
 
 
 def test_web_goal_set_saves_chat_state_without_forced_workflow(

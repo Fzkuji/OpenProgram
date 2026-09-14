@@ -459,7 +459,7 @@ def test_chat_startup_failure_fails_exact_admission_and_clears_task(
         assert session_id not in _s._running_tasks
 
 
-def test_handle_chat_starts_turn_when_ack_socket_is_gone(monkeypatch):
+def test_handle_chat_starts_turn_when_ack_socket_is_gone(monkeypatch, tmp_path):
     from openprogram.webui import server as _s
     from openprogram.webui.ws_actions import chat as chat_actions
     from openprogram.webui.ws_actions.chat import handle_chat
@@ -496,6 +496,7 @@ def test_handle_chat_starts_turn_when_ack_socket_is_gone(monkeypatch):
         session_db,
         "default_db",
         lambda: types.SimpleNamespace(
+            root_path=tmp_path,
             get_session=lambda sid: {"extra_meta": {"_user_titled": True}},
         ),
     )

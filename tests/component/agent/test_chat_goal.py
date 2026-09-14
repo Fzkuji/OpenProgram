@@ -31,7 +31,8 @@ def runtime(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("failure", [None, "notification", "admission", "checkpoint"])
-def test_completed_chat_continues_once_with_original_authority(runtime, monkeypatch, failure):
+@pytest.mark.parametrize("source", ["web", "tui"])
+def test_completed_chat_continues_once_with_original_authority(runtime, monkeypatch, failure, source):
     from openprogram.agent.production_driver import CanonicalAgentAdapter
     from openprogram.agent.dispatcher.types import TurnRequest
     goals, chat, store = runtime
@@ -82,7 +83,7 @@ def test_completed_chat_continues_once_with_original_authority(runtime, monkeypa
     authority = {"speaker_kind": "owner", "speaker_id": "owner/local",
                  "principal_id": "owner/install/0123456789abcdef", "authority_tier": "owner",
                  "interaction": "interactive"}
-    request = TurnRequest("goal-chat", "work", "main", "web", permission_mode="ask",
+    request = TurnRequest("goal-chat", "work", "main", source, permission_mode="ask",
                           tools_override=["read", "update_goal"], **authority)
     admission = adapter.admit(request, trusted_actor=authority, user_message_id="u1",
                               assistant_message_id="u1_reply", config_snapshot_ref="session:goal-chat")
@@ -91,7 +92,7 @@ def test_completed_chat_continues_once_with_original_authority(runtime, monkeypa
     assert len(calls) == 2
     assert calls[1].tools_override == ["read", "update_goal"]
     assert calls[1].principal_id == authority["principal_id"]
-    assert calls[1].source == "web"
+    assert calls[1].source == source
     assert calls[1].goal_trigger is True
     from openprogram.agent.run_control import current_token
     from openprogram.execution.model import ExecutionStatus

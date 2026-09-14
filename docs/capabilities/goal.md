@@ -31,4 +31,6 @@ The state tools are short operations: `create_goal`, `get_goal`, and `update_goa
 
 Direct Python and composed Workflow calls to `goal()` retain their existing work/refinement/judge contract. This compatibility path is distinct from chat Goals. It accepts `context_mode`, work/judge model settings and execution limits. Chat mode uses the conversation's work model and does not use those separate role settings.
 
+The chat form preserves explicit round, token, active-time and cost limits. It rejects separate Workflow role options and isolated context; change the conversation's settings for chat work instead. In the Rich REPL, `/goal` starts a canonical chat execution and prints its execution ID.
+
 See the [engineering design](../reference/design/runtime/goal.md) for the migration and implementation evidence.

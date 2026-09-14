@@ -358,10 +358,17 @@ def run_agentic_function_call(
     if name == "goal":
         from openprogram.programs.workflow.goal import chat
         try:
+            if any(kwargs.get(key) not in (None, "") for key in (
+                "model", "effort", "judge_model", "judge_effort", "timeout_s", "judge_timeout_s",
+            )) or kwargs.get("context_mode") == "isolated":
+                raise ValueError("Chat Goals use the current conversation model and context. Configure the conversation settings; separate Workflow role options require Python goal().")
             if kwargs.get("resume"):
                 chat.resume(session_id, kwargs.get("expected_goal"))
             else:
-                chat.create(session_id, str(kwargs.get("prompt") or ""), kwargs.get("max_tokens"))
+                from openprogram.programs.workflow.goal.goal import _positive_int
+                chat.create(session_id, str(kwargs.get("prompt") or ""),
+                            _positive_int(kwargs.get("max_tokens"), name="max_tokens"),
+                            **{key: kwargs.get(key) for key in ("max_rounds", "max_elapsed_s", "max_cost_usd")})
             return chat.start_from_controls(session_id)
         except ValueError as exc:
             return {"error": str(exc), "status_code": 409}

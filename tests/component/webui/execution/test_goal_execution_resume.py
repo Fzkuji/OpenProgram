@@ -189,8 +189,12 @@ def test_answer_saves_without_resuming_an_unfinished_execution(bound_goal, surfa
     assert package.load_goal("bound")["questions"][0]["answer"] == "narrow"
 
 
-def test_terminal_parent_with_active_grandchild_cannot_resume(bound_goal):
+def test_terminal_parent_with_active_grandchild_cannot_resume(bound_goal, monkeypatch):
     package, store, parent, client = bound_goal
+    from openprogram.programs.workflow.goal import chat
+    starts = []
+    monkeypatch.setattr(chat, "start_from_controls", lambda sid:
+                        starts.append(sid) or {"execution_id": "new-chat"})
     child = store.create_execution(session_id="bound", revision_id=parent.revision_id, parent_execution_id=parent.execution_id)
     grandchild = store.create_execution(session_id="bound", revision_id=parent.revision_id, parent_execution_id=child.execution_id)
     for item in (parent, child):
@@ -201,10 +205,13 @@ def test_terminal_parent_with_active_grandchild_cannot_resume(bound_goal):
     assert response["execution"]["active_children"] == [grandchild.execution_id]
     assert not response["execution"]["finished"]
     assert client.post("/api/sessions/bound/goal", json={"action": "resume"}).status_code == 409
+    assert not starts
     grandchild = store.transition_execution(grandchild.execution_id, expected_version=grandchild.status_version, target=ExecutionStatus.CANCELLING)
     store.transition_execution(grandchild.execution_id, expected_version=grandchild.status_version, target=ExecutionStatus.CANCELLED)
     assert client.post("/api/sessions/bound/goal", json={"action": "resume"}).status_code == 200
-    assert "invoke" in package.handle_goal_command("bound", "resume")
+    assert starts == ["bound"]
+    assert package.load_goal("bound")["execution_mode"] == "chat"
+    assert package.handle_goal_command("bound", "resume")["send_text"] is None
 
 
 @pytest.mark.parametrize("failure", ["missing", "wrong_session", "storage"])

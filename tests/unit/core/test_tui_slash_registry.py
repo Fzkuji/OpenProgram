@@ -66,34 +66,36 @@ def test_invoke_local_carries_marker_and_raw_args(clean_registry):
     assert res.raw_args == "glm-4.7"
 
 
-def test_rich_repl_goal_invokes_the_public_workflow(clean_registry, monkeypatch):
+def test_rich_repl_goal_starts_ordinary_chat(clean_registry, monkeypatch):
     import openprogram.programs.workflow.goal as goal_pkg
+    from openprogram.programs.workflow.goal import chat
 
     calls = []
     runtime = object()
-    monkeypatch.setattr(
-        goal_pkg,
-        "goal",
-        lambda **kwargs: calls.append(kwargs) or "finished",
-    )
-    monkeypatch.setattr(
-        "openprogram.agent.run_control.set_current_session_id",
-        lambda _sid: "token",
-    )
-    monkeypatch.setattr(
-        "openprogram.agent.run_control.reset_current_session_id",
-        lambda _token: None,
-    )
+    monkeypatch.setattr(chat, "create", lambda sid, prompt: calls.append((sid, prompt)))
+    monkeypatch.setattr(chat, "start_from_controls", lambda sid, **kw:
+                        calls.append((sid, kw)) or {"execution_id": "chat-exec"})
+    monkeypatch.setattr(goal_pkg, "goal", lambda **kw: pytest.fail("nested Workflow invoked"))
 
     console = _console()
     handlers._handle_goal(["tests", "pass"], console, runtime, "s1")
 
-    assert calls == [{
-        "prompt": "tests pass",
-        "context_mode": "session",
-        "runtime": runtime,
-    }]
-    assert "finished" in console.export_text()
+    assert calls == [("s1", "tests pass"), ("s1", {"source": "tui"})]
+    assert "chat-exec" in console.export_text()
+
+
+@pytest.mark.parametrize("command,send", [("resume", True), ("answer q yes", True),
+                                         ("pause", False), ("", False), ("answer q yes", False)])
+def test_rich_goal_only_starts_when_command_requests_work(clean_registry, monkeypatch, command, send):
+    import openprogram.programs.workflow.goal as goal_pkg
+    from openprogram.programs.workflow.goal import chat
+    calls = []
+    monkeypatch.setattr(goal_pkg, "handle_goal_command", lambda sid, raw:
+                        {"text": "saved", "send_text": "continue" if send else None})
+    monkeypatch.setattr(chat, "start_from_controls", lambda sid, **kw:
+                        calls.append((sid, kw)) or {"execution_id": "chat-exec"})
+    assert handlers._handle_goal(command.split(), _console(), object(), "s1") is False
+    assert len(calls) == int(send)
 
 
 def test_local_action_dispatch(clean_registry):
