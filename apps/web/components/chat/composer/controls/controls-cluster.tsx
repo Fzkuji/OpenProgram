@@ -469,7 +469,9 @@ export function ControlsCluster({
                         style={{ color: thinking === "max" ? "#8E6BD9" : effortColor }}
                         aria-hidden="true"
                       />
-                      {fastEnabled && fastSupported && <GaugeIcon size={14} active aria-hidden="true" />}
+                      <span className={styles.fastIndicator} data-active={fastEnabled && fastSupported} aria-hidden="true">
+                        <GaugeIcon size={14} active className="shrink-0" />
+                      </span>
                       <span className={styles.effortValue}>
                         {thinking ? thinking[0].toUpperCase() + thinking.slice(1) : text("Model settings", "模型设置")}
                       </span>
