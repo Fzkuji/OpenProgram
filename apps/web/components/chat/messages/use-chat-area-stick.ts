@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { animateJumpToLatest, isChatAtBottom, readBottomPadding, readComposerHeight, readChatScroll, resolveChatScrollTop, writeChatScroll } from "@/lib/chat/chat-scroll";
 import { renderMathInChat } from "@/lib/runtime-bridge/markdown-render";
 import { useSessionHistory } from "@/lib/chat/session-history";
@@ -12,7 +12,15 @@ export function useChatAreaStick(
   newTurnSeed: string | null,
   ownTurn: boolean,
   paintRows: boolean,
+  options?: { sessionId: string | null; areaRef: RefObject<HTMLElement>; columnRef: RefObject<HTMLElement> },
 ) {
+  const focusedId = useSessionStore(s => s.currentSessionId);
+  const sessionId = options ? options.sessionId : focusedId;
+  const areaRef = options?.areaRef;
+  const columnRef = options?.columnRef;
+  const hasNewer = useSessionHistory(s => !!(sessionId && s.pages[sessionId]?.after));
+  const interactionRef = useRef(0);
+  const pendingJumpRef = useRef(false);
   const activeKeyRef = useRef<string | null>(chatKey);
   const previousKeyRef = useRef<string | null>(null);
   const previousSeedRef = useRef(newTurnSeed);
@@ -30,18 +38,18 @@ export function useChatAreaStick(
 
   useEffect(() => {
     if (!paintRows) return;
-    const area = document.getElementById("chatArea");
-    const msgs = document.getElementById("chatMessages");
+    const area = areaRef?.current ?? document.getElementById("chatArea");
+    const msgs = columnRef?.current ?? document.getElementById("chatMessages");
     if (!area || !msgs) return;
     // A click that expands/collapses something (execution strip, thinking
     // row) resizes the container; pinning then yanks the clicked element
     // upward. Suppress the pin briefly after any pointer interaction so
     // user-initiated growth expands downward in place.
     const syncDetached = () => {
-      const atBottom = isChatAtBottom(
+      const atBottom = !(sessionId && useSessionHistory.getState().pages[sessionId]?.after) && isChatAtBottom(
         area,
         readBottomPadding(msgs),
-        readComposerHeight(),
+        areaRef ? 0 : readComposerHeight(),
       );
       if (jumpingRef.current) {
         // Stay visible until the ease-in-out ride finishes.
@@ -66,6 +74,7 @@ export function useChatAreaStick(
       if (area.clientHeight <= 0) return;
       if (
         stuckRef.current
+        && !(sessionId && useSessionHistory.getState().pages[sessionId]?.after)
         && !jumpingRef.current
         && performance.now() - lastPointerRef.current > 600
       ) {
@@ -80,6 +89,8 @@ export function useChatAreaStick(
       syncDetached();
     };
     const onPointer = () => {
+      interactionRef.current++;
+      pendingJumpRef.current = false;
       lastPointerRef.current = performance.now();
       if (jumpingRef.current) {
         cancelJumpRef.current?.();
@@ -89,24 +100,30 @@ export function useChatAreaStick(
     };
     area.addEventListener("scroll", onScroll, { passive: true });
     area.addEventListener("pointerdown", onPointer, { passive: true });
+    area.addEventListener("wheel", onPointer, { passive: true });
+    area.addEventListener("keydown", onPointer);
     const ro = new ResizeObserver(pin);
     ro.observe(msgs);
     return () => {
+      interactionRef.current++;
+      pendingJumpRef.current = false;
       cancelJumpRef.current?.();
       cancelJumpRef.current = null;
       jumpingRef.current = false;
       area.removeEventListener("scroll", onScroll);
       area.removeEventListener("pointerdown", onPointer);
+      area.removeEventListener("wheel", onPointer);
+      area.removeEventListener("keydown", onPointer);
       ro.disconnect();
     };
-  }, [paintRows]);
+  }, [paintRows, chatKey, sessionId, areaRef, columnRef]);
 
   // Save the outgoing position and restore the incoming one before paint.
   // `chatKey` is part of the dependency so equal-length conversations still
   // switch correctly. Whether a new turn in the same chat returns to the
   // bottom depends on where the reader was — see `resolveChatScrollTop`.
   useLayoutEffect(() => {
-    const area = document.getElementById("chatArea");
+    const area = areaRef?.current ?? document.getElementById("chatArea");
     if (!area) return;
     if (!paintRows) {
       previousPaintRef.current = false;
@@ -115,7 +132,7 @@ export function useChatAreaStick(
     const becameVisible = previousPaintRef.current === false;
     previousPaintRef.current = true;
     const keyChanged = previousKeyRef.current !== chatKey;
-    const sid = useSessionStore.getState().currentSessionId;
+    const sid = sessionId;
     const history = sid ? useSessionHistory.getState().pages[sid] : undefined;
     const windowKey = `${history?.snapshot}:${history?.start}:${history?.end}`;
     const windowChanged = historyWindowRef.current !== windowKey;
@@ -157,36 +174,46 @@ export function useChatAreaStick(
     // and after a deliberate stay-put we are not — and it is this flag
     // that decides whether the streaming deltas keep pinning.
     if (!jumpingRef.current) {
-      stuckRef.current = isChatAtBottom(
+      stuckRef.current = !hasNewer && isChatAtBottom(
         area,
-        readBottomPadding(document.getElementById("chatMessages")),
-        readComposerHeight(),
+        readBottomPadding(columnRef?.current ?? document.getElementById("chatMessages")),
+        areaRef ? 0 : readComposerHeight(),
       );
       setDetached(!stuckRef.current);
     }
-  }, [chatKey, newTurnSeed, ownTurn, paintRows]);
+  }, [chatKey, newTurnSeed, ownTurn, paintRows, hasNewer, sessionId, areaRef, columnRef]);
 
   const jumpToLatest = useCallback(async () => {
-    const sid = useSessionStore.getState().currentSessionId;
-    if (sid) {
-      saveHistoryAnchor(sid, null);
-      const history = useSessionHistory.getState().pages[sid];
-      if (history?.after || history?.loading) await loadSessionHistoryWindow(sid, "latest");
-      if (useSessionStore.getState().currentSessionId !== sid) return;
-    }
-    const area = document.getElementById("chatArea");
-    if (!area) return;
-    cancelJumpRef.current?.();
-    jumpingRef.current = true;
-    stuckRef.current = true;
-    cancelJumpRef.current = animateJumpToLatest(area, () => {
-      cancelJumpRef.current = null;
-      jumpingRef.current = false;
+    if (pendingJumpRef.current) return;
+    const sid = sessionId;
+    const interaction = interactionRef.current;
+    const isCurrent = () => interaction === interactionRef.current;
+    pendingJumpRef.current = true;
+    try {
+      if (sid) {
+        const history = useSessionHistory.getState().pages[sid];
+        if (history?.after || history?.loading) {
+          const loaded = await loadSessionHistoryWindow(sid, "latest", undefined, { isCurrent });
+          if (!loaded) return;
+        }
+        if (!isCurrent()) return;
+        saveHistoryAnchor(sid, null);
+      }
+      const area = areaRef?.current ?? document.getElementById("chatArea");
+      if (!area || !isCurrent()) return;
+      cancelJumpRef.current?.();
+      jumpingRef.current = true;
       stuckRef.current = true;
-      setDetached(false);
-    });
-  }, []);
+      cancelJumpRef.current = animateJumpToLatest(area, () => {
+        cancelJumpRef.current = null;
+        jumpingRef.current = false;
+        stuckRef.current = true;
+        setDetached(false);
+      });
+    } finally {
+      if (isCurrent()) pendingJumpRef.current = false;
+    }
+  }, [sessionId, areaRef]);
 
   return { detached, jumpToLatest };
 }
-

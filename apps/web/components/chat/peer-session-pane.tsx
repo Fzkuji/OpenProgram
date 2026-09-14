@@ -19,17 +19,15 @@
  * right rail and DAG follow. Interacting with a pane sets it silently
  * (`setActive`), which changes no layout and interrupts no input.
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import { useMessageIds, useSessionStore } from "@/lib/session-store";
 import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
-import { isChatAtBottom, readBottomPadding, readComposerHeight, readChatScroll, writeChatScroll } from "@/lib/chat/chat-scroll";
 import {
   RECYCLE_MIN_ROWS,
   collectAlwaysLive,
   decideLiveRows,
   heightsFor,
-  noteChatWidth,
 } from "@/lib/chat/message-window";
 import { getSocket } from "@/lib/runtime-bridge/state";
 import { wsSend } from "@/components/sidebar/sessions-list/helpers";
@@ -37,6 +35,8 @@ import { Composer } from "./composer";
 import { SessionScopeProvider } from "@/lib/session-store/session-scope";
 import { useTranslation } from "@/lib/i18n";
 
+import { useChatAreaStick } from "./messages/use-chat-area-stick";
+import { useMessageViewport } from "./messages/use-message-viewport";
 import { useHistoryWindow } from "./messages/use-history-window";
 import { MessageRow, RecyclableRow } from "./messages/message-list";
 
@@ -123,98 +123,25 @@ export function PeerSessionPane({
     return () => ro.disconnect();
   }, [sessionId]);
 
-  // Stick-to-bottom. Same rule the main shell's useChatAreaStick uses: track
-  // whether the user is parked near the bottom, and re-pin as content grows.
-  // A ResizeObserver on the message column (rather than a message-count
-  // effect) is what catches streamed text deltas too, not just new bubbles.
-  const stuckRef = useRef(true);
   const columnRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const area = areaRef.current;
-    const column = columnRef.current;
-    if (!area || !column) return;
-    const pin = () => {
-      if (!stuckRef.current) return;
-      area.scrollTop = area.scrollHeight;
-      if (scrollKey) writeChatScroll(window.sessionStorage, scrollKey, area.scrollTop);
-    };
-    const ro = new ResizeObserver(pin);
-    ro.observe(column);
-    return () => ro.disconnect();
-  }, [scrollKey]);
-
-  // Own scroll state, keyed per session — the panes never share a position.
-  useEffect(() => {
-    const area = areaRef.current;
-    if (!area || !scrollKey) return;
-    const saved = readChatScroll(window.sessionStorage, scrollKey);
-    area.scrollTop = saved ?? area.scrollHeight;
-    const padEl = columnRef.current;
-    stuckRef.current = isChatAtBottom(area, readBottomPadding(padEl), readComposerHeight());
-    const onScroll = () => {
-      stuckRef.current = isChatAtBottom(area, readBottomPadding(padEl), readComposerHeight());
-      writeChatScroll(window.sessionStorage, scrollKey, area.scrollTop);
-    };
-    area.addEventListener("scroll", onScroll, { passive: true });
-    return () => area.removeEventListener("scroll", onScroll);
-  }, [scrollKey]);
-
+  const lastId = ids.at(-1) ?? null;
+  const lastRole = useSessionStore(s => lastId ? s.messagesById[lastId]?.role : null);
+  const { detached, jumpToLatest } = useChatAreaStick(scrollKey, lastId, lastRole === "user", true,
+    { sessionId, areaRef, columnRef });
   const streaming = useSessionStore((s) =>
     sessionId ? Boolean(s.runningTasks[sessionId]) : false,
   );
   const chatKey = scrollKey;
   const snap = useSessionStore.getState();
   const alwaysLive = collectAlwaysLive(ids, (id) => snap.messagesById[id]);
-  const [view, setView] = useState({ top: 0, h: 800 });
-  const measureGate = useRef(false);
-  const [, setMeasureGen] = useState(0);
-  const notifyMeasured = useCallback(() => {
-    if (measureGate.current) return;
-    measureGate.current = true;
-    requestAnimationFrame(() => {
-      measureGate.current = false;
-      setMeasureGen((n) => n + 1);
-    });
-  }, []);
-  useLayoutEffect(() => {
-    const area = areaRef.current;
-    if (!area) return;
-    if (chatKey && area.clientWidth > 0 && noteChatWidth(chatKey, area.clientWidth)) {
-      setMeasureGen((n) => n + 1);
-    }
-    const next = { top: area.scrollTop, h: area.clientHeight };
-    setView((prev) => (prev.top === next.top && prev.h === next.h ? prev : next));
-  }, [chatKey, ids.length]);
-  useEffect(() => {
-    const area = areaRef.current;
-    if (!area) return;
-    let raf = 0;
-    const sync = () => {
-      raf = 0;
-      if (chatKey && area.clientWidth > 0 && noteChatWidth(chatKey, area.clientWidth)) {
-        setMeasureGen((n) => n + 1);
-      }
-      const next = { top: area.scrollTop, h: area.clientHeight };
-      setView((prev) => (prev.top === next.top && prev.h === next.h ? prev : next));
-    };
-    const onScroll = () => {
-      if (!raf) raf = requestAnimationFrame(sync);
-    };
-    area.addEventListener("scroll", onScroll, { passive: true });
-    const ro = new ResizeObserver(sync);
-    ro.observe(area);
-    return () => {
-      area.removeEventListener("scroll", onScroll);
-      ro.disconnect();
-      if (raf) cancelAnimationFrame(raf);
-    };
-  }, [chatKey]);
+  const { view, notifyMeasured } = useMessageViewport(chatKey, ids.length, true, areaRef);
   const liveSet = chatKey
     ? decideLiveRows({
         nodes: ids.map((id) => ({ kind: "row" as const, id })),
         heights: heightsFor(chatKey),
         scrollTop: view.top,
         viewH: view.h,
+        overscan: view.overscan,
         always: alwaysLive,
         listLen: ids.length,
         recycleMin: RECYCLE_MIN_ROWS,
@@ -262,6 +189,11 @@ export function PeerSessionPane({
         >
           {title}
         </span>
+        {detached ? <button type="button" onClick={jumpToLatest}
+          aria-label={text("Jump to latest", "跳到最新")}
+          style={{ marginLeft: "auto", fontSize: "inherit", cursor: "pointer" }}>
+          {text("Jump to latest", "跳到最新")}
+        </button> : null}
         {streaming ? <span className="thinking-spinner" aria-hidden="true" /> : null}
       </div>
       {/* `minWidth: 0` on both the scroller and the column: without it a
@@ -269,6 +201,7 @@ export function PeerSessionPane({
           width, and the bubbles collapse instead of wrapping. */}
       <div
         ref={areaRef}
+        tabIndex={0}
         className="chat-area peer-session-area"
         style={{ flex: 1, minHeight: 0, minWidth: 0, overflowY: "auto" }}
       >

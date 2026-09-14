@@ -1,9 +1,9 @@
 "use client";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { noteChatWidth } from "@/lib/chat/message-window";
 
 /** Measured viewport with extra mounted content for large scroll deltas. */
-export function useMessageViewport(chatKey: string | null, rowCount: number, paintRows: boolean) {
+export function useMessageViewport(chatKey: string | null, rowCount: number, paintRows: boolean, areaRef?: RefObject<HTMLElement>) {
   const [view, setView] = useState({ top: 0, h: 800, overscan: 1600 });
   const measureGate = useRef(false);
   const [, setMeasureGen] = useState(0);
@@ -17,14 +17,14 @@ export function useMessageViewport(chatKey: string | null, rowCount: number, pai
   }, []);
   useLayoutEffect(() => {
     if (!paintRows) return;
-    const area = document.getElementById("chatArea");
+    const area = areaRef?.current ?? document.getElementById("chatArea");
     if (!area) return;
     const next = { top: area.scrollTop, h: area.clientHeight, overscan: 1600 };
     setView((prev) => (prev.top === next.top && prev.h === next.h ? prev : next));
-  }, [chatKey, rowCount, paintRows]);
+  }, [chatKey, rowCount, paintRows, areaRef]);
   useEffect(() => {
     if (!paintRows) return;
-    const area = document.getElementById("chatArea");
+    const area = areaRef?.current ?? document.getElementById("chatArea");
     if (!area) return;
     let raf = 0;
     let idle: ReturnType<typeof setTimeout> | undefined;
@@ -53,6 +53,6 @@ export function useMessageViewport(chatKey: string | null, rowCount: number, pai
       if (raf) cancelAnimationFrame(raf);
       clearTimeout(idle);
     };
-  }, [chatKey, paintRows]);
+  }, [chatKey, paintRows, areaRef]);
   return {view, notifyMeasured};
 }

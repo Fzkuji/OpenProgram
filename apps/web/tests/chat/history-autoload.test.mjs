@@ -71,3 +71,15 @@ test('a new session generation clears old retry delays',async t=>{
   assert.equal(f.requests.length,2);
   await f.settle({before:null});f.frame();
 });
+
+ test('connectivity recovery clears backoff and cleanup removes the listener',async t=>{
+  const f=fixture(t);f.area.scrollTop=0;f.frame();await f.settle({error:true});
+  window.dispatchEvent(new Event('op:browser-connection'));f.frame();
+  assert.equal(f.requests.length,2);
+  await f.settle({error:true});
+  window.dispatchEvent(new Event('online'));f.frame();
+  assert.equal(f.requests.length,3);
+  f.stop();await f.settle({error:true});
+  window.dispatchEvent(new Event('op:browser-connection'));f.frame();
+  assert.equal(f.requests.length,3);
+ });

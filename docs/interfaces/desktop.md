@@ -105,6 +105,8 @@ When a task page disappears, the Agent reacquires the page or reopens its last k
 
 Conversation history loads the latest page first. Scrolling retrieves nearby messages automatically in either direction while keeping your reading position and new streamed output. No loading button is needed; failed requests retry automatically. Distant pages leave the memory cache and are retrieved again when you return. Reopening a conversation restores the visible message when it still exists on the selected branch. Jump to latest retrieves the latest page directly. The DAG is loaded when you open its view. Stored history and model context are unchanged.
 
+The main conversation and split panes each provide Jump to latest while newer messages remain outside the loaded window. A failed jump keeps the control available for retry. Scrolling, clicking inside the transcript, or pressing a key there cancels a pending jump or saved-position restoration; late replies do not replace the window you are reading. Closing a pane saves its final reading position. Reconnecting resumes automatic history loading without waiting for an old retry delay.
+
 ## Continuing after a restart
 
 Closing a conversation tab or the App window leaves worker-owned tasks running. If the worker itself stops, resumable Agent tasks save checkpoints at completed provider and tool boundaries. On restart, tasks paused by shutdown or recovered from a safe abandoned checkpoint automatically continue within two hours. The deadline is persisted; another restart does not extend it. After expiry, the task stays paused and can be continued manually.

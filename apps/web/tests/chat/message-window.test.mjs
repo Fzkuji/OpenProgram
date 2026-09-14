@@ -182,7 +182,7 @@ test("peer pane recycles with its own height bucket", () => {
   assert.match(peerSrc, /peer:\$\{sessionId\}/);
   assert.match(peerSrc, /heightsFor\(chatKey\)/);
   assert.match(peerSrc, /chatKey=\{chatKey\}/);
-  assert.match(peerSrc, /noteChatWidth\(chatKey/);
+  assert.match(peerSrc, /useMessageViewport\(chatKey, ids.length, true, areaRef\)/);
   clearHeights();
   setRowHeight("sess-1", "m1", 40);
   setRowHeight("peer:s1", "m1", 90);

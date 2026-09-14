@@ -50,12 +50,13 @@ export function seedHistoryWindow(id: string, messages: HistoryRow[], history?: 
   windows.set(id, window);
   trimHistoryWindows(id);
 }
-export function loadOlderSessionHistory(id: string): Promise<void> {
-  return loadSessionHistoryWindow(id, 'older');
+export async function loadOlderSessionHistory(id: string): Promise<void> {
+  await loadSessionHistoryWindow(id, 'older');
 }
 
 /** Network and data coordination. All viewport operations live in history-viewport. */
-export async function loadSessionHistoryWindow(id: string, direction: HistoryDirection, around?: string): Promise<void> {
+export async function loadSessionHistoryWindow(id: string, direction: HistoryDirection, around?: string, options?: { isCurrent: () => boolean }): Promise<boolean> {
+  if (options && !options.isCurrent()) return false;
   const expected = useSessionHistory.getState().pages[id];
   if (expected?.loading && (direction === 'latest' || direction === 'around')) {
     await new Promise<void>(resolve => {
@@ -66,14 +67,14 @@ export async function loadSessionHistoryWindow(id: string, direction: HistoryDir
         }
       });
     });
-    return loadSessionHistoryWindow(id, direction, around);
+    return loadSessionHistoryWindow(id, direction, around, options);
   }
   if (!expected || expected.loading || (direction === 'older' && !expected.before)
-      || (direction === 'newer' && !expected.after)) return;
+      || (direction === 'newer' && !expected.after)) return false;
   const socket = getSocket();
   if (!socket || socket.readyState !== WebSocket.OPEN) {
     updateSessionHistory(id, expected.generation, {error: true});
-    return;
+    return false;
   }
   updateSessionHistory(id, expected.generation, { loading: true, error: false });
   const field = direction === 'older' ? {history_before: expected.before}
@@ -83,14 +84,18 @@ export async function loadSessionHistoryWindow(id: string, direction: HistoryDir
     'load_session', {session_id:id, history_head:expected.head_id, history_snapshot:expected.snapshot, ...field},
     'session_history_page', {requestId:true}, 15000,
   );
-  if (useSessionHistory.getState().pages[id]?.generation !== expected.generation) return;
+  if (useSessionHistory.getState().pages[id]?.generation !== expected.generation) return false;
   if (getSocket() !== socket || !page || page.id !== id || !page.history || !Array.isArray(page.messages)
       || (direction !== 'latest' && page.history.head_id !== expected.head_id)) {
     updateSessionHistory(id, expected.generation, {loading:false,error:true});
-    return;
+    return false;
+  }
+  if (options && !options.isCurrent()) {
+    updateSessionHistory(id, expected.generation, { loading: false });
+    return false;
   }
   const conv = runtimeState.conversations[id] as {messages?: HistoryRow[]} | undefined;
-  if (!conv) { updateSessionHistory(id, expected.generation, {loading:false}); return; }
+  if (!conv) { updateSessionHistory(id, expected.generation, {loading:false}); return false; }
   const registered=viewports.get(id);
   const area = registered?.keys().next().value
     ?? (runtimeState.currentSessionId === id ? document.getElementById('chatArea') : null);
@@ -132,4 +137,5 @@ export async function loadSessionHistoryWindow(id: string, direction: HistoryDir
     area.dispatchEvent(new Event('scroll'));
   }
   trimHistoryWindows(id);
+  return true;
 }

@@ -1,13 +1,13 @@
 import type { HistoryDirection } from './history-window';
 import type { HistoryState } from './session-history';
 
-/** Prefetch only around the visible transcript's upper edge. */
+/** Prefetch only around the visible transcript's edges. */
 export function startHistoryAutoload(
   area: HTMLElement,
   source: {
     read: () => HistoryState | undefined;
     subscribe: (changed: () => void) => () => void;
-    load: (direction: HistoryDirection) => Promise<void>;
+    load: (direction: HistoryDirection) => Promise<unknown>;
   },
 ): () => void {
   let stopped = false;
@@ -72,7 +72,15 @@ export function startHistoryAutoload(
   resize.observe(area);
   area.addEventListener('scroll', schedule, { passive: true });
   document.addEventListener('visibilitychange', schedule);
-  window.addEventListener('online', schedule);
+  const recover = () => {
+    if (document.visibilityState === 'hidden') return;
+    failures = 0;
+    clearTimeout(timer);
+    timer = undefined;
+    schedule();
+  };
+  window.addEventListener('online', recover);
+  window.addEventListener('op:browser-connection', recover);
   schedule();
   return () => {
     stopped = true;
@@ -80,7 +88,8 @@ export function startHistoryAutoload(
     resize.disconnect();
     area.removeEventListener('scroll', schedule);
     document.removeEventListener('visibilitychange', schedule);
-    window.removeEventListener('online', schedule);
+    window.removeEventListener('online', recover);
+    window.removeEventListener('op:browser-connection', recover);
     if (frame) cancelAnimationFrame(frame);
     clearTimeout(timer);
   };
