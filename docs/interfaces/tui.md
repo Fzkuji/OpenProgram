@@ -82,3 +82,5 @@ leaves the context unchanged.
 Also available: `/search`, `/review`, `/diff`, `/init`, `/browser`, `/welcome`. The `/help` output is the authoritative full list.
 
 Beyond these built-ins, the completion menu also lists every command from the unified command registry — skills, MCP prompts, plugin commands, and your own command files under `~/.openprogram/commands/` or `<project>/.openprogram/commands/` (markdown with optional YAML frontmatter). Running one expands its body and sends it as the message, exactly like the Web composer: the TUI and the Web UI read the same registry, so a command defined once appears in both.
+
+Tool continuations can compact completed text results within the same user message; no additional `/compact` command is required. Original execution records are retained.

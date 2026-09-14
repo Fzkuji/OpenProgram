@@ -197,3 +197,9 @@ append-only 替身节点对所有方案通用，换方案永不迁移数据：
 - 第八节不变量——`tests/unit/context/test_compaction_covers.py`、
   `tests/unit/dag/test_graph_builder_covers.py`、
   `tests/integration/dag/test_dag_mutation_scenarios.py`。
+
+## 同一条用户消息内压缩
+
+每次 AgentLoop 请求前都会检查转换后的消息、实际工具、系统提示、输出上限与安全余量。聊天工具续调和函数内部的 `llm()` / `agent()` 都使用此入口。需要时摘要已完整返回的工具组中的纯文本结果，不必等待下一条用户消息；用户消息、调用参数、结果 ID、错误状态和多模态内容保持不变。
+
+处理仅作用于当前请求，原始执行消息和 DAG 保留，不创建持久化的会话摘要节点。缓存限于一次调用，按原始结果内容和模型配置匹配。摘要请求单独计量输入与输出，每次构建最多 32 次摘要调用、总计 60 秒，不递归进入 AgentLoop。token 为本地估算，不保证与 provider 计量一致或语义完全等价；必要内容仍无法容纳时，不发送已知超预算请求。

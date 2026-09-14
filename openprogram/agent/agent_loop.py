@@ -883,16 +883,21 @@ async def _stream_assistant_response(
     if stream_fn is None:
         from openprogram.providers.stream import stream_simple_with_provider
 
-        def snapshot_stream(candidate, candidate_context, candidate_options):
+        async def snapshot_stream(candidate, candidate_context, candidate_options):
             snapshot = dispatch_snapshots.get(id(candidate))
             provider = snapshot.provider if snapshot is not None else None
-            return stream_simple_with_provider(
+            # Failover can change the input window and output cap. Validate
+            # each actual candidate, not only the initial model.
+            candidate_context = await context._request_compactor.prepare(
+                candidate_context, candidate, candidate_options, get_api_key=config.get_api_key)
+            async for event in stream_simple_with_provider(
                 provider,
                 candidate,
                 candidate_context,
                 candidate_options,
                 get_api_key=config.get_api_key,
-            )
+            ):
+                yield event
 
         fn = snapshot_stream
         try:
@@ -1031,6 +1036,14 @@ async def _stream_assistant_response(
         response_format=provider_response_format,
         supports_idempotency_key=provider_supports_idempotency_key,
     )
+
+    # Shared by outer chat and Runtime.exec()/llm()/agent() tool continuations.
+    # Prepare after dynamic memory, tools, and response-format instructions.
+    from openprogram.context.request_compaction import RequestCompactor
+
+    if context._request_compactor is None:
+        context._request_compactor = RequestCompactor()
+    llm_context = await context._request_compactor.prepare(llm_context, config.model, stream_opts, get_api_key=config.get_api_key)
 
     partial_message: AssistantMessage | None = None
     added_partial = False

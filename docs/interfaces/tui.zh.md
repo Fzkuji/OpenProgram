@@ -80,3 +80,5 @@ Windows 推荐使用 Windows Terminal。运行在 MinTTY 中的 Git Bash 可能�
 另有 `/search`、`/review`、`/diff`、`/init`、`/browser`、`/welcome`。完整清单以 `/help` 输出为准。
 
 除这些内置命令外，补全菜单还会列出统一命令注册表里的全部命令——skill、MCP prompt、插件命令，以及你放在 `~/.openprogram/commands/` 或 `<项目>/.openprogram/commands/` 下的自定义命令文件（markdown，可带 YAML frontmatter）。执行时命令正文展开后作为消息发送，与 Web composer 完全一致：TUI 和 Web UI 读同一张注册表，命令定义一次两边都有。
+
+同一条用户消息内的工具续调也能压缩已完成的文本结果，无需额外发送 `/compact`。原始执行记录仍然保留。

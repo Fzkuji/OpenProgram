@@ -258,3 +258,21 @@ validation policy is under verification:
 - §8 invariants — `tests/unit/context/test_compaction_covers.py`,
   `tests/unit/dag/test_graph_builder_covers.py`,
   `tests/integration/dag/test_dag_mutation_scenarios.py`.
+
+## Compaction inside one user message
+
+Before every AgentLoop provider request, including chat tool continuations and
+function-local `llm()` / `agent()` calls, the runtime budgets the converted
+messages, actual tools, system prompt, output cap, and a safety margin. When
+needed, it summarizes text-only results of fully completed tool groups without
+waiting for another user message. User messages, tool arguments, result IDs,
+error flags, and multimodal content remain unchanged.
+
+This is a request-local transformation. Original execution messages and the
+DAG remain intact; it does not create a durable conversation-summary node.
+An invocation-local cache matches original result content and model settings.
+Summary calls have their own input/output budgets, at most 32 requests per
+preparation and a 60-second deadline, and bypass AgentLoop to avoid recursive
+compaction. Token counts are local estimates, not a guarantee of provider
+accounting or semantic equivalence. If required content cannot fit, the runtime
+does not dispatch a request it estimates to be over budget.
