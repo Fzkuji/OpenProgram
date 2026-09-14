@@ -21,8 +21,10 @@ def digest(raw: bytes) -> str:
 def documents(tmp_path, monkeypatch):
     root = tmp_path / "project"
     root.mkdir()
-    state = tmp_path / "state"
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    from openprogram.paths import get_state_dir
+    state = get_state_dir()
     project = types.SimpleNamespace(id="p1", path=str(root),
                                     location_state="available", is_default=False,
                                     **capture_directory_identity(root))
