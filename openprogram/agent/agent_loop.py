@@ -884,6 +884,9 @@ async def _stream_assistant_response(
         from openprogram.providers.stream import stream_simple_with_provider
 
         async def snapshot_stream(candidate, candidate_context, candidate_options):
+            candidate_options = candidate_options.model_copy(update={
+                "max_tokens": request_output_limit(candidate, config.max_tokens),
+            })
             snapshot = dispatch_snapshots.get(id(candidate))
             provider = snapshot.provider if snapshot is not None else None
             # Failover can change the input window and output cap. Validate
@@ -1004,6 +1007,7 @@ async def _stream_assistant_response(
         )
 
     from openprogram.providers import SimpleStreamOptions
+    from openprogram.context.request_compaction import RequestCompactor, request_output_limit
     # ``thinking_levels`` is the model's request-body capability contract.
     # A stale session/agent preference can outlive a model switch, so never
     # forward it to a model whose list is empty: OpenAI-compatible upstreams
@@ -1015,7 +1019,7 @@ async def _stream_assistant_response(
         reasoning=reasoning,
         thinking_budgets=config.thinking_budgets,
         temperature=config.temperature,
-        max_tokens=config.max_tokens,
+        max_tokens=request_output_limit(config.model, config.max_tokens),
         signal=cancel_event,
         api_key=resolved_api_key,
         transport=config.transport,
@@ -1039,8 +1043,6 @@ async def _stream_assistant_response(
 
     # Shared by outer chat and Runtime.exec()/llm()/agent() tool continuations.
     # Prepare after dynamic memory, tools, and response-format instructions.
-    from openprogram.context.request_compaction import RequestCompactor
-
     if context._request_compactor is None:
         context._request_compactor = RequestCompactor()
     llm_context = await context._request_compactor.prepare(llm_context, config.model, stream_opts, get_api_key=config.get_api_key)

@@ -261,6 +261,8 @@ validation policy is under verification:
 
 ## Compaction inside one user message
 
+When no output cap is specified, the request uses the smallest of the model's output capability, the standard output reserve (16,384 tokens), and one quarter of its context window. The same resolved cap is used for input budgeting and provider dispatch. Explicit caps remain unchanged; an oversized protected request is rejected rather than silently reducing the requested output.
+
 Before every AgentLoop provider request, including chat tool continuations and
 function-local `llm()` / `agent()` calls, the runtime budgets the converted
 messages, actual tools, system prompt, output cap, and a safety margin. When

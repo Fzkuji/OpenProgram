@@ -11,7 +11,7 @@ import hashlib
 import json
 import inspect
 
-from openprogram.context.budget import BudgetAllocator
+from openprogram.context.budget import BudgetAllocator, DEFAULT_OUTPUT_RESERVE
 from openprogram.context.tokens import _text_tokens, estimate_history_tokens, real_context_window
 from openprogram.providers.types import Context, SimpleStreamOptions, TextContent, ToolCall, UserMessage
 
@@ -23,6 +23,13 @@ _INSTRUCTION = (
 )
 
 
+def request_output_limit(model, requested: int | None) -> int:
+    """Resolve the default only; never silently reduce an explicit output cap."""
+    if requested is not None:
+        return requested
+    return min(model.max_tokens, DEFAULT_OUTPUT_RESERVE, max(1, real_context_window(model) // 4))
+
+
 class RequestCompactor:
     """Invocation-local memoization; never consult a different DAG view."""
 
@@ -31,7 +38,7 @@ class RequestCompactor:
 
     async def prepare(self, context: Context, model, options: SimpleStreamOptions, *, get_api_key=None) -> Context:
         window = real_context_window(model)
-        reserve = options.max_tokens or model.max_tokens
+        reserve = request_output_limit(model, options.max_tokens)
         margin = max(256, window // 20)
         budget = BudgetAllocator().allocate(
             context_window=window, system_prompt=context.system_prompt or '',

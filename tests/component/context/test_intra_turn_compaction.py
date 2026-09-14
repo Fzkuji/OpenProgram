@@ -9,6 +9,33 @@ from openprogram.context.tokens import estimate_history_tokens
 from openprogram.providers.types import AssistantMessage, EventDone, Model, TextContent, ToolCall, UserMessage
 
 
+@pytest.mark.parametrize('requested,expected', [(None, 250), (100, 100), (900, None)])
+def test_small_window_default_matches_provider_output_limit(requested, expected):
+    model = Model(id='small', name='small', api='openai-completions', provider='openai',
+                  base_url='https://example.invalid', context_window=1000, max_tokens=8192)
+    seen = []
+    async def stream(_model, context, options):
+        seen.append(options.max_tokens)
+        result = AssistantMessage(content=[TextContent(text='done')], api=model.api,
+                                  provider=model.provider, model=model.id, timestamp=0)
+        yield EventDone(reason='stop', message=result)
+    async def run():
+        events = agent_loop([UserMessage(content='hello', timestamp=0)],
+            AgentContext(tools=[], memory_prefetch=''),
+            AgentLoopConfig(model=model, max_tokens=requested, convert_to_llm=lambda messages: messages),
+            stream_fn=stream)
+        async for _ in events:
+            pass
+        return await events.result()
+    if expected is None:
+        with pytest.raises(ValueError, match='Protected request'):
+            asyncio.run(run())
+        assert not seen
+    else:
+        asyncio.run(run())
+        assert seen == [expected]
+
+
 def test_one_user_message_multiple_tool_rounds(monkeypatch):
     model = Model(id='fixture', name='fixture', api='openai-completions', provider='openai',
                   base_url='https://example.invalid', context_window=12000, max_tokens=1000)
@@ -185,6 +212,34 @@ def test_cancelled_summary_never_changes_raw_messages(monkeypatch, mode):
     assert context.model_dump_json() == before
     assert not compactor._cache
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize('requested,expected', [(None, [3000, 250]), (100, [100, 100])])
+def test_fallback_resolves_its_own_default_output_cap(monkeypatch, requested, expected):
+    from types import SimpleNamespace
+    import importlib
+    primary = Model(id='primary', name='fixture', api='openai-completions', provider='openai',
+        base_url='https://example.invalid', context_window=12000, max_tokens=8192)
+    fallback = primary.model_copy(update={'id': 'fallback', 'context_window': 1000})
+    dispatched = []
+    async def provider_stream(provider, model, context, options, **kwargs):
+        dispatched.append(options.max_tokens)
+        if model.id == 'primary':
+            raise ConnectionError('primary unavailable')
+        yield EventDone(reason='stop', message=AssistantMessage(content=[TextContent(text='ok')],
+            api=model.api, provider=model.provider, model=model.id, timestamp=0))
+    monkeypatch.setattr('openprogram.providers.api_registry.resolve_api_provider_snapshot',
+        lambda model: SimpleNamespace(provider=object(), supports_idempotency_key=False))
+    monkeypatch.setattr('openprogram.providers.utils.failover.resolve_fallback_models', lambda model: [fallback])
+    monkeypatch.setattr(importlib.import_module('openprogram.providers.stream'),
+                        'stream_simple_with_provider', provider_stream)
+    async def run():
+        events = agent_loop([UserMessage(content='hello', timestamp=0)],
+            AgentContext(tools=[], memory_prefetch=''),
+            AgentLoopConfig(model=primary, convert_to_llm=lambda messages: messages, max_tokens=requested))
+        await events.result()
+    asyncio.run(run())
+    assert dispatched == expected
 
 
 def test_fallback_rechecks_actual_model_window(monkeypatch):
