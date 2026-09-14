@@ -957,5 +957,6 @@ document.getElementById('reset-subagent').addEventListener('click',resetSubagent
 <p class="desc">Chat markdown already stashes complete <code>$$</code>/<code>$</code>/<code>\[</code>/<code>\(</code> blocks before <code>marked</code> and restores them as escaped text after sanitize. The React bubble still has to run KaTeX: <code>MarkdownText</code> typesets after paint, and the chat-area pin path calls <code>renderMathInChat</code>. Unclosed streaming math is not a complete stash pair; the next paint with a closer typesets. Sanitize, code, links, and ordinary escapes stay as they were. No new math library.</p>
 <p class="rule">Acceptance: the sample <code>\(d_t\)</code> / <code>\(v_t = (d_t - d_{t+1}) / d_t\)</code> produces KaTeX HTML on the assistant bubble; display <code>\[</code>/<code>$$</code> and inline <code>$</code> do too; prose without math and incomplete openers do not typeset; invalid math does not throw.</p>
 </section>
+<p>Assistant replies omit the token and service-tier usage footer. Only an execution segment containing the final content block may shimmer while the reply is running. Earlier segments remain static; a trailing text block stops execution-summary animation.</p>
 </body>
 </html>

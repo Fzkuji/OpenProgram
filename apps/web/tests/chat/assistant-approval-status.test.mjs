@@ -13,7 +13,7 @@ after(() => rm(dir, { recursive: true, force: true }));
 const file = join(dir, 'bubble.mjs');
 await build({
   absWorkingDir: web, entryPoints: ['components/chat/messages/assistant-bubble.tsx'],
-  bundle: true, platform: 'node', format: 'esm', packages: 'external', jsx: 'automatic', outfile: file,
+  external: ['react'], bundle: true, platform: 'node', format: 'esm', packages: 'external', jsx: 'automatic', outfile: file,
   plugins: [{ name: 'bubble-services', setup(b) {
     b.onResolve({ filter: /^(@\/|\.\/)/ }, a => a.importer.endsWith('assistant-bubble.tsx') && a.path !== '@/lib/format-utils/format' ? { path: a.path, namespace: 'stub' } : null);
     b.onLoad({ filter: /.*/, namespace: 'stub' }, a => ({ contents:
@@ -25,7 +25,7 @@ await build({
       a.path.includes('markdown-render') ? 'export const typesetMath=()=>{};' :
       a.path.includes('user-attachments') ? 'export const parseAttachments=text=>({attachments:[],text}), AttachmentChips=()=>null;' :
       a.path.includes('turn-files-presentation') ? 'export const shouldRenderTurnFiles=()=>false;' :
-      'export const Avatar=()=>null, AttachCard=()=>null, ExecutionStrip=({children})=>children, execStripLabel=()=>"", FunctionStep=()=>null, SPAWNING_TOOL_NAMES=new Set(), SubAgentStep=()=>null, ThinkingStep=({text})=>text, MessageActions=()=>null, MessageTimestamp=()=>null, RuntimeBlock=()=>null, TurnFilesChips=()=>null;'
+      'import {createElement} from "react"; export const Avatar=()=>null, AttachCard=()=>null, ExecutionStrip=({children,streaming})=>createElement("section",{"data-active":String(!!streaming)},children), execStripLabel=()=>"", FunctionStep=()=>null, SPAWNING_TOOL_NAMES=new Set(), SubAgentStep=()=>null, ThinkingStep=({text})=>text, MessageActions=()=>null, MessageTimestamp=()=>null, RuntimeBlock=()=>null, TurnFilesChips=()=>null;'
     }));
   }}],
 });
@@ -56,4 +56,18 @@ test('a failed assistant retains the streamed text alongside the error notice', 
   assert.match(html, /Checking evidence/);
   assert.match(html, /Partial response/);
   assert.match(html, /provider disconnected/);
+});
+
+function renderBlocks(blocks, status='running', usage) {
+  globalThis.approvalState={currentSessionId:'s1',pendingDecisions:[],executionUpdateOrders:{}};
+  return renderToStaticMarkup(createElement(AssistantBubble,{msg:{id:'m1',role:'assistant',status,blocks,usage},sessionIdOverride:'s1'}));
+}
+test('only the final active execution segment animates and text ends that animation', () => {
+  const blocks=[{type:'thinking',text:'Earlier'},{type:'text',text:'Update'},{type:'thinking',text:'Current'}];
+  assert.deepEqual([...renderBlocks(blocks).matchAll(/data-active="(true|false)"/g)].map(m=>m[1]),['false','true']);
+  assert.doesNotMatch(renderBlocks([...blocks,{type:'text',text:'Answer'}]), /data-active="true"/);
+  assert.doesNotMatch(renderBlocks(blocks,'done'), /data-active="true"/);
+});
+test('assistant replies do not display the usage footer', () => {
+  assert.doesNotMatch(renderBlocks([{type:'text',text:'Answer'}],'done',{input_tokens:89000,output_tokens:327,service_tiers:['priority']}), /runtime-usage-footer|Fast served|89.0k/);
 });
