@@ -292,3 +292,79 @@ window.locked=()=>isFollowLocked('main');
             page.wait_for_function("Math.abs(document.getElementById('chatArea').scrollHeight-document.getElementById('chatArea').scrollTop-document.getElementById('chatArea').clientHeight)<8")
         finally:
             browser.close()
+
+
+def test_jump_during_older_send_wait_still_fetches_latest(tmp_path):
+    from playwright.sync_api import sync_playwright
+    entry = r'''
+import React from 'react';import {createRoot} from 'react-dom/client';
+import {useChatAreaStick} from './components/chat/messages/use-chat-area-stick';
+import {useSessionStore} from './lib/session-store';
+import {useSessionHistory,registerSessionHistory} from './lib/chat/session-history';
+import {seedHistoryWindow,loadOlderSessionHistory} from './lib/runtime-bridge/session-history-loader';
+import {runtimeState,setSocket} from './lib/runtime-bridge/state';
+import {sendChatMessage} from './components/chat/composer/submit/send-chat-message';
+import {isFollowLocked} from './lib/chat/history-viewport';
+import {lastSettledTakeLatest,peekTakeLatest} from './lib/chat/chat-scroll';
+function page(id,start){let end=start+50;return {messages:Array.from({length:50},(_,i)=>({id:`${id}-${start+i}`,role:'user',content:`m${start+i}`,status:'completed'})),history:{snapshot:id,head_id:`${id}-499`,before:start>0?`${id}-${start}`:null,after:end<500?`${id}-${end-1}`:null,start,end,total:500}};}
+class Socket extends EventTarget{static OPEN=1;readyState=1;send(wire){let req=JSON.parse(wire);if(req.action==='load_session')window.requests.push(req);}}
+window.requests=[];window.WebSocket=Socket;const socket=new Socket();setSocket(socket);
+window.seed=(id,start)=>{const r=page(id,start);runtimeState.conversations[id]={id,messages:r.messages};seedHistoryWindow(id,r.messages,r.history);registerSessionHistory(id,r.history);useSessionStore.getState().setMessages(id,r.messages);};
+window.reply=(req,fail=false)=>{let start=req.history_latest?450:req.history_before?Number(String(req.history_before).split('-').at(-1))-50:400;socket.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({type:'session_history_page',data:{id:fail?'wrong':req.session_id,action:'load_session',request_id:req.request_id,...page(req.session_id,start)}})}));};
+window.pageState=id=>useSessionHistory.getState().pages[id];
+runtimeState.currentSessionId='main';useSessionStore.setState({currentSessionId:'main',activeChatKey:'main'});window.seed('main',450);
+function Main(){const ids=useSessionStore(s=>s.messageOrder.main??[]);const {detached,jumpToLatest}=useChatAreaStick('main',ids.at(-1)??null,true);window.jump=jumpToLatest;return <><div id="chatArea" tabIndex={0}><div id="chatMessages">{ids.map(id=><div data-msg-id={id} className="row" key={id}>{id}</div>)}</div></div>{detached&&<button onClick={jumpToLatest}>Jump</button>}</>;}
+createRoot(document.getElementById('mount')).render(<Main/>);
+window.loadOlder=()=>loadOlderSessionHistory('main');
+window.send=()=>sendChatMessage({text:'during older',sessionId:'main',thinking:'medium',toolsEnabled:true,webSearchEnabled:false});
+window.locked=()=>isFollowLocked('main');
+window.latestCount=()=>window.requests.filter(r=>r.history_latest).length;
+window.noteGen=()=>peekTakeLatest('main','main')?.generation??null;
+window.settled=()=>lastSettledTakeLatest('main','main');
+'''
+    bundle = tmp_path / "older-send-jump.js"
+    built = subprocess.run(
+        [
+            "node",
+            "-e",
+            "require('esbuild').buildSync({stdin:{contents:process.argv[3],resolveDir:process.argv[1],loader:'tsx'},bundle:true,format:'iife',platform:'browser',jsx:'automatic',loader:{'.css':'empty'},outfile:process.argv[2],tsconfig:process.argv[1]+'/tsconfig.json'});",
+            str(ROOT / "apps/web"),
+            str(bundle),
+            entry,
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    if built.returncode != 0:
+        raise AssertionError(built.stderr)
+    shell = tmp_path / "older-send-jump.html"
+    shell.write_text(
+        "<!doctype html><style>#chatArea{height:500px;overflow:auto}.row{height:120px}</style><div id='mount'></div>"
+    )
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.goto(shell.as_uri())
+            page.add_script_tag(path=str(bundle))
+            page.wait_for_function("document.getElementById('chatArea')")
+            page.evaluate("const a=document.getElementById('chatArea');a.scrollTop=0")
+            page.evaluate("void window.loadOlder()")
+            page.wait_for_function("window.pageState('main').loading===true")
+            page.wait_for_function("window.requests.some(r=>r.history_before)")
+            assert page.evaluate("window.send()") is True
+            page.wait_for_function("window.locked()===true")
+            page.wait_for_function("document.querySelector('button')")
+            page.evaluate("void window.jump()")
+            page.wait_for_timeout(30)
+            older = page.evaluate("window.requests.filter(r=>r.history_before)")
+            page.evaluate("(reqs)=>reqs.forEach(r=>window.reply(r))", older)
+            page.wait_for_function("window.latestCount()>0")
+            latest = page.evaluate("window.requests.filter(r=>r.history_latest)")
+            page.evaluate("(reqs)=>reqs.forEach(r=>window.reply(r))", latest)
+            page.wait_for_function("Math.abs(document.getElementById('chatArea').scrollHeight-document.getElementById('chatArea').scrollTop-document.getElementById('chatArea').clientHeight)<8")
+            page.wait_for_function("window.locked()===false")
+            page.wait_for_function("window.settled()>=window.noteGen()")
+        finally:
+            browser.close()

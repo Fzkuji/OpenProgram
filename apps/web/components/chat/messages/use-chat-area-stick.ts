@@ -371,7 +371,14 @@ export function useChatAreaStick(
     }
 
     if (takeLatest && note && sid && chatKey) {
-      if (pendingJumpRef.current || jumpingRef.current) {
+      const jumpInFlight = pendingJumpRef.current || jumpingRef.current;
+      const jumpOwnsThisNote = !!(
+        jumpInFlight
+        && opRef.current
+        && opRef.current.scrollerKey === chatKey
+        && opRef.current.generation === note.generation
+      );
+      if (jumpInFlight && !jumpOwnsThisNote) {
         pendingJumpRef.current = false;
         interactionRef.current += 1;
         cancelJumpRef.current?.();
@@ -382,13 +389,16 @@ export function useChatAreaStick(
       const needsLatest = !!(history?.after || history?.loading);
       const alreadyAwaiting = !!(
         opRef.current?.awaitingLatest
+        && opCurrent(opRef.current)
         && opRef.current.generation === note.generation
         && opRef.current.scrollerKey === chatKey
       );
       if (needsLatest) setFollowLock(chatKey, true);
-      if (alreadyAwaiting) {
+      if (alreadyAwaiting || (jumpOwnsThisNote && !jumpingRef.current)) {
         stuckRef.current = false;
         setDetached(true);
+      } else if (jumpOwnsThisNote) {
+        // Jump animation owns this note; hide only after verified settle.
       } else if (needsLatest) {
         const effectGen = ++effectGenRef.current;
         stuckRef.current = false;
@@ -412,8 +422,12 @@ export function useChatAreaStick(
             && lastSettledTakeLatest(sid, chatKey) < note.generation;
           const loaded = await loadSessionHistoryWindow(sid, "latest", undefined, { isCurrent });
           if (!isCurrent()) {
-            setFollowLock(chatKey, false);
-            pendingJumpRef.current = false;
+            const jumpOwns = pendingJumpRef.current || jumpingRef.current;
+            if (!jumpOwns) setFollowLock(chatKey, false);
+            const live = opRef.current;
+            if (live && live.epoch === epoch && live.awaitingLatest) {
+              opRef.current = { ...live, awaitingLatest: false };
+            }
             return;
           }
           if (!loaded) {
@@ -427,7 +441,9 @@ export function useChatAreaStick(
           }
           const live = areaRef ? areaRef.current : document.getElementById("chatArea");
           if (!live || !isCurrent()) {
-            setFollowLock(chatKey, false);
+            if (!(pendingJumpRef.current || jumpingRef.current)) {
+              setFollowLock(chatKey, false);
+            }
             return;
           }
           stuckRef.current = true;
@@ -506,12 +522,16 @@ export function useChatAreaStick(
     const epoch = interactionRef.current;
     const isCurrent = () => epoch === interactionRef.current && activeKeyRef.current === key;
     pendingJumpRef.current = true;
+    const history = sid ? useSessionHistory.getState().pages[sid] : undefined;
+    if (key && (history?.after || history?.loading)) setFollowLock(key, true);
     try {
       if (sid) {
-        const history = useSessionHistory.getState().pages[sid];
         if (history?.after || history?.loading) {
           const loaded = await loadSessionHistoryWindow(sid, "latest", undefined, { isCurrent });
-          if (!loaded) return;
+          if (!loaded) {
+            if (isCurrent() && key) setFollowLock(key, false);
+            return;
+          }
         }
         if (!isCurrent()) return;
         saveHistoryAnchor(sid, null);
@@ -521,11 +541,12 @@ export function useChatAreaStick(
       cancelJumpRef.current?.();
       jumpingRef.current = true;
       stuckRef.current = true;
+      const generation = sid && key ? (peekTakeLatest(sid, key)?.generation ?? 0) : 0;
       opRef.current = key && sid
         ? {
             sessionId: sid,
             scrollerKey: key,
-            generation: peekTakeLatest(sid, key)?.generation ?? 0,
+            generation,
             epoch,
             kind: "jump",
             nextResizeArmed: false,
@@ -533,7 +554,6 @@ export function useChatAreaStick(
             awaitingLatest: false,
           }
         : null;
-      const generation = opRef.current?.generation ?? 0;
       cancelJumpRef.current = animateJumpToLatest(
         area,
         () => {
@@ -544,6 +564,11 @@ export function useChatAreaStick(
           setDetached(false);
           if (sid && key) {
             setApplied(key, generation);
+            const note = peekTakeLatest(sid, key);
+            if (note && lastSettledTakeLatest(sid, key) < note.generation) {
+              settleTakeLatest(sid, key, note.generation);
+            }
+            setFollowLock(key, false);
           }
           opRef.current = null;
         },
