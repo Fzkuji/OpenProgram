@@ -33,7 +33,7 @@ function Dual(){const left=useRef(null),right=useRef(null),lc=useRef(null),rc=us
   const b=useChatAreaStick('peer:right',R.at(-1)??null,true,{sessionId:'right',areaRef:right,columnRef:rc});
   useHistoryWindow('left',true,left,'peer:left');useHistoryWindow('right',true,right,'peer:right');
   return <div style={{display:'flex',height:500}}><div style={{flex:1,minWidth:0}}><div ref={left} className="area" tabIndex={0}><div ref={lc}>{L.map(id=><div data-msg-id={id} className="row" key={id}>{id}</div>)}</div></div>{a.detached&&<button onClick={a.jumpToLatest}>JumpL</button>}</div><div style={{flex:1,minWidth:0}}><div ref={right} className="area" tabIndex={0}><div ref={rc}>{R.map(id=><div data-msg-id={id} className="row" key={id}>{id}</div>)}</div></div>{b.detached&&<button onClick={b.jumpToLatest}>JumpR</button>}</div></div>;}
-let root=createRoot(document.getElementById('mount'));root.render(<Main/>);
+let root=createRoot(document.getElementById('mount'));root.render(<React.StrictMode><Main/></React.StrictMode>);
 window.sendFar=()=>{const area=document.getElementById('chatArea');area.scrollTop=0;area.dispatchEvent(new Event('scroll'));appendLocalUserTurn('main','u-new','hi',undefined,Date.now(),'pending');noteTakeLatest({sessionId:'main',scrollerKey:'main',turnSeed:'u-new'});};
 window.topOf=sel=>document.querySelector(sel).scrollTop;
 window.note=()=>peekTakeLatest('main','main');

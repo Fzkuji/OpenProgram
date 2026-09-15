@@ -278,6 +278,7 @@ type TakeLatestListener = (note: TakeLatestNote) => void;
 const takeLatestNotes = new Map<string, TakeLatestNote>();
 const takeLatestSettled = new Map<string, number>();
 const takeLatestListeners = new Set<TakeLatestListener>();
+const followLocks = new Set<string>();
 let takeLatestGeneration = 0;
 
 function takeLatestMapKey(sessionId: string, scrollerKey: string): string {
@@ -322,6 +323,44 @@ export function settleTakeLatest(
   const key = takeLatestMapKey(sessionId, scrollerKey);
   const prev = takeLatestSettled.get(key) ?? 0;
   if (generation > prev) takeLatestSettled.set(key, generation);
+  followLocks.delete(scrollerKey);
+}
+
+/** Move an open note to a new session/scroller without a new generation (provisional bind). */
+export function relocateTakeLatest(
+  fromSessionId: string,
+  fromScrollerKey: string,
+  toSessionId: string,
+  toScrollerKey: string,
+): TakeLatestNote | null {
+  const from = takeLatestMapKey(fromSessionId, fromScrollerKey);
+  const note = takeLatestNotes.get(from);
+  if (!note) return null;
+  const moved: TakeLatestNote = {
+    ...note,
+    sessionId: toSessionId,
+    scrollerKey: toScrollerKey,
+  };
+  takeLatestNotes.delete(from);
+  takeLatestNotes.set(takeLatestMapKey(toSessionId, toScrollerKey), moved);
+  const settled = takeLatestSettled.get(from);
+  if (settled != null) {
+    takeLatestSettled.delete(from);
+    takeLatestSettled.set(takeLatestMapKey(toSessionId, toScrollerKey), settled);
+  }
+  if (followLocks.delete(fromScrollerKey)) followLocks.add(toScrollerKey);
+  for (const listener of takeLatestListeners) listener(moved);
+  return moved;
+}
+
+export function setFollowLock(scrollerKey: string, locked: boolean): void {
+  if (!scrollerKey) return;
+  if (locked) followLocks.add(scrollerKey);
+  else followLocks.delete(scrollerKey);
+}
+
+export function isFollowLocked(scrollerKey: string): boolean {
+  return followLocks.has(scrollerKey);
 }
 
 export function subscribeTakeLatest(listener: TakeLatestListener): () => void {

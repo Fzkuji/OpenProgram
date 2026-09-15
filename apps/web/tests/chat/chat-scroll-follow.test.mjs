@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -15,6 +16,24 @@ import {
   subscribeTakeLatest,
   animateJumpToLatest,
 } from "../../lib/chat/chat-scroll.ts";
+
+test("F18 web production has no leftover follow writers", () => {
+  const files = [
+    "helpers.ts",
+    "chat-handlers.ts",
+    "conversations.ts",
+    "state.ts",
+    "session-history-loader.ts",
+  ].map((name) => readFileSync(new URL(`../../lib/runtime-bridge/${name}`, import.meta.url), "utf8"));
+  const joined = files.join("\n");
+  assert.doesNotMatch(joined, /scrollToBottom/);
+  assert.doesNotMatch(joined, /_skipScrollToBottom/);
+  assert.doesNotMatch(joined, /stickToBottom/);
+  assert.doesNotMatch(
+    readFileSync(new URL("../../lib/runtime-bridge/session-history-loader.ts", import.meta.url), "utf8"),
+    /direction===['"]latest['"]\) area\.scrollTop/,
+  );
+});
 
 test("F01 empty short overflow geometry and peer slack 24+8", () => {
   assert.equal(latestScrollTop({ scrollHeight: 0, scrollTop: 0, clientHeight: 0 }), 0);
@@ -111,6 +130,25 @@ test("watchdog corrects to the current target then completes", async () => {
   events.get("scrollend")?.();
   assert.equal(done, 1);
   assert.ok(Math.abs(area.scrollTop - latestScrollTop(area)) <= JUMP_PLACEMENT_TOLERANCE_PX);
+});
+
+test("reduced motion jump places instantly", () => {
+  const area = {
+    scrollTop: 10,
+    scrollHeight: 2000,
+    clientHeight: 800,
+    scrollTo({ top, behavior }) {
+      this.scrollTop = top;
+      this.behavior = behavior;
+    },
+    addEventListener() {},
+    removeEventListener() {},
+  };
+  let done = 0;
+  animateJumpToLatest(area, () => { done += 1; }, { reducedMotion: true });
+  assert.equal(done, 1);
+  assert.equal(area.scrollTop, latestScrollTop(area));
+  assert.notEqual(area.behavior, "smooth");
 });
 
 test("stopAreaScroll holds the current top", () => {

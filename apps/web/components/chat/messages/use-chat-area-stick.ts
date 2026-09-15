@@ -10,6 +10,8 @@ import {
   readChatScroll,
   readComposerOverlay,
   resolveChatScrollTop,
+  relocateTakeLatest,
+  setFollowLock,
   settleTakeLatest,
   snapToLatest,
   subscribeTakeLatest,
@@ -51,7 +53,7 @@ export function useChatAreaStick(
   },
 ) {
   const focusedId = useSessionStore((s) => s.currentSessionId);
-  const sessionId = options ? options.sessionId : focusedId;
+  const sessionId = (options ? options.sessionId : focusedId) ?? chatKey;
   const areaRef = options?.areaRef;
   const columnRef = options?.columnRef;
   const composerRootRef = options?.composerRootRef;
@@ -61,6 +63,7 @@ export function useChatAreaStick(
   const pendingJumpRef = useRef(false);
   const activeKeyRef = useRef<string | null>(chatKey);
   const previousKeyRef = useRef<string | null>(null);
+  const previousSidRef = useRef<string | null>(null);
   const previousSeedRef = useRef(newTurnSeed);
   const historyWindowRef = useRef("");
   const previousPaintRef = useRef(paintRows);
@@ -70,7 +73,9 @@ export function useChatAreaStick(
   const lastPointerRef = useRef(0);
   const scrollTopRef = useRef(0);
   const programmaticRef = useRef(false);
-  const lastAppliedRef = useRef(0);
+  const pointerArmedRef = useRef(false);
+  const lastAppliedByKeyRef = useRef<Record<string, number>>({});
+  const effectGenRef = useRef(0);
   const opRef = useRef<FollowOp | null>(null);
   const [noteTick, setNoteTick] = useState(0);
   const [detached, setDetached] = useState(false);
@@ -79,6 +84,14 @@ export function useChatAreaStick(
     if (!sessionId) return true;
     const page = useSessionHistory.getState().pages[sessionId];
     return !page?.after && !page?.loading;
+  };
+
+  const appliedOf = (key: string | null) =>
+    (key && lastAppliedByKeyRef.current[key]) || 0;
+
+  const setApplied = (key: string | null, generation: number) => {
+    if (!key) return;
+    lastAppliedByKeyRef.current[key] = Math.max(appliedOf(key), generation);
   };
 
   const opCurrent = (op: FollowOp | null) =>
@@ -113,9 +126,10 @@ export function useChatAreaStick(
   };
 
   useEffect(() => {
-    if (!chatKey || !sessionId) return;
+    if (!chatKey) return;
+    const sid = sessionId ?? chatKey;
     return subscribeTakeLatest((note) => {
-      if (note.scrollerKey === chatKey && note.sessionId === sessionId) {
+      if (note.scrollerKey === chatKey && note.sessionId === sid) {
         setNoteTick((n) => n + 1);
       }
     });
@@ -150,8 +164,27 @@ export function useChatAreaStick(
       return atBottom;
     };
 
+    const cancelPending = () => {
+      const op = opRef.current;
+      interactionRef.current += 1;
+      pendingJumpRef.current = false;
+      if (jumpingRef.current) {
+        stopJump(false);
+        stuckRef.current = false;
+      }
+      if (op && op.kind === "send") {
+        settleTakeLatest(op.sessionId, op.scrollerKey, op.generation);
+        setApplied(op.scrollerKey, op.generation);
+        setFollowLock(op.scrollerKey, false);
+      }
+      opRef.current = null;
+    };
+
     const onScroll = () => {
       if (area.clientHeight <= 0) return;
+      if (pointerArmedRef.current && !programmaticRef.current) {
+        cancelPending();
+      }
       syncDetached();
       scrollTopRef.current = area.scrollTop;
       const key = activeKeyRef.current;
@@ -173,10 +206,10 @@ export function useChatAreaStick(
         op.nextResizeArmed = false;
         if (op.kind === "send") {
           settleTakeLatest(op.sessionId, op.scrollerKey, op.generation);
-          lastAppliedRef.current = op.generation;
+          setApplied(op.scrollerKey, op.generation);
           stuckRef.current = true;
           setDetached(false);
-          opRef.current = { ...op, nextResizeArmed: false, welcomeArmed: false };
+          opRef.current = { ...op, nextResizeArmed: false, welcomeArmed: op.welcomeArmed };
         }
         syncDetached();
         return;
@@ -192,22 +225,8 @@ export function useChatAreaStick(
       syncDetached();
     };
 
-    const cancelPending = () => {
-      const op = opRef.current;
-      interactionRef.current += 1;
-      pendingJumpRef.current = false;
-      if (jumpingRef.current) {
-        stopJump(false);
-        stuckRef.current = false;
-      }
-      if (op && op.kind === "send") {
-        settleTakeLatest(op.sessionId, op.scrollerKey, op.generation);
-        lastAppliedRef.current = Math.max(lastAppliedRef.current, op.generation);
-      }
-      opRef.current = null;
-    };
-
     const onPointerDown = () => {
+      pointerArmedRef.current = true;
       lastPointerRef.current = performance.now();
       if (jumpingRef.current) {
         interactionRef.current += 1;
@@ -217,6 +236,9 @@ export function useChatAreaStick(
         stuckRef.current = false;
         setDetached(true);
       }
+    };
+    const onPointerUp = () => {
+      pointerArmedRef.current = false;
     };
     const onWheel = () => {
       lastPointerRef.current = performance.now();
@@ -230,16 +252,21 @@ export function useChatAreaStick(
 
     area.addEventListener("scroll", onScroll, { passive: true });
     area.addEventListener("pointerdown", onPointerDown, { passive: true });
+    area.addEventListener("pointerup", onPointerUp, { passive: true });
+    area.addEventListener("pointercancel", onPointerUp, { passive: true });
     area.addEventListener("wheel", onWheel, { passive: true });
     area.addEventListener("keydown", onKey);
     const ro = new ResizeObserver(pin);
     ro.observe(msgs);
     return () => {
+      effectGenRef.current += 1;
       cancelJumpRef.current?.();
       cancelJumpRef.current = null;
       jumpingRef.current = false;
       area.removeEventListener("scroll", onScroll);
       area.removeEventListener("pointerdown", onPointerDown);
+      area.removeEventListener("pointerup", onPointerUp);
+      area.removeEventListener("pointercancel", onPointerUp);
       area.removeEventListener("wheel", onWheel);
       area.removeEventListener("keydown", onKey);
       ro.disconnect();
@@ -268,18 +295,29 @@ export function useChatAreaStick(
         previousKeyRef.current,
         scrollTopRef.current,
       );
-      if (sid && previousKeyRef.current) {
-        const outgoing = peekTakeLatest(sid, previousKeyRef.current);
-        if (outgoing) settleTakeLatest(sid, previousKeyRef.current, outgoing.generation);
+      const outgoingKey = previousKeyRef.current;
+      const outgoingSid = previousSidRef.current;
+      const provisional = !!(
+        outgoingKey?.startsWith("local_")
+        && chatKey
+        && sid
+        && !chatKey.startsWith("local_")
+      );
+      if (provisional && outgoingSid && outgoingKey && sid && chatKey) {
+        relocateTakeLatest(outgoingSid, outgoingKey, sid, chatKey);
+      } else if (outgoingSid && outgoingKey) {
+        const outgoing = peekTakeLatest(outgoingSid, outgoingKey);
+        if (outgoing) settleTakeLatest(outgoingSid, outgoingKey, outgoing.generation);
+        opRef.current = null;
+        jumpingRef.current = false;
+        cancelJumpRef.current?.();
+        cancelJumpRef.current = null;
       }
-      opRef.current = null;
-      jumpingRef.current = false;
-      cancelJumpRef.current?.();
-      cancelJumpRef.current = null;
     }
     const seedChanged = previousSeedRef.current !== newTurnSeed && !windowChanged;
     activeKeyRef.current = chatKey;
     previousKeyRef.current = chatKey;
+    previousSidRef.current = sid ?? null;
     previousSeedRef.current = newTurnSeed;
 
     const saved = (keyChanged || becameVisible) && chatKey
@@ -288,12 +326,12 @@ export function useChatAreaStick(
 
     const note = sid && chatKey ? peekTakeLatest(sid, chatKey) : null;
     const settled = sid && chatKey ? lastSettledTakeLatest(sid, chatKey) : 0;
-    lastAppliedRef.current = Math.max(lastAppliedRef.current, settled);
+    if (chatKey) setApplied(chatKey, settled);
     const takeLatest = !!(
       note
       && chatKey
       && note.scrollerKey === chatKey
-      && note.generation > lastAppliedRef.current
+      && note.generation > appliedOf(chatKey)
     );
 
     if (keyChanged && !takeLatest) {
@@ -333,7 +371,9 @@ export function useChatAreaStick(
         jumpingRef.current = false;
       }
       const epoch = interactionRef.current;
+      const effectGen = ++effectGenRef.current;
       const needsLatest = !!(history?.after || history?.loading);
+      setFollowLock(chatKey, true);
       if (needsLatest) {
         stuckRef.current = false;
         setDetached(true);
@@ -349,22 +389,27 @@ export function useChatAreaStick(
         };
         void (async () => {
           const isCurrent = () =>
-            epoch === interactionRef.current
+            effectGen === effectGenRef.current
+            && epoch === interactionRef.current
             && activeKeyRef.current === chatKey
             && peekTakeLatest(sid, chatKey)?.generation === note.generation
             && lastSettledTakeLatest(sid, chatKey) < note.generation;
           const loaded = await loadSessionHistoryWindow(sid, "latest", undefined, { isCurrent });
           if (!isCurrent()) return;
           if (!loaded) {
+            settleTakeLatest(sid, chatKey, note.generation);
+            setApplied(chatKey, note.generation);
+            setFollowLock(chatKey, false);
+            opRef.current = null;
             stuckRef.current = false;
             setDetached(true);
             return;
           }
-          const live = areaRef?.current ?? document.getElementById("chatArea");
+          const live = areaRef ? areaRef.current : document.getElementById("chatArea");
           if (!live || !isCurrent()) return;
           stuckRef.current = true;
           applySnap(live);
-          lastAppliedRef.current = note.generation;
+          setApplied(chatKey, note.generation);
           settleTakeLatest(sid, chatKey, note.generation);
           opRef.current = {
             sessionId: sid,
@@ -381,7 +426,7 @@ export function useChatAreaStick(
       } else {
         stuckRef.current = true;
         applySnap(area);
-        lastAppliedRef.current = note.generation;
+        setApplied(chatKey, note.generation);
         settleTakeLatest(sid, chatKey, note.generation);
         opRef.current = {
           sessionId: sid,
@@ -407,18 +452,26 @@ export function useChatAreaStick(
 
   useEffect(() => {
     if (areaRef) return;
-    const op = opRef.current;
-    if (!op || !op.welcomeArmed || !opCurrent(op) || op.kind !== "send") return;
-    if (welcomeVisible) return;
-    const area = document.getElementById("chatArea");
-    if (!area) return;
+    const tryWelcome = () => {
+      const op = opRef.current;
+      if (!op || !op.welcomeArmed || !opCurrent(op) || op.kind !== "send") return;
+      if (welcomeVisible) return;
+      const area = document.getElementById("chatArea");
+      if (!area) return;
+      const mount = document.getElementById("welcome-mount");
+      if (mount && mount.childElementCount > 0) return;
+      if (!atLatestWindow()) return;
+      op.welcomeArmed = false;
+      applySnap(area);
+      stuckRef.current = true;
+      setDetached(false);
+    };
+    tryWelcome();
     const mount = document.getElementById("welcome-mount");
-    if (mount && mount.childElementCount > 0) return;
-    if (!atLatestWindow()) return;
-    op.welcomeArmed = false;
-    applySnap(area);
-    stuckRef.current = true;
-    setDetached(false);
+    if (!mount || typeof MutationObserver !== "function") return;
+    const observer = new MutationObserver(tryWelcome);
+    observer.observe(mount, { childList: true });
+    return () => observer.disconnect();
   }, [welcomeVisible, areaRef]);
 
   const jumpToLatest = useCallback(async () => {
@@ -439,7 +492,7 @@ export function useChatAreaStick(
         if (!isCurrent()) return;
         saveHistoryAnchor(sid, null);
       }
-      const area = areaRef?.current ?? document.getElementById("chatArea");
+      const area = areaRef ? areaRef.current : document.getElementById("chatArea");
       if (!area || !isCurrent()) return;
       cancelJumpRef.current?.();
       jumpingRef.current = true;
@@ -466,7 +519,7 @@ export function useChatAreaStick(
           stuckRef.current = true;
           setDetached(false);
           if (sid && key) {
-            lastAppliedRef.current = Math.max(lastAppliedRef.current, generation);
+            setApplied(key, generation);
           }
           opRef.current = null;
         },

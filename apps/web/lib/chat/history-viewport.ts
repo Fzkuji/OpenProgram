@@ -1,3 +1,5 @@
+import { isFollowLocked } from "./chat-scroll";
+
 export interface HistoryAnchor { id: string; offset: number; head?: string | null }
 const STORAGE_KEY = 'chatReadingAnchors';
 
@@ -63,8 +65,9 @@ export function restoreAreaWindow(
   direction: string,
   around?: string,
 ): void {
-  const { area, anchor, oldTop, oldHeight } = state;
+  const { area, anchor, oldTop, oldHeight, chatKey } = state;
   if (!area.isConnected) return;
+  if (isFollowLocked(chatKey)) return;
   if (direction === "around" && around) {
     restoreHistoryAnchor(area, { id: around, offset: 0 });
   } else if (!anchor || !restoreHistoryAnchor(area, anchor)) {
