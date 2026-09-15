@@ -193,7 +193,7 @@ button[aria-pressed="true"] { border-color: var(--acc); color: var(--acc); }
 <h1 id="title">Chat transcript follow</h1>
 <div class="meta">
   <span class="pill">Author: engineering</span>
-  <span class="pill draft">Status: Draft · not implemented</span>
+  <span class="pill">Status: implemented on the web renderer</span>
   <span class="pill">Scope: web renderer (App and browser)</span>
 </div>
 <p class="lead">Sending a message does not reliably take the reader to the latest turn. Four overlapping scroll writers disagree about what “bottom” is and who may move the viewport (legacy <code>scrollToBottom</code>, unused <code>useStickToBottom</code>, live <code>useChatAreaStick</code>, and <code>loadSessionHistoryWindow</code>). This page collapses them into one React-owned follow policy: one attach/detach state, one at-bottom predicate, one follow-trigger table, and one padding-edge definition of latest. Chat handlers and the history loader do not pin latest onto an arbitrary viewport.</p>
@@ -558,7 +558,7 @@ export function scrollToBottom(_opts?: { force?: boolean }): void {}</code></pre
 </section>
 
 <section id="sequence"><h2>Implementation handoff</h2>
-<p>This section is the single implementation plan. Status: planned, no implementation or review pass. Read this page, AGENTS.md, tests/README.md and the OpenProgram workflow before changing code. Preserve unrelated dirty files. Start from an immutable base in a clean codex/ worktree; transfer only these two approved design pages and their existing navigation entries. Record exact base and candidate commits in the ignored reports ledger, not in this design body.</p>
+<p>This section is the single implementation plan. The web renderer implements the unified contract in this page. Read this page, AGENTS.md, tests/README.md and the OpenProgram workflow before changing follow behavior. Record exact commits in the ignored reports ledger, not in this design body.</p>
 <p>One implementation owner works sequentially through A, B, C and D. Each code stage gets a specification review by a non-author, then a fresh quality review, with confirmed fixes and scoped re-review before the next stage. Reviewers do not edit tracked files. Do not split B across independently mergeable PRs. A may merge alone; B must include legacy no-op and all B tests. C can delete the no-op later. Remote push/merge is outside this planning authorization.</p>
 <div class="doc-scroll"><table><thead><tr><th>Stage</th><th>Primary files (repository-relative)</th><th>Deliverable</th></tr>
 </thead><tbody><tr><td>A</td><td><code>apps/web/lib/chat/chat-scroll.ts</code><br><code>apps/web/tests/chat/chat-scroll-follow.test.mjs</code><br><code>apps/web/tests/chat/jump-latest.test.mjs</code></td><td>Primitives, keyed observable notes, exact placement, cancellation-capable Jump helper. Preserve current callers until B.</td></tr>
@@ -622,13 +622,13 @@ git diff --check</code></pre><p>Browser automation uses isolated test state, no 
 <table>
 <thead><tr><th>Area</th><th>State</th><th>Boundary</th></tr></thead>
 <tbody>
-<tr><td><code>chat-scroll.ts</code> math (<code>isChatAtBottom</code>, slack, storage, <code>animateJumpToLatest</code>, <code>resolveChatScrollTop</code>)</td><td>Present</td><td>Whether-to-follow is encoded; take-latest latch, <code>latestScrollTop</code>, and reduced-motion Jump are not the unified owner yet.</td></tr>
-<tr><td><code>useChatAreaStick</code> + Jump portal</td><td>Partial</td><td>Live React owner, but lastRole ownTurn, 600ms vs send, stale-window send, and peer composer height remain.</td></tr>
-<tr><td>Optimistic user row at send</td><td>Present</td><td><code>appendLocalUserTurn</code> at socket accept. Does not yet note take-latest.</td></tr>
-<tr><td>Legacy <code>scrollToBottom</code> / module stick flag</td><td>Present and harmful</td><td>Still called from chat-handlers and conversations.</td></tr>
-<tr><td><code>useStickToBottom</code></td><td>Dead code</td><td>Unused; not yet deleted.</td></tr>
-<tr><td>History loader <code>scrollTop</code> writes</td><td>Present and harmful</td><td>Fourth owner. In scope to stop pinning <code>latest</code> on <code>registered.keys().next()</code>. Send/Jump placement belongs to the hook; per-area window restoration belongs to history-viewport helpers.</td></tr>
-<tr><td>Unified follow contract on this page</td><td class="warn">Not implemented</td><td>No production evidence. Do not treat this preview as App behavior. No review pass is claimed.</td></tr>
+<tr><td><code>chat-scroll.ts</code> math (<code>isChatAtBottom</code>, slack, storage, <code>animateJumpToLatest</code>, <code>resolveChatScrollTop</code>)</td><td>Present</td><td>Take-latest notes, <code>latestScrollTop</code>, overlay vs pad, and cancel-capable Jump live in this module.</td></tr>
+<tr><td><code>useChatAreaStick</code> + Jump portal</td><td>Present</td><td>Single React owner. Send identity is the take-latest note, not <code>lastRole</code>. Peer overlay is the composer root.</td></tr>
+<tr><td>Optimistic user row at send</td><td>Present</td><td><code>appendLocalUserTurn</code> at socket accept notes take-latest for the submitting scroller.</td></tr>
+<tr><td>Legacy <code>scrollToBottom</code> / module stick flag</td><td>Removed</td><td>No production web callers. Handlers do not scroll.</td></tr>
+<tr><td><code>useStickToBottom</code></td><td>Removed</td><td>File deleted.</td></tr>
+<tr><td>History loader <code>scrollTop</code> writes</td><td>Present</td><td>Loader does not pin latest. Per-area restore lives in history-viewport helpers and skips a locked follow.</td></tr>
+<tr><td>Unified follow contract on this page</td><td>Present</td><td>Web App and browser share this renderer. Evidence is the reviewed implementation commits on <code>codex/chat-transcript-follow</code>, not this preview.</td></tr>
 </tbody>
 </table>
 </div>

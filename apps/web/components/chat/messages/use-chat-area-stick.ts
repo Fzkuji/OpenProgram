@@ -57,6 +57,7 @@ export function useChatAreaStick(
   const columnRef = options?.columnRef;
   const composerRootRef = options?.composerRootRef;
   const hasNewer = useSessionHistory((s) => !!(sessionId && s.pages[sessionId]?.after));
+  const historyLoading = useSessionHistory((s) => !!(sessionId && s.pages[sessionId]?.loading));
   const welcomeVisible = useSessionStore((s) => s.welcomeVisible);
   const interactionRef = useRef(0);
   const pendingJumpRef = useRef(false);
@@ -378,10 +379,18 @@ export function useChatAreaStick(
         jumpingRef.current = false;
       }
       const epoch = interactionRef.current;
-      const effectGen = ++effectGenRef.current;
       const needsLatest = !!(history?.after || history?.loading);
+      const alreadyAwaiting = !!(
+        opRef.current?.awaitingLatest
+        && opRef.current.generation === note.generation
+        && opRef.current.scrollerKey === chatKey
+      );
       if (needsLatest) setFollowLock(chatKey, true);
-      if (needsLatest) {
+      if (alreadyAwaiting) {
+        stuckRef.current = false;
+        setDetached(true);
+      } else if (needsLatest) {
+        const effectGen = ++effectGenRef.current;
         stuckRef.current = false;
         setDetached(true);
         opRef.current = {
@@ -463,7 +472,7 @@ export function useChatAreaStick(
       );
       setDetached(!stuckRef.current);
     }
-  }, [chatKey, newTurnSeed, paintRows, hasNewer, sessionId, areaRef, columnRef, composerRootRef, noteTick]);
+  }, [chatKey, newTurnSeed, paintRows, hasNewer, historyLoading, sessionId, areaRef, columnRef, composerRootRef, noteTick]);
 
   useEffect(() => {
     if (areaRef) return;

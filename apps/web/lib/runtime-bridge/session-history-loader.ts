@@ -60,12 +60,20 @@ export async function loadSessionHistoryWindow(id: string, direction: HistoryDir
   const expected = useSessionHistory.getState().pages[id];
   if (expected?.loading && (direction === 'latest' || direction === 'around')) {
     await new Promise<void>(resolve => {
-      const unsubscribe = useSessionHistory.subscribe(state => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        unsubscribe();
+        queueMicrotask(resolve);
+      };
+      const unsubscribe = useSessionHistory.subscribe((state) => {
         if (!state.pages[id]?.loading || state.pages[id]?.generation !== expected.generation) {
-          unsubscribe();
-          queueMicrotask(resolve);
+          finish();
         }
       });
+      const current = useSessionHistory.getState().pages[id];
+      if (!current?.loading || current.generation !== expected.generation) finish();
     });
     return loadSessionHistoryWindow(id, direction, around, options);
   }

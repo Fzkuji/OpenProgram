@@ -193,7 +193,7 @@ button[aria-pressed="true"] { border-color: var(--acc); color: var(--acc); }
 <h1 id="title">聊天转录跟随</h1>
 <div class="meta">
   <span class="pill">作者：engineering</span>
-  <span class="pill draft">状态：草稿 · 尚未实现</span>
+  <span class="pill">状态：Web 渲染器已实现</span>
   <span class="pill">范围：Web 渲染器（App 与浏览器）</span>
 </div>
 <p class="lead">发送消息并不能可靠地把读者带到最新一轮。四个重叠的滚动写入者对“底部”是什么、谁可以移动视口意见不一（遗留 <code>scrollToBottom</code>、未使用的 <code>useStickToBottom</code>、现场 <code>useChatAreaStick</code>、以及 <code>loadSessionHistoryWindow</code>）。本页把它们收成一份由 React 持有的跟随策略：一种附着/脱离状态、一个“在底部”判定、一张跟随触发表、以及一个以 padding 边缘定义的 latest。聊天 handler 和历史加载器不得把 latest 钉到任意视口上。</p>
@@ -620,13 +620,13 @@ git diff --check</code></pre><p>浏览器自动测试使用隔离状态，不发
 <table>
 <thead><tr><th>范围</th><th>状态</th><th>边界</th></tr></thead>
 <tbody>
-<tr><td><code>chat-scroll.ts</code> 数学（<code>isChatAtBottom</code>、松弛量、存储、<code>animateJumpToLatest</code>、<code>resolveChatScrollTop</code>）</td><td>已有</td><td>是否跟随已编码；take-latest 闩、<code>latestScrollTop</code> 和减少动效 Jump 还不是统一所有者。</td></tr>
-<tr><td><code>useChatAreaStick</code> + Jump portal</td><td>部分</td><td>现场 React 所有者，但 lastRole ownTurn、600ms 对发送、过期窗口发送、对等输入框高度仍在。</td></tr>
-<tr><td>发送时的乐观用户行</td><td>已有</td><td>套接字接受时 <code>appendLocalUserTurn</code>。尚未记下 take-latest。</td></tr>
-<tr><td>遗留 <code>scrollToBottom</code> / 模块 stick 标志</td><td>已有且有害</td><td>仍由 chat-handlers 和 conversations 调用。</td></tr>
-<tr><td><code>useStickToBottom</code></td><td>死代码</td><td>未使用；尚未删除。</td></tr>
-<tr><td>历史加载器 <code>scrollTop</code> 写入</td><td>已有且有害</td><td>第四个所有者。纳入范围：停止把 <code>latest</code> pin 到 <code>registered.keys().next()</code>。发送/Jump 定位归 hook；各视口窗口恢复归 history-viewport helper。</td></tr>
-<tr><td>本页的统一跟随契约</td><td class="warn">未实现</td><td>无生产证据。不要把本预览当成 App 行为。不声称已通过审查。</td></tr>
+<tr><td><code>chat-scroll.ts</code> 数学（<code>isChatAtBottom</code>、松弛量、存储、<code>animateJumpToLatest</code>、<code>resolveChatScrollTop</code>）</td><td>已有</td><td>take-latest 记录、<code>latestScrollTop</code>、overlay 与 pad、可取消 Jump 都在此模块。</td></tr>
+<tr><td><code>useChatAreaStick</code> + Jump portal</td><td>已有</td><td>唯一 React 所有者。发送身份是 take-latest 记录，不是 <code>lastRole</code>。Peer overlay 是 composer 根。</td></tr>
+<tr><td>发送时的乐观用户行</td><td>已有</td><td>套接字接受时 <code>appendLocalUserTurn</code> 为提交滚动器记下 take-latest。</td></tr>
+<tr><td>遗留 <code>scrollToBottom</code> / 模块 stick 标志</td><td>已删除</td><td>Web 生产无调用方。handler 不滚动。</td></tr>
+<tr><td><code>useStickToBottom</code></td><td>已删除</td><td>文件已删。</td></tr>
+<tr><td>历史加载器 <code>scrollTop</code> 写入</td><td>已有</td><td>加载器不 pin latest。各视口恢复在 history-viewport helper，跟随锁定期跳过。</td></tr>
+<tr><td>本页的统一跟随契约</td><td>已有</td><td>App 与浏览器共用此 Web 渲染器。证据是已审查的实现提交，不是本预览。</td></tr>
 </tbody>
 </table>
 </div>
