@@ -1,6 +1,16 @@
-import { isFollowLocked } from "./chat-scroll";
-
 export interface HistoryAnchor { id: string; offset: number; head?: string | null }
+
+const followLocks = new Set<string>();
+
+export function setFollowLock(scrollerKey: string, locked: boolean): void {
+  if (!scrollerKey) return;
+  if (locked) followLocks.add(scrollerKey);
+  else followLocks.delete(scrollerKey);
+}
+
+export function isFollowLocked(scrollerKey: string): boolean {
+  return followLocks.has(scrollerKey);
+}
 const STORAGE_KEY = 'chatReadingAnchors';
 
 export function captureHistoryAnchor(area: HTMLElement): HistoryAnchor | null {

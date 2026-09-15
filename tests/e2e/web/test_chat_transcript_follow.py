@@ -162,6 +162,21 @@ window.slashNote=()=>noteTakeLatest({sessionId:'main',scrollerKey:'main',turnSee
             page.evaluate("const a=document.getElementById('chatArea');a.scrollTop=0;a.dispatchEvent(new WheelEvent('wheel',{deltaY:-80,bubbles:true}))")
             page.evaluate("window.slashNote()")
             page.wait_for_function("Math.abs(document.getElementById('chatArea').scrollHeight-document.getElementById('chatArea').scrollTop-document.getElementById('chatArea').clientHeight)<8")
+            # F15: Jump with growth before settle still ends on the current padding edge.
+            page.evaluate("const a=document.getElementById('chatArea');a.scrollTop=0;a.dispatchEvent(new WheelEvent('wheel',{deltaY:-80,bubbles:true}))")
+            page.get_by_role("button", name="Jump", exact=True).click()
+            page.evaluate(
+                """() => {
+                  const root=document.getElementById('chatMessages');
+                  for (let i=0;i<6;i++) {
+                    const row=document.createElement('div');
+                    row.className='row'; row.textContent='jump-grow';
+                    root.appendChild(row);
+                  }
+                  document.getElementById('chatArea').dispatchEvent(new Event('scrollend'));
+                }"""
+            )
+            page.wait_for_function("Math.abs(document.getElementById('chatArea').scrollHeight-document.getElementById('chatArea').scrollTop-document.getElementById('chatArea').clientHeight)<3")
         finally:
             browser.close()
 

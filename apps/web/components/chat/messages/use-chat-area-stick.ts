@@ -11,7 +11,6 @@ import {
   readComposerOverlay,
   resolveChatScrollTop,
   relocateTakeLatest,
-  setFollowLock,
   settleTakeLatest,
   snapToLatest,
   subscribeTakeLatest,
@@ -21,7 +20,7 @@ import { renderMathInChat } from "@/lib/runtime-bridge/markdown-render";
 import { useSessionHistory } from "@/lib/chat/session-history";
 import { loadSessionHistoryWindow } from "@/lib/runtime-bridge/session-history-loader";
 import { useSessionStore } from "@/lib/session-store";
-import { saveHistoryAnchor } from "@/lib/chat/history-viewport";
+import { saveHistoryAnchor, setFollowLock } from "@/lib/chat/history-viewport";
 
 const GROWTH_SUPPRESS_MS = 600;
 const SCROLL_KEYS = new Set([
@@ -305,6 +304,8 @@ export function useChatAreaStick(
       );
       if (provisional && outgoingSid && outgoingKey && sid && chatKey) {
         relocateTakeLatest(outgoingSid, outgoingKey, sid, chatKey);
+        setFollowLock(outgoingKey, false);
+        setFollowLock(chatKey, true);
       } else if (outgoingSid && outgoingKey) {
         const outgoing = peekTakeLatest(outgoingSid, outgoingKey);
         if (outgoing) settleTakeLatest(outgoingSid, outgoingKey, outgoing.generation);

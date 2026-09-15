@@ -16,6 +16,7 @@ import {
   subscribeTakeLatest,
   animateJumpToLatest,
 } from "../../lib/chat/chat-scroll.ts";
+import { restoreAreaWindow, setFollowLock, isFollowLocked } from "../../lib/chat/history-viewport.ts";
 
 test("F18 web production has no leftover follow writers", () => {
   const files = [
@@ -33,6 +34,41 @@ test("F18 web production has no leftover follow writers", () => {
     readFileSync(new URL("../../lib/runtime-bridge/session-history-loader.ts", import.meta.url), "utf8"),
     /direction===['"]latest['"]\) area\.scrollTop/,
   );
+});
+
+test("F07/F17 follow lock skips restore and each area keeps its own fallback", () => {
+  const areaA = {
+    isConnected: true,
+    scrollTop: 20,
+    scrollHeight: 200,
+    querySelectorAll: () => [],
+    dispatchEvent() {},
+  };
+  const areaB = {
+    isConnected: true,
+    scrollTop: 80,
+    scrollHeight: 400,
+    querySelectorAll: () => [],
+    dispatchEvent() {},
+  };
+  setFollowLock("peer:a", true);
+  assert.equal(isFollowLocked("peer:a"), true);
+  restoreAreaWindow(
+    { area: areaA, chatKey: "peer:a", anchor: null, oldTop: 20, oldHeight: 100 },
+    "older",
+  );
+  assert.equal(areaA.scrollTop, 20);
+  setFollowLock("peer:a", false);
+  restoreAreaWindow(
+    { area: areaA, chatKey: "peer:a", anchor: null, oldTop: 20, oldHeight: 100 },
+    "older",
+  );
+  assert.equal(areaA.scrollTop, 20 + 200 - 100);
+  restoreAreaWindow(
+    { area: areaB, chatKey: "peer:b", anchor: null, oldTop: 80, oldHeight: 250 },
+    "older",
+  );
+  assert.equal(areaB.scrollTop, 80 + 400 - 250);
 });
 
 test("F01 empty short overflow geometry and peer slack 24+8", () => {
