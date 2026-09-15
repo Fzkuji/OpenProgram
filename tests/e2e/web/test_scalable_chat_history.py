@@ -55,10 +55,13 @@ let root=createRoot(document.getElementById('messages-mount'));root.render(<Mess
                 page.wait_for_function('(previous)=>window.stats().start<previous',arg=previous)
             assert page.evaluate('window.stats().after') is None
             page.evaluate("document.getElementById('chatArea').scrollTop=0")
-            page.wait_for_function('window.pending===1')
+            page.wait_for_function('window.pending===1 || window.stats().after')
             latest_before=page.evaluate('window.latestRequests')
+            needed_latest=page.evaluate('!!(window.stats().after || window.stats().loading || window.pending)')
             page.get_by_role('button',name='Jump to latest',exact=True).click()
-            page.wait_for_function('(n)=>window.latestRequests>n && window.pending===0',arg=latest_before)
+            page.wait_for_function('window.stats().end===300000 && window.pending===0')
+            if needed_latest:
+                assert page.evaluate('window.latestRequests')>latest_before
             expect(page.locator('[data-msg-slot="m299999"] .message')).to_be_attached()
             page.evaluate("window.seek('m150000')")
             expect(page.locator('[data-msg-slot="m150000"] .message')).to_be_attached()

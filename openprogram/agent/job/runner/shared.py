@@ -361,19 +361,26 @@ def runner_for_execution_store(store) -> JobRunner | None:
         return _RUNNERS_BY_EXECUTION_PATH.get(str(store.path))
 
 
-def shutdown_runner() -> None:
-    """Tear down the singleton (mainly for tests)."""
+def shutdown_runner(*, wait: bool = True) -> None:
+    """Tear down the singleton (mainly for tests).
+
+    Tests wait for pool workers so the unit thread-leak guard can see a
+    stopped runner. Process exit uses ``wait=False`` so atexit cannot hang
+    on a still-running job. The singleton lock is released before joining
+    so worker threads that re-enter ``get_runner`` cannot deadlock.
+    """
     global _runner
     with _runner_lock:
-        if _runner is not None:
-            try:
-                _runner.shutdown(wait=False)
-            except Exception:
-                pass
-            _runner = None
+        runner = _runner
+        _runner = None
+    if runner is not None:
+        try:
+            runner.shutdown(wait=wait)
+        except Exception:
+            pass
 
 
-atexit.register(shutdown_runner)
+atexit.register(lambda: shutdown_runner(wait=False))
 
 
 __all__ = [

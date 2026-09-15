@@ -15,6 +15,7 @@ fields without bypassing admission and activation.
 from __future__ import annotations
 
 from contextvars import copy_context
+import threading
 
 import pytest
 
@@ -179,6 +180,10 @@ def test_runner_clean_passes_spawn_caller(store, monkeypatch):
         assert cap["spawn_caller"] == "a1"
     finally:
         runner_mod.shutdown_runner()
+        assert not any(
+            thread.name.startswith("op-job") and thread.is_alive()
+            for thread in threading.enumerate()
+        )
 
 
 def test_runner_inherit_preserves_canonical_spawn_caller(store, monkeypatch):
@@ -211,6 +216,10 @@ def test_runner_inherit_preserves_canonical_spawn_caller(store, monkeypatch):
         assert cap["spawn_caller"] == "a1"
     finally:
         runner_mod.shutdown_runner()
+        assert not any(
+            thread.name.startswith("op-job") and thread.is_alive()
+            for thread in threading.enumerate()
+        )
 
 
 # ---- entry 1b: background agent() (_agent_impl run_in_background=True) ---
