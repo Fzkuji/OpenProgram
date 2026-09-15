@@ -101,7 +101,7 @@ import {useSessionStore} from './lib/session-store';
 import {registerSessionHistory} from './lib/chat/session-history';
 import {seedHistoryWindow} from './lib/runtime-bridge/session-history-loader';
 import {runtimeState,setSocket} from './lib/runtime-bridge/state';
-import {peekTakeLatest} from './lib/chat/chat-scroll';
+import {peekTakeLatest,noteTakeLatest} from './lib/chat/chat-scroll';
 import {sendChatMessage} from './components/chat/composer/submit/send-chat-message';
 function page(id){return {messages:Array.from({length:40},(_,i)=>({id:`${id}-${450+i}`,role:'user',content:`Message ${450+i}`,status:'completed'})),history:{snapshot:id,head_id:`${id}-489`,before:`${id}-450`,after:null,start:450,end:490,total:500}};}
 class Socket extends EventTarget{static OPEN=1;readyState=1;send(){}}
@@ -111,6 +111,7 @@ function Main(){const ids=useSessionStore(s=>s.messageOrder.main??[]);const {det
 createRoot(document.getElementById('mount')).render(<React.StrictMode><Main/></React.StrictMode>);
 window.sendPublic=()=>sendChatMessage({text:'hello from send',sessionId:'main',thinking:'medium',toolsEnabled:true,webSearchEnabled:false});
 window.note=()=>peekTakeLatest('main','main');
+window.slashNote=()=>noteTakeLatest({sessionId:'main',scrollerKey:'main',turnSeed:'slash:1'});
 '''
     bundle = tmp_path / "follow-latest.js"
     subprocess.run(
@@ -143,5 +144,73 @@ window.note=()=>peekTakeLatest('main','main');
             page.wait_for_function("window.note()")
             page.wait_for_function("Math.abs(document.getElementById('chatArea').scrollHeight-document.getElementById('chatArea').scrollTop-document.getElementById('chatArea').clientHeight)<8")
             expect(page.get_by_role("button", name="Jump", exact=True)).to_have_count(0)
+            # F04: after send, user wheel-up then delayed growth must not snap back.
+            page.evaluate("const a=document.getElementById('chatArea');a.scrollTop=0;a.dispatchEvent(new WheelEvent('wheel',{deltaY:-120,bubbles:true}))")
+            top_after_wheel = page.evaluate("document.getElementById('chatArea').scrollTop")
+            page.evaluate(
+                """() => {
+                  const root=document.getElementById('chatMessages');
+                  for (let i=0;i<8;i++) {
+                    const row=document.createElement('div');
+                    row.className='row'; row.dataset.msgId='grow-'+i; row.textContent='grow';
+                    root.appendChild(row);
+                  }
+                }"""
+            )
+            page.wait_for_timeout(80)
+            assert page.evaluate("document.getElementById('chatArea').scrollTop") <= top_after_wheel + 2
+            page.evaluate("const a=document.getElementById('chatArea');a.scrollTop=0;a.dispatchEvent(new WheelEvent('wheel',{deltaY:-80,bubbles:true}))")
+            page.evaluate("window.slashNote()")
+            page.wait_for_function("Math.abs(document.getElementById('chatArea').scrollHeight-document.getElementById('chatArea').scrollTop-document.getElementById('chatArea').clientHeight)<8")
+        finally:
+            browser.close()
+
+
+def test_welcome_first_send_retries_after_lock_lifts(tmp_path):
+    from playwright.sync_api import sync_playwright
+    entry = r'''
+import React from 'react';import {createRoot} from 'react-dom/client';
+import {useChatAreaStick} from './components/chat/messages/use-chat-area-stick';
+import {useSessionStore} from './lib/session-store';
+import {runtimeState,setSocket} from './lib/runtime-bridge/state';
+import {sendChatMessage} from './components/chat/composer/submit/send-chat-message';
+class Socket extends EventTarget{static OPEN=1;readyState=1;send(){}}
+window.WebSocket=Socket;setSocket(new Socket());
+useSessionStore.setState({currentSessionId:null,activeChatKey:'local_welcome',welcomeVisible:true,messageOrder:{},messagesById:{}});
+runtimeState.currentSessionId=null;
+function Main(){const ids=useSessionStore(s=>s.messageOrder.local_welcome??[]);useChatAreaStick('local_welcome',ids.at(-1)??null,true);return <div className="chat-area" id="chatArea"><div id="welcome-mount"><div className="welcome">hi</div></div><div id="chatMessages">{ids.map(id=><div data-msg-id={id} className="row" key={id}>{id}</div>)}</div></div>;}
+createRoot(document.getElementById('mount')).render(<Main/>);
+window.sendFirst=()=>sendChatMessage({text:'first',sessionId:'local_welcome',thinking:'medium',toolsEnabled:true,webSearchEnabled:false});
+window.unlock=()=>{document.getElementById('welcome-mount').innerHTML='';useSessionStore.getState().setWelcomeVisible(false);};
+'''
+    bundle = tmp_path / "welcome.js"
+    subprocess.run(
+        [
+            "node",
+            "-e",
+            "require('esbuild').buildSync({stdin:{contents:process.argv[3],resolveDir:process.argv[1],loader:'tsx'},bundle:true,format:'iife',platform:'browser',jsx:'automatic',loader:{'.css':'empty'},outfile:process.argv[2],tsconfig:process.argv[1]+'/tsconfig.json'});",
+            str(ROOT / "apps/web"),
+            str(bundle),
+            entry,
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+    )
+    shell = tmp_path / "welcome.html"
+    shell.write_text(
+        "<!doctype html><style>#chatArea{height:400px;overflow:auto}.chat-area:has(#welcome-mount>*){overflow:hidden}.row{height:120px}</style><div id='mount'></div>"
+    )
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.goto(shell.as_uri())
+            page.add_script_tag(path=str(bundle))
+            page.wait_for_function("document.getElementById('chatArea')")
+            assert page.evaluate("window.sendFirst()") is True
+            page.evaluate("window.unlock()")
+            page.wait_for_function("document.getElementById('chatMessages')?.children.length>0")
+            page.wait_for_function("Math.abs(document.getElementById('chatArea').scrollHeight-document.getElementById('chatArea').scrollTop-document.getElementById('chatArea').clientHeight)<8")
         finally:
             browser.close()
