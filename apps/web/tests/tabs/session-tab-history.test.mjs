@@ -302,16 +302,16 @@ test("tab switches restore each tab's sidebar route without adding visits", () =
   reset(); state().openNewTabPage(); const first = active().id;
   state().recordRouteNavigation("/skills"); const before = structuredClone(active());
   state().openNewTabPage(); const second = active().id;
-  state().recordRouteNavigation("/settings/general");
+  state().recordRouteNavigation("/programs");
   state().setActive(first); assert.equal(state().navigationRoute, "/skills");
   assert.deepEqual(active(), before);
   state().navigateHistory(-1); assert.equal(state().navigationRoute, undefined);
-  state().setActive(second); assert.equal(state().navigationRoute, "/settings/general");
+  state().setActive(second); assert.equal(state().navigationRoute, "/programs");
 });
 
 test("sidebar routes also return to the launcher in visit order", () => {
   reset(); state().openNewTabPage(); const home = active().id;
-  state().recordRouteNavigation("/skills"); state().recordRouteNavigation("/settings/general");
+  state().recordRouteNavigation("/skills"); state().recordRouteNavigation("/programs");
   state().navigateHistory(-1); assert.equal(state().navigationRoute, "/skills");
   state().navigateHistory(-1); assert.equal(active().id, home); assert.equal(state().navigationRoute, undefined);
   state().navigateHistory(1); assert.equal(state().navigationRoute, "/skills");
@@ -451,4 +451,56 @@ test("transfers reject duplicate conversation identities without replacing eithe
   reset();
   const tabs = ["one", "two"].map(id => ({ id, kind: "session", sessionId: "A", title: "A" }));
   assert.equal(validateTransferredTabs({ tabs, chats: [], source: {kind: "group", memberIds: ["one", "two"]} }, {kind: "strip-end"}).ok, false);
+});
+
+
+test("application settings leave tab content and forward history unchanged", (t) => {
+  const location = window.location;
+  delete window.location;
+  t.after(() => { window.location = location; });
+  for (const kind of ["session", "ntp", "files", "browser"]) {
+    reset(); state().openNewTabPage();
+    if (kind === "session") state().openSessionTab("settings-owner", "Owner");
+    if (kind === "files" || kind === "browser") state().openBuiltinTab(kind);
+    state().recordRouteNavigation("/skills");
+    state().recordRouteNavigation("/programs");
+    state().navigateHistory(-1);
+    const before = structuredClone(state().tabs);
+    for (const path of ["/settings", "/settings/general", "/settings/providers/provider", "/settings/browser#clear-data"]) {
+      state().recordRouteNavigation(path);
+      assert.deepEqual(state().tabs, before, `${kind}: ${path}`);
+      assert.equal(state().navigationRoute, "/skills");
+    }
+    state().navigateHistory(1);
+    assert.equal(state().navigationRoute, "/programs");
+  }
+});
+
+test("legacy settings visits are removed on reload without losing current metadata", () => {
+  const base = { id: "s:A", kind: "session", sessionId: "A", title: "Old" };
+  const pages = [base, { ...base, navigationRoute: "/skills" },
+    { ...base, navigationRoute: "/settings/general" },
+    { ...base, navigationRoute: "/settings/providers" },
+    { ...base, navigationRoute: "/programs" }];
+  for (let index = 0; index < pages.length; index++) {
+    const tab = { ...pages[index], title: "Latest", pageHistory: { entries: pages, index } };
+    storage.set("centerTabs", JSON.stringify({ version: 2, tabs: [tab], activeId: base.id }));
+    const restored = readCenterTabsPayload().tabs[0];
+    assert.equal(restored.title, "Latest");
+    assert.equal(restored.navigationRoute, index === 0 ? undefined : index === 4 ? "/programs" : "/skills");
+    assert.equal(restored.pageHistory.entries.length, 3);
+    assert.equal(restored.pageHistory.index, index === 0 ? 0 : index === 4 ? 2 : 1);
+    assert.equal(restored.pageHistory.entries.some(p => p.navigationRoute?.startsWith("/settings")), false);
+    assert.deepEqual(normalizeCenterTabsPayload({ tabs: [restored], activeId: base.id }).tabs[0], restored);
+  }
+});
+
+test("legacy settings without an underlying visit retain their content identity", () => {
+  const tab = { id: "s:orphan", kind: "session", sessionId: "orphan", title: "Draft", draft: true, navigationRoute: "/settings/general" };
+  for (const input of [tab, { ...tab, pageHistory: { entries: [tab, { ...tab, navigationRoute: "/settings/browser" }], index: 1 } }]) {
+    const restored = normalizeCenterTabsPayload({ tabs: [input], activeId: tab.id }).tabs[0];
+    assert.equal(restored.navigationRoute, undefined);
+    assert.equal(restored.sessionId, "orphan"); assert.equal(restored.draft, true);
+    assert.equal(restored.pageHistory?.entries.some(p => p.navigationRoute?.startsWith("/settings")) ?? false, false);
+  }
 });

@@ -1,5 +1,7 @@
 # Desktop App and built-in browser
 
+Settings are an application-wide page. Opening Settings from the account menu, app menu, keyboard shortcut or Browser menu leaves every tab and its Back/Forward history unchanged. Select a tab to return to its content. Settings sections can still be opened directly by URL; older settings entries are removed when saved tabs are restored.
+
 
 Local App refresh preserves permissions of unpacked native dependencies and restores execute permission on the node-pty terminal helper when an earlier refresh removed it.
 

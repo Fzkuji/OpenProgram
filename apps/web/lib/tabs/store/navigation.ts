@@ -1,7 +1,7 @@
 import { replaceGroupTabId } from "@/lib/tabs/center-tabs-persistence";
 import type { StoreApi } from "zustand";
 import { pushPath } from "../../shallow-nav";
-import { pageHistory, recordTabPage, restoreTabPage, tabPage } from "../navigation/page-history";
+import { isSettingsRoute, pageHistory, recordTabPage, restoreTabPage, tabPage } from "../navigation/page-history";
 import { navigationTarget } from "../navigation/selectors";
 import { commitCenterTabsState, independentTab } from "./core";
 import type { CenterTab, CenterTabsState } from "./types";
@@ -9,6 +9,7 @@ import type { CenterTab, CenterTabsState } from "./types";
 export function navigationActions(set: StoreApi<CenterTabsState>["setState"], get: StoreApi<CenterTabsState>["getState"], closedSessionAckTombstones: Set<string>): Pick<CenterTabsState, "recordRouteNavigation" | "canNavigateHistory" | "navigateHistory" | "navigateSessionHistory" | "navigateFileHistory" | "canNavigateFile" | "updateFileNavigationView" | "recordFileNavigation" | "removeSessionFromHistory"> {
   return {
     recordRouteNavigation: pathname => set(s => {
+      if (isSettingsRoute(pathname)) return {};
       const active = s.tabs.find(tab => tab.id === s.activeId);
       if (!active) return {};
       const navigationRoute = pathname === "/chat" || pathname.startsWith("/s/") ? undefined : pathname;
