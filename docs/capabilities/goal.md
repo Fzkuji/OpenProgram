@@ -21,7 +21,7 @@ The Goal details retain the objective, status, usage and progress after page rel
 - `/goal clear`: cancel the Goal.
 - `/goal budget max_turns=10 max_tokens=10000`: change limits; zero removes a limit.
 
-The default turn limit is configured by `goal.max_turns`. Token, active-time and cost limits use cumulative usage. A depleted budget must be increased before resuming. Waiting time is excluded from active time. Automatic continuation does not expand tool permissions.
+Goals have no round limit by default. Only an explicit positive `goal.max_turns` or start-time round budget sets a cap; reaching it is not completion. The progress badge shows todo completion, not execution rounds. Existing Goals retain their saved budgets: use `/goal budget max_turns=0` to remove an old round cap without resetting work or usage. Explicit token, active-time and cost limits use cumulative usage. A depleted budget must be increased or removed before resuming. Waiting time is excluded from active time. Automatic continuation does not expand tool permissions.
 
 A failed or cancelled execution stops automatic continuation. Worker restart leaves interrupted Goals recoverably paused. Resume is explicit; external-event wakeups are not implemented. A wait or unresolved execution is not evidence of Goal completion.
 

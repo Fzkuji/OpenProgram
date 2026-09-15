@@ -974,12 +974,12 @@ def test_checklist_stall_is_shared_goal_state(
     assert "checklist stuck" in stored["last_reason"]
 
 
-def test_default_max_turns_is_150_when_config_unset(
+def test_default_max_turns_is_unlimited_when_config_unset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import openprogram.setup as setup_module
     monkeypatch.setattr(setup_module, "_read_config", lambda: {})
-    assert G.default_max_turns() == G.DEFAULT_MAX_TURNS == 150
+    assert G.default_max_turns() is G.DEFAULT_MAX_TURNS is None
 
 
 def test_explicit_zero_or_negative_max_turns_means_unlimited(

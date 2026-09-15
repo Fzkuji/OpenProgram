@@ -92,6 +92,20 @@ function reset() {
   useSessionStore.setState({ currentSessionId: "s1" });
 }
 
+test("Goal progress shows todos, never execution rounds", async () => {
+  reset();
+  runtimeState.conversations.s1.goal = { ...snapshot(1), turns_used: 12, max_turns: 150 };
+  const view = await mount();
+  try {
+    assert.match(view.host.textContent, /No todos yet/);
+    assert.doesNotMatch(view.host.textContent, /12\/150/);
+    await frame({ ...snapshot(2), checklist: [{ text: "Verify", done: false }] });
+    assert.match(view.host.textContent, /Todos 0\/1/);
+    await frame({ ...snapshot(3), checklist: [{ text: "Verify", done: true }] });
+    assert.match(view.host.textContent, /Todos 1\/1/);
+  } finally { await view.close(); }
+});
+
 test("real connection updates enable Goal resume only after a fresh stop observation", async () => {
   reset();
   const previousWebSocket = globalThis.WebSocket;

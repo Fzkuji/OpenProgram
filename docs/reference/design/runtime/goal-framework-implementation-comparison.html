@@ -233,6 +233,7 @@
 <main>
   <section id="chat-goal-contract">
     <h2>聊天 Goal 与工作计划</h2>
+    <p>默认不限制 Goal 的执行轮数。完成依据是当前目标要求、关联 todo 的完成状态和 agent 的证据核实，不是轮数。只有用户明确设置的轮数预算才限制执行；耗尽预算不表示完成。界面进度只显示 todo 完成数，没有 todo 时显示尚无待办，不以执行轮数代替。旧会话保存的预算不批量猜测来源；用户要求取消的既有目标通过预算控制移除上限，不修改目标、todo、用量或运行状态。</p>
     <p>Goal 是会话的持久目标。工作由当前聊天 agent 执行；harness 在普通回合结束、会话空闲时检查状态，并为 active Goal 提交下一轮普通聊天。长时间运行的 Goal Workflow 不再作为聊天入口。下述设计的实现状态集中记录在文末。</p>
     <table><thead><tr><th>职责</th><th>行为</th><th>验收边界</th></tr></thead><tbody>
       <tr><td>目标</td><td>create_goal/get_goal/update_goal 仅管理状态；用户可通过 /goal 和现有详情控制开始、暂停、恢复和取消。</td><td>开始和恢复不生成强制 goal 函数调用。</td></tr>

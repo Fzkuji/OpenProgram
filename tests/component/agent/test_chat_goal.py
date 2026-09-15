@@ -36,6 +36,9 @@ def test_completed_chat_continues_once_with_original_authority(runtime, monkeypa
     from openprogram.agent.production_driver import CanonicalAgentAdapter
     from openprogram.agent.dispatcher.types import TurnRequest
     goals, chat, store = runtime
+    goal = goals.load_goal("goal-chat")
+    goal["turns_used"] = 150
+    goals.save_goal("goal-chat", goal)
     calls = []
     finished = threading.Event()
     real_notify = chat.after_terminal

@@ -20,9 +20,8 @@ _log = logging.getLogger(__name__)
 JUDGE_PARSE_FAILURE_LIMIT = 3
 # 连续 N 个续轮判定打勾数不涨 → 无进展停机(只读磨洋工守卫)。
 STALL_ROUND_LIMIT = 3
-# 未配置时的默认轮数上限（对齐 OpenHands 的 500 量级预算 + Codex goal
-# 模式 200，取更保守的 150；显式配 0/负数才表示无限）。
-DEFAULT_MAX_TURNS = 150
+# Only an explicitly configured positive value limits Goal rounds.
+DEFAULT_MAX_TURNS: Optional[int] = None
 DEFAULT_PHASE_TIMEOUT_S = 300.0
 # 连续 N 轮零工具且仍 unmet → 判定为 idle spin 停机；第 1 次先警告。
 IDLE_ROUND_LIMIT = 2
@@ -325,10 +324,8 @@ def budget_exhausted(goal: dict, *, now: float | None = None) -> str:
 
 def default_max_turns() -> Optional[int]:
     """``goal.max_turns`` from config.json (config_schema setting).
-    Unset — the default — means :data:`DEFAULT_MAX_TURNS` (150), the
-    runaway budget every Goal run starts with. An explicit zero or
-    negative value means NO turn cap; an explicit positive value is
-    honoured as-is."""
+    Unset, zero or negative means no round cap. An explicit positive
+    value is honoured as a budget, not a completion criterion."""
     try:
         from openprogram import setup as _setup
         v = (_setup._read_config().get("goal") or {}).get("max_turns")

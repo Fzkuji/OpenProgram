@@ -223,8 +223,8 @@ function GoalDetails({ sessionId, goal }: { sessionId: string; goal: GoalState }
   const pendingQuestions = (goal.questions ?? []).filter((item) => item.status === "pending");
   const done = checklist.filter((item) => item.done).length;
   const progress = checklist.length
-    ? `${done}/${checklist.length}`
-    : `${goal.turns_used ?? 0}${goal.max_turns ? `/${goal.max_turns}` : ""}`;
+    ? `${text("Todos", "待办")} ${done}/${checklist.length}`
+    : text("No todos yet", "尚无待办");
   const running = runningStatuses.has(goal.status || "");
   const resumable = resumableStatuses.has(goal.status || "");
   const terminal = terminalStatuses.has(goal.status || "");

@@ -662,15 +662,14 @@ SETTINGS: list[SettingSpec] = [
         apply=APPLY_LIVE, default=None,
         validate=lambda v: (None if v in (None, "")
                             or str(v).lstrip("-").isdigit()
-                            else "must be empty (default 150) or a "
+                            else "must be empty (unlimited) or a "
                                  "whole number (0 or negative = "
                                  "unlimited)"),
-        help="Upper bound on rounds one Goal Workflow may consume "
-             "before it stops with status=capped. Empty (default) = "
-             "150. Zero or a negative number = no cap (stop rules are "
-             "then judge failures, idle-spin detection and /goal "
-             "clear). Read when the Workflow starts; each run keeps "
-             "the bound it started with.",
+        help="Optional round budget for new Goals. Empty (default), zero or "
+             "negative means unlimited. Only an explicit positive value "
+             "sets a cap. Reaching a cap stops execution without completing "
+             "the Goal. Existing Goals retain their saved budget; use "
+             "/goal budget max_turns=0 to remove it.",
     ),
     SettingSpec(
         key="goal.judge_model", path=("goal", "judge_model"), group="Goal",

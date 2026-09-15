@@ -56,6 +56,8 @@ def test_slash_goal_starts_normal_chat(session):
     goal = goals.load_goal("chat-goal")
     assert goal["execution_mode"] == "chat"
     assert goal["text"] == "implement and verify the feature"
+    assert goal["max_turns"] is None
+    assert goal["budget"]["max_turns"] is None
 
 
 def test_chat_goal_completion_rejects_unfinished_todos(session, monkeypatch):
