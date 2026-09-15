@@ -132,23 +132,13 @@ def test_distribution_workflows_use_node24_action_releases() -> None:
 
 
 
-def test_release_workflow_builds_explicitly_unsigned_macos_artifacts() -> None:
-    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
-        encoding="utf-8"
-    )
-    assert "unsigned" in workflow.lower()
-    assert 'CSC_IDENTITY_AUTO_DISCOVERY: "false"' in workflow
-    for forbidden in (
-        "APPLE_API_KEY",
-        "APPLE_API_ISSUER",
-        "APPLE_TEAM_ID",
-        "MAC_CSC_LINK",
-        "notarytool",
-        "stapler",
-        "gh-action-pypi-publish",
-    ):
-        assert forbidden not in workflow
-
+def test_release_workflow_requires_signed_notarized_macos_artifacts() -> None:
+    workflow = (ROOT / ".github/workflows/release.yml").read_text()
+    assert "scripts/release/ci-sign-macos.py" in workflow
+    for secret in ("MAC_CSC_LINK", "MAC_CSC_KEY_PASSWORD", "APPLE_ID",
+                   "APPLE_TEAM_ID", "APPLE_APP_SPECIFIC_PASSWORD"):
+        assert "secrets." + secret in workflow
+    assert "Build explicitly unsigned macOS artifacts" not in workflow
 
 
 def test_release_matrix_requires_explicit_windows_selection():

@@ -87,6 +87,13 @@ assert.deepEqual(desktopAssetSpec("0.6.7", "win32", "arm64"), {
 });
 
 const available = resolveDesktopRelease(release, manifest, "0.6.6", "arm64");
+const signedRelease = { ...release, assets: [...release.assets,
+  { name: "OpenProgram-0.6.7-mac-arm64.dmg", size: 456 }] };
+const signedManifest = { ...manifest, files: [...manifest.files,
+  { path: "desktop-mac-arm64/OpenProgram-0.6.7-mac-arm64.dmg", bytes: 456, sha256: "b".repeat(64) }] };
+const signedAvailable = resolveDesktopRelease(signedRelease, signedManifest, "0.6.6", "arm64");
+assert.equal(signedAvailable.asset.bytes, 456);
+assert.equal(signedAvailable.asset.sha256, "b".repeat(64));
 assert.equal(available.status, "available");
 assert.equal(available.latestVersion, "0.6.7");
 assert.equal(available.asset.bytes, 123);

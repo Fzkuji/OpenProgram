@@ -14,7 +14,7 @@ curl -fsSL https://openprogram.io/install | sh
 
 Desktop 会自动检查最新 stable GitHub Release，也可以在“设置 → General → Application → 立即检查”手动检查。
 
-- macOS：有新版本时选择“下载并打开 DMG”。OpenProgram 会选择与架构匹配的完整 `unsigned` DMG，下载到用户指定位置，验证字节数与 SHA-256 后打开。退出 OpenProgram 并替换 `OpenProgram.app`；macOS 可能再次要求通过“隐私与安全性 → 仍要打开”授权。
+- macOS：有新版本时选择“下载并打开 DMG”。OpenProgram 会选择与架构匹配的完整 DMG，下载到用户指定位置，验证字节数与 SHA-256 后打开。退出 OpenProgram 并替换 `OpenProgram.app`；旧的未签名安装包可能再次要求通过“隐私与安全性 → 仍要打开”授权。
 - Linux：从目标不可变 tag 重新执行 release installer。当前不发布 Linux 桌面包。
 
 应用外壳与完整 product runtime 一起替换；`~/.openprogram` 下的状态保持不变。
@@ -356,3 +356,5 @@ openprogram upgrade
 source checkout 的恢复细节见[服务器升级](../server/upgrading.zh.md)。
 持续维护的架构、信任边界、界面状态和实现证据见
 [正式版本自动更新](../reference/design/distribution/automatic-updates.html)。
+
+新的 macOS 发行版使用 Developer ID 签名和 Apple 公证。旧版文件名明确包含 `unsigned` 的安装包仍适用原有安全要求。本地源码构建使用单独的开发签名身份。

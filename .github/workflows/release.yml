@@ -202,18 +202,27 @@ jobs:
             throw "Windows runtime ZIP was not downloaded"
           }
           scripts/release/prepare-desktop-runtime.ps1
-      - name: Build explicitly unsigned macOS artifacts
+      - name: Build staged macOS application
         if: matrix.platform != 'win'
         working-directory: apps/desktop
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: |
           npm run icon:check
-          npx electron-builder --mac dmg zip --${{ matrix.builder_arch }} --publish never
-          for artifact in dist/*.dmg dist/*.zip; do
-            extension="${artifact##*.}"
-            mv "$artifact" "${artifact%.*}-unsigned.$extension"
-          done
+          npx electron-builder --mac --dir --${{ matrix.builder_arch }} --publish never
+      - name: Sign and notarize macOS artifacts
+        if: matrix.platform != 'win'
+        env:
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          OPENPROGRAM_SIGNING_IDENTITY: ${{ vars.MAC_SIGNING_IDENTITY }}
+        run: |
+          app="$(find apps/desktop/dist -maxdepth 2 -name OpenProgram.app -type d -print -quit)"
+          test -n "$app"
+          python3 scripts/release/ci-sign-macos.py --app "$app" --output apps/desktop/dist --arch ${{ matrix.builder_arch }}
       - name: Require Windows signing credentials
         if: matrix.platform == 'win'
         shell: pwsh

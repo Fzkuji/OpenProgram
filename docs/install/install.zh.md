@@ -20,10 +20,10 @@ OpenProgram 分别提供桌面 release 安装和 CLI/server release 安装。所
 
 ### macOS
 
-1. 从 GitHub Releases 下载与机器架构对应且文件名包含 `unsigned` 的 DMG。
+1. 从 GitHub Releases 下载与机器架构对应的 DMG。
 2. 用 release checksum 文件验证 SHA-256。
 3. 打开 DMG，把 `OpenProgram.app` 复制到 `/Applications`。
-4. 从 Applications 启动。当前 release 没有使用 Apple Developer ID 签名，macOS 可能阻止首次启动。打开“系统设置 → 隐私与安全性”，找到 OpenProgram 提示并选择“仍要打开”。checksum 只验证下载内容，不能说明该应用已经通过 Apple 验证。
+4. 从 Applications 启动。正式签名的发行版由 macOS 检查 Developer ID 和 Apple 公证。旧的 `unsigned` 发行版在验证 checksum 后，可能仍需通过“系统设置 → 隐私与安全性 → 仍要打开”启动。
 
 ### Windows
 
@@ -141,3 +141,5 @@ Source build 不适用于普通用户，也不定义 `stable` channel。
 - 只有在备份后显式 purge `~/.openprogram`，才会删除用户数据。
 
 版本变更见[升级](upgrade.zh.md)，隔离状态目录见[Profiles](profiles.zh.md)。
+
+新的 macOS 发行版使用 Developer ID 签名和 Apple 公证。旧版文件名明确包含 `unsigned` 的安装包仍适用原有安全要求。本地源码构建使用单独的开发签名身份。
