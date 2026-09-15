@@ -61,6 +61,7 @@ def test_env_vars_for(monkeypatch):
     assert ek.env_vars_for("minimax-cn") == ["MINIMAX_CN_API_KEY", "MINIMAX_API_KEY"]
     assert ek.env_vars_for("kimi-coding") == ["KIMI_API_KEY", "MOONSHOT_API_KEY"]
     assert ek.env_vars_for("deepseek") == ["DEEPSEEK_API_KEY"]
+    assert ek.env_vars_for("atlascloud") == ["ATLASCLOUD_API_KEY"]
     assert ek.env_vars_for("totally-unknown") == []
 
 

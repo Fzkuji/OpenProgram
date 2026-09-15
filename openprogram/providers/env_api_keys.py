@@ -125,6 +125,7 @@ _PROVIDER_ENV_VARS: dict[str, list[str]] = {
     "kimi": ["KIMI_API_KEY"],
     "moonshot": ["MOONSHOT_API_KEY"],
     "deepseek": ["DEEPSEEK_API_KEY"],
+    "atlascloud": ["ATLASCLOUD_API_KEY"],
 }
 
 # Providers whose credential is a cloud-credential chain (SigV4 / ADC), not a

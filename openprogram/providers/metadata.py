@@ -64,6 +64,7 @@ PROVIDER_LABELS: dict[str, str] = {
     # Zen 的姊妹线路：Go 订阅走 /zen/go/v1，模型集与计费都和 Zen 分开。
     "opencode-go": "OpenCode Go",
     "deepseek": "DeepSeek",
+    "atlascloud": "Atlas Cloud",
     # Claude via local HTTP proxy daemon (replaces the old Claude Code
     # CLI provider). Tools come from OpenProgram's own registry instead
     # of the CLI's built-ins.
@@ -98,6 +99,7 @@ FETCH_MODELS_PROVIDERS = frozenset({
     "minimax-cn",
     "vercel-ai-gateway",
     "deepseek",
+    "atlascloud",
     # Excluded deliberately:
     #   anthropic      — /v1/models uses x-api-key header, not Bearer
     #   google*        — custom endpoints / OAuth
@@ -136,6 +138,7 @@ ENV_API_KEYS: dict[str, str | None] = {
     "openai-codex": None,  # OAuth via ~/.codex/auth.json
     "xai-subscription": None,  # SuperGrok / X Premium+ OAuth
     "deepseek": "DEEPSEEK_API_KEY",
+    "atlascloud": "ATLASCLOUD_API_KEY",
 }
 
 
