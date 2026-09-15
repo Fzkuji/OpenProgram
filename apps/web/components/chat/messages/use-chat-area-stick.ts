@@ -371,6 +371,17 @@ export function useChatAreaStick(
       scrollTopRef.current = area.scrollTop;
     }
 
+    if (jumpingRef.current && history?.after) {
+      pendingJumpRef.current = false;
+      interactionRef.current += 1;
+      cancelJumpRef.current?.();
+      cancelJumpRef.current = null;
+      jumpingRef.current = false;
+      if (chatKey) setFollowLock(chatKey, false);
+      stuckRef.current = false;
+      setDetached(true);
+    }
+
     if (takeLatest && note && sid && chatKey) {
       const jumpInFlight = pendingJumpRef.current || jumpingRef.current;
       const jumpOwnsThisNote = !!(
