@@ -541,7 +541,7 @@ export function useChatAreaStick(
         { getTarget: () => latestScrollTop(area) },
       );
     } finally {
-      pendingJumpRef.current = false;
+      if (isCurrent()) pendingJumpRef.current = false;
     }
   }, [sessionId, areaRef]);
 
