@@ -136,8 +136,8 @@ export function useChatAreaStick(
 
   useEffect(() => {
     if (!paintRows) return;
-    const area = areaRef?.current ?? document.getElementById("chatArea");
-    const msgs = columnRef?.current ?? document.getElementById("chatMessages");
+    const area = areaRef ? areaRef.current : document.getElementById("chatArea");
+    const msgs = columnRef ? columnRef.current : document.getElementById("chatMessages");
     if (!area || !msgs) return;
 
     const overlay = () => readComposerOverlay(area, composerRootRef?.current ?? null);
@@ -227,11 +227,8 @@ export function useChatAreaStick(
     const onPointerDown = () => {
       pointerArmedRef.current = true;
       lastPointerRef.current = performance.now();
-      if (jumpingRef.current) {
-        interactionRef.current += 1;
-        pendingJumpRef.current = false;
-        stopJump(false);
-        opRef.current = null;
+      if (jumpingRef.current || pendingJumpRef.current) {
+        cancelPending();
         stuckRef.current = false;
         setDetached(true);
       }
@@ -259,6 +256,10 @@ export function useChatAreaStick(
     ro.observe(msgs);
     return () => {
       effectGenRef.current += 1;
+      pendingJumpRef.current = false;
+      interactionRef.current += 1;
+      const key = activeKeyRef.current;
+      if (key) setFollowLock(key, false);
       cancelJumpRef.current?.();
       cancelJumpRef.current = null;
       jumpingRef.current = false;
@@ -273,7 +274,7 @@ export function useChatAreaStick(
   }, [paintRows, chatKey, sessionId, areaRef, columnRef, composerRootRef]);
 
   useLayoutEffect(() => {
-    const area = areaRef?.current ?? document.getElementById("chatArea");
+    const area = areaRef ? areaRef.current : document.getElementById("chatArea");
     if (!area) return;
     if (!paintRows) {
       previousPaintRef.current = false;
@@ -309,6 +310,9 @@ export function useChatAreaStick(
       } else if (outgoingSid && outgoingKey) {
         const outgoing = peekTakeLatest(outgoingSid, outgoingKey);
         if (outgoing) settleTakeLatest(outgoingSid, outgoingKey, outgoing.generation);
+        setFollowLock(outgoingKey, false);
+        pendingJumpRef.current = false;
+        interactionRef.current += 1;
         opRef.current = null;
         jumpingRef.current = false;
         cancelJumpRef.current?.();
@@ -366,7 +370,9 @@ export function useChatAreaStick(
     }
 
     if (takeLatest && note && sid && chatKey) {
-      if (jumpingRef.current) {
+      if (pendingJumpRef.current || jumpingRef.current) {
+        pendingJumpRef.current = false;
+        interactionRef.current += 1;
         cancelJumpRef.current?.();
         cancelJumpRef.current = null;
         jumpingRef.current = false;
@@ -396,7 +402,11 @@ export function useChatAreaStick(
             && peekTakeLatest(sid, chatKey)?.generation === note.generation
             && lastSettledTakeLatest(sid, chatKey) < note.generation;
           const loaded = await loadSessionHistoryWindow(sid, "latest", undefined, { isCurrent });
-          if (!isCurrent()) return;
+          if (!isCurrent()) {
+            setFollowLock(chatKey, false);
+            pendingJumpRef.current = false;
+            return;
+          }
           if (!loaded) {
             settleTakeLatest(sid, chatKey, note.generation);
             setApplied(chatKey, note.generation);
@@ -407,7 +417,10 @@ export function useChatAreaStick(
             return;
           }
           const live = areaRef ? areaRef.current : document.getElementById("chatArea");
-          if (!live || !isCurrent()) return;
+          if (!live || !isCurrent()) {
+            setFollowLock(chatKey, false);
+            return;
+          }
           stuckRef.current = true;
           applySnap(live);
           setApplied(chatKey, note.generation);
@@ -528,7 +541,7 @@ export function useChatAreaStick(
         { getTarget: () => latestScrollTop(area) },
       );
     } finally {
-      if (isCurrent()) pendingJumpRef.current = false;
+      pendingJumpRef.current = false;
     }
   }, [sessionId, areaRef]);
 
