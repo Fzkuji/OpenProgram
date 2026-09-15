@@ -835,6 +835,13 @@ html[data-sidebar-closed] #sidebar .sidebar-nav-action {
   animation: convFinishingWipe 1.1s cubic-bezier(0.4, 0, 0.6, 1) forwards;
 }
 
+/* Unselected running rows keep only the leading three-dot marker.
+   The sweep is reserved for the current conversation. */
+.convRunning:not([aria-current="true"])::before,
+.convFinishing:not([aria-current="true"])::before {
+  content: none;
+}
+
 /* One-shot 360° spin for the avatar-picker "↻ Regenerate" glyph.
    Non-infinite (no ``infinite`` keyword) so it rotates once per
    click and settles back at 0°; the component re-triggers it by

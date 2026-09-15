@@ -821,8 +821,8 @@ type MarkerState = "working" | "needs_input" | "unread" | "idle";
 
 /** The dot to the left of a conversation title, mirroring Claude Code's
  *  status markers (colours sampled from claude.ai/code):
- *   - pinned       → an amber pin (our own addition, takes priority)
  *   - working      → three pulsing gray dots (a task is running)
+ *   - pinned       → an amber pin (idle pinned rows only; running wins)
  *   - needs_input  → a filled amber dot (#ffd014 — awaiting the user)
  *   - unread       → a filled blue dot (#5aa6f2 — finished, not yet seen)
  *   - idle         → a hollow gray ring (done & seen / nothing pending)
@@ -836,17 +836,6 @@ function StatusMarker({
   state: MarkerState;
   labels: { pinned: string; working: string; needsInput: string; unread: string };
 }) {
-  if (pinned) {
-    return (
-      <svg
-        className="shrink-0 text-[var(--accent-orange)]"
-        width="12" height="12" viewBox="0 0 16 16" fill="currentColor"
-        aria-label={labels.pinned}
-      >
-        <path d="M9.5 1.5a1 1 0 0 0-1.7.7l.1 3.2-2.4 2.4a1 1 0 0 0-.3.7v.5l2.6-.0 0 4 .8 1.3.8-1.3 0-4 2.6.0v-.5a1 1 0 0 0-.3-.7L9.5 5.4l.1-3.2a1 1 0 0 0-.1-.7z" />
-      </svg>
-    );
-  }
   if (state === "working") {
     return (
       <span
@@ -882,6 +871,17 @@ function StatusMarker({
         aria-label={labels.unread}
         title={labels.unread}
       />
+    );
+  }
+  if (pinned) {
+    return (
+      <svg
+        className="shrink-0 text-[var(--accent-orange)]"
+        width="12" height="12" viewBox="0 0 16 16" fill="currentColor"
+        aria-label={labels.pinned}
+      >
+        <path d="M9.5 1.5a1 1 0 0 0-1.7.7l.1 3.2-2.4 2.4a1 1 0 0 0-.3.7v.5l2.6-.0 0 4 .8 1.3.8-1.3 0-4 2.6.0v-.5a1 1 0 0 0-.3-.7L9.5 5.4l.1-3.2a1 1 0 0 0-.1-.7z" />
+      </svg>
     );
   }
   // idle / done & seen → 圆环。圆心用侧栏背景色实心填充，盖住底下穿过的
@@ -1056,10 +1056,11 @@ function ConvItem({
         /* 不给 title：悬停时标题自己滚动（measureMarquee 起的 marquee），
            原生 tooltip 会浮在相邻行上盖住列表，两者只留滚动这一种。 */
       >
-        {/* Leading status marker (Claude-Code-style). Priority: pinned →
-            live running task → backend status (needs_input / unread) →
-            idle. status/unread are backend-fed; until the server sends
-            them, rows simply show working or idle.
+        {/* Leading status marker (Claude-Code-style). Priority:
+            needs_input → live running task → unread → pinned → idle.
+            A working row shows three dots even when pinned; waiting
+            for input retains the amber marker. Until the
+            server sends them, rows simply show working or idle.
             Wrapped in a 16px-wide centred slot — the SAME width as the
             nav rows' icon slot (sidebarNavIconClass) — so with the row's
             12px gap the conversation title lines up at the exact same
