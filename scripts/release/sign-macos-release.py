@@ -27,12 +27,27 @@ def run(*args: str) -> str:
 
 def notarize(path: Path, profile: str) -> None:
     keychain = os.environ.get('OPENPROGRAM_NOTARY_KEYCHAIN')
-    extra = ['--keychain', keychain] if keychain else []
+    auth = ['--keychain-profile', profile]
+    if keychain:
+        auth += ['--keychain', keychain]
     result = json.loads(run('xcrun', 'notarytool', 'submit', str(path),
-                            '--keychain-profile', profile, '--wait', '--output-format', 'json', *extra))
-    if result.get('status') != 'Accepted':
-        raise RuntimeError(f'Apple notarization did not accept the artifact: {result.get("id", "unknown")}')
-    print(f'Notarization Accepted: {result["id"]}', flush=True)
+                            *auth, '--output-format', 'json'))
+    submission = result.get('id')
+    if not isinstance(submission, str) or not submission:
+        raise RuntimeError('Apple did not return a notarization submission ID')
+    print(f'Notarization submitted: {submission}', flush=True)
+    try:
+        run('xcrun', 'notarytool', 'wait', submission, *auth, '--timeout', '45m')
+    except (RuntimeError, subprocess.SubprocessError):
+        # A timeout does not cancel Apple's processing. Query authoritative status
+        # before deciding whether the artifact can be published.
+        pass
+    status = json.loads(run('xcrun', 'notarytool', 'info', submission,
+                            *auth, '--output-format', 'json')).get('status')
+    if status != 'Accepted':
+        raise RuntimeError(f'Apple notarization {status}: {submission}. '
+                           'No release artifacts were published; inspect this submission with notarytool info/log.')
+    print(f'Notarization Accepted: {submission}', flush=True)
 
 
 def sign(app: Path, identity: str, entitlements: Path) -> None:

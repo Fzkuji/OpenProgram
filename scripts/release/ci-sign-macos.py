@@ -44,7 +44,8 @@ def main():
                 '--apple-id', os.environ['APPLE_ID'], '--team-id', os.environ['APPLE_TEAM_ID'],
                 '--password', os.environ['APPLE_APP_SPECIFIC_PASSWORD'], '--keychain', keychain)
             # Keep notarization credentials scoped to this temporary keychain.
-            env = dict(os.environ, OPENPROGRAM_NOTARY_KEYCHAIN=keychain)
+            env = {name: value for name, value in os.environ.items() if name not in required}
+            env['OPENPROGRAM_NOTARY_KEYCHAIN'] = keychain
             command = [sys.executable, str(Path(__file__).with_name('sign-macos-release.py')),
                        *sys.argv[1:], '--profile', profile]
             result = subprocess.run(command, env=env)

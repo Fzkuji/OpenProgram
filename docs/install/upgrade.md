@@ -19,6 +19,23 @@ The Desktop checks the latest stable GitHub Release automatically. You can also 
 
 The application shell and complete product runtime are replaced together. State under `~/.openprogram` remains unchanged.
 
+
+### macOS development and public releases
+
+Local development and public distribution use separate signing modes:
+
+- **Local iteration:** `scripts/refresh-local-app.sh` rebuilds the default installed development App with its persistent local certificate. It does not submit each edit to Apple. Keep the local signing state outside the repository and reuse it; do not delete it to fix a permission prompt.
+- **Public release:** the `Release` GitHub Actions workflow runs for a `v*` tag, or manually for an existing immutable tag. It signs the application and embedded native components with Developer ID, waits for Apple notarization, staples and validates tickets, runs the packaged-runtime checks, and only then publishes checksummed artifacts. Ordinary branch pushes do not trigger this workflow.
+
+The workflow requires repository Secrets `MAC_CSC_LINK` (base64 encrypted PKCS#12), `MAC_CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID`, plus repository variable `MAC_SIGNING_IDENTITY`. Store them in GitHub settings, never in source files. CI imports them into a temporary keychain and removes it when the signing step exits.
+
+To rebuild an existing reviewed release tag, use the **Release → Run workflow** UI or `gh workflow run release.yml -f tag=vX.Y.Z`. The tag, package versions and release notes must agree. Do not recreate a certificate or app password for each release. If a credential expires or is revoked, update the corresponding Secret before retrying.
+
+A notarization submission ID appears in the signing job log. `In Progress` means Apple has not finished; `Accepted` permits publication; other states stop publication. A 45-minute wait timeout does not cancel the submission. Use `xcrun notarytool info SUBMISSION_ID --keychain-profile PROFILE` to check it and `xcrun notarytool log SUBMISSION_ID --keychain-profile PROFILE` for rejection details. After resolving the cause, rerun the failed workflow for the same immutable tag; a new build may create a new notarization submission.
+
+Keep the development App on machines used for frequent source iteration. A public Developer ID App has a different identity; local refresh intentionally refuses to overwrite it with a development signature. Switching between those modes can require fresh macOS permission consent. Agent bypass settings do not control these macOS permissions.
+
+
 ## CLI and server release
 
 Check or upgrade to the latest stable release:
@@ -462,5 +479,3 @@ The historical `openprogram update` command is a compatibility alias for `openpr
 See [Server upgrading](../server/upgrading.md) for source-checkout recovery details.
 The maintained architecture, trust boundaries, UI states, and implementation
 evidence are in [Automatic updates](../reference/design/distribution/automatic-updates.html).
-
-New macOS releases use Developer ID signing and Apple notarization. Older assets explicitly named `unsigned` retain their original security requirements. Local source builds use a separate development identity.
