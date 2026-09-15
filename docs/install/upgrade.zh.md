@@ -19,6 +19,23 @@ Desktop 会自动检查最新 stable GitHub Release，也可以在“设置 → 
 
 应用外壳与完整 product runtime 一起替换；`~/.openprogram` 下的状态保持不变。
 
+
+### macOS 本地迭代和正式发布
+
+本地开发与对外发行使用两种签名方式：
+
+- **本地迭代：** `scripts/refresh-local-app.sh` 使用固定的本地证书重建默认安装的开发版 App，不会把每次修改提交给 Apple。签名状态保存在仓库外并持续复用，不要为了消除权限弹窗删除它。
+- **正式发布：** GitHub Actions 的 `Release` 工作流只在推送 `v*` 标签，或手动指定已有不可变标签时运行。它对 App 和内嵌原生组件进行 Developer ID 签名，等待 Apple 公证，附加并验证票据，检查完整 runtime，最后发布带校验和的安装包。普通分支推送不会触发公证。
+
+工作流需要仓库 Secrets：`MAC_CSC_LINK`（加密 PKCS#12 的 base64）、`MAC_CSC_KEY_PASSWORD`、`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID`，以及仓库变量 `MAC_SIGNING_IDENTITY`。这些值只保存在 GitHub 设置中，不写入源码。CI 把凭据导入临时钥匙串，签名步骤结束时删除。
+
+重新构建已经审查的发行标签时，在 **Release → Run workflow** 指定标签，或执行 `gh workflow run release.yml -f tag=vX.Y.Z`。标签、包版本和发行说明必须一致。每次发布不需要重新创建证书或专用密码；只有凭据过期或被撤销时，才更新对应 Secret 后重试。
+
+签名任务日志会显示公证申请编号。`In Progress` 表示 Apple 尚未处理完；`Accepted` 才允许发布；其他状态停止发布。等待超过 45 分钟不会取消 Apple 端的申请。可用 `xcrun notarytool info 申请编号 --keychain-profile 凭据名称` 查询状态，用 `xcrun notarytool log 申请编号 --keychain-profile 凭据名称` 查看拒绝原因。解决原因后，重新运行同一个不可变标签的失败工作流；新的构建可能产生新的公证申请。
+
+频繁源码开发的机器应保留开发版 App。正式 Developer ID App 的身份不同，本地刷新会主动拒绝用开发签名覆盖它。切换这两种模式可能需要重新同意 macOS 权限；Agent 的 bypass 设置不控制 macOS 权限。
+
+
 ## CLI 和服务器 release
 
 检查或升级到最新 stable release：
@@ -356,5 +373,3 @@ openprogram upgrade
 source checkout 的恢复细节见[服务器升级](../server/upgrading.zh.md)。
 持续维护的架构、信任边界、界面状态和实现证据见
 [正式版本自动更新](../reference/design/distribution/automatic-updates.html)。
-
-新的 macOS 发行版使用 Developer ID 签名和 Apple 公证。旧版文件名明确包含 `unsigned` 的安装包仍适用原有安全要求。本地源码构建使用单独的开发签名身份。
