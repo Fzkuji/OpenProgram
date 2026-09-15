@@ -33,7 +33,8 @@ def test_native_release_workflow_has_platform_jobs() -> None:
     assert "scripts/release/create-release-manifest.py" in workflow
     assert "scripts/release/smoke-packaged-runtime.sh" in workflow
     assert "sha256" in workflow.lower()
-    assert "electron-builder --mac dmg zip" in workflow
+    assert "electron-builder --mac --dir" in workflow
+    assert "scripts/release/ci-sign-macos.py" in workflow
     assert "electron-builder --win nsis --${{ matrix.builder_arch }} --publish never" in workflow
     assert "windows-11-vs2026-arm" in matrix
     assert "vars.OPENPROGRAM_RELEASE_WINDOWS" in workflow
