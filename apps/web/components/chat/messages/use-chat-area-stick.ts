@@ -172,11 +172,12 @@ export function useChatAreaStick(
         stopJump(false);
         stuckRef.current = false;
       }
-      if (op && op.kind === "send") {
+      if (op && op.generation > 0) {
         settleTakeLatest(op.sessionId, op.scrollerKey, op.generation);
         setApplied(op.scrollerKey, op.generation);
-        setFollowLock(op.scrollerKey, false);
       }
+      const key = op?.scrollerKey ?? activeKeyRef.current;
+      if (key) setFollowLock(key, false);
       opRef.current = null;
     };
 
@@ -468,6 +469,7 @@ export function useChatAreaStick(
         applySnap(area);
         setApplied(chatKey, note.generation);
         settleTakeLatest(sid, chatKey, note.generation);
+        setFollowLock(chatKey, false);
         opRef.current = {
           sessionId: sid,
           scrollerKey: chatKey,
@@ -529,7 +531,17 @@ export function useChatAreaStick(
         if (history?.after || history?.loading) {
           const loaded = await loadSessionHistoryWindow(sid, "latest", undefined, { isCurrent });
           if (!loaded) {
-            if (isCurrent() && key) setFollowLock(key, false);
+            if (isCurrent() && key) {
+              setFollowLock(key, false);
+              if (sid) {
+                const note = peekTakeLatest(sid, key);
+                if (note) {
+                  settleTakeLatest(sid, key, note.generation);
+                  setApplied(key, note.generation);
+                }
+              }
+              opRef.current = null;
+            }
             return;
           }
         }
