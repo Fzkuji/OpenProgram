@@ -65,6 +65,17 @@ test('hidden views do not fetch and cleanup prevents completion from scheduling 
   assert.equal(f.requests.length,1);assert.equal(f.listeners.size,0);
 });
 
+test('a concurrent latest load does not back off older prefetch',async t=>{
+  const f=fixture(t);f.area.scrollTop=0;f.frame();
+  assert.equal(f.requests.length,1);
+  await f.settle({loading:true});
+  f.frame();
+  f.update({loading:false});
+  f.area.dispatchEvent(new Event('scroll'));f.frame();
+  assert.equal(f.requests.length,2);
+  await f.settle({before:null});f.frame();
+});
+
 test('a new session generation clears old retry delays',async t=>{
   const f=fixture(t);f.area.scrollTop=0;f.frame();await f.settle({error:true});
   f.update({generation:2,error:false,before:'new-history'});f.frame();

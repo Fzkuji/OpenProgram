@@ -34,6 +34,12 @@ export function startHistoryAutoload(
       clearTimeout(timer);
       timer = undefined;
     }
+    if (page?.loading) {
+      failures = 0;
+      clearTimeout(timer);
+      timer = undefined;
+      return;
+    }
     const now = performance.now();
     const elapsed = Math.max(16, now - lastTime);
     const delta = area.scrollTop - lastTop;
@@ -57,6 +63,10 @@ export function startHistoryAutoload(
       latency = Math.min(5000, Math.max(250, (latency + performance.now() - started) / 2));
       if (stopped) return;
       const next = source.read();
+      if (next?.loading) {
+        schedule();
+        return;
+      }
       if (next?.generation === page.generation
           && (next.error || (direction === 'older' ? next.before === page.before : next.after === page.after))) {
         const delay = Math.min(30_000, 1000 * 2 ** Math.min(failures++, 5));
