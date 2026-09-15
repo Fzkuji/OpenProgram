@@ -119,7 +119,11 @@ function resolveDesktopRelease(
   if (!releaseAssets.has("release-manifest.json")) throw new Error("release manifest asset is missing");
   const manifestFiles = manifestMap(manifest);
   const spec = desktopAssetSpec(latestVersion, platform, arch);
-  const { name } = spec;
+  let { name } = spec;
+  if (platform === "darwin") {
+    const signedName = name.replace("-unsigned.dmg", ".dmg");
+    if (releaseAssets.has(signedName)) name = signedName;
+  }
   const asset = releaseAssets.get(name);
   const entry = manifestFiles.get(name);
   if (!asset || !entry) throw new Error(`complete Desktop asset is missing: ${name}`);

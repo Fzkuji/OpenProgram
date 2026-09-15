@@ -20,10 +20,10 @@ Supported macOS and Windows desktop artifacts contain Electron and the platform 
 
 ### macOS
 
-1. Download the DMG whose name contains `unsigned` for the machine architecture from GitHub Releases.
+1. Download the DMG for the machine architecture from GitHub Releases.
 2. Verify its SHA-256 against the release checksum file.
 3. Open the DMG and copy `OpenProgram.app` to `/Applications`.
-4. Start OpenProgram from Applications. Because the current release is not signed with Apple Developer ID, macOS may block the first launch. Open **System Settings → Privacy & Security**, find the OpenProgram notice, and select **Open Anyway**. The checksum verifies the downloaded bytes; the app is not Apple-verified.
+4. Start OpenProgram from Applications. Signed releases are checked by macOS using Developer ID and Apple notarization. Older `unsigned` releases may require **System Settings → Privacy & Security → Open Anyway** after checksum verification.
 
 ### Windows
 
@@ -152,3 +152,5 @@ Configuration, sessions, logs, Programs, and caches live under `~/.openprogram`;
 - User data is removed only by an explicit purge of `~/.openprogram` after backup.
 
 See [Upgrading](upgrade.md) for version changes and [Profiles](profiles.md) for isolated state directories.
+
+New macOS releases use Developer ID signing and Apple notarization. Older assets explicitly named `unsigned` retain their original security requirements. Local source builds use a separate development identity.

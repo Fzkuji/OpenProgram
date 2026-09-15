@@ -18,7 +18,7 @@ a uv-managed portable CPython runtime, and include that runtime under Electron
 resources:
 
     npm run dist        # build, validate, and replace /Applications/OpenProgram.app
-    npm run dist:mac    # release-only, explicitly unsigned DMG + ZIP
+    npm run dist:mac    # local unsigned packaging; production uses the release workflow
     npm run dist:win          # Windows x64 NSIS package with the complete runtime
     npm run dist:win:arm64    # Windows arm64 NSIS package with the complete runtime
 
@@ -31,8 +31,12 @@ files remain release artifacts because immutable releases and automatic updates
 need them.
 
 Packaged builds never fall back to `PATH`, system Python, conda, or the source
-checkout. The tag workflow builds explicitly unsigned macOS artifacts and uses
-no Apple signing or notarization credentials. The Windows tag job requires the
+checkout. The tag workflow requires Developer ID signing and Apple notarization for macOS.
+It publishes DMG and ZIP files only after signature and stapled-ticket verification.
+Configure MAC_CSC_LINK (base64 PKCS#12), MAC_CSC_KEY_PASSWORD, APPLE_ID,
+APPLE_APP_SPECIFIC_PASSWORD and APPLE_TEAM_ID repository secrets, and the
+MAC_SIGNING_IDENTITY repository variable. Local release signing uses
+`scripts/release/sign-macos-release.py --help` with a Keychain notarization profile. The Windows tag job requires the
 Windows signing certificate secrets, signs both the application executable and
 NSIS installer, verifies Authenticode, and smoke-tests the embedded runtime.
 Missing signing credentials fail publication; local unsigned Windows builds are
