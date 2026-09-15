@@ -30,6 +30,7 @@ import { attachmentsBlockSend } from "../attach/attachment-session-cache";
 import { expandAtMentions } from "../attach/at-mention";
 import { expandPasteTokens, missingPasteIds } from "../paste/paste-store";
 import { sendChatMessage } from "./send-chat-message";
+import { defaultScrollerKey, noteTakeLatest } from "@/lib/chat/chat-scroll";
 import { resolveFnFormSessionId } from "../modes/fn-form/session-target";
 import type { useComposerAttachments } from "../attach/use-composer-attachments";
 import type { useSlashMenu } from "../slash/use-slash-menu";
@@ -108,6 +109,13 @@ export function useChatSubmit({
       }
       const accepted = dispatchFunction(invocation.fn, invocation.kwargs);
       if (!accepted) return;
+      if (submitOwnerKey) {
+        noteTakeLatest({
+          sessionId: submitOwnerKey,
+          scrollerKey: defaultScrollerKey(submitOwnerKey, bound !== null),
+          turnSeed: `slash:${Date.now()}`,
+        });
+      }
       setComposerInputFor(submitOwnerKey, "");
       setHistoryIndex(-1);
       slash.close();

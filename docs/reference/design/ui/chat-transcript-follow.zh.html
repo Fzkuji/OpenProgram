@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenProgram · 聊天转录跟随</title>
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #141413;
+  --bg-code: #1c1c1a;
+  --bg-elev: #222220;
+  --tx: #e8e6dc;
+  --tx-soft: #9a988f;
+  --acc: #d19a66;
+  --bd: rgba(226,225,218,.18);
+  --ok: #55d69c;
+  --warn: #f0c562;
+  --bad: #ff8b82;
+  --user: #2a3344;
+  --assist: #1f1f1d;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg: #f4f3ef; --bg-code: #eceae3; --bg-elev: #fff;
+    --tx: #242420; --tx-soft: #66655e; --acc: #a05a1c;
+    --bd: rgba(36,36,32,.16); --ok: #157a4b; --warn: #8a5b00; --bad: #b42318;
+    --user: #dbe6f6; --assist: #fff;
+  }
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f4f3ef; --bg-code: #eceae3; --bg-elev: #fff;
+  --tx: #242420; --tx-soft: #66655e; --acc: #a05a1c;
+  --bd: rgba(36,36,32,.16); --ok: #157a4b; --warn: #8a5b00; --bad: #b42318;
+  --user: #dbe6f6; --assist: #fff;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #141413; --bg-code: #1c1c1a; --bg-elev: #222220;
+  --tx: #e8e6dc; --tx-soft: #9a988f; --acc: #d19a66;
+  --bd: rgba(226,225,218,.18); --ok: #55d69c; --warn: #f0c562; --bad: #ff8b82;
+  --user: #2a3344; --assist: #1f1f1d;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--tx);
+  font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", sans-serif;
+}
+main { max-width: 1120px; margin: auto; padding: 40px 24px 96px; }
+h1 { font-size: clamp(28px, 4vw, 36px); line-height: 1.2; margin: 8px 0 12px; }
+h2 { font-size: 22px; margin: 42px 0 12px; padding-top: 8px; border-top: 1px solid var(--bd); }
+h3 { font-size: 16px; margin: 22px 0 8px; }
+p { margin: 8px 0 14px; max-width: 85ch; }
+a { color: var(--acc); }
+code { font-family: var(--mono); font-size: .9em; overflow-wrap: anywhere; background: var(--bg-code); padding: 1px 5px; border-radius: 4px; border: 1px solid var(--bd); }
+pre { overflow: auto; background: var(--bg-code); border: 1px solid var(--bd); border-radius: 10px; padding: 14px 16px; font: 12.5px/1.5 var(--mono); }
+pre code { background: none; border: 0; padding: 0; }
+.eyebrow { color: var(--acc); font: 600 11px/1.4 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 18px; }
+.pill { display: inline-flex; align-items: center; min-height: 26px; padding: 3px 9px; border: 1px solid var(--bd); border-radius: 999px; color: var(--tx-soft); font-size: 12px; background: var(--bg-code); }
+.pill.draft { color: var(--warn); }
+.lead { border-left: 4px solid var(--acc); background: var(--bg-code); padding: 14px 16px; border-radius: 0 10px 10px 0; max-width: none; }
+.toc { display: flex; flex-wrap: wrap; gap: 8px; position: sticky; top: 0; z-index: 6; padding: 12px 0; background: var(--bg); border-bottom: 1px solid var(--bd); }
+.toc a { text-decoration: none; font-size: 13px; padding: 4px 10px; border: 1px solid var(--bd); border-radius: 6px; background: var(--bg-elev); color: var(--tx); }
+.toc a:focus-visible, button:focus-visible, a:focus-visible, summary:focus-visible, [tabindex="0"]:focus-visible {
+  outline: 3px solid var(--acc); outline-offset: 3px;
+}
+.doc-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--bd); border-radius: 10px; background: var(--bg-code); }
+table { width: 100%; border-collapse: collapse; min-width: 760px; font-size: 14px; }
+th, td { padding: 9px 11px; border-bottom: 1px solid var(--bd); text-align: left; vertical-align: top; }
+th { background: var(--bg-elev); color: var(--tx-soft); font-weight: 600; font-size: 12px; }
+tr:last-child td { border-bottom: 0; }
+.ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+.grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.card { padding: 14px 16px; background: var(--bg-code); border: 1px solid var(--bd); border-radius: 10px; min-width: 0; }
+.card h3 { margin-top: 0; }
+.card p { margin: 6px 0 0; font-size: 14px; }
+.note { margin: 12px 0; padding: 11px 13px; border-left: 3px solid var(--warn); background: color-mix(in srgb, var(--warn) 10%, var(--bg-code)); }
+.flow { display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; align-items: start; }
+.flow b { color: var(--acc); font-family: var(--mono); font-size: 12px; padding-top: 3px; }
+ul, ol { padding-left: 22px; } li { margin: 5px 0; }
+details { padding: 10px 0; border-bottom: 1px solid var(--bd); }
+summary { cursor: pointer; font-weight: 600; }
+.theme-row { display: flex; gap: 8px; align-items: center; margin-left: auto; }
+.theme-row button { font: inherit; color: inherit; background: var(--bg-elev); border: 1px solid var(--bd); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+button { font: inherit; color: inherit; background: var(--bg-elev); border: 1px solid var(--bd); border-radius: 7px; padding: 8px 12px; cursor: pointer; }
+button.primary { background: var(--acc); color: #141413; border-color: transparent; font-weight: 600; }
+button[aria-pressed="true"] { border-color: var(--acc); color: var(--acc); }
+.status { color: var(--warn); }
+
+/* Preview */
+.demo {
+  border: 1px solid var(--bd);
+  border-radius: 14px;
+  background: var(--bg-elev);
+  overflow: hidden;
+  margin: 16px 0 12px;
+}
+.demo-toolbar {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  padding: 12px; border-bottom: 1px solid var(--bd);
+}
+.demo-toolbar .spacer { flex: 1; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  font: 600 11px/1 var(--mono); padding: 5px 8px; border-radius: 999px;
+  border: 1px solid var(--bd); color: var(--tx-soft);
+}
+.chip.on { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--bd)); }
+.chip.off { color: var(--warn); }
+.stage {
+  position: relative;
+  height: min(62vh, 560px);
+  min-height: 360px;
+  background: var(--bg);
+}
+.scroller {
+  height: 100%;
+  overflow-y: auto;
+  overflow-anchor: none;
+  padding: 0;
+}
+.column {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 18px 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.msg { max-width: 78%; padding: 8px 12px; border-radius: 14px; font-size: 14px; line-height: 1.45; }
+.msg.user { align-self: flex-end; background: var(--user); }
+.msg.assistant { align-self: flex-start; background: var(--assist); border: 1px solid var(--bd); }
+.msg.pending { align-self: flex-start; color: var(--tx-soft); font-style: italic; border: 1px dashed var(--bd); }
+.msg.queued { align-self: flex-end; opacity: .55; }
+.composer {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  border-top: 1px solid var(--bd);
+  backdrop-filter: blur(8px);
+}
+.composer-box {
+  max-width: 640px; margin: 0 auto; display: flex; gap: 8px; align-items: center;
+  background: var(--bg-elev); border: 1px solid var(--bd); border-radius: 14px; padding: 8px 10px;
+}
+.composer-box span { flex: 1; color: var(--tx-soft); font-size: 14px; }
+.jump-host {
+  position: absolute; left: 0; right: 0;
+  bottom: calc(var(--demo-composer-h, 64px) + 12px);
+  height: 0; display: flex; justify-content: center; pointer-events: none; z-index: 3;
+}
+.jump-btn {
+  pointer-events: auto; display: none; align-items: center; gap: 6px;
+  padding: 6px 12px 6px 10px; border-radius: 999px; font-size: 12.5px;
+  background: var(--bg-elev); border: 1px solid var(--bd); box-shadow: 0 4px 14px rgba(0,0,0,.16);
+}
+.jump-btn.show { display: inline-flex; }
+.jump-live { display: inline-flex; gap: 2px; height: 12px; width: 14px; align-items: flex-end; }
+.jump-live i { display: block; width: 2.5px; height: 4px; border-radius: 1px; background: var(--acc); animation: bar .9s ease-in-out infinite; }
+.jump-live i:nth-child(2) { animation-delay: .15s; height: 7px; }
+.jump-live i:nth-child(3) { animation-delay: .3s; }
+@keyframes bar { 0%,100% { transform: scaleY(.45); opacity: .55; } 50% { transform: scaleY(1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .jump-live i { animation: none; opacity: .8; }
+  .jump-btn { transition: none; }
+}
+.log {
+  font: 12px/1.5 var(--mono); color: var(--tx-soft);
+  padding: 10px 12px; border-top: 1px solid var(--bd);
+  max-height: 7.5em; overflow: auto; background: var(--bg-code);
+}
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
+@media (max-width: 780px) {
+  main { padding: 24px 16px 72px; }
+  .grid { grid-template-columns: 1fr; }
+  .toc { position: static; }
+  table { min-width: 640px; }
+  .stage { min-height: 320px; height: 70vh; }
+}
+</style>
+</head>
+<body>
+<main>
+<p class="eyebrow">OpenProgram / Web / 转录</p>
+<h1 id="title">聊天转录跟随</h1>
+<div class="meta">
+  <span class="pill">作者：engineering</span>
+  <span class="pill draft">状态：草稿 · 尚未实现</span>
+  <span class="pill">范围：Web 渲染器（App 与浏览器）</span>
+</div>
+<p class="lead">发送消息并不能可靠地把读者带到最新一轮。四个重叠的滚动写入者对“底部”是什么、谁可以移动视口意见不一（遗留 <code>scrollToBottom</code>、未使用的 <code>useStickToBottom</code>、现场 <code>useChatAreaStick</code>、以及 <code>loadSessionHistoryWindow</code>）。本页把它们收成一份由 React 持有的跟随策略：一种附着/脱离状态、一个“在底部”判定、一张跟随触发表、以及一个以 padding 边缘定义的 latest。聊天 handler 和历史加载器不得把 latest 钉到任意视口上。</p>
+
+<nav class="toc" aria-label="页面章节">
+  <a href="#preview">预览</a>
+  <a href="#current">现状缺口</a>
+  <a href="#corpus">参考对照</a>
+  <a href="#choices">取舍</a>
+  <a href="#architecture">架构</a>
+  <a href="#api">接口</a>
+  <a href="#acceptance">验收</a>
+  <a href="#sequence">实施顺序</a>
+  <a href="#status">实现状态</a>
+  <span class="theme-row">
+    <button type="button" id="themeBtn" aria-pressed="false">主题</button>
+  </span>
+</nav>
+
+<section id="preview">
+<h2>已采纳契约的交互预览</h2>
+<p>该视口完全本地，不发网络请求。它实现的是统一策略，不是当前产品行为。可以灌入长历史、向上翻、发送、模拟流式，并使用“跳到最新”。在最新窗口上，发送瞬间贴底并附着。正在显示更早窗口时，发送保持 pending、保留 Jump，latest 加载后再贴底。流式增长只在附着时跟随。“跳到最新”用原生平滑滚动重新附着（请求减少动效时改为瞬间）。</p>
+<div class="demo">
+  <div class="demo-toolbar">
+    <button type="button" id="seedBtn">灌入长历史</button>
+    <button type="button" id="sendBtn" class="primary">发送</button>
+    <button type="button" id="streamBtn">模拟流式</button>
+    <button type="button" id="olderBtn" aria-pressed="false">查看更早一页</button>
+    <button type="button" id="switchBtn">切换会话</button>
+    <span class="spacer"></span>
+    <div class="chips" aria-live="polite">
+      <span class="chip on" id="chipAttached">已附着</span>
+      <span class="chip" id="chipWindow">最新窗口</span>
+      <span class="chip" id="chipMotion">发送 = 瞬间贴底</span>
+    </div>
+  </div>
+  <div class="stage" id="chatView">
+    <div class="scroller" id="chatArea" tabindex="0" role="log" aria-label="预览转录">
+      <div class="column" id="chatMessages"></div>
+    </div>
+    <div class="jump-host">
+      <button type="button" class="jump-btn" id="jumpBtn">跳到最新</button>
+    </div>
+    <div class="composer" id="composer">
+      <div class="composer-box">
+        <span id="draftHint">随便问…然后发送，或在转录区按 Enter</span>
+        <button type="button" class="primary" id="sendBtn2">发送</button>
+      </div>
+    </div>
+  </div>
+  <div class="log" id="policyLog" aria-live="polite">策略日志：就绪。灌入历史，向上翻，然后发送。</div>
+</div>
+<p class="muted" style="color:var(--tx-soft);font-size:13px">键盘：Tab 到滚动区或按钮；在滚动区按 Enter 发送；“跳到最新”是真实按钮。呼吸垫为 <code>max(25vh, composer + 24)</code>。latest 是 padding 边缘，因此最后一条气泡落在输入框上方的可见带里，而不是被输入框挡住。Jump 在平滑行程落定前保持可见；滚动器上的指针或滚轮取消行程。发送仍然瞬间隐藏 Jump。本预览尚未覆盖本页新增的 generation 生命周期、异步取消及 Jump 动态目标完成验证，不作为这些行为的契约实现证据。本视口不模拟欢迎页 overflow、peer overlay 松弛、latest 窗口加载失败，或真实更早历史页（更早页控件只是一个标志）。</p>
+</section>
+
+<section id="current">
+<h2>当前实现与已核实缺口</h2>
+<p>现场所有者是 React 的 <code>useChatAreaStick</code>（<code>apps/web/components/chat/messages/use-chat-area-stick.ts</code>），由 <code>MessageList</code> 和 <code>peer-session-pane.tsx</code> 消费。数学辅助已在 <code>apps/web/lib/chat/chat-scroll.ts</code>。旁边仍有三个旧的或并行的写入者。</p>
+
+<div class="doc-scroll" tabindex="0" role="region" aria-label="当前滚动所有者">
+<table>
+<thead><tr><th>所有者</th><th>附着 / 底部</th><th>跟随目标</th><th>调用方</th><th>核实状态</th></tr></thead>
+<tbody>
+<tr>
+  <td>遗留 <code>scrollToBottom</code> / 模块级 <code>stickToBottom</code>（<code>apps/web/lib/runtime-bridge/helpers.ts</code>）</td>
+  <td>全局布尔，默认 true；在 <code>#chatArea</code> 上用 <code>isChatAtBottom</code> 听滚动</td>
+  <td>最后一条 <code>.message</code> 底边 + 16px，否则 <code>scrollHeight</code></td>
+  <td><code>chat-handlers.ts</code>（compaction、local_command、status、follow-up）；<code>conversations.ts</code> 在非 <code>_skipScrollToBottom</code> 时 <code>scrollToBottom({ force: true })</code>；<code>addSystemMessage</code></td>
+  <td class="bad">仍在运行。独立 stick 标志。最后一条 + 16px 与 25vh 垫冲突。MessageList 注释说 React 从不调用它，但 WS handler 仍会调用。</td>
+</tr>
+<tr>
+  <td><code>useStickToBottom</code>（<code>apps/web/lib/format-utils/scroll.ts</code>）</td>
+  <td>同一套最后一条 + 16px 策略的 container-ref 副本</td>
+  <td>最后一条 <code>.message</code> + 16px</td>
+  <td>仅定义</td>
+  <td class="warn">无生产调用方。并行实现，尚未删除。</td>
+</tr>
+<tr>
+  <td><code>useChatAreaStick</code></td>
+  <td><code>stuckRef</code> 来自 <code>isChatAtBottom</code> + <code>history.after</code>；区域上 600ms 指针抑制；Jump 走 <code>animateJumpToLatest</code></td>
+  <td>ResizeObserver <code>pin()</code> 里 <code>area.scrollTop = area.scrollHeight</code>；发送跟随走 <code>resolveChatScrollTop({ ownTurn })</code></td>
+  <td><code>MessageList</code>（<code>lastRole === "user"</code> 当作 <code>ownTurn</code>）；peer pane 传入 <code>areaRef</code> / <code>columnRef</code></td>
+  <td class="warn">预定所有者。下列缺口使发送跟随不可靠。</td>
+</tr>
+<tr>
+  <td><code>loadSessionHistoryWindow</code>（<code>apps/web/lib/runtime-bridge/session-history-loader.ts</code>）</td>
+  <td>无附着状态。在 <code>flushSync</code> 之后为 <code>latest</code> / <code>around</code> / 高度差恢复写入 <code>scrollTop</code>，然后 <code>dispatchEvent("scroll")</code>。</td>
+  <td><code>latest</code> → <code>area.scrollHeight</code>；<code>around</code> → <code>restoreHistoryAnchor</code>；否则 <code>oldTop + heightDelta</code></td>
+  <td>Jump、在 <code>after</code> 时发送、<code>useHistoryWindow</code> 自动加载。区域是 <code>registered?.keys().next().value</code> —— 主栏和 peer 都注册时是任意第一个视口。</td>
+  <td class="bad">第四个滚动所有者，纳入范围。可能贴错 pane，也可能在 hook 之前对过期页贴底。</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>压缩折叠的 <code>easeScrollBy</code> / <code>pinWhile</code>（<code>message-list.tsx</code>）、消息轨 <code>scrollIntoView</code>、父返回 <code>scrollIntoView</code>、分支检出 <code>_postCheckoutScrollTo</code> 也会写滚动。它们保持为具名排除（显式定位），不是跟随策略。</p>
+
+<h3 id="gap-ownturn">ownTurn 身份</h3>
+<p><code>MessageList</code> 把 <code>lastRole === "user"</code> 当作 <code>ownTurn</code>。这只在 store 最后一行仍是用户气泡时为真。</p>
+<p>发送路径已经在 0ms 落下乐观用户行：<code>sendChatMessage</code> 在 socket 接受帧之后调用 <code>appendLocalUserTurn</code>（<code>apps/web/components/chat/composer/submit/send-chat-message.ts</code>）。助手占位并不在同一次更新里创建。<code>apps/web/lib/net/chat-stream.ts</code> 的 <code>handleAck</code> 会重键 pending 用户 id，然后 <code>ensureReply</code> 追加空助手行。ack 之后 <code>lastRole</code> 变成 <code>"assistant"</code>，<code>ownTurn</code> 变为 false。</p>
+<p><code>apps/web/scripts/chat/check-chat-ui.mjs</code> 里的单元契约是对的：自己的发送即使远离底部也要跟随；向上翻时到达的 agent 行不得移动视口。缺口是 <code>ownTurn</code> 从转录尾部身份推断，而不是从发送手势推断。若发送那次 layout 没能闩上 <code>stuckRef</code>，追加助手行的 ack 会被当成外来 agent 轮，视口不动。成为最后一行的 compaction / local_command / system 行同样会关掉 <code>ownTurn</code>。</p>
+<p><code>docs/reference/design/ui/interaction-feedback.md</code> 仍写用户气泡在 <code>chat_ack</code> 落地。发送路径现在在 socket 接受时就追加。跟随必须在那条乐观行（以及 <code>lastRole === "user"</code> 时的 pending 指示）落地时开始，而不是等 ack。本页不重做 send/ack 管线。</p>
+
+<h3 id="gap-layout">布局与增长</h3>
+<p>layout effect 赋值 <code>scrollTop = resolveChatScrollTop(...)</code>，跟随成功时该值是 <code>area.scrollHeight</code>，浏览器在 <code>clientHeight &gt; 0</code> 时钳到 <code>scrollHeight - clientHeight</code>（hook 已跳过 <code>clientHeight &lt;= 0</code>）。该钳位与 Jump 已经使用的 padding 边缘相同；它不是相对最后一条 + 16px 的另一类缺陷。读取仍可能发生在新行高度进入布局之前。ResizeObserver 的 <code>pin()</code> 本可以补完，但前提是 <code>stuckRef</code> 已经为 true、窗口没有 <code>after</code>、Jump 不在动画、并且 <code>performance.now() - lastPointerRef &gt; 600</code>。</p>
+<p><code>lastPointerRef</code> 只在<em>区域</em>上的 pointer/wheel/keydown 更新。Composer 点击不在 <code>#chatArea</code> 上，因此已经在底部的读者发送不会被抑制。先向上翻再在 600ms 内发送的读者<em>会被</em>抑制：layout 贴底用了过小的 <code>scrollHeight</code>，pin 不跑，<code>stuckRef</code> 保持 false，随后的助手行不再跟随。</p>
+<p>600ms 窗口的目的是避免点击执行条 / thinking 行时把被点控件向上拽。它不得抑制 take-latest 手势。发送闩序列见 <a href="#send-latch">发送闩序列</a>：在第一次高度读取前强制 <code>stuckRef = true</code>，现在以及本轮下一次列 resize 时 snap，600ms 仍挡住无关的转录区内增长。</p>
+
+<h3 id="gap-history">在 <code>history.after</code> 置位时发送</h3>
+<pre><code>if (seedChanged &amp;&amp; ownTurn &amp;&amp; sid &amp;&amp; history?.after) {
+  void loadSessionHistoryWindow(sid, "latest");
+}
+area.scrollTop = resolveChatScrollTop({ ... });</code></pre>
+<p>“跳到最新”已经用 <code>isCurrent</code> token <code>await</code> <code>loadSessionHistoryWindow(sid, "latest")</code>，然后再动画。发送却 fire-and-forget 这次加载，并立刻对过期的旧窗口做跟随。加载器本身也可能对任意已注册区域赋值 <code>scrollTop</code>（第四个所有者）。在 <code>useLayoutEffect</code> 里直接 <code>await</code> 不合法；fire-and-forget 会重现该缺陷。采纳路径使用与 Jump 相同的 <code>isCurrent</code> 异步回调，不对过期页 snap，并且在 latest 窗口到达之前不把 attached 设为 true。</p>
+
+<h3 id="gap-anchor">两套锚定策略</h3>
+<p><code>.chat-messages</code> 的垫是 <code>max(25vh, calc(var(--main-composer-height) + 24px))</code>。Composer 绝对覆盖在上面。<code>isChatAtBottom</code> 的松弛是 <code>pad - composer + 8</code>，因此“在最新”表示最后一条气泡还没钻进输入框下面。Jump 和 pin 瞄准 padding 边缘（<code>scrollHeight - clientHeight</code>）。遗留 <code>scrollToBottom</code> 瞄准最后一条底边 + 16px，把内容拉向覆盖层，可能把新用户气泡藏进输入框下。当 WS handler 仍调用遗留 helper、React 又 pin 到 <code>scrollHeight</code> 时，两个目标会打架。</p>
+
+<h3 id="gap-welcome">欢迎页首次发送</h3>
+<p><code>setWelcomeVisible(false)</code> 在 0ms 运行，早于 <code>appendLocalUserTurn</code>。<code>.chat-area:has(#welcome-mount &gt; *)</code> 会设 <code>overflow: hidden</code>。若 stick 的 layout effect 与欢迎子节点同帧，滚动赋值是空操作。stick 依赖不含 <code>welcomeVisible</code>。采纳的重试在发送闩序列中：主壳观察 <code>welcomeVisible</code> 或 <code>#welcome-mount</code> 子节点，锁解开且 take-latest generation 仍当前时 snap 一次。Peer 不走这条路径。</p>
+
+<h3 id="gap-peer">Peer pane 的 composer 松弛</h3>
+<p>传入 <code>areaRef</code> 时（peer pane），<code>readComposerHeight()</code> 被强制为 0，overlay 当作 0，松弛大约偏松一个 composer 盒子。Peer 发布的 <code>--peer-composer-h</code> 是<strong>测得的 composer 根高度 + 24px</strong>（<code>peer-session-pane.tsx</code>），并且同一变量用作 <code>.chat-messages</code> 的 <code>padding-bottom</code>（<code>peer-session-pane.css</code>）。主栏的 <code>--main-composer-height</code> 只是 overlay 高度；垫是 <code>max(25vh, composer + 24)</code>。</p>
+<p>松弛是 <code>max(0, pad - overlay) + 8</code>。把 <code>--peer-composer-h</code> 当 overlay 会得到 <code>(h+24) - (h+24) + 8 = 8</code>，紧 24px。该变量与 <code>--main-composer-height</code> 不是同类。overlay 与 pad 是分开的输入：pad 来自 <code>readBottomPadding(column)</code>；peer overlay 来自 composer 根（或 <code>--peer-composer-h - 24</code>，或第二个 CSS 变量）。单元用例：peer pad <code>h+24</code>，overlay <code>h</code> ⇒ slack <code>24+8</code>。</p>
+<p>Peer 的 <code>useChatAreaStick</code> 使用 <code>scrollKey = sessionId ? \`peer:${sessionId}\` : null</code>。主栏使用 <code>activeChatKey</code>。<code>sendChatMessage</code> 只知道 <code>sessionId</code>。按任一键做 consume-once 的 map 会让两个 hook 抢同一条记录，或永远匹配不上分屏 pane。</p>
+
+<h3 id="gap-tests">测试已经编码的内容</h3>
+<ul>
+  <li><code>check-chat-ui.mjs</code>：切换恢复已存像素；<code>atBottom</code> 时跟随；向上翻时 agent 行保持；自己的发送即使远离底部也跟随；<code>atBottom</code> 默认 true；MessageList 接入 <code>lastRole === "user"</code>。</li>
+  <li><code>jump-latest.test.mjs</code>：松弛公式；Jump portal 在 <code>#chatView</code> 而不是滚动器；原生平滑滚动；淡出；无虚拟列表库。</li>
+  <li><code>apps/web/tests/desktop/self-update-scroll.test.mjs</code> 是持久化契约：带 <code>data-self-update-verification</code> 时跳过 <code>writeChatScroll</code>。<code>apps/desktop/scripts/check-self-update-ui.js</code> 只检查该属性是否出现在 capture 上。</li>
+</ul>
+<p>缺失：hook 时序、指针抑制 vs 发送、<code>history.after</code> 发送、ack 翻转 <code>ownTurn</code>、残留 <code>scrollToBottom</code> 调用方、欢迎页 overflow、peer overlay vs pad、加载器滚动写入、take-latest 键 vs <code>peer:${sessionId}</code>。</p>
+</section>
+
+<section id="corpus">
+<h2>官方参考语料与框架对照</h2>
+<p>对照的是产品规则，不是像素克隆。缺失的能力保持缺失。</p>
+<div class="doc-scroll" tabindex="0" role="region" aria-label="框架对照">
+<table>
+<thead><tr><th>表面</th><th>向上翻时发送</th><th>流式 / agent 增长</th><th>重新附着控件</th><th>会话 / 历史</th><th>此处缺失（除非另注，保持缺失）</th></tr></thead>
+<tbody>
+<tr>
+  <td>ChatGPT web</td>
+  <td>发送是“带我到最新”手势。新用户轮出现在活动带里。</td>
+  <td>读者在活动边缘时跟随。向上翻脱离。滚回边缘附近重新附着。</td>
+  <td>脱离时出现向下箭头。流式时可显示该控件的 live 变体。</td>
+  <td>打开对话瞄准 latest；失败时有恢复位置的缺陷报告。</td>
+  <td>OpenProgram 不引入虚拟列表库。不自动跟随每一次 DAG 节点展开。</td>
+</tr>
+<tr>
+  <td>Claude.ai / Claude Code web</td>
+  <td>提交把用户轮送进视口。阅读旧内容会被发送打断，不会被模型继续生成打断。</td>
+  <td>在活动边缘跟随流式。手动向上翻保持位置。</td>
+  <td>不在活动边缘时提供跳到最新。</td>
+  <td>切换对话恢复该对话，而不是全局 stick 标志。</td>
+  <td>没有全局 <code>window</code> stick 标志。OpenProgram 只在名字上删掉了 <code>window.__stickListenerInstalled</code>；模块级标志仍在。</td>
+</tr>
+<tr>
+  <td>Cursor chat / Composer</td>
+  <td>发送把新提示保持在输入框邻近带。</td>
+  <td>钉住时跟随生成；检查器式向上翻脱离。</td>
+  <td>落后于尾部时显式跳转。</td>
+  <td>按线程。不作为协议来源。</td>
+  <td>不引入 Cursor 式 message-scroller 库。本切片不做“把上一轮钉在顶部”的第二模式。</td>
+</tr>
+<tr>
+  <td>本仓库中的 Codex / ChatGPT Atlas 笔记</td>
+  <td>仓库内没有 Atlas 转录跟随规格。此处 Codex 材料覆盖队列/转向（<code>send-queue-reliability.html</code>），不是滚动物理。</td>
+  <td>—</td>
+  <td>—</td>
+  <td>—</td>
+  <td>不编造 Atlas 滚动契约。队列/转向仍是独立主题。</td>
+</tr>
+<tr>
+  <td>OpenProgram CLI <code>ScrollBox</code></td>
+  <td><code>scrollToBottom()</code> 把 <code>stickyScroll = true</code>（手势持有的标志），然后渲染器钉住。</td>
+  <td>仅在 sticky 时位置跟随。<code>scrollTo</code> / <code>scrollBy</code> 清除 sticky。Sticky 不依赖布局 epsilon。</td>
+  <td>命令式 <code>scrollToBottom</code> 重新设置 sticky。</td>
+  <td>仅 TUI。</td>
+  <td class="warn">不在实现范围内。采纳<em>具名 attached 标志</em>这一想法，不采纳 Yoga/Ink 代码。</td>
+</tr>
+<tr>
+  <td>shadcn MessageScroller（先例，不是我们交付的产品）</td>
+  <td>新用户轮可用靠近顶部的 turn-anchor，并露出上一轮的一点内容。</td>
+  <td><code>autoScroll</code> 仅在底部时运行。</td>
+  <td>落后时出现 <code>MessageScrollerButton</code>。</td>
+  <td>—</td>
+  <td>作为库以及作为第二套“把上一轮钉在顶部”的模式均拒绝。OpenProgram 的垫已经在输入框上方留出呼吸空间。</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>ChatGPT、Claude 与 Cursor 的共同规则：发送是隐式跳到最新；模型 token 不是。OpenProgram 的 <code>resolveChatScrollTop</code> 已经陈述该规则。Web 视图没有用单一所有者执行它。</p>
+</section>
+
+<section id="choices">
+<h2>采用、修改与拒绝</h2>
+<div class="grid">
+  <article class="card">
+    <h3>采用</h3>
+    <p>一份策略模块，位于 <code>apps/web/lib/chat/chat-scroll.ts</code>。每个滚动器一个 attached 布尔。发送 / 队列 drain / 欢迎页第一条 = take-latest，瞬时贴底。流式只在已附着且位于最新历史窗口时 pin。跳到最新仍是显式平滑重新附着。会话切换恢复 <code>sessionStorage</code> 像素，不是一次发送。桌面 App 使用同一套 web 渲染器。</p>
+  </article>
+  <article class="card">
+    <h3>修改</h3>
+    <p>Take-latest 是带 generation 的记录，键为 session id 加上提交滚动器的 <code>chatKey</code>，不是 consume-once 布尔，也不单独靠 <code>lastRole</code>。<code>lastRole === "user"</code> 在发送路径记号进入同一合并列车之前仍是回退。指针 600ms 抑制只用于会改变尺寸的转录区内点击，从不用于 take-latest 或跳转。Peer overlay 与 pad 是分开的输入；不要把 <code>--peer-composer-h</code> 当成 <code>--main-composer-height</code>。<code>resolveChatScrollTop</code> 仍决定是否移动；调用方随后赋 <code>latestScrollTop</code>（Jump 已用的命名钳位 padding 边缘）。带 <code>history.after</code> 的发送在 latest 到达前保持 pending；过期页上 attached 保持 false。历史加载器不执行 latest 定位；窗口锚点恢复保留在 history-viewport helper，具体归属见下文。</p>
+  </article>
+  <article class="card">
+    <h3>拒绝</h3>
+    <p>第四份 stick 文件。以最后一条 + 16px 作为跟随目标。把发送做成第二条平滑动画。WS handler 调用滚动器。全局 <code>window</code> / 模块 <code>stickToBottom</code>。把粘滞写到磁盘。虚拟列表库。自动跟随每一次 DAG 展开。重写发送/ack 协议。把 CLI <code>ScrollBox</code> 打进 web 包。并行的“把上一轮钉在顶部”模式。</p>
+  </article>
+</div>
+
+<h3 id="bottom-definition">“底部”指什么</h3>
+<p>latest 是滚动器的 padding 边缘。<code>latestScrollTop = max(0, scrollHeight - clientHeight)</code> 是 Jump 已经使用、并且在 <code>clientHeight &gt; 0</code> 时把 <code>scrollTop = scrollHeight</code> 钳到同一位置的命名形式。主栏垫为 <code>max(25vh, overlay + 24)</code>（peer 垫是已发布的 <code>--peer-composer-h</code> = overlay + 24），最后相关内容落在输入框上方的可见带。剩余松弛是 <code>chatAtBottomSlack(pad, overlay)</code> = <code>max(0, pad - overlay) + 8</code>。overlay 是浮动 composer 盒子，不是垫的 CSS 变量。</p>
+<p>拒绝最后一条 + 16px，因为它相对滚动器可见底边测量，而那条边在叠层下面，并且忽略了跳转已经使用的垫。pin 到 padding 边缘却不用松弛量会让跳转按钮直到再多滚约 25vh 才出现；该缺陷已在 <code>isChatAtBottom</code> 修好，予以保留。</p>
+</section>
+
+<section id="architecture">
+<h2>目标架构</h2>
+<div class="flow">
+  <b>1</b><div>Composer 提交、队列排出、斜杠提交或 Jump 写入跟随手势。WebSocket 帧不滚动。历史加载器不得把 <code>latest</code> pin 到 <code>registered.keys().next()</code> 的 <code>scrollHeight</code> 上。数据发布后，匹配 hook 执行发送 snap 或 Jump smooth；窗口替换按各视口恢复，见 History 恢复的执行归属。</div>
+  <b>2</b><div><code>useChatAreaStick</code> 是 DOM 施加器与状态机（<code>stuckRef</code>、<code>jumpingRef</code>、<code>lastPointerRef</code>、pending latest 加载）。MessageList 与 peer pane 传入滚动器、列、overlay 读取器和滚动器 <code>chatKey</code>。</div>
+  <b>3</b><div>原语在 <code>chat-scroll.ts</code>（<code>latestScrollTop</code>、take-latest 记录、overlay vs pad、<code>snapToLatest</code>、<code>resolveChatScrollTop</code> 作为是否移动）。hook 施加它们。没有 <code>decideFollow</code> 动作枚举。</div>
+  <b>4</b><div>列上的 ResizeObserver 只在已附着、位于最新窗口、且没有进行中的 Jump 时 pin。Take-latest 仅在已经位于最新窗口时，即使在 600ms 窗口内也强制 <code>stuckRef</code> 并 snap。当 <code>after</code> 置位时，take-latest 为 pending：保持脱离，保留 Jump，不对过期页 snap。600ms 仍挡住无关的转录区内增长。</div>
+  <b>5</b><div>遗留 <code>scrollToBottom</code> 先变成有文档的空操作垫片，再连同调用方删除。<code>useStickToBottom</code> 删除。同一次统一中，加载器停止把 <code>latest</code> 钉到任意第一个视口。</div>
+</div>
+
+<div class="doc-scroll" tabindex="0" role="region" aria-label="跟随触发表">
+<table>
+<thead><tr><th>公开入口</th><th>手势</th><th>附着</th><th>运动</th><th>历史窗口</th></tr></thead>
+<tbody>
+<tr><td>Composer 提交（Enter / 发送），包括欢迎页第一条</td><td><code>take-latest</code></td><td>在最新窗口上：立即为 true。当 <code>after</code> 置位：pending，保持脱离，保留 Jump。latest 加载成功后：true。失败或 <code>!isCurrent</code>：保持脱离。</td><td>见 <a href="#send-latch">发送闩</a>。在最新窗口上：layout 看到记录，强制 <code>stuckRef = true</code>（忽略 600ms 和当前 <code>isChatAtBottom</code>），现在以及本轮下一次列 resize 时 <code>snapToLatest</code>。当 <code>after</code> 置位：pending，保持脱离，保留 Jump。600ms 仍挡住无关转录区内增长。瞬间贴底，不是平滑。Jump 在 snap 时隐藏，pending 时不隐藏。欢迎页：主壳在 <code>welcomeVisible</code> / <code>#welcome-mount</code> 子节点清空时重试一次。</td><td>若 <code>after</code> 置位，不对过期页 snap。用 Jump 风格的 <code>isCurrent</code> 异步回调 await <code>loadSessionHistoryWindow(..., "latest")</code>，不要在 <code>useLayoutEffect</code> 里 await。加载器不得把 <code>latest</code> pin 到 <code>registered.keys().next()</code>；数据发布后由匹配 hook 执行仍有效的发送操作。</td></tr>
+<tr><td>真正调用 <code>sendChatMessage</code> 的队列排出</td><td><code>take-latest</code>（与提交相同）</td><td>仅提交滚动器，与提交相同</td><td>瞬间贴底（同一闩）</td><td>与提交相同。只入队不是发送；排出才是。</td></tr>
+<tr><td>不走 <code>sendChatMessage</code> 的 composer 斜杠 / 内建提交（<code>use-chat-submit.ts</code> 的 <code>dispatchFunction</code>）</td><td>在提交点 <code>take-latest</code></td><td>与提交相同</td><td>同一闩。WS <code>local_command</code> handler 不滚动、不记 note。</td><td>若 <code>local_command</code> 行在没有提交 note 时到达（另一客户端），仅在已附着时跟随。</td></tr>
+<tr><td>跳到最新（主栏：portal 到 <code>#chatView</code>；peer：现有标题栏按钮，无 portal、无 live 条）</td><td><code>jump</code></td><td>latest 上屏后为 true；按钮留到 settle 再淡出（<code>jumpingRef</code> / <code>JUMP_LATEST_FADE_MS</code>）</td><td>原生平滑滚动；<code>prefers-reduced-motion: reduce</code> 时瞬间。滚动器上的指针/滚轮取消行程。</td><td>等待 latest，然后 <code>animateJumpToLatest</code>。现有 <code>isCurrent</code> 取消保留。加载器不得把 <code>latest</code> pin 到任意第一个视口；数据发布后匹配 hook 直接开始仍有效的平滑 Jump，不先 snap。</td></tr>
+<tr><td><code>#chatArea</code> / 对等滚动器：滚轮、指针、键盘</td><td><code>user-scroll</code></td><td>当且仅当 <code>isChatAtBottom</code> 且没有 <code>after</code></td><td>无</td><td>分页不变。向上翻脱离。滚进松弛量重新附着。</td></tr>
+<tr><td>流式 / 工具 / KaTeX / 回收 / 垫高 / 输入框 resize</td><td><code>growth</code></td><td>不变</td><td>仅在已附着时 pin 到 <code>latestScrollTop</code></td><td>设置了 <code>after</code> 时不 pin。</td></tr>
+<tr><td>会话切换（<code>chatKey</code> 变化）</td><td><code>restore</code></td><td>恢复后按几何判定</td><td>瞬时恢复已存 <code>scrollTop</code>，没有则到 latest</td><td>不是发送。历史自动加载 / around 锚点仍由 <code>useHistoryWindow</code> 负责。</td></tr>
+<tr><td>不是 take-latest/jump 的历史窗口加载</td><td><code>window</code></td><td>有 <code>after</code> 则为 false，否则几何判定</td><td>加载器不得把 <code>latest</code> pin 到 <code>registered.keys().next()</code> 的 <code>scrollHeight</code>。<code>flushSync</code> 之后对每一个已注册区域做 older/around 的 history-viewport 恢复。</td><td>更早/更新的页不得当作 latest 来 pin。恢复是策略对 <code>scrollTop</code> 的写入，不是加载器把 latest pin 上去。</td></tr>
+<tr><td>WS <code>chat_response</code> / compaction / status / follow-up / <code>local_command</code> 帧</td><td>无</td><td>—</td><td>handler 不调用滚动、不记 take-latest</td><td>行进入 store；视图只经 growth + attached 跟随，除非 composer 提交已经记过 take-latest。</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3 id="send-latch">发送闩序列</h3>
+<ol>
+  <li><code>sendChatMessage</code>（或斜杠提交）在适用时调用 <code>appendLocalUserTurn</code>，然后 <code>noteTakeLatest({ sessionId, scrollerKey, turnSeed })</code>。<code>sendChatMessage</code> 内部默认：<code>scrollerKey = background ? "peer:" + sessionId : sessionId</code>。交互提交可以显式传入 <code>scrollerKey</code>。排出时不要读取现场 <code>activeChatKey</code>（那是聚焦会话，未必是正在排出的会话）。队列排出因已带 <code>sessionId</code> 和 <code>background</code> 调用 <code>sendChatMessage</code> 而继承；<code>send-queue.ts</code> 保持不变。</li>
+  <li>匹配 hook 的 layout effect 看到 <code>generation</code> 新于 <code>lastAppliedGeneration</code> 且 <code>scrollerKey</code> 等于本实例 <code>chatKey</code> 的记录。其他 pane 不闩。记录不在读取时删除（Strict Mode 与两个 hook 实例）。</li>
+  <li>若 <code>history.after</code> 置位：不设 attached，不 snap，保留 Jump。启动与 Jump 相同的异步 <code>isCurrent</code> await。layout effect 不得 <code>await</code>。</li>
+  <li>已在最新窗口（或 latest 加载成功）时：无论 600ms 指针窗口和当前 <code>isChatAtBottom</code>，设 <code>stuckRef = true</code>，立刻 <code>snapToLatest</code>。</li>
+  <li>本轮下一次列 <code>ResizeObserver</code> 回调也 snap（迟到的行高）。该 pin 因 take-latest generation 仍当前而忽略 600ms。无关的转录区内增长仍遵守 600ms。</li>
+  <li>仅主壳：订阅 <code>welcomeVisible</code> 或观察 <code>#welcome-mount</code> 子节点。overflow 锁解开时，若同一 take-latest generation 仍当前则重试 snap 一次。Peer 发送使用 <code>background: true</code>，跳过欢迎页。</li>
+  <li>追加助手占位的 ack 不脱离：attached 已闩上，不从 <code>lastRole</code> 推导。</li>
+</ol>
+
+
+<h3 id="lifecycle">手势记录的生命周期与取消</h3>
+<p>note 标识一次发送，不代表永久滚动许可。按 <code>(sessionId, scrollerKey)</code> 独立保存，使用 <code>peekTakeLatest(sessionId, scrollerKey)</code> 读取；同 session 的主栏与 peer 发送不能互相覆盖。发布 note 必须通知匹配的 view，包括没有新增转录行的 slash submit；不能只在无关 render 中读取可变 Map。<code>turnSeed</code> 标识已接受的乐观用户行，不要求等于 ack 之后的最后一行。</p>
+<ol>
+<li>每个活动操作捕获 session id、scroller key、generation、view interaction epoch。异步完成、下一次 resize 重试、welcome 重试、动画回调写入前都验证这四项。较新发送替换本 scroller 的旧操作；Jump 替换 pending send；发送替换 Jump，并先停止原生动画再瞬间定位。</li>
+<li>转录区中的滚轮、触摸/指针滚动意图、滚动按键，在后续 resize 或网络回调之前使 pending 操作失效，并清除强制 resize/welcome 重试。实际滚动后按几何位置确定 attached；点击执行控件仍保留现有的短暂增高抑制。程序触发的 scroll 事件本身不算取消。发送后用户上翻，迟到增长不得强制再附着。</li>
+<li>切 key 或真正卸载使旧 view 的操作失效。返回 chat 恢复像素位置，不重放已完成或已取消的 note。记录保持可读，不在读取时删除；明确维护完成/取消状态与各 view 的 applied-generation。Strict Mode effect cleanup 清理该次 effect 的资源；setup 必须恢复仍有效的 pending 操作，不新增逻辑发送、不丢重试、不遗留请求。开始 latest 请求时不能直接把 generation 标为完成。</li>
+<li>欢迎页首次发送可能早于 transcript 可见。只保留这次仍 pending 的交接，直到匹配 view 就绪；挂载时初始化订阅基线不能丢掉它。可见和 layout 就绪后重试一次，后续用户手势或离开 session 则取消。现有 provisional 到真实 session 的绑定应保留 pending 操作身份，不新增发送、不重放已完成操作。ack 替换 message id 后，不要求 turnSeed 继续等于最后一行 id。</li>
+<li>已有 older/around 请求进行中时，即使当前页暂时没有 after，发送也要等待确认 latest 窗口。以 <code>history.after || history.loading</code> 进入异步协调，然后验证返回窗口和操作身份。取消/失败不遗留强制重试、不隐藏 Jump；后续新手势仍可成功，旧完成回调不得把新操作设为 detached 或清除它。</li>
+</ol>
+<p>一次 next-resize 重试属于该操作，不属于整个助手回合。用完后恢复 attached 与正常手势规则；generation 未变不代表无限期绕过 600ms。每个 hook 管理自己的资源和清理，不增加轮询计时器或持久化 attached。</p>
+
+<h3 id="jump-completion">内容变化时的 Jump 完成条件</h3>
+<p>latest 加载成功后，Jump 直接从保留位置开始平滑滚动，禁止先 snap。Jump 期间 resize 记录目标变化，不瞬间 pin。原生滚动停止时重新计算 <code>latestScrollTop</code>；目标变动则结束原动画，瞬间补齐到当前 padding 边，并验证位置。只有位置验证通过且操作仍有效，才隐藏 Jump。reduced-motion 从开始就瞬间定位，使用同样的最终验证。</p>
+<p>超时仅用于结束异常等待，不证明已经到达。超时后，仍有效的操作先停止原生运动，再补齐到当前目标、验证并完成。取消既要停止回调，也要停止浏览器动画；只删除 scrollend listener 不算取消。已取消操作不得补齐。后续增长恢复普通 attached pin。定位允许 2px 几何误差，不用更大的再附着 slack 代替 Jump 到达验证。</p>
+
+<h3 id="history-ownership">History 恢复的执行归属</h3>
+<p><code>loadSessionHistoryWindow</code> 协调请求并发布行及窗口元数据，不执行 latest 定位，不检查 send/jump note。只有 <code>useChatAreaStick</code> 在 latest 成功后选择并执行发送 snap 或 Jump smooth。older/newer/around 窗口替换继续由现有 history-viewport helper 恢复锚点：更新前分别捕获每个 registered area 的 anchor、oldTop、oldHeight；flushSync 后仅恢复仍注册在该 session 的 area。高度缓存也使用各自 chatKey，不能复用第一视口的 anchor 或高度差。</p>
+<p>窗口替换恢复是明确保留的滚动写入，不是另一套跟随策略。它不执行 latest snap，也不能覆盖较新的活动跟随操作。同 session 的主栏与 peer 共享历史数据，替换行可能影响两者；非请求方在原锚点仍存在时保留其可见位置。淘汰导致锚点消失时沿用现有有界回退，并在验收证据中说明；scroller 隔离不承诺独立历史数据集。</p>
+
+<h3 id="trust">信任边界、数据流、失败</h3>
+<ul>
+  <li>跟随是视图问题。转录身份、attached 和最后一次用户手势足够。帧类型不是滚动信号。</li>
+  <li><code>sessionStorage</code> 键 <code>chatScrollByKey</code> 仍只存像素位置。不要持久化 attached。加固上下文里写失败已经吞掉。</li>
+  <li><code>data-self-update-verification</code> 继续跳过持久化。</li>
+  <li>最新窗口加载失败或 <code>!isCurrent</code>：保持脱离，Jump 仍可见，不对过期页 snap，也不让 pending take-latest 把 attached 留在 true。Jump 在 <code>loadSessionHistoryWindow</code> 为 false 时已经返回。</li>
+  <li>进行中的 Jump 遇上 take-latest：取消平滑行程并 snap（仅当 latest 已在屏上）。已在最新窗口时发送在 0ms 反馈上获胜。</li>
+  <li>减少动效：跳转贴底。发送本来就是贴底。</li>
+  <li>虚拟化：回收保留已测量占位，使 <code>scrollHeight</code> 诚实。回收后 pin。不要加 <code>react-virtuoso</code> / <code>react-window</code> / <code>@tanstack/react-virtual</code>。</li>
+  <li>KaTeX：<code>renderMathInChat</code> 留在单一 pin 路径里作为增高副作用，不是第二套滚动器。</li>
+  <li>不改后端协议。</li>
+</ul>
+
+<h3 id="compat">兼容与排除</h3>
+<ul>
+  <li>App 与浏览器共享这份 web 契约。</li>
+  <li>CLI TUI <code>ScrollBox</code> 不在范围内。</li>
+  <li>不自动跟随 DAG 条展开、压缩折叠 <code>easeScrollBy</code> / <code>pinWhile</code>、父返回 <code>scrollIntoView</code>、消息轨定位、或分支检出枢轴（<code>_postCheckoutScrollTo</code>）。那些仍是显式定位。</li>
+  <li>除了在现有 <code>appendLocalUserTurn</code> 调用处（以及斜杠提交）记一条 take-latest，不改写 occupancy、发送队列准入或 ack 配对。</li>
+  <li>不把发送做成流式钉住旁边的第二套策略。发送闩上 attached（或 pending-latest）并选择瞬间运动。</li>
+  <li>Peer Jump 保留现有标题栏按钮：同一附着策略，本切片不要 <code>#chatView</code> portal、live 条或 composer 偏移定位。</li>
+</ul>
+</section>
+
+<section id="api">
+<h2>API 与数据模型变化</h2>
+<p>扩展 <code>chat-scroll.ts</code>。不要加第四个 stick 模块。原语加上带 generation 的记录；<code>useChatAreaStick</code> 仍是状态机。示意表面（名字可在审查时收紧；行为不得改）：</p>
+<pre><code>export function latestScrollTop(area: ScrollMetrics): number;
+// Jump 已经使用的命名钳位：max(0, scrollHeight - clientHeight).
+
+export type TakeLatestNote = {
+  sessionId: string;
+  scrollerKey: string; // 默认: background ? `peer:${sessionId}` : sessionId
+  turnSeed: string;
+  generation: number;  // 单调；禁止读取即删
+};
+
+export function noteTakeLatest(note: Omit&lt;TakeLatestNote, "generation"&gt;): TakeLatestNote;
+export function peekTakeLatest(sessionId: string, scrollerKey: string): TakeLatestNote | null;
+// 没有 consumeTakeLatest。每个 hook 用实例 lastAppliedGeneration 比较。
+// Strict Mode 重跑是幂等的。
+
+export function readComposerOverlay(area: HTMLElement | null): number;
+// 主栏: --main-composer-height（仅 overlay）。
+// Peer: composer 根 offsetHeight，或 (--peer-composer-h - 24)。
+// 绝不要把 --peer-composer-h 当 overlay。
+
+export function snapToLatest(area: HTMLElement): void;
+</code></pre>
+<p><code>resolveChatScrollTop</code> 仍是是否移动函数，可以继续返回 <code>scrollHeight</code> 作为哨兵。跟随决定之后调用方赋 <code>latestScrollTop(area)</code>。触发表中的手势名是文档，不是函数参数。</p>
+<p>键空间：send 知道 <code>sessionId</code> 和 <code>background</code>。<code>sendChatMessage</code> 默认 <code>scrollerKey</code> 为 <code>background ? "peer:" + sessionId : sessionId</code>（主栏 <code>chatKey</code> 在显示该会话时等于 session id；peer pane 一律用 <code>peer:</code> 前缀）。交互提交可以显式传入 <code>scrollerKey</code>。排出时不要读取现场 <code>activeChatKey</code>。hook 仅当 <code>note.scrollerKey === chatKey</code> 时闩上。不同会话的两个 pane 不会共享闩。同一会话的两个 pane 目前共享 <code>peer:${sessionId}</code>（与行高缓存同一碰撞）；本切片不加 pane 实例 id。公共入口测试：未聚焦 peer composer 对会话 Y 发送、另一 pane 显示会话 X 时，只附着 Y。</p>
+<p><code>useChatAreaStick</code> 仍返回 <code>{ detached, jumpToLatest }</code>。发送路径记号落地前，<code>lastRole === "user"</code> 仍是有文档的回退，以保持发送跟随为绿。丢掉 <code>lastRole</code> 和更新 <code>check-chat-ui.mjs</code> 与 <code>noteTakeLatest</code> 同一合并。</p>
+<p>加载器不得任意 pin latest。数据发布后发送/Jump 定位归 hook；窗口替换由 history-viewport helper 分别恢复各视口，具体规则见 History 恢复的执行归属。</p>
+<p>遗留：</p>
+<pre><code>/** @deprecated React MessageList owns follow. No-op. */
+export function scrollToBottom(_opts?: { force?: boolean }): void {}</code></pre>
+<p>然后删除它和每一个调用方。删除 <code>useStickToBottom</code>。<code>conversations.ts</code> 不再强制滚动之后删除 <code>runtimeState._skipScrollToBottom</code>。不要从 <code>chat-handlers.ts</code> 调用任何滚动器。</p>
+</section>
+
+<section id="acceptance">
+<h2>验收标准</h2>
+<div class="doc-scroll" tabindex="0" role="region" aria-label="验收矩阵">
+<table>
+<thead><tr><th>公开入口</th><th>前置</th><th>可观察结果</th></tr></thead>
+<tbody>
+<tr><td>Composer 提交</td><td>在最新窗口上翻得很远；按 Enter 或发送</td><td>乐观用户气泡（若仍是 last-role user，含 pending 指示）在 store 追加后 0ms 处于输入框上方可见带。瞬间贴底，不是平滑。attached 变为 true。Jump 在 snap 时隐藏，不是之前。</td></tr>
+<tr><td>输入框提交</td><td>已经附着</td><td>同样贴到最新；随后流式保持钉住。</td></tr>
+<tr><td>欢迎页第一条</td><td>欢迎页可见；overflow 锁定</td><td>欢迎页在 0ms 隐藏；锁解开后第一条用户行在活动带。滚动不得停在已解锁空垫高的 0。</td></tr>
+<tr><td>队列 drain</td><td>某条排队行经 <code>sendChatMessage</code> 真正发出（另一会话可能正被聚焦）</td><td>与手动发送相同的 take-latest。<code>scrollerKey</code> 由 <code>sessionId</code> 和 <code>background</code> 默认，不读现场 <code>activeChatKey</code>。只入队不 drain 不移动视口。<code>send-queue.ts</code> 保持不变。</td></tr>
+<tr><td>跳到最新</td><td>在更早窗口上处于脱离</td><td>等待最新页，然后平滑滚动（减少动效时瞬间）。Jump 留到 settle 再淡出。滚动器上的指针/滚轮取消行程。主栏用 <code>#chatView</code> portal；peer 用现有标题栏按钮。</td></tr>
+<tr><td><code>#chatArea</code> 滚动</td><td>向上滚到最后一条钻到输入框下</td><td>脱离；跳转可见；之后的助手/工具增量不移动 <code>scrollTop</code>。</td></tr>
+<tr><td><code>#chatArea</code> 滚动</td><td>滚回松弛量内</td><td>重新附着；跳转隐藏；随后增高会 pin。</td></tr>
+<tr><td>流式增量</td><td>已附着；KaTeX / 回收 / token 增高</td><td>pin 到 latest。数学渲染走同一 pin 路径。</td></tr>
+<tr><td>没有 take-latest 的 agent/system 行</td><td>已脱离</td><td><code>scrollTop</code> 不变。compaction 与 <code>local_command</code> <em>帧</em>不得调用滚动器。Composer 斜杠/内建提交在提交点记 take-latest。</td></tr>
+<tr><td>会话切换</td><td>进入的 key 有已存像素</td><td>恢复该像素。不把切换当成发送。先写出正在离开的 key。</td></tr>
+<tr><td>历史窗口</td><td>在 <code>pages[sid].after</code> 置位时发送</td><td>不对过期页 snap。Jump 保留。attached 在 latest 加载成功前保持 false，然后 snap+附着。失败或 <code>!isCurrent</code>：保持脱离，Jump 可见。加载器不得把 <code>latest</code> pin 到 <code>registered.keys().next()</code>。</td></tr>
+<tr><td>Peer session pane</td><td>从未聚焦 peer composer（会话 Y）发送，另一 pane 显示会话 X</td><td>只有 Y 的滚动器附着并 snap。X 不动。松弛：overlay = composer 根，pad = <code>h+24</code>，slack = 24+8。Peer Jump 是标题栏按钮（无 portal、无 live 条）。聚焦壳欢迎/运行标志不被触碰（<code>background: true</code>）。</td></tr>
+<tr><td>发送后的 ack</td><td>助手占位成为最后一行</td><td>不脱离。流式继续 pin。</td></tr>
+<tr><td>滚动后 600ms 内发送</td><td>指针在区域上，然后输入框提交</td><td>take-latest 仍贴底并 pin。600ms 抑制不适用。</td></tr>
+<tr><td>遗留辅助</td><td>统一后 grep</td><td>除待删空操作垫片外，没有 <code>scrollToBottom</code> 的生产调用方。<code>useStickToBottom</code> 消失。<code>#chatArea</code> 上没有模块级 <code>stickToBottom</code> 监听器。</td></tr>
+</tbody>
+</table>
+</div>
+<p>需要新增的 RED 测试（公共入口，不是实现细节）：take-latest 记录在 ack 和 Strict Mode 双 layout 后仍有效；发送 + <code>history.after</code> 在 latest 到达前保持脱离；晚到的行高之后仍 pin；600ms 不挡住发送；<code>scrollToBottom</code> 未被使用；加载器不得把 <code>latest</code> pin 到 <code>registered.keys().next()</code>；排出使用 <code>background ? "peer:" + sessionId : sessionId</code> 而不是现场 <code>activeChatKey</code>；peer overlay/pad slack 24+8；从 peer Y 发送不 snap pane X；欢迎 overflow 后一次重试；减少动效时 Jump 是瞬间。在落地 <code>noteTakeLatest</code> 的 PR 之前保留 <code>lastRole === "user"</code> 断言。Peer pad/overlay 单元：pad <code>h+24</code>，overlay <code>h</code> ⇒ slack <code>24+8</code>。</p>
+</section>
+
+<section id="sequence"><h2>实施交接说明</h2>
+<p>本节是唯一实施计划。状态：已规划，尚无实现或审查通过证据。改代码前读本页、AGENTS.md、tests/README.md 与 openprogram 工作流。保留无关 dirty 文件；从不可变基线建立干净 codex/ worktree，只转入这两份已确认设计及现有导航条目。精确基线和候选 commit 记入忽略的 reports 台账，不写进设计正文。</p>
+<p>由一名实施负责人顺序执行 A、B、C、D。每个代码阶段先由非作者做契约审查，再做独立质量审查；确认问题修复并复审后才能进入下一阶段。审查者不编辑受跟踪文件。B 不拆成可独立合并的 PR。A 可单独合；B 必须包含 legacy no-op 和全部 B 用例；C 再删 no-op。本次规划不授权远端 push/merge。</p>
+<div class="doc-scroll"><table><thead><tr><th>阶段</th><th>主要文件（仓库相对路径）</th><th>交付要求</th></tr>
+</thead><tbody><tr><td>A</td><td><code>apps/web/lib/chat/chat-scroll.ts</code><br><code>apps/web/tests/chat/chat-scroll-follow.test.mjs</code><br><code>apps/web/tests/chat/jump-latest.test.mjs</code></td><td>原语、按键可订阅 note、精确定位、可取消的 Jump helper。B 之前保留现有调用兼容。</td></tr>
+<tr><td>B</td><td><code>apps/web/components/chat/messages/use-chat-area-stick.ts</code><br><code>apps/web/components/chat/messages/message-list.tsx</code><br><code>apps/web/components/chat/peer-session-pane.tsx</code><br><code>apps/web/components/chat/composer/submit/send-chat-message.ts</code><br><code>apps/web/components/chat/composer/submit/use-chat-submit.ts</code><br><code>apps/web/lib/runtime-bridge/session-history-loader.ts</code><br><code>apps/web/lib/chat/history-viewport.ts</code><br><code>apps/web/components/chat/messages/use-history-window.ts</code><br><code>apps/web/lib/runtime-bridge/helpers.ts</code></td><td>完整接入：note 发布/订阅、生命周期、latest 加载、各视口恢复、overlay reader、welcome 交接、Jump 完成、legacy no-op 并移除全局 listener。同一候选中删除 lastRole 推断。</td></tr>
+<tr><td>C</td><td><code>apps/web/lib/runtime-bridge/helpers.ts</code><br><code>apps/web/lib/runtime-bridge/chat-handlers.ts</code><br><code>apps/web/lib/runtime-bridge/conversations.ts</code><br><code>apps/web/lib/format-utils/scroll.ts</code><br><code>apps/web/lib/runtime-bridge/state.ts</code></td><td>删除 no-op 调用/import、死代码 useStickToBottom、废弃 _skipScrollToBottom 声明与赋值。先查全引用，保留显式定位 helper。</td></tr>
+<tr><td>D</td><td><code>Both chat-transcript-follow HTML pages</code><br><code>apps/web/tests/chat/send-chat-message-latency.test.mjs</code><br><code>apps/web/tests/desktop/self-update-scroll.test.mjs</code><br><code>apps/web/scripts/chat/check-chat-ui.mjs</code><br><code>tests/e2e/web/test_chat_history_interactions.py</code><br><code>tests/e2e/web/test_chat_transcript_follow.py</code></td><td>组合候选验证与文档证据。这里列出的测试随 A/B/C 对应改动加入，不推迟到 D。D 不补写遗漏的核心功能。</td></tr>
+</tbody></table>
+</div>
+<p>B 开始时用 CodeGraph 列全 legacy 调用者和现有 provisional 绑定路径；仅在契约确实需要时把查到的确切文件补入 brief。不重做 ack 或队列准入。默认 key 由保存的 session/background 得到，send-queue.ts 不变；本次不引入超出这两个默认值的自定义 key。Peer overlay 读取 composer root offsetHeight，pad 沿用现有 reader；不加 CSS 变量或 pane instance id。</p>
+<h3 id="test-matrix">验收矩阵</h3>
+<p>A 使用纯函数/共享边界测试。B 的生命周期、layout、动画用真实浏览器中的生产 React hook，实际公开提交/队列入口及可控 WebSocket 响应。扩展现有 history interaction harness，不把预览策略复制成测试实现。断言 scrollTop、行/overlay 几何、按钮可见性、请求顺序及清理。显式运行 StrictMode；源码字符串断言不能证明时序。表中拟新增测试文件在所属阶段创建。</p>
+<div class="doc-scroll"><table><thead><tr><th>ID</th><th>阶段</th><th>必须验证的结果</th></tr>
+</thead><tbody><tr><td>F01</td><td>A</td><td>空/短/溢出几何；主栏 slack 与 peer h+24 对 h 得到 32px。</td></tr>
+<tr><td>F02</td><td>A/B</td><td>同 session 主栏/peer note 独立；generation 递增；不更新行也触发订阅。</td></tr>
+<tr><td>F03</td><td>B</td><td>上翻后分别 Enter/Send：socket 接受后、ack 前用户行在 overlay 上方；placeholder 与流式继续跟随。</td></tr>
+<tr><td>F04</td><td>B</td><td>滚动后 600ms 内发送，迟到列增高补齐；发送后在迟到增高前上翻，不再强制贴底。</td></tr>
+<tr><td>F05</td><td>B</td><td>脱离后流式/工具/数学增高保持位置；滚回 slack 再附着；执行行展开保留抑制。</td></tr>
+<tr><td>F06</td><td>B</td><td>after 页发送不写旧页，pending 保留 Jump；成功贴底，失败/取消保持脱离。</td></tr>
+<tr><td>F07</td><td>B</td><td>当前无 after 但正在加载 older/around 时发送；协调旧请求后加载 latest；旧响应不能覆盖新手势。</td></tr>
+<tr><td>F08</td><td>B</td><td>StrictMode 首发及 pending latest cleanup/setup：不丢意图、不重复逻辑发送、不遗留 pending。</td></tr>
+<tr><td>F09</td><td>B</td><td>发送、脱离、切出切回；真正卸载/重挂恢复已存位置，不重放。请求期间切换不移动新 chat。</td></tr>
+<tr><td>F10</td><td>B</td><td>transcript 未就绪时欢迎页首发与 provisional ack 绑定；有效重试一次，取消后不写。</td></tr>
+<tr><td>F11</td><td>B</td><td>peer Y 发送、pane X 脱离：只移动 Y。同 session 主栏/peer note 独立；共用 peer key 的 pane 明确共同响应。</td></tr>
+<tr><td>F12</td><td>B</td><td>仅入队不移动；焦点变化后真正 drain 仍用保存的 session/background。socket 关闭/抛错或重复首发不产生新 note。</td></tr>
+<tr><td>F13</td><td>B</td><td>slash/builtin 提交不依赖立即新增行也跟随；脱离时远端 local_command/compaction/status 不跟随。</td></tr>
+<tr><td>F14</td><td>B</td><td>旧窗口 Jump 加载后实际平滑滚动，不先 snap；验证完成前按钮保留。</td></tr>
+<tr><td>F15</td><td>B</td><td>Jump 期间增高、动画结束前停止增高：最终距当前 latest 不超过 2px 再藏按钮；另测无 scrollend 的超时分支。</td></tr>
+<tr><td>F16</td><td>B</td><td>指针/滚轮/滚动键取消 pending 或原生 Jump，无后续动画/补齐；Jump 中发送瞬间生效；减少动效时瞬间定位。</td></tr>
+<tr><td>F17</td><td>B</td><td>两个位置不同的注册区域分别恢复 older/newer/around 锚点及回退高度差；latest 无加载器任意 pin。</td></tr>
+<tr><td>F18</td><td>C/D</td><td>无 legacy 全局跟随 listener 或生产 scrollToBottom/useStickToBottom 引用；显式定位与自更新持久化保护仍有效。</td></tr>
+</tbody></table>
+</div>
+<h3 id="gates">命令与完成条件</h3>
+<p>以下命令从仓库根执行。按 CONTRIBUTING.md 安装锁定的 dev/browser 依赖与 Chromium，使用 workspace Node 依赖。A 先运行两个原语测试文件；B/C 运行下列相关选集。对应修复前通过生产边界记录实际失败基线，再验证 GREEN。新 API 尚不存在时不把 import 失败当作有效 RED；对应行为缺陷仍需 B 的基线证据。</p>
+<pre><code>node --no-warnings --experimental-strip-types --test apps/web/tests/chat/chat-scroll-follow.test.mjs apps/web/tests/chat/jump-latest.test.mjs apps/web/tests/chat/send-chat-message-latency.test.mjs apps/web/tests/desktop/self-update-scroll.test.mjs
+npm --prefix apps/web run check:chat-ui
+npm --prefix apps/web run check:provisional-send
+npm --prefix apps/web run check:send-queue
+uv run --locked --extra dev --extra browser python -m pytest -q -m browser tests/e2e/web/test_chat_transcript_follow.py tests/e2e/web/test_chat_history_interactions.py tests/e2e/web/test_automatic_chat_history.py tests/e2e/web/test_scalable_chat_history.py</code></pre><p>最终代码候选通过两轮审查后完整执行下列清单一次。此后受跟踪代码/测试/依赖变动，需相关复审并重跑完整清单。缺依赖或已验证基线失败仍记 failed/pending，不用较小测试集代替。CLI 不变；仅 desktop 源码改变时追加 desktop checks。</p>
+<pre><code>npm --prefix apps/web test
+(cd apps/web &amp;&amp; npx tsc --noEmit)
+npm --prefix apps/web run check
+npm --prefix apps/web run build
+uv run --locked --extra dev ruff check openprogram tests scripts
+uv run --locked --extra dev python -m pytest -q tests/contracts
+uv run --locked --extra dev python -m pytest -q tests/unit
+uv run --locked --extra dev python -m pytest -q tests/component
+uv run --locked --extra dev python -m pytest -q tests/integration
+uv run --locked --extra dev python -m pytest -q -m &quot;not browser&quot; tests/e2e
+uv run --locked --extra dev --extra browser python -m pytest -q -m browser tests/e2e/web
+uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m scripts.docs_site.build
+uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m scripts.docs_site.check_landing
+uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m scripts.docs_site.checklinks
+git diff --check</code></pre><p>浏览器自动测试使用隔离状态，不发送真实用户消息或调用外部模型。产品可视验收只用 /Applications/OpenProgram.app 与默认 profile/18100/~/.openprogram。不启动 dev profile、第二套前端或作为可见 App 的测试 Electron。完整功能审查并提交后，从该 checkout 执行 scripts/refresh-local-app.sh 刷新一次，再验主栏 ack 前发送、peer 隔离、旧窗口发送、Jump 增高/取消、欢迎页和 session 恢复。保存实际几何和截图，HTML 预览不算证据。</p>
+<p>台账目录 reports/chat-transcript-follow/：逐阶段记录 base/candidate、RED/GREEN 命令结果、F01–F18 对应测试名和证据、契约/质量结论、修复、最终完整检查输出、干净的范围内 diff 与 App 验收。源码测试、commit、已安装 App、远端状态分别记录。证据未齐不能标完成。回退 B 必须整体回退 hook＋send＋loader＋no-op，不能单独恢复冲突的写入者。</p>
+</section>
+
+<section id="status">
+<h2>实现状态</h2>
+<div class="doc-scroll" tabindex="0" role="region" aria-label="实现状态">
+<table>
+<thead><tr><th>范围</th><th>状态</th><th>边界</th></tr></thead>
+<tbody>
+<tr><td><code>chat-scroll.ts</code> 数学（<code>isChatAtBottom</code>、松弛量、存储、<code>animateJumpToLatest</code>、<code>resolveChatScrollTop</code>）</td><td>已有</td><td>是否跟随已编码；take-latest 闩、<code>latestScrollTop</code> 和减少动效 Jump 还不是统一所有者。</td></tr>
+<tr><td><code>useChatAreaStick</code> + Jump portal</td><td>部分</td><td>现场 React 所有者，但 lastRole ownTurn、600ms 对发送、过期窗口发送、对等输入框高度仍在。</td></tr>
+<tr><td>发送时的乐观用户行</td><td>已有</td><td>套接字接受时 <code>appendLocalUserTurn</code>。尚未记下 take-latest。</td></tr>
+<tr><td>遗留 <code>scrollToBottom</code> / 模块 stick 标志</td><td>已有且有害</td><td>仍由 chat-handlers 和 conversations 调用。</td></tr>
+<tr><td><code>useStickToBottom</code></td><td>死代码</td><td>未使用；尚未删除。</td></tr>
+<tr><td>历史加载器 <code>scrollTop</code> 写入</td><td>已有且有害</td><td>第四个所有者。纳入范围：停止把 <code>latest</code> pin 到 <code>registered.keys().next()</code>。发送/Jump 定位归 hook；各视口窗口恢复归 history-viewport helper。</td></tr>
+<tr><td>本页的统一跟随契约</td><td class="warn">未实现</td><td>无生产证据。不要把本预览当成 App 行为。不声称已通过审查。</td></tr>
+</tbody>
+</table>
+</div>
+<p>发布：无特性开关。没有发送身份（<code>lastRole</code> 回退或同一列车里的 <code>noteTakeLatest</code>）时不要合并 hook 改动。若部分栈之后从向上翻处发送失败，回退该列车。App 与浏览器共享 Web 渲染器；回滚是 git revert，不是协议回滚。</p>
+
+<h3 id="open-questions">本次实施默认</h3>
+<ul>
+<li>Peer overlay 直接读取 composer root 的 offsetHeight；pad 用 readBottomPadding。不增加 CSS 变量，也不从 --peer-composer-h 减 24。</li>
+<li>同 session 的多个 peer pane 共用 peer:${sessionId}，可共同响应同一 note。本次不增加 pane instance id；不同 session 与主栏/peer 的 key 保持独立。</li>
+</ul>
+
+<h3 id="references">参考</h3>
+<ul>
+  <li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/chat/chat-scroll.ts">apps/web/lib/chat/chat-scroll.ts</a></li>
+  <li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/chat/messages/use-chat-area-stick.ts">use-chat-area-stick.ts</a></li>
+  <li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/chat/messages/message-list.tsx">message-list.tsx</a></li>
+  <li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/runtime-bridge/helpers.ts">helpers.ts</a></li>
+  <li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/runtime-bridge/session-history-loader.ts">session-history-loader.ts</a></li>
+  <li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/tests/desktop/self-update-scroll.test.mjs">self-update-scroll.test.mjs</a></li>
+  <li><a href="interaction-feedback.md">interaction-feedback.md</a>（0ms 规则；发送气泡那句相对 <code>appendLocalUserTurn</code> 已过时）</li>
+  <li><a href="send-queue-reliability.html">send-queue-reliability.html</a></li>
+  <li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/cli/src/runtime/ink/components/ScrollBox.tsx">CLI ScrollBox.tsx</a>（仅作对照）</li>
+</ul>
+</section>
+</main>
+<script>
+(function () {
+  const root = document.documentElement;
+  const themeBtn = document.getElementById("themeBtn");
+  function applyTheme(mode) {
+    if (mode === "light" || mode === "dark") root.setAttribute("data-theme", mode);
+    else root.removeAttribute("data-theme");
+    themeBtn.setAttribute("aria-pressed", mode === "dark" ? "true" : "false");
+    themeBtn.textContent = mode === "dark" ? "深色" : mode === "light" ? "浅色" : "主题";
+  }
+  try {
+    const stored = localStorage.getItem("op-docs-theme");
+    if (stored === "light" || stored === "dark") applyTheme(stored);
+  } catch (e) { /* ignore */ }
+  themeBtn.addEventListener("click", function () {
+    const cur = root.getAttribute("data-theme");
+    const next = cur === "dark" ? "light" : cur === "light" ? "" : "dark";
+    applyTheme(next || null);
+    try { if (next) localStorage.setItem("op-docs-theme", next); else localStorage.removeItem("op-docs-theme"); } catch (e) { /* ignore */ }
+  });
+
+  const area = document.getElementById("chatArea");
+  const column = document.getElementById("chatMessages");
+  const composer = document.getElementById("composer");
+  const jumpBtn = document.getElementById("jumpBtn");
+  const logEl = document.getElementById("policyLog");
+  const chipAttached = document.getElementById("chipAttached");
+  const chipWindow = document.getElementById("chipWindow");
+  const olderBtn = document.getElementById("olderBtn");
+  const EPSILON = 8;
+  const lines = [];
+  let attached = true;
+  let jumping = false;
+  let pendingLatest = false;
+  let hasNewer = false;
+  let streaming = false;
+  let streamTimer = 0;
+  let pendingTimer = 0;
+  let n = 0;
+  let session = "A";
+  const saved = { A: null, B: null };
+  const transcripts = { A: [], B: [] };
+  let cancelJump = null;
+
+  function composerH() { return composer.getBoundingClientRect().height || 64; }
+  function padPx() {
+    return Math.max(area.clientHeight * 0.25, composerH() + 24);
+  }
+  function slack() { return Math.max(0, padPx() - composerH()) + EPSILON; }
+  function remaining() { return area.scrollHeight - area.scrollTop - area.clientHeight; }
+  function isAtBottom() { return !hasNewer && remaining() <= slack(); }
+  function latestTop() { return Math.max(0, area.scrollHeight - area.clientHeight); }
+  function reduceMotion() {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }
+  function log(msg) {
+    lines.unshift(msg);
+    logEl.textContent = "策略日志：" + lines.slice(0, 6).join(" · ");
+  }
+  function applyPad() {
+    column.style.paddingBottom = padPx() + "px";
+    document.getElementById("chatView").style.setProperty("--demo-composer-h", composerH() + "px");
+  }
+  function syncChips() {
+    chipAttached.textContent = pendingLatest ? "等待最新" : attached ? "已附着" : "已脱离";
+    chipAttached.className = "chip " + (attached && !pendingLatest ? "on" : "off");
+    chipWindow.textContent = hasNewer ? "更早窗口" : "最新窗口";
+    jumpBtn.classList.toggle("show", !attached || jumping || pendingLatest);
+    jumpBtn.classList.toggle("is-live", streaming);
+    jumpBtn.innerHTML = streaming
+      ? '<span class="jump-live" aria-hidden="true"><i></i><i></i><i></i></span> 跳到最新'
+      : "跳到最新";
+    olderBtn.setAttribute("aria-pressed", String(hasNewer));
+  }
+  function render() {
+    const rows = transcripts[session];
+    column.replaceChildren();
+    rows.forEach(function (row) {
+      const el = document.createElement("div");
+      el.className = "msg " + row.role;
+      el.textContent = row.text;
+      column.appendChild(el);
+    });
+    applyPad();
+    syncChips();
+  }
+  function snap() {
+    attached = true;
+    jumping = false;
+    if (cancelJump) { cancelJump(); cancelJump = null; }
+    area.scrollTop = latestTop();
+    syncChips();
+  }
+  function takeLatest(reason) {
+    if (cancelJump) { cancelJump(); cancelJump = null; jumping = false; }
+    if (hasNewer) {
+      pendingLatest = true;
+      attached = false;
+      log(reason + "：等待最新窗口，保留跳转，不对过期页贴底");
+      syncChips();
+      if (pendingTimer) window.clearTimeout(pendingTimer);
+      pendingTimer = window.setTimeout(function () {
+        pendingTimer = 0;
+        hasNewer = false;
+        pendingLatest = false;
+        render();
+        snap();
+        log(reason + "：最新已加载，贴底并附着");
+      }, 280);
+      return;
+    }
+    pendingLatest = false;
+    log(reason + "：瞬间贴底并附着");
+    render();
+    snap();
+    requestAnimationFrame(function () { if (attached) area.scrollTop = latestTop(); });
+  }
+  function seed(target) {
+    const rows = [];
+    for (let i = 1; i <= 18; i += 1) {
+      rows.push({ role: "user", text: "会话 " + target + " 的用户轮次 " + i + "。" });
+      rows.push({ role: "assistant", text: "助手回复 " + i + "。更早轮次存在，便于离开活动边缘向上翻。" });
+    }
+    transcripts[target] = rows;
+  }
+  function send() {
+    n += 1;
+    transcripts[session].push({ role: "user", text: "已发送消息 " + n + "（0ms 乐观行）。" });
+    transcripts[session].push({ role: "pending", text: "思考中…" });
+    takeLatest("send");
+    streaming = true;
+    syncChips();
+    window.setTimeout(function () {
+      const rows = transcripts[session];
+      const last = rows[rows.length - 1];
+      if (last && last.role === "pending") {
+        last.role = "assistant";
+        last.text = "";
+        render();
+        if (attached) snap();
+        startStream();
+      }
+    }, 280);
+  }
+  function startStream() {
+    stopStream();
+    let ticks = 0;
+    streamTimer = window.setInterval(function () {
+      ticks += 1;
+      const rows = transcripts[session];
+      const last = rows[rows.length - 1];
+      if (!last || last.role !== "assistant") { stopStream(); return; }
+      last.text += (last.text ? " " : "") + "token-" + ticks;
+      render();
+      if (attached && !jumping) area.scrollTop = latestTop();
+      if (ticks >= 24) stopStream();
+    }, 90);
+    log(attached ? "流式：pin（已附着）" : "流式：保持（已脱离）");
+  }
+  function stopStream() {
+    if (streamTimer) window.clearInterval(streamTimer);
+    streamTimer = 0;
+    streaming = false;
+    syncChips();
+  }
+  function jump() {
+    if (hasNewer) {
+      pendingLatest = true;
+      attached = false;
+      jumping = false;
+      log("跳转：等待最新窗口，保留按钮");
+      syncChips();
+      if (pendingTimer) window.clearTimeout(pendingTimer);
+      pendingTimer = window.setTimeout(function () {
+        pendingTimer = 0;
+        hasNewer = false;
+        pendingLatest = false;
+        render();
+        startJumpRide();
+      }, 280);
+      return;
+    }
+    startJumpRide();
+  }
+  function startJumpRide() {
+    attached = true;
+    jumping = true;
+    syncChips();
+    if (reduceMotion()) { snap(); log("跳转：减少动效贴底"); return; }
+    const to = latestTop();
+    if (Math.abs(area.scrollTop - to) < 2) { jumping = false; syncChips(); return; }
+    let done = false;
+    const finish = function () {
+      if (done) return;
+      done = true;
+      jumping = false;
+      attached = true;
+      area.removeEventListener("scrollend", finish);
+      window.clearTimeout(tid);
+      syncChips();
+      log("跳转：平滑落定，附着");
+    };
+    area.addEventListener("scrollend", finish, { once: true });
+    const tid = window.setTimeout(finish, 700);
+    cancelJump = function () { done = true; area.removeEventListener("scrollend", finish); window.clearTimeout(tid); };
+    area.scrollTo({ top: to, behavior: "smooth" });
+    log("跳转：平滑重新附着，按钮留到落定");
+  }
+  function cancelRideFromUser() {
+    if (!jumping) return;
+    if (cancelJump) { cancelJump(); cancelJump = null; }
+    jumping = false;
+    attached = isAtBottom();
+    syncChips();
+    log("跳转：被指针/滚轮取消");
+  }
+
+  area.addEventListener("pointerdown", cancelRideFromUser, { passive: true });
+  area.addEventListener("wheel", cancelRideFromUser, { passive: true });
+  area.addEventListener("scroll", function () {
+    if (jumping || pendingLatest || area.clientHeight <= 0) return;
+    attached = isAtBottom();
+    saved[session] = area.scrollTop;
+    syncChips();
+  }, { passive: true });
+  area.addEventListener("keydown", function (ev) {
+    if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); send(); }
+  });
+
+  document.getElementById("seedBtn").addEventListener("click", function () {
+    seed(session); hasNewer = false; attached = true; render(); snap(); log("灌入：18 轮，附着在最新");
+  });
+  document.getElementById("sendBtn").addEventListener("click", send);
+  document.getElementById("sendBtn2").addEventListener("click", send);
+  document.getElementById("streamBtn").addEventListener("click", function () {
+    const rows = transcripts[session];
+    if (!rows.length) seed(session);
+    if (!rows.length || rows[rows.length - 1].role !== "assistant") {
+      rows.push({ role: "assistant", text: "" });
+    }
+    render();
+    streaming = true;
+    startStream();
+  });
+  olderBtn.addEventListener("click", function () {
+    hasNewer = !hasNewer;
+    attached = isAtBottom();
+    render();
+    log(hasNewer ? "窗口：更早分页，脱离" : "窗口：回到最新");
+  });
+  document.getElementById("switchBtn").addEventListener("click", function () {
+    saved[session] = area.scrollTop;
+    session = session === "A" ? "B" : "A";
+    if (!transcripts[session].length) seed(session);
+    hasNewer = false;
+    render();
+    const restore = saved[session];
+    area.scrollTop = restore == null ? latestTop() : restore;
+    attached = isAtBottom();
+    syncChips();
+    log("切换：恢复会话 " + session + "（不是发送）");
+  });
+  jumpBtn.addEventListener("click", jump);
+  window.addEventListener("resize", function () { applyPad(); if (attached && !hasNewer) area.scrollTop = latestTop(); });
+
+  seed("A");
+  render();
+  snap();
+})();
+</script>
+</body>
+</html>

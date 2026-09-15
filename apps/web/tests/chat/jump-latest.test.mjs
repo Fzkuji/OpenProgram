@@ -45,7 +45,7 @@ test("jump button is portaled onto #chatView, not the scroller", () => {
   assert.match(messageList, /getElementById\("chatView"\)/);
   assert.doesNotMatch(messageList.slice(0, messageList.indexOf("function AutomaticHistory")), /createPortal\([\s\S]*chatArea/);
   assert.match(messageList, /isChatAtBottom/);
-  assert.match(messageList, /readComposerHeight/);
+  assert.match(messageList, /readComposerOverlay/);
   assert.doesNotMatch(messageList, /clientHeight < 80/);
   assert.match(jumpCss, /position: absolute;/);
   assert.doesNotMatch(jumpCss, /position: sticky;/);

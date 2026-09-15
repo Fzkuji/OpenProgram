@@ -3,6 +3,7 @@
 Web UI surfaces — the surface system, indicator dots, attachment handling, chat-turn visuals, and GUI-agent context flow.
 
 - [`invariants.md`](invariants.md) — cross-module UI invariants (walk the list before touching related modules)
+- [`chat-transcript-follow.html`](chat-transcript-follow.html) — unified transcript follow: one attach/detach policy for send, stream, Jump to latest, session switch, and history windows
 - [`chat-turn-visual-spec.html`](chat-turn-visual-spec.html) — chat-turn visual spec (execution timeline, file-change summary surface, manual function runs, and message minimap); file-history semantics live in the [canonical runtime design](../runtime/operations/file-management.html)
 - [`interaction-feedback.md`](interaction-feedback.md) — the 0ms interaction-feedback rule (optimistic state first, data backfills)
 - [`turn-occupancy.md`](turn-occupancy.md) — stop, send-queue, and session-slot occupancy (released on cancel intent)

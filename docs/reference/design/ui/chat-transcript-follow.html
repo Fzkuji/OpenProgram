@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenProgram · Chat transcript follow</title>
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #141413;
+  --bg-code: #1c1c1a;
+  --bg-elev: #222220;
+  --tx: #e8e6dc;
+  --tx-soft: #9a988f;
+  --acc: #d19a66;
+  --bd: rgba(226,225,218,.18);
+  --ok: #55d69c;
+  --warn: #f0c562;
+  --bad: #ff8b82;
+  --user: #2a3344;
+  --assist: #1f1f1d;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg: #f4f3ef; --bg-code: #eceae3; --bg-elev: #fff;
+    --tx: #242420; --tx-soft: #66655e; --acc: #a05a1c;
+    --bd: rgba(36,36,32,.16); --ok: #157a4b; --warn: #8a5b00; --bad: #b42318;
+    --user: #dbe6f6; --assist: #fff;
+  }
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f4f3ef; --bg-code: #eceae3; --bg-elev: #fff;
+  --tx: #242420; --tx-soft: #66655e; --acc: #a05a1c;
+  --bd: rgba(36,36,32,.16); --ok: #157a4b; --warn: #8a5b00; --bad: #b42318;
+  --user: #dbe6f6; --assist: #fff;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #141413; --bg-code: #1c1c1a; --bg-elev: #222220;
+  --tx: #e8e6dc; --tx-soft: #9a988f; --acc: #d19a66;
+  --bd: rgba(226,225,218,.18); --ok: #55d69c; --warn: #f0c562; --bad: #ff8b82;
+  --user: #2a3344; --assist: #1f1f1d;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--tx);
+  font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", sans-serif;
+}
+main { max-width: 1120px; margin: auto; padding: 40px 24px 96px; }
+h1 { font-size: clamp(28px, 4vw, 36px); line-height: 1.2; margin: 8px 0 12px; }
+h2 { font-size: 22px; margin: 42px 0 12px; padding-top: 8px; border-top: 1px solid var(--bd); }
+h3 { font-size: 16px; margin: 22px 0 8px; }
+p { margin: 8px 0 14px; max-width: 85ch; }
+a { color: var(--acc); }
+code { font-family: var(--mono); font-size: .9em; overflow-wrap: anywhere; background: var(--bg-code); padding: 1px 5px; border-radius: 4px; border: 1px solid var(--bd); }
+pre { overflow: auto; background: var(--bg-code); border: 1px solid var(--bd); border-radius: 10px; padding: 14px 16px; font: 12.5px/1.5 var(--mono); }
+pre code { background: none; border: 0; padding: 0; }
+.eyebrow { color: var(--acc); font: 600 11px/1.4 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 18px; }
+.pill { display: inline-flex; align-items: center; min-height: 26px; padding: 3px 9px; border: 1px solid var(--bd); border-radius: 999px; color: var(--tx-soft); font-size: 12px; background: var(--bg-code); }
+.pill.draft { color: var(--warn); }
+.lead { border-left: 4px solid var(--acc); background: var(--bg-code); padding: 14px 16px; border-radius: 0 10px 10px 0; max-width: none; }
+.toc { display: flex; flex-wrap: wrap; gap: 8px; position: sticky; top: 0; z-index: 6; padding: 12px 0; background: var(--bg); border-bottom: 1px solid var(--bd); }
+.toc a { text-decoration: none; font-size: 13px; padding: 4px 10px; border: 1px solid var(--bd); border-radius: 6px; background: var(--bg-elev); color: var(--tx); }
+.toc a:focus-visible, button:focus-visible, a:focus-visible, summary:focus-visible, [tabindex="0"]:focus-visible {
+  outline: 3px solid var(--acc); outline-offset: 3px;
+}
+.doc-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--bd); border-radius: 10px; background: var(--bg-code); }
+table { width: 100%; border-collapse: collapse; min-width: 760px; font-size: 14px; }
+th, td { padding: 9px 11px; border-bottom: 1px solid var(--bd); text-align: left; vertical-align: top; }
+th { background: var(--bg-elev); color: var(--tx-soft); font-weight: 600; font-size: 12px; }
+tr:last-child td { border-bottom: 0; }
+.ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+.grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.card { padding: 14px 16px; background: var(--bg-code); border: 1px solid var(--bd); border-radius: 10px; min-width: 0; }
+.card h3 { margin-top: 0; }
+.card p { margin: 6px 0 0; font-size: 14px; }
+.note { margin: 12px 0; padding: 11px 13px; border-left: 3px solid var(--warn); background: color-mix(in srgb, var(--warn) 10%, var(--bg-code)); }
+.flow { display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; align-items: start; }
+.flow b { color: var(--acc); font-family: var(--mono); font-size: 12px; padding-top: 3px; }
+ul, ol { padding-left: 22px; } li { margin: 5px 0; }
+details { padding: 10px 0; border-bottom: 1px solid var(--bd); }
+summary { cursor: pointer; font-weight: 600; }
+.theme-row { display: flex; gap: 8px; align-items: center; margin-left: auto; }
+.theme-row button { font: inherit; color: inherit; background: var(--bg-elev); border: 1px solid var(--bd); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+button { font: inherit; color: inherit; background: var(--bg-elev); border: 1px solid var(--bd); border-radius: 7px; padding: 8px 12px; cursor: pointer; }
+button.primary { background: var(--acc); color: #141413; border-color: transparent; font-weight: 600; }
+button[aria-pressed="true"] { border-color: var(--acc); color: var(--acc); }
+.status { color: var(--warn); }
+
+/* Preview */
+.demo {
+  border: 1px solid var(--bd);
+  border-radius: 14px;
+  background: var(--bg-elev);
+  overflow: hidden;
+  margin: 16px 0 12px;
+}
+.demo-toolbar {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  padding: 12px; border-bottom: 1px solid var(--bd);
+}
+.demo-toolbar .spacer { flex: 1; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  font: 600 11px/1 var(--mono); padding: 5px 8px; border-radius: 999px;
+  border: 1px solid var(--bd); color: var(--tx-soft);
+}
+.chip.on { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--bd)); }
+.chip.off { color: var(--warn); }
+.stage {
+  position: relative;
+  height: min(62vh, 560px);
+  min-height: 360px;
+  background: var(--bg);
+}
+.scroller {
+  height: 100%;
+  overflow-y: auto;
+  overflow-anchor: none;
+  padding: 0;
+}
+.column {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 18px 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.msg { max-width: 78%; padding: 8px 12px; border-radius: 14px; font-size: 14px; line-height: 1.45; }
+.msg.user { align-self: flex-end; background: var(--user); }
+.msg.assistant { align-self: flex-start; background: var(--assist); border: 1px solid var(--bd); }
+.msg.pending { align-self: flex-start; color: var(--tx-soft); font-style: italic; border: 1px dashed var(--bd); }
+.msg.queued { align-self: flex-end; opacity: .55; }
+.composer {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  border-top: 1px solid var(--bd);
+  backdrop-filter: blur(8px);
+}
+.composer-box {
+  max-width: 640px; margin: 0 auto; display: flex; gap: 8px; align-items: center;
+  background: var(--bg-elev); border: 1px solid var(--bd); border-radius: 14px; padding: 8px 10px;
+}
+.composer-box span { flex: 1; color: var(--tx-soft); font-size: 14px; }
+.jump-host {
+  position: absolute; left: 0; right: 0;
+  bottom: calc(var(--demo-composer-h, 64px) + 12px);
+  height: 0; display: flex; justify-content: center; pointer-events: none; z-index: 3;
+}
+.jump-btn {
+  pointer-events: auto; display: none; align-items: center; gap: 6px;
+  padding: 6px 12px 6px 10px; border-radius: 999px; font-size: 12.5px;
+  background: var(--bg-elev); border: 1px solid var(--bd); box-shadow: 0 4px 14px rgba(0,0,0,.16);
+}
+.jump-btn.show { display: inline-flex; }
+.jump-live { display: inline-flex; gap: 2px; height: 12px; width: 14px; align-items: flex-end; }
+.jump-live i { display: block; width: 2.5px; height: 4px; border-radius: 1px; background: var(--acc); animation: bar .9s ease-in-out infinite; }
+.jump-live i:nth-child(2) { animation-delay: .15s; height: 7px; }
+.jump-live i:nth-child(3) { animation-delay: .3s; }
+@keyframes bar { 0%,100% { transform: scaleY(.45); opacity: .55; } 50% { transform: scaleY(1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .jump-live i { animation: none; opacity: .8; }
+  .jump-btn { transition: none; }
+}
+.log {
+  font: 12px/1.5 var(--mono); color: var(--tx-soft);
+  padding: 10px 12px; border-top: 1px solid var(--bd);
+  max-height: 7.5em; overflow: auto; background: var(--bg-code);
+}
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
+@media (max-width: 780px) {
+  main { padding: 24px 16px 72px; }
+  .grid { grid-template-columns: 1fr; }
+  .toc { position: static; }
+  table { min-width: 640px; }
+  .stage { min-height: 320px; height: 70vh; }
+}
+</style>
+</head>
+<body>
+<main>
+<p class="eyebrow">OpenProgram / Web / Transcript</p>
+<h1 id="title">Chat transcript follow</h1>
+<div class="meta">
+  <span class="pill">Author: engineering</span>
+  <span class="pill draft">Status: Draft · not implemented</span>
+  <span class="pill">Scope: web renderer (App and browser)</span>
+</div>
+<p class="lead">Sending a message does not reliably take the reader to the latest turn. Four overlapping scroll writers disagree about what “bottom” is and who may move the viewport (legacy <code>scrollToBottom</code>, unused <code>useStickToBottom</code>, live <code>useChatAreaStick</code>, and <code>loadSessionHistoryWindow</code>). This page collapses them into one React-owned follow policy: one attach/detach state, one at-bottom predicate, one follow-trigger table, and one padding-edge definition of latest. Chat handlers and the history loader do not pin latest onto an arbitrary viewport.</p>
+
+<nav class="toc" aria-label="Page sections">
+  <a href="#preview">Preview</a>
+  <a href="#current">Current gaps</a>
+  <a href="#corpus">Reference corpus</a>
+  <a href="#choices">Choices</a>
+  <a href="#architecture">Architecture</a>
+  <a href="#api">Interfaces</a>
+  <a href="#acceptance">Acceptance</a>
+  <a href="#sequence">Sequence</a>
+  <a href="#status">Status</a>
+  <span class="theme-row">
+    <button type="button" id="themeBtn" aria-pressed="false">Theme</button>
+  </span>
+</nav>
+
+<section id="preview">
+<h2>Interactive preview of the adopted contract</h2>
+<p>This viewport is local and makes no network requests. It illustrates the basic follow interactions, not the current product or the full acceptance matrix. Seed a long history, scroll up, send, watch a stream, and use Jump to latest. On the latest window, send snaps instantly and attaches. While an older window is showing, send stays pending, keeps Jump, and snaps after latest loads. Stream growth follows only while attached. Jump re-attaches with native smooth scroll (instant when reduced motion is requested).</p>
+<div class="demo">
+  <div class="demo-toolbar">
+    <button type="button" id="seedBtn">Seed long history</button>
+    <button type="button" id="sendBtn" class="primary">Send</button>
+    <button type="button" id="streamBtn">Simulate stream</button>
+    <button type="button" id="olderBtn" aria-pressed="false">View older page</button>
+    <button type="button" id="switchBtn">Switch session</button>
+    <span class="spacer"></span>
+    <div class="chips" aria-live="polite">
+      <span class="chip on" id="chipAttached">attached</span>
+      <span class="chip" id="chipWindow">latest window</span>
+      <span class="chip" id="chipMotion">send = snap</span>
+    </div>
+  </div>
+  <div class="stage" id="chatView">
+    <div class="scroller" id="chatArea" tabindex="0" role="log" aria-label="Preview transcript">
+      <div class="column" id="chatMessages"></div>
+    </div>
+    <div class="jump-host">
+      <button type="button" class="jump-btn" id="jumpBtn">Jump to latest</button>
+    </div>
+    <div class="composer" id="composer">
+      <div class="composer-box">
+        <span id="draftHint">Ask anything… then Send, or press Enter in the transcript</span>
+        <button type="button" class="primary" id="sendBtn2">Send</button>
+      </div>
+    </div>
+  </div>
+  <div class="log" id="policyLog" aria-live="polite">Policy log: ready. Seed history, scroll up, then send.</div>
+</div>
+<p class="muted" style="color:var(--tx-soft);font-size:13px">Keyboard: Tab to the scroller or buttons; Enter in the scroller sends; the Jump control is a real button. The breathing pad is <code>max(25vh, composer + 24)</code>. Latest is the padding edge, so the last bubble sits in the visible band above the composer, not under it. Jump stays visible until the smooth ride settles; pointer or wheel on the scroller cancels the ride. Send still hides Jump instantly. This preview does not yet implement the gesture-lifetime, asynchronous cancellation, or dynamic Jump completion requirements below and is not evidence for those cases. This viewport does not simulate welcome overflow, peer overlay slack, a failed latest-window load, or a real older history page (the older-page control is a flag).</p>
+</section>
+
+<section id="current">
+<h2>Current implementation and verified gaps</h2>
+<p>The live owner is React <code>useChatAreaStick</code> in <code>apps/web/components/chat/messages/use-chat-area-stick.ts</code>, consumed by <code>MessageList</code> and <code>peer-session-pane.tsx</code>. Math helpers already live in <code>apps/web/lib/chat/chat-scroll.ts</code>. Three older or parallel writers still exist beside it.</p>
+
+<div class="doc-scroll" tabindex="0" role="region" aria-label="Current scroll owners">
+<table>
+<thead><tr><th>Owner</th><th>Attach / bottom</th><th>Follow target</th><th>Callers</th><th>Verified state</th></tr></thead>
+<tbody>
+<tr>
+  <td>Legacy <code>scrollToBottom</code> / module <code>stickToBottom</code> in <code>apps/web/lib/runtime-bridge/helpers.ts</code></td>
+  <td>Global boolean, default true; scroll listener on <code>#chatArea</code> using <code>isChatAtBottom</code></td>
+  <td>Last <code>.message</code> bottom + 16px, else <code>scrollHeight</code></td>
+  <td><code>chat-handlers.ts</code> (compaction, local_command, status, follow-up); <code>conversations.ts</code> <code>scrollToBottom({ force: true })</code> unless <code>_skipScrollToBottom</code>; <code>addSystemMessage</code></td>
+  <td class="bad">Still live. Independent stick flag. Last-message + 16px fights the 25vh pad. MessageList comments that React never calls it, but WS handlers still do.</td>
+</tr>
+<tr>
+  <td><code>useStickToBottom</code> in <code>apps/web/lib/format-utils/scroll.ts</code></td>
+  <td>Container-ref copy of the same last-message + 16px policy</td>
+  <td>Last <code>.message</code> + 16px</td>
+  <td>Definition only</td>
+  <td class="warn">No production callers. Parallel implementation, not deleted.</td>
+</tr>
+<tr>
+  <td><code>useChatAreaStick</code></td>
+  <td><code>stuckRef</code> from <code>isChatAtBottom</code> + <code>history.after</code>; 600ms pointer suppression on the area; Jump via <code>animateJumpToLatest</code></td>
+  <td><code>area.scrollTop = area.scrollHeight</code> on ResizeObserver <code>pin()</code>; send-follow via <code>resolveChatScrollTop({ ownTurn })</code></td>
+  <td><code>MessageList</code> (<code>lastRole === "user"</code> as <code>ownTurn</code>); peer pane with <code>areaRef</code> / <code>columnRef</code></td>
+  <td class="warn">Intended owner. Gaps below make send-follow unreliable.</td>
+</tr>
+<tr>
+  <td><code>loadSessionHistoryWindow</code> in <code>apps/web/lib/runtime-bridge/session-history-loader.ts</code></td>
+  <td>None. Writes <code>scrollTop</code> after <code>flushSync</code> for <code>latest</code> / <code>around</code> / height-delta restore, then <code>dispatchEvent("scroll")</code>.</td>
+  <td><code>latest</code> → <code>area.scrollHeight</code>; <code>around</code> → <code>restoreHistoryAnchor</code>; else <code>oldTop + heightDelta</code></td>
+  <td>Jump, send-while-<code>after</code>, <code>useHistoryWindow</code> autoload. Area is <code>registered?.keys().next().value</code> — an arbitrary first viewport when main and peer are both registered.</td>
+  <td class="bad">Fourth scroll owner, in scope. Can snap the wrong pane and can snap a stale page before the hook runs.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Compaction fold <code>easeScrollBy</code> / <code>pinWhile</code> in <code>message-list.tsx</code>, message-rail <code>scrollIntoView</code>, parent-return <code>scrollIntoView</code>, and branch-checkout <code>_postCheckoutScrollTo</code> also write scroll. They stay named exclusions (explicit locators), not follow policy.</p>
+
+<h3 id="gap-ownturn">ownTurn identity</h3>
+<p><code>MessageList</code> passes <code>lastRole === "user"</code> as <code>ownTurn</code>. That is true only while the last store row is the user bubble.</p>
+<p>Send already lands an optimistic user row at 0ms: <code>sendChatMessage</code> calls <code>appendLocalUserTurn</code> after the socket accepts the frame (<code>apps/web/components/chat/composer/submit/send-chat-message.ts</code>). The assistant placeholder is <em>not</em> created in that update. <code>handleAck</code> in <code>apps/web/lib/net/chat-stream.ts</code> rekeys the pending user id, then <code>ensureReply</code> appends an empty assistant row. After ack, <code>lastRole</code> is <code>"assistant"</code> and <code>ownTurn</code> becomes false.</p>
+<p>The unit contract in <code>apps/web/scripts/chat/check-chat-ui.mjs</code> is correct: own send follows from far up; an agent turn while scrolled up must not move. The gap is that <code>ownTurn</code> is inferred from transcript tail identity, not from the send gesture. If the send layout pass fails to latch <code>stuckRef</code>, the ack that appends the assistant row is treated as a foreign agent turn and the view stays put. Compaction / local_command / system rows that become last also flip <code>ownTurn</code> off.</p>
+<p><code>docs/reference/design/ui/interaction-feedback.md</code> still says the user bubble lands on <code>chat_ack</code>. The send path now appends at socket-accept time. Follow must start when that optimistic row (and the pending-reply indicator while <code>lastRole === "user"</code>) lands, not wait for ack. This page does not redesign the send/ack pipeline.</p>
+
+<h3 id="gap-layout">Layout versus growth</h3>
+<p>The layout effect assigns <code>scrollTop = resolveChatScrollTop(...)</code>, and on follow that value is <code>area.scrollHeight</code>, which the browser clamps to <code>scrollHeight - clientHeight</code> when <code>clientHeight &gt; 0</code> (the hook already skips <code>clientHeight &lt;= 0</code>). That clamp is the same padding edge Jump already uses; it is not a distinct bug from last-message + 16px. The read can still run before the new row’s height is in the layout. ResizeObserver <code>pin()</code> would finish the job, but only if <code>stuckRef</code> is already true, the window has no <code>after</code>, Jump is not animating, and <code>performance.now() - lastPointerRef &gt; 600</code>.</p>
+<p><code>lastPointerRef</code> is updated on pointer/wheel/keydown on the <em>area</em>. A composer click is not on <code>#chatArea</code>, so a send from a reader who was already at the bottom is not suppressed. A reader who scrolled up and then sent within 600ms <em>is</em> suppressed: the layout snap uses a too-small <code>scrollHeight</code>, pin does not run, <code>stuckRef</code> stays false, and the later assistant row does not follow.</p>
+<p>The 600ms window exists to stop execution-strip / thinking-row clicks from yanking the clicked control upward. It must not suppress a take-latest gesture. The send latch is specified under <a href="#send-latch">Send latch sequence</a>: force <code>stuckRef = true</code> before the first height read, snap now and on the next column resize this turn, and leave 600ms in place for unrelated in-transcript growth.</p>
+
+<h3 id="gap-history">Send while <code>history.after</code> is set</h3>
+<pre><code>if (seedChanged &amp;&amp; ownTurn &amp;&amp; sid &amp;&amp; history?.after) {
+  void loadSessionHistoryWindow(sid, "latest");
+}
+area.scrollTop = resolveChatScrollTop({ ... });</code></pre>
+<p>Jump to latest already <code>await</code>s <code>loadSessionHistoryWindow(sid, "latest")</code> with an <code>isCurrent</code> token, then animates. Send fires the load and immediately applies follow against the stale older window. The loader itself may also assign <code>scrollTop</code> on an arbitrary registered area (fourth owner). A naive <code>await</code> inside <code>useLayoutEffect</code> is not legal; fire-and-forget recreates the bug. The adopted path uses the same click-handler-style <code>isCurrent</code> await as Jump, does not snap the stale page, and does not set attached true until the latest window is present.</p>
+
+<h3 id="gap-anchor">Two anchoring policies</h3>
+<p><code>.chat-messages</code> pad is <code>max(25vh, calc(var(--main-composer-height) + 24px))</code>. The composer is absolutely overlaid. <code>isChatAtBottom</code> slack is <code>pad - composer + 8</code> so “at latest” means the last bubble has not tucked under the composer. Jump and pin aim at the padding edge (<code>scrollHeight - clientHeight</code>). Legacy <code>scrollToBottom</code> aims last-message bottom + 16px, which pulls content toward the overlay and can hide a new user bubble under the composer. Those two targets fight when a WS handler still calls the legacy helper while React pins to <code>scrollHeight</code>.</p>
+
+<h3 id="gap-welcome">Welcome first send</h3>
+<p><code>setWelcomeVisible(false)</code> runs at 0ms, before <code>appendLocalUserTurn</code>. <code>.chat-area:has(#welcome-mount &gt; *)</code> sets <code>overflow: hidden</code>. If the stick layout effect runs in the same frame as the welcome child, scroll assignment is a no-op. Stick dependencies do not include <code>welcomeVisible</code>. The adopted retry is specified in the send latch: main shell observes <code>welcomeVisible</code> or <code>#welcome-mount</code> children and snaps once when the lock lifts if the take-latest generation is still current. Peer is out of this path.</p>
+
+<h3 id="gap-peer">Peer pane composer slack</h3>
+<p>When <code>areaRef</code> is passed (peer pane), <code>readComposerHeight()</code> is forced to 0, so overlay is treated as 0 and slack is too loose by roughly the composer box. Peer publishes <code>--peer-composer-h</code> as <strong>measured composer root + 24px</strong> (<code>peer-session-pane.tsx</code>) and uses that same variable as <code>.chat-messages</code> <code>padding-bottom</code> (<code>peer-session-pane.css</code>). Main publishes <code>--main-composer-height</code> as overlay height only; pad is <code>max(25vh, composer + 24)</code>.</p>
+<p>Slack is <code>max(0, pad - overlay) + 8</code>. Treating <code>--peer-composer-h</code> as overlay would yield <code>(h+24) - (h+24) + 8 = 8</code>, 24px too tight. The variable is not analogous to <code>--main-composer-height</code>. Overlay and pad are separate inputs: pad from <code>readBottomPadding(column)</code>; peer overlay from the composer root (or <code>--peer-composer-h - 24</code>, or a second CSS variable). Unit case: peer pad <code>h+24</code>, overlay <code>h</code> ⇒ slack <code>24+8</code>.</p>
+<p>Peer <code>useChatAreaStick</code> is keyed with <code>scrollKey = sessionId ? \`peer:${sessionId}\` : null</code>. Main uses <code>activeChatKey</code>. <code>sendChatMessage</code> only knows <code>sessionId</code>. A consume-once map keyed by either value races two hook instances or never matches a split pane.</p>
+
+<h3 id="gap-tests">What tests already encode</h3>
+<ul>
+  <li><code>check-chat-ui.mjs</code>: switch restores saved pixels; follow when <code>atBottom</code>; stay when agent row and scrolled up; own send follows from far up; <code>atBottom</code> defaults true; MessageList wires <code>lastRole === "user"</code>.</li>
+  <li><code>jump-latest.test.mjs</code>: slack formula; Jump portal on <code>#chatView</code> not the scroller; native smooth scroll; fade; no virtual-list library.</li>
+  <li><code>apps/web/tests/desktop/self-update-scroll.test.mjs</code> is the persistence contract: <code>writeChatScroll</code> is skipped while <code>data-self-update-verification</code> is set. <code>apps/desktop/scripts/check-self-update-ui.js</code> only checks that the attribute is present on a capture.</li>
+</ul>
+<p>Missing: hook timing, pointer suppression vs send, <code>history.after</code> send, ack flipping <code>ownTurn</code>, leftover <code>scrollToBottom</code> callers, welcome overflow, peer overlay vs pad, loader scroll writes, take-latest key vs <code>peer:${sessionId}</code>.</p>
+</section>
+
+<section id="corpus">
+<h2>Official reference corpus and framework comparison</h2>
+<p>Comparison is of product rules, not pixel clones. Absent capabilities stay absent.</p>
+<div class="doc-scroll" tabindex="0" role="region" aria-label="Framework comparison">
+<table>
+<thead><tr><th>Surface</th><th>Send while scrolled up</th><th>Stream / agent growth</th><th>Re-attach control</th><th>Session / history</th><th>Absent here (keep absent unless noted)</th></tr></thead>
+<tbody>
+<tr>
+  <td>ChatGPT web</td>
+  <td>Send is a take-me-to-latest gesture. New user turn appears in the live band.</td>
+  <td>Follows while the reader is at the live edge. Scroll up detaches. Scroll back near the edge re-attaches.</td>
+  <td>Down-arrow when detached. Stream can show a live variant of that control.</td>
+  <td>Opening a chat aims at latest; restore bugs are reported when this fails.</td>
+  <td>No virtual-list library in OpenProgram. No auto-follow of every DAG node expansion.</td>
+</tr>
+<tr>
+  <td>Claude.ai / Claude Code web</td>
+  <td>Submit lands the user turn in view. Reading older content is interrupted by send, not by the model continuing.</td>
+  <td>Streaming follows at the live edge. Manual scroll up holds position.</td>
+  <td>Jump/latest affordance when not at the live edge.</td>
+  <td>Conversation switch restores that conversation, not a global stick flag.</td>
+  <td>No global <code>window</code> stick flag. OpenProgram already killed <code>window.__stickListenerInstalled</code> in name only; the module flag remains.</td>
+</tr>
+<tr>
+  <td>Cursor chat / Composer</td>
+  <td>Send keeps the new prompt in the composer-adjacent band.</td>
+  <td>Follows generation while pinned; inspector-style scroll up detaches.</td>
+  <td>Explicit jump when behind the tail.</td>
+  <td>Per-thread. Not used as a protocol source.</td>
+  <td>No Cursor-style message-scroller library. No turn-anchor-to-top of the previous reply as a second mode in this slice.</td>
+</tr>
+<tr>
+  <td>Codex / ChatGPT Atlas notes in this repo</td>
+  <td>No in-repo Atlas transcript-follow spec. Codex material here covers queue/steer (<code>send-queue-reliability.html</code>), not scroll physics.</td>
+  <td>—</td>
+  <td>—</td>
+  <td>—</td>
+  <td>Do not invent an Atlas scroll contract. Queue/steer remains a separate topic.</td>
+</tr>
+<tr>
+  <td>OpenProgram CLI <code>ScrollBox</code></td>
+  <td><code>scrollToBottom()</code> sets <code>stickyScroll = true</code> (gesture-owned flag), then the renderer pins.</td>
+  <td>Positional follow only while sticky. <code>scrollTo</code> / <code>scrollBy</code> clear sticky. Sticky does not depend on layout epsilon.</td>
+  <td>Imperative <code>scrollToBottom</code> re-sets sticky.</td>
+  <td>TUI only.</td>
+  <td class="warn">Out of implementation scope. Adopt the <em>named attached flag</em> idea, not Yoga/Ink code.</td>
+</tr>
+<tr>
+  <td>shadcn MessageScroller (prior art, not a product we ship)</td>
+  <td>New user turn can use a turn-anchor near the top with a peek of the previous exchange.</td>
+  <td><code>autoScroll</code> only while at bottom.</td>
+  <td><code>MessageScrollerButton</code> when behind.</td>
+  <td>—</td>
+  <td>Rejected as a library and as a second “anchor previous turn at top” mode. OpenProgram pad already leaves breathing room above the composer.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Shared rule across ChatGPT, Claude, and Cursor: send is an implicit jump to latest; model tokens are not. OpenProgram’s <code>resolveChatScrollTop</code> already states that rule. The web view does not enforce it with one owner.</p>
+</section>
+
+<section id="choices">
+<h2>Adopted, modified, and rejected choices</h2>
+<div class="grid">
+  <article class="card">
+    <h3>Adopted</h3>
+    <p>One policy module in <code>apps/web/lib/chat/chat-scroll.ts</code>. One attached boolean per scroller. Send / queue-drain / first welcome send = take-latest, instant snap. Stream pins only while attached and on the latest history window. Jump to latest remains the explicit smooth re-attach. Session switch restores <code>sessionStorage</code> pixels and is not a send. Desktop App uses this same web renderer.</p>
+  </article>
+  <article class="card">
+    <h3>Modified</h3>
+    <p>Take-latest is a generation-stamped note keyed by session id plus the submitting scroller’s <code>chatKey</code>, not a consume-once boolean and not <code>lastRole</code> alone. <code>lastRole === "user"</code> remains a fallback until the send-path note lands in the same merge train. Pointer 600ms suppression applies only to in-transcript clicks that resize content, never to take-latest or Jump. Peer overlay and pad are separate inputs; do not treat <code>--peer-composer-h</code> as <code>--main-composer-height</code>. <code>resolveChatScrollTop</code> keeps the whether-to-move decision; callers then assign <code>latestScrollTop</code> (the named clamped padding edge Jump already uses). Send while <code>history.after</code> is pending until latest loads; attached stays false on the stale page. The history loader never places latest; window anchor restoration remains in history-viewport helpers as specified below.</p>
+  </article>
+  <article class="card">
+    <h3>Rejected</h3>
+    <p>A fourth stick file. Last-message + 16px as the follow target. Send as a second smooth animation. WS handlers calling a scroller. Global <code>window</code> / module <code>stickToBottom</code>. Persisting stickiness to disk. A virtual-list library. Auto-follow of every DAG expand. Rewriting the send/ack protocol. CLI <code>ScrollBox</code> in the web bundle. Turn-anchor-previous-reply-at-top as a parallel mode.</p>
+  </article>
+</div>
+
+<h3 id="bottom-definition">What “bottom” means</h3>
+<p>Latest is the padding edge of the scroller. <code>latestScrollTop = max(0, scrollHeight - clientHeight)</code> is the named form of the clamp Jump already uses and that assigning <code>scrollTop = scrollHeight</code> already produces when <code>clientHeight &gt; 0</code>. Combined with pad <code>max(25vh, overlay + 24)</code> on main (peer pad is the published <code>--peer-composer-h</code> = overlay + 24), the last relevant content (user bubble, pending-reply indicator, streaming assistant, visible queued rows) sits in the visible band above the composer. Remaining slack is <code>chatAtBottomSlack(pad, overlay)</code> = <code>max(0, pad - overlay) + 8</code>. Overlay is the floating composer box, not the pad CSS variable.</p>
+<p>Last-message + 16px is rejected because it measures against the scroller’s visible bottom, which is under the overlay, and because it ignores the pad that Jump already uses. Pinning to the padding edge without slack would hide Jump until the reader scrolled an extra ~25vh; that bug is already fixed in <code>isChatAtBottom</code> and is kept.</p>
+</section>
+
+<section id="architecture">
+<h2>Target architecture</h2>
+<div class="flow">
+  <b>1</b><div>Composer submit, queue drain, slash submit, or Jump writes a follow gesture. WebSocket frames do not scroll. The history loader does not pin <code>latest</code> to <code>scrollHeight</code> on <code>registered.keys().next()</code>. After data publication, the matching hook applies send snap or Jump smooth. Window replacement uses per-area history restoration; see History restoration ownership.</div>
+  <b>2</b><div><code>useChatAreaStick</code> is the DOM applicator and state machine (<code>stuckRef</code>, <code>jumpingRef</code>, <code>lastPointerRef</code>, pending latest-load). MessageList and the peer pane pass the scroller, column, overlay reader, and scroller <code>chatKey</code>.</div>
+  <b>3</b><div>Primitives live in <code>chat-scroll.ts</code> (<code>latestScrollTop</code>, take-latest note, overlay vs pad, <code>snapToLatest</code>, <code>resolveChatScrollTop</code> as whether-to-move). The hook applies them. There is no <code>decideFollow</code> action enum.</div>
+  <b>4</b><div>ResizeObserver on the column pins only while attached, on the latest window, and not during an in-flight Jump. Take-latest forces <code>stuckRef</code> and snaps inside the 600ms window only when already on the latest window. While <code>after</code> is set, take-latest is pending: stay detached, keep Jump, do not snap the stale page. 600ms still blocks unrelated in-transcript growth.</div>
+  <b>5</b><div>Legacy <code>scrollToBottom</code> becomes a documented no-op shim, then is removed with its callers. <code>useStickToBottom</code> is deleted. The loader stops pinning <code>latest</code> onto an arbitrary first viewport in the same unification.</div>
+</div>
+
+<div class="doc-scroll" tabindex="0" role="region" aria-label="Follow trigger table">
+<table>
+<thead><tr><th>Public entry</th><th>Gesture</th><th>Attached</th><th>Motion</th><th>History window</th></tr></thead>
+<tbody>
+<tr><td>Composer submit (Enter / Send), including first message from welcome</td><td><code>take-latest</code></td><td>On the latest window: true immediately. While <code>after</code> is set: pending, stay detached, keep Jump. After successful latest load: true. On load failure or <code>!isCurrent</code>: stay detached.</td><td>See <a href="#send-latch">send latch</a>. On the latest window: layout sees the note, forces <code>stuckRef = true</code> (ignore 600ms and current <code>isChatAtBottom</code>), <code>snapToLatest</code> now and on the next column resize this turn. While <code>after</code> is set: pending, stay detached, keep Jump. 600ms still blocks unrelated in-transcript growth. Instant snap, not smooth. Jump hides on snap, not while pending. Welcome: one retry when <code>welcomeVisible</code> / <code>#welcome-mount</code> child list clears, main shell only.</td><td>If <code>after</code> is set, do not snap the stale page. Await <code>loadSessionHistoryWindow(..., "latest")</code> with <code>isCurrent</code> in a Jump-style async callback, not inside <code>useLayoutEffect</code>. Loader must not pin <code>latest</code> on <code>registered.keys().next()</code>; after data publication the matching hook applies the still-current send.</td></tr>
+<tr><td>Queued drain that actually calls <code>sendChatMessage</code></td><td><code>take-latest</code> (same as submit)</td><td>Same latch as submit for the submitting scroller only</td><td>Instant snap (same latch)</td><td>Same as submit. Parking a queued row is not a send; draining it is.</td></tr>
+<tr><td>Composer slash / builtin submit that does not call <code>sendChatMessage</code> (<code>dispatchFunction</code> in <code>use-chat-submit.ts</code>)</td><td><code>take-latest</code> at the submit site</td><td>Same as submit</td><td>Same latch. The WS <code>local_command</code> handler does not scroll and does not note.</td><td>If a <code>local_command</code> row arrives with no prior submit note (another client), follow only while already attached.</td></tr>
+<tr><td>Jump to latest (main: portal on <code>#chatView</code>; peer: existing header button, no portal, no live bars)</td><td><code>jump</code></td><td>True after latest is on screen; button stays until settle then fades (<code>jumpingRef</code> / <code>JUMP_LATEST_FADE_MS</code>)</td><td>Native smooth scroll; instant if <code>prefers-reduced-motion: reduce</code>. Pointer/wheel on the scroller cancels the ride.</td><td>Await latest, then <code>animateJumpToLatest</code>. Existing <code>isCurrent</code> cancellation stays. Loader must not pin <code>latest</code> on an arbitrary first viewport; after data publication the matching hook begins the still-current smooth Jump without a preliminary snap.</td></tr>
+<tr><td><code>#chatArea</code> / peer scroller: wheel, pointer, keyboard</td><td><code>user-scroll</code></td><td>True iff <code>isChatAtBottom</code> and not <code>after</code></td><td>None</td><td>Unchanged page. Scroll-up detaches. Scroll into slack re-attaches.</td></tr>
+<tr><td>Stream / tool / KaTeX / recycle / pad / composer resize</td><td><code>growth</code></td><td>Unchanged</td><td>Pin to <code>latestScrollTop</code> only if attached</td><td>No pin while <code>after</code> is set.</td></tr>
+<tr><td>Session switch (<code>chatKey</code> change)</td><td><code>restore</code></td><td>After restore, geometric</td><td>Instant restore of saved <code>scrollTop</code>, or latest if none</td><td>Not a send. History autoload / around-anchor remains <code>useHistoryWindow</code>.</td></tr>
+<tr><td>History window load that is not a take-latest/jump</td><td><code>window</code></td><td>False if <code>after</code>, else geometric</td><td>Loader does not pin <code>latest</code> to <code>scrollHeight</code> on <code>registered.keys().next()</code>. After <code>flushSync</code>, apply history-viewport restore on <em>every</em> registered area for older/around.</td><td>Older/newer pages never pin as if they were latest. Restore is a policy write of <code>scrollTop</code>, not a loader pin of latest.</td></tr>
+<tr><td>WS <code>chat_response</code> / compaction / status / follow-up / <code>local_command</code> frame</td><td>None</td><td>—</td><td>No scroll call and no take-latest note from the handler</td><td>Rows land in the store; the view follows only via growth + attached, unless the composer submit already noted take-latest.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3 id="send-latch">Send latch sequence</h3>
+<ol>
+  <li><code>sendChatMessage</code> (or slash submit) calls <code>appendLocalUserTurn</code> when applicable, then <code>noteTakeLatest({ sessionId, scrollerKey, turnSeed })</code>. Default inside <code>sendChatMessage</code>: <code>scrollerKey = background ? "peer:" + sessionId : sessionId</code>. Interactive submit may pass <code>scrollerKey</code> explicitly. Do not read live <code>activeChatKey</code> at drain (that is the focused session, which may not be the draining session). Queue drain inherits because it already calls <code>sendChatMessage</code> with <code>sessionId</code> and <code>background</code>; <code>send-queue.ts</code> stays unchanged.</li>
+  <li>The matching hook’s layout effect sees a note whose <code>generation</code> is newer than <code>lastAppliedGeneration</code> and whose <code>scrollerKey</code> equals this instance’s <code>chatKey</code>. Other panes do not latch. The note is not deleted on read (Strict Mode and two hook instances).</li>
+  <li>If <code>history.after</code> is set, do not set attached, do not snap, keep Jump. Start the same async <code>isCurrent</code> await Jump uses. Layout effect must not <code>await</code>.</li>
+  <li>When on the latest window (or after a successful latest load): set <code>stuckRef = true</code> regardless of the 600ms pointer window and regardless of current <code>isChatAtBottom</code>. Assign <code>snapToLatest</code> now.</li>
+  <li>The next column <code>ResizeObserver</code> callback in this turn also snaps (late row height). That pin ignores 600ms because the take-latest generation is still current. Unrelated in-transcript growth still honors 600ms.</li>
+  <li>Main shell only: subscribe to <code>welcomeVisible</code> or observe <code>#welcome-mount</code> children. When the overflow lock lifts, one retry snap if the same take-latest generation is still current. Peer sends use <code>background: true</code> and skip welcome.</li>
+  <li>Ack that appends the assistant placeholder does not detach: attached is already latched, not derived from <code>lastRole</code>.</li>
+</ol>
+
+
+<h3 id="lifecycle">Gesture lifetime and cancellation</h3>
+<p>A note identifies a send, not permanent permission to scroll. Store notes independently by <code>(sessionId, scrollerKey)</code>; <code>peekTakeLatest(sessionId, scrollerKey)</code> reads that pair. A main send and a peer send in the same session must not overwrite each other. Publishing a note must notify the matching view even when no transcript row changes (slash submit); reading a mutable map only during unrelated renders is insufficient. <code>turnSeed</code> identifies the accepted optimistic turn, not the current last row after ack.</p>
+<ol>
+<li>Each active follow operation captures session id, scroller key, generation, and a view interaction epoch. Every async completion, next-resize snap, welcome retry, and animation callback verifies all four before writing. A newer send replaces the older operation for that scroller. Jump replaces a pending send operation; send replaces Jump and stops its native animation before instant placement.</li>
+<li>Wheel, touch/pointer scroll intent, and scrolling keys in the transcript invalidate pending work before subsequent resize or network callbacks. They clear the forced next-resize/welcome retry. Geometry then determines attached after actual scrolling; clicking an execution control retains the existing temporary growth suppression. Programmatic scroll events alone are not cancellation. After send then user scroll-up, delayed growth never forces reattachment.</li>
+<li>Changing key or truly unmounting invalidates the outgoing operation. Returning to a chat restores pixels and must not replay a completed or cancelled note. Keep note data readable; do not delete it on read. Maintain explicit operation completion/cancellation and per-view applied-generation bookkeeping. Strict Mode effect cleanup cancels that effect's resources; setup must resume a still-valid pending operation, without a second logical send, lost retry, or an orphaned request. Do not mark a generation completed when merely starting a latest request.</li>
+<li>A first welcome send may publish before the transcript becomes visible. Preserve only that still-pending handoff until its matching view is ready; an initial subscription baseline must not discard it. Retry after visibility/layout readiness once, and cancel on a later user gesture or session departure. Existing provisional-to-real session binding must preserve the pending operation's identity without generating another send or replaying a completed one. Ack message-id replacement does not require <code>turnSeed</code> to remain the transcript's last id.</li>
+<li>While an older/around request is in flight, a send waits for a verified latest window even if the currently displayed page has no <code>after</code> yet. Use <code>history.after || history.loading</code> to enter asynchronous coordination, then verify the resulting latest page and operation identity. A cancelled/failed request leaves no forced retry and cannot hide Jump. A newer valid gesture may still succeed; an older completion must not detach or clear it.</li>
+</ol>
+<p>One next-resize retry belongs to the operation, not to the entire assistant turn. After that retry, ordinary growth uses attached plus the normal interaction rules. Do not infer unlimited bypass from an unchanged generation. Each hook owns its resources and cleanup; no polling timer or persistent attached state is added.</p>
+
+<h3 id="jump-completion">Jump completion with changing content</h3>
+<p>On latest-load success, Jump starts smooth scrolling directly from the preserved position; no pre-animation snap is allowed. While Jump is active, resize records the changed target but does not instant-pin. At native settle, recompute <code>latestScrollTop</code>. If the target moved, stop the completed animation and perform one instant correction to the current padding edge, then verify placement. Hide Jump only after this verification and only if the same operation is still current. Reduced motion uses the same final verification with instant placement from the start.</p>
+<p>The fallback timeout is a watchdog, not proof of arrival. At the timeout, a still-current operation stops native motion, corrects to the current target, verifies, and only then completes. Cancelling must stop browser motion as well as callbacks; removing a <code>scrollend</code> listener alone is not cancellation. No cancelled operation performs a correction. Subsequent growth resumes ordinary attached pinning. Accept a small geometry tolerance (2px); do not substitute the larger reattachment slack for exact Jump placement.</p>
+
+<h3 id="history-ownership">History restoration ownership</h3>
+<p><code>loadSessionHistoryWindow</code> coordinates requests and publishes rows/window metadata. It never performs latest placement or examines send/jump notes. <code>useChatAreaStick</code> alone chooses and applies send snap or Jump smooth after a successful latest load. For older/newer/around replacement, existing history-viewport helpers own anchor restoration: capture a separate anchor, old top, and old height for each registered area before the update; restore only still-registered areas for that session after <code>flushSync</code>. Use each area's own chat key for height-cache maintenance. Do not reuse the first area's anchor or fallback delta.</p>
+<p>History restoration is the explicitly retained scroll writer for window replacement, not another follow policy. It does not run a latest snap, and it must not overwrite an active, newer follow operation. Shared session data can replace rows in both main and peer panes; preserve each non-requesting pane's visible anchor when it remains available. If eviction removes that anchor, keep the existing bounded fallback and document it in acceptance evidence; scroller isolation does not promise independent history datasets.</p>
+
+<h3 id="trust">Trust boundaries, data flow, failures</h3>
+<ul>
+  <li>Follow is a view concern. Transcript identity, attached, and the last user gesture are enough. Frame type is not a scroll signal.</li>
+  <li><code>sessionStorage</code> key <code>chatScrollByKey</code> remains pixel positions only. Do not persist attached. Hardened contexts already swallow write failures.</li>
+  <li><code>data-self-update-verification</code> continues to skip persistence.</li>
+  <li>Failed latest-window load, or <code>!isCurrent</code>: remain detached, keep Jump visible, do not snap to a stale page, do not leave attached true from a pending take-latest. Jump already returns if <code>loadSessionHistoryWindow</code> is false.</li>
+  <li>Take-latest during an in-flight Jump: cancel the smooth ride and snap (only once latest is on screen). Send wins on 0ms feedback when already on the latest window.</li>
+  <li>Reduced motion: Jump snaps. Send already snaps.</li>
+  <li>Virtualization: recycle keeps measured placeholders so <code>scrollHeight</code> stays honest. Pin after recycle. Do not add <code>react-virtuoso</code> / <code>react-window</code> / <code>@tanstack/react-virtual</code>.</li>
+  <li>KaTeX: <code>renderMathInChat</code> stays a growth side effect inside the single pin path, not a second scroller.</li>
+  <li>No backend protocol change.</li>
+</ul>
+
+<h3 id="compat">Compatibility and exclusions</h3>
+<ul>
+  <li>App and browser share this web contract.</li>
+  <li>CLI TUI <code>ScrollBox</code> is out of scope.</li>
+  <li>Do not auto-follow DAG strip expand, compaction fold <code>easeScrollBy</code> / <code>pinWhile</code>, parent-return <code>scrollIntoView</code>, message-rail seek, or branch-checkout pivot (<code>_postCheckoutScrollTo</code>). Those remain explicit locators.</li>
+  <li>Do not rewrite occupancy, send-queue admission, or ack pairing except for a take-latest note at the existing <code>appendLocalUserTurn</code> call (and slash submit).</li>
+  <li>Do not keep send as a special-case policy beside stream pinning. Send latches attached (or pending-latest) and chooses instant motion.</li>
+  <li>Peer Jump keeps the existing header button: same attach policy, no <code>#chatView</code> portal, no live bars, no composer-offset positioning in this slice.</li>
+</ul>
+</section>
+
+<section id="api">
+<h2>API and data-model changes</h2>
+<p>Extend <code>chat-scroll.ts</code>. Do not add a fourth stick module. Primitives plus a generation-stamped note; <code>useChatAreaStick</code> remains the state machine. Illustrative surface (names may tighten in review; behavior must not):</p>
+<pre><code>export function latestScrollTop(area: ScrollMetrics): number;
+// Named clamp Jump already uses: max(0, scrollHeight - clientHeight).
+
+export type TakeLatestNote = {
+  sessionId: string;
+  scrollerKey: string; // default: background ? `peer:${sessionId}` : sessionId
+  turnSeed: string;    // optimistic message id / lastId at send
+  generation: number;  // monotonic; never delete-on-read
+};
+
+export function noteTakeLatest(note: Omit&lt;TakeLatestNote, "generation"&gt;): TakeLatestNote;
+export function peekTakeLatest(sessionId: string, scrollerKey: string): TakeLatestNote | null;
+// No consumeTakeLatest. Each hook compares note.generation to a per-instance
+// lastAppliedGeneration ref. Strict Mode re-runs are idempotent.
+
+export function readComposerOverlay(area: HTMLElement | null): number;
+// Main: --main-composer-height (overlay only).
+// Peer: composer root offsetHeight, or (--peer-composer-h - 24).
+// Never treat --peer-composer-h as overlay.
+
+export function snapToLatest(area: HTMLElement): void; // instant
+// animateJumpToLatest stays; respects prefers-reduced-motion
+</code></pre>
+<p><code>resolveChatScrollTop</code> remains the whether-to-move function and may still return <code>scrollHeight</code> as a sentinel. Callers assign <code>latestScrollTop(area)</code> after a follow decision. <code>FollowGesture</code> in the trigger table is documentation, not a function argument.</p>
+<p>Key space: send knows <code>sessionId</code> and <code>background</code>. <code>sendChatMessage</code> defaults <code>scrollerKey</code> to <code>background ? "peer:" + sessionId : sessionId</code> (main <code>chatKey</code> equals that session id when that session is shown; peer panes always use the <code>peer:</code> prefix). Interactive submit may pass <code>scrollerKey</code> explicitly. Do not read live <code>activeChatKey</code> at drain. A hook latches only when <code>note.scrollerKey === chatKey</code>. Two panes of different sessions never share a latch. Two panes of the same session currently share <code>peer:${sessionId}</code> (same collision as row-height cache); this slice does not add a pane instance id. Public-entry test: send from an unfocused peer composer of session Y while the other pane shows session X attaches Y only.</p>
+<p><code>useChatAreaStick</code> keeps <code>{ detached, jumpToLatest }</code>. Until the send-path note lands, <code>lastRole === "user"</code> remains a documented fallback so send-follow stays green. Dropping <code>lastRole</code> and updating <code>check-chat-ui.mjs</code> happen in the same merge as <code>noteTakeLatest</code>.</p>
+<p>Loader: <code>loadSessionHistoryWindow</code> must not pin <code>latest</code> to <code>scrollHeight</code> on <code>registered.keys().next()</code>. The hook owns send/Jump placement after publication. History-viewport helpers restore each area independently for window replacement, as specified in History restoration ownership.</p>
+<p>Legacy:</p>
+<pre><code>/** @deprecated React MessageList owns follow. No-op. */
+export function scrollToBottom(_opts?: { force?: boolean }): void {}</code></pre>
+<p>Then delete it and every caller. Delete <code>useStickToBottom</code>. Delete <code>runtimeState._skipScrollToBottom</code> once <code>conversations.ts</code> no longer force-scrolls; session restore is the React layout effect.</p>
+<p>Do not call any scroller from <code>chat-handlers.ts</code>.</p>
+</section>
+
+<section id="acceptance">
+<h2>Acceptance criteria</h2>
+<div class="doc-scroll" tabindex="0" role="region" aria-label="Acceptance matrix">
+<table>
+<thead><tr><th>Public entry</th><th>Setup</th><th>Observable outcome</th></tr></thead>
+<tbody>
+<tr><td>Composer submit</td><td>Scrolled far up on the latest window; press Enter or Send</td><td>Optimistic user bubble (and pending indicator if still last-role user) is in the visible band above the composer at 0ms after the store append. Instant snap, not smooth. Attached becomes true. Jump hides at snap, not before.</td></tr>
+<tr><td>Composer submit</td><td>Already attached</td><td>Same snap-to-latest; stream that follows stays pinned.</td></tr>
+<tr><td>Welcome first send</td><td>Welcome visible; overflow locked</td><td>Welcome hides at 0ms; after the lock lifts, the first user row is in the live band. Scroll is not left at 0 on an unlocked empty pad.</td></tr>
+<tr><td>Queue drain</td><td>A queued row actually sends via <code>sendChatMessage</code> (possibly while another session is focused)</td><td>Same take-latest as a manual send. <code>scrollerKey</code> defaults from <code>sessionId</code> and <code>background</code>, not live <code>activeChatKey</code>. Enqueue without drain does not move the viewport. <code>send-queue.ts</code> stays unchanged.</td></tr>
+<tr><td>Jump to latest</td><td>Detached on an older window</td><td>Awaits latest page, then smooth-scrolls (instant if reduced motion). Jump stays visible until settle, then fades. Pointer/wheel on the scroller cancels the ride. Main uses the <code>#chatView</code> portal; peer uses the existing header button.</td></tr>
+<tr><td><code>#chatArea</code> scroll</td><td>Wheel up until last bubble tucks under the composer</td><td>Detached; Jump visible; later assistant/tool deltas do not move <code>scrollTop</code>.</td></tr>
+<tr><td><code>#chatArea</code> scroll</td><td>Scroll back into slack</td><td>Re-attaches; Jump hides; subsequent growth pins.</td></tr>
+<tr><td>Stream deltas</td><td>Attached; KaTeX / recycle / token growth</td><td>Pin to latest. Math renders through the same pin path.</td></tr>
+<tr><td>Agent/system row without take-latest</td><td>Detached</td><td><code>scrollTop</code> unchanged. Compaction and the <code>local_command</code> <em>frame</em> must not call a scroller. Composer slash/builtin submit notes take-latest at the submit site.</td></tr>
+<tr><td>Session switch</td><td>Saved pixel for the incoming key</td><td>Restores that pixel. Does not treat switch as send. Outgoing key is written first.</td></tr>
+<tr><td>History window</td><td>Send while <code>pages[sid].after</code> is set</td><td>No snap on the stale page. Jump stays. Attached stays false until latest load succeeds, then snap+attach. Failure or <code>!isCurrent</code>: stay detached, Jump visible. Loader must not pin <code>latest</code> on <code>registered.keys().next()</code>.</td></tr>
+<tr><td>Peer session pane</td><td>Send from an unfocused peer composer (session Y) while the other pane shows session X</td><td>Only Y’s scroller attaches and snaps. X does not move. Slack: overlay = composer root, pad = <code>h+24</code>, slack = 24+8. Peer Jump is the header button (no portal, no live bars). Focused shell welcome/run flags stay untouched (<code>background: true</code>).</td></tr>
+<tr><td>Ack after send</td><td>Assistant placeholder becomes last row</td><td>Does not detach. Stream continues to pin.</td></tr>
+<tr><td>Scroll then send within 600ms</td><td>Pointer on the area, then composer submit</td><td>Take-latest still snaps and pins. 600ms suppression does not apply.</td></tr>
+<tr><td>Legacy helpers</td><td>Grep after unification</td><td>No production caller of <code>scrollToBottom</code> except a no-op shim pending deletion. <code>useStickToBottom</code> gone. No module <code>stickToBottom</code> listener on <code>#chatArea</code>.</td></tr>
+</tbody>
+</table>
+</div>
+<p>RED tests to add (public entries, not implementation details): take-latest note survives ack and Strict Mode double layout; send + <code>history.after</code> stays detached until latest; pin after late row height; 600ms does not block send; <code>scrollToBottom</code> is unused; loader does not pin <code>latest</code> on <code>registered.keys().next()</code>; drain uses <code>background ? "peer:" + sessionId : sessionId</code> and not live <code>activeChatKey</code>; peer overlay/pad slack 24+8; send from peer Y does not snap pane X; welcome overflow then one retry; reduced-motion Jump is instant. Keep <code>lastRole === "user"</code> assertions until the PR that lands <code>noteTakeLatest</code>. Peer pad/overlay unit: pad <code>h+24</code>, overlay <code>h</code> ⇒ slack <code>24+8</code>.</p>
+</section>
+
+<section id="sequence"><h2>Implementation handoff</h2>
+<p>This section is the single implementation plan. Status: planned, no implementation or review pass. Read this page, AGENTS.md, tests/README.md and the OpenProgram workflow before changing code. Preserve unrelated dirty files. Start from an immutable base in a clean codex/ worktree; transfer only these two approved design pages and their existing navigation entries. Record exact base and candidate commits in the ignored reports ledger, not in this design body.</p>
+<p>One implementation owner works sequentially through A, B, C and D. Each code stage gets a specification review by a non-author, then a fresh quality review, with confirmed fixes and scoped re-review before the next stage. Reviewers do not edit tracked files. Do not split B across independently mergeable PRs. A may merge alone; B must include legacy no-op and all B tests. C can delete the no-op later. Remote push/merge is outside this planning authorization.</p>
+<div class="doc-scroll"><table><thead><tr><th>Stage</th><th>Primary files (repository-relative)</th><th>Deliverable</th></tr>
+</thead><tbody><tr><td>A</td><td><code>apps/web/lib/chat/chat-scroll.ts</code><br><code>apps/web/tests/chat/chat-scroll-follow.test.mjs</code><br><code>apps/web/tests/chat/jump-latest.test.mjs</code></td><td>Primitives, keyed observable notes, exact placement, cancellation-capable Jump helper. Preserve current callers until B.</td></tr>
+<tr><td>B</td><td><code>apps/web/components/chat/messages/use-chat-area-stick.ts</code><br><code>apps/web/components/chat/messages/message-list.tsx</code><br><code>apps/web/components/chat/peer-session-pane.tsx</code><br><code>apps/web/components/chat/composer/submit/send-chat-message.ts</code><br><code>apps/web/components/chat/composer/submit/use-chat-submit.ts</code><br><code>apps/web/lib/runtime-bridge/session-history-loader.ts</code><br><code>apps/web/lib/chat/history-viewport.ts</code><br><code>apps/web/components/chat/messages/use-history-window.ts</code><br><code>apps/web/lib/runtime-bridge/helpers.ts</code></td><td>Atomic integration: note publication/subscription, lifecycle, latest loading, per-area restoration, overlay reader, welcome handoff, Jump completion, legacy no-op and removal of its global listener. Remove lastRole inference in the same candidate.</td></tr>
+<tr><td>C</td><td><code>apps/web/lib/runtime-bridge/helpers.ts</code><br><code>apps/web/lib/runtime-bridge/chat-handlers.ts</code><br><code>apps/web/lib/runtime-bridge/conversations.ts</code><br><code>apps/web/lib/format-utils/scroll.ts</code><br><code>apps/web/lib/runtime-bridge/state.ts</code></td><td>Remove no-op callers/imports, dead useStickToBottom and obsolete _skipScrollToBottom declarations/assignments. Search all references before removal; preserve explicit locator helpers.</td></tr>
+<tr><td>D</td><td><code>Both chat-transcript-follow HTML pages</code><br><code>apps/web/tests/chat/send-chat-message-latency.test.mjs</code><br><code>apps/web/tests/desktop/self-update-scroll.test.mjs</code><br><code>apps/web/scripts/chat/check-chat-ui.mjs</code><br><code>tests/e2e/web/test_chat_history_interactions.py</code><br><code>tests/e2e/web/test_chat_transcript_follow.py</code></td><td>Combined-candidate verification and documentation evidence. Tests listed here are added with A/B/C when their behavior changes, not deferred to D. D adds no missing core behavior.</td></tr>
+</tbody></table>
+</div>
+<p>At B entry, enumerate all legacy callers and the existing provisional binding path with CodeGraph; extend the brief with exact discovered files only if required for this contract. Do not redesign ack or queue admission. The default scroller key uses captured session/background, so send-queue.ts remains unchanged; an explicit custom key outside these defaults is not introduced. Peer overlay reads the composer root offsetHeight, with the existing pad reader. No new CSS variable or pane instance id.</p>
+<h3 id="test-matrix">Acceptance matrix</h3>
+<p>A tests are pure/shared-boundary tests. B lifecycle, layout and animation cases use real React hooks in a browser, with actual public submit/queue entries and controlled WebSocket responses. Extend the existing history interaction harness; do not copy the preview policy into a test implementation. Assert scrollTop, row/overlay geometry, button visibility, request ordering and cleanup. Run StrictMode explicitly; source-string assertions cannot prove timing. New proposed test files are created in their owning stage.</p>
+<div class="doc-scroll"><table><thead><tr><th>ID</th><th>Stage</th><th>Required observation</th></tr>
+</thead><tbody><tr><td>F01</td><td>A</td><td>Empty/short/overflow geometry; main slack and peer h+24 versus h = 32px.</td></tr>
+<tr><td>F02</td><td>A/B</td><td>Independent main/peer notes in the same session; increasing generations; subscription fires without a row update.</td></tr>
+<tr><td>F03</td><td>B</td><td>Enter and Send while far up: socket accepted, user row visible above overlay before ack; assistant placeholder then stream continue following.</td></tr>
+<tr><td>F04</td><td>B</td><td>Scroll then send inside 600ms; delayed column growth follows once. Send then scroll up before delayed growth does not snap back.</td></tr>
+<tr><td>F05</td><td>B</td><td>Detached stream/tool/math growth preserves top; scroll into slack reattaches; execution-row expansion retains suppression.</td></tr>
+<tr><td>F06</td><td>B</td><td>after send: no stale-page write, pending Jump visible, success snaps; failure and cancellation stay detached.</td></tr>
+<tr><td>F07</td><td>B</td><td>Send during loading older/around with no current after; settle that request then fetch latest; stale responses never win over newer gestures.</td></tr>
+<tr><td>F08</td><td>B</td><td>StrictMode initial send and pending latest cleanup/setup: no lost intent, no duplicate logical send, no stranded pending state.</td></tr>
+<tr><td>F09</td><td>B</td><td>Send, detach, switch away and back; true unmount/remount restores saved top without replay. Switch during request does not move incoming chat.</td></tr>
+<tr><td>F10</td><td>B</td><td>Welcome first send before transcript readiness and provisional ack binding; one valid retry, cancelled retry never writes.</td></tr>
+<tr><td>F11</td><td>B</td><td>Peer Y sends while pane X is detached: only Y moves. Same-session main/peer notes stay independent; shared peer key intentionally affects matching peers.</td></tr>
+<tr><td>F12</td><td>B</td><td>Enqueue alone does not move; actual drain uses captured session/background while focus changes. Socket closed/throw or duplicate pending-first-send creates no new note.</td></tr>
+<tr><td>F13</td><td>B</td><td>Slash/builtin submit follows without relying on an immediate new row; remote local_command/compaction/status while detached do not follow.</td></tr>
+<tr><td>F14</td><td>B</td><td>Older-window Jump loads then visibly smooth-scrolls, never pre-snaps; button remains until verified completion.</td></tr>
+<tr><td>F15</td><td>B</td><td>Growth during Jump stops before animation ends: final current latest reached within 2px, then button hides; test watchdog without scrollend.</td></tr>
+<tr><td>F16</td><td>B</td><td>Pointer/wheel/scrolling key cancels pending or native Jump; no later animation/correction; send during Jump wins instantly. Reduced motion is instant.</td></tr>
+<tr><td>F17</td><td>B</td><td>Two registered areas with distinct positions restore their own older/newer/around anchors and fallback deltas; latest has no arbitrary loader pin.</td></tr>
+<tr><td>F18</td><td>C/D</td><td>No legacy global follow listener or production scrollToBottom/useStickToBottom references; explicit locators and self-update persistence guard still work.</td></tr>
+</tbody></table>
+</div>
+<h3 id="gates">Commands and completion gates</h3>
+<p>Run commands from the repository root. Install locked dev/browser dependencies and Chromium as in CONTRIBUTING.md; use the installed workspace Node dependencies. A runs its two primitive test files first; B/C run the relevant focused selection below. Capture an actual failing baseline through the production boundary before the corresponding fix, then GREEN. A RED is not required for a new API that does not exist yet; the behavioral defect still needs its B baseline.</p>
+<pre><code>node --no-warnings --experimental-strip-types --test apps/web/tests/chat/chat-scroll-follow.test.mjs apps/web/tests/chat/jump-latest.test.mjs apps/web/tests/chat/send-chat-message-latency.test.mjs apps/web/tests/desktop/self-update-scroll.test.mjs
+npm --prefix apps/web run check:chat-ui
+npm --prefix apps/web run check:provisional-send
+npm --prefix apps/web run check:send-queue
+uv run --locked --extra dev --extra browser python -m pytest -q -m browser tests/e2e/web/test_chat_transcript_follow.py tests/e2e/web/test_chat_history_interactions.py tests/e2e/web/test_automatic_chat_history.py tests/e2e/web/test_scalable_chat_history.py</code></pre><p>After the final code candidate passes both reviews, run this full manifest once. New tracked code/test/dependency changes require scoped re-review and another full run. Missing dependencies or verified baseline failures remain explicit failed/pending gates, never replaced with a smaller suite. CLI is unchanged; add desktop checks only if desktop source changes.</p>
+<pre><code>npm --prefix apps/web test
+(cd apps/web &amp;&amp; npx tsc --noEmit)
+npm --prefix apps/web run check
+npm --prefix apps/web run build
+uv run --locked --extra dev ruff check openprogram tests scripts
+uv run --locked --extra dev python -m pytest -q tests/contracts
+uv run --locked --extra dev python -m pytest -q tests/unit
+uv run --locked --extra dev python -m pytest -q tests/component
+uv run --locked --extra dev python -m pytest -q tests/integration
+uv run --locked --extra dev python -m pytest -q -m &quot;not browser&quot; tests/e2e
+uv run --locked --extra dev --extra browser python -m pytest -q -m browser tests/e2e/web
+uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m scripts.docs_site.build
+uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m scripts.docs_site.check_landing
+uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m scripts.docs_site.checklinks
+git diff --check</code></pre><p>Browser automation uses isolated test state, no real user messages or external model calls. Product visual acceptance uses only /Applications/OpenProgram.app and default profile/18100/~/.openprogram. Do not launch a dev profile, second frontend or test Electron as a visible App. After the complete feature is reviewed and committed, refresh once using scripts/refresh-local-app.sh from that checkout, then verify main send-before-ack, peer isolation, older-window send, Jump with growth/cancellation, welcome and session restore. Capture actual geometry and screenshots; the HTML preview is not evidence.</p>
+<p>Ledger: reports/chat-transcript-follow/ records each stage base/candidate, RED and GREEN commands/results, F01–F18 test names and evidence, specification/quality verdicts, fixes, final full-gate outputs, clean scoped diff and App acceptance. Keep source tests, commit, installed App and remote state separate. No implementation-complete mark until all required evidence exists. Rollback B atomically (hook + send + loader + no-op); never restore a competing writer alone.</p>
+</section>
+
+<section id="status">
+<h2>Implementation status</h2>
+<div class="doc-scroll" tabindex="0" role="region" aria-label="Implementation status">
+<table>
+<thead><tr><th>Area</th><th>State</th><th>Boundary</th></tr></thead>
+<tbody>
+<tr><td><code>chat-scroll.ts</code> math (<code>isChatAtBottom</code>, slack, storage, <code>animateJumpToLatest</code>, <code>resolveChatScrollTop</code>)</td><td>Present</td><td>Whether-to-follow is encoded; take-latest latch, <code>latestScrollTop</code>, and reduced-motion Jump are not the unified owner yet.</td></tr>
+<tr><td><code>useChatAreaStick</code> + Jump portal</td><td>Partial</td><td>Live React owner, but lastRole ownTurn, 600ms vs send, stale-window send, and peer composer height remain.</td></tr>
+<tr><td>Optimistic user row at send</td><td>Present</td><td><code>appendLocalUserTurn</code> at socket accept. Does not yet note take-latest.</td></tr>
+<tr><td>Legacy <code>scrollToBottom</code> / module stick flag</td><td>Present and harmful</td><td>Still called from chat-handlers and conversations.</td></tr>
+<tr><td><code>useStickToBottom</code></td><td>Dead code</td><td>Unused; not yet deleted.</td></tr>
+<tr><td>History loader <code>scrollTop</code> writes</td><td>Present and harmful</td><td>Fourth owner. In scope to stop pinning <code>latest</code> on <code>registered.keys().next()</code>. Send/Jump placement belongs to the hook; per-area window restoration belongs to history-viewport helpers.</td></tr>
+<tr><td>Unified follow contract on this page</td><td class="warn">Not implemented</td><td>No production evidence. Do not treat this preview as App behavior. No review pass is claimed.</td></tr>
+</tbody>
+</table>
+</div>
+<p>Rollout: no feature flag. Do not merge the hook change without send identity (<code>lastRole</code> fallback or <code>noteTakeLatest</code> in the same train). If send-from-scrolled-up fails after a partial stack, revert that train. App and browser share the web renderer; rollback is git revert, not a protocol change.</p>
+
+<h3 id="open-questions">Implementation defaults</h3>
+<ul>
+<li>Read peer overlay directly from the composer root offsetHeight and pad from readBottomPadding. Add no CSS variable and do not subtract 24 from --peer-composer-h.</li>
+<li>Multiple peer panes for the same session share peer:${sessionId} and may respond to the same note. Add no pane instance id in this scope. Different sessions and main versus peer retain independent keys.</li>
+</ul>
+
+<h3 id="references">References</h3>
+<ul>
+  <li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/chat/chat-scroll.ts">apps/web/lib/chat/chat-scroll.ts</a></li>
+  <li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/chat/messages/use-chat-area-stick.ts">use-chat-area-stick.ts</a></li>
+  <li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/chat/messages/message-list.tsx">message-list.tsx</a></li>
+  <li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/runtime-bridge/helpers.ts">helpers.ts</a></li>
+  <li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/runtime-bridge/session-history-loader.ts">session-history-loader.ts</a></li>
+  <li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/tests/desktop/self-update-scroll.test.mjs">self-update-scroll.test.mjs</a></li>
+  <li><a href="interaction-feedback.md">interaction-feedback.md</a> (0ms rule; send-bubble sentence is stale vs <code>appendLocalUserTurn</code>)</li>
+  <li><a href="send-queue-reliability.html">send-queue-reliability.html</a></li>
+  <li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/cli/src/runtime/ink/components/ScrollBox.tsx">CLI ScrollBox.tsx</a> (comparison only)</li>
+</ul>
+</section>
+</main>
+<script>
+(function () {
+  const root = document.documentElement;
+  const themeBtn = document.getElementById("themeBtn");
+  function applyTheme(mode) {
+    if (mode === "light" || mode === "dark") root.setAttribute("data-theme", mode);
+    else root.removeAttribute("data-theme");
+    themeBtn.setAttribute("aria-pressed", mode === "dark" ? "true" : "false");
+    themeBtn.textContent = mode === "dark" ? "Dark" : mode === "light" ? "Light" : "Theme";
+  }
+  try {
+    const stored = localStorage.getItem("op-docs-theme");
+    if (stored === "light" || stored === "dark") applyTheme(stored);
+  } catch (e) { /* ignore */ }
+  themeBtn.addEventListener("click", function () {
+    const cur = root.getAttribute("data-theme");
+    const next = cur === "dark" ? "light" : cur === "light" ? "" : "dark";
+    applyTheme(next || null);
+    try { if (next) localStorage.setItem("op-docs-theme", next); else localStorage.removeItem("op-docs-theme"); } catch (e) { /* ignore */ }
+  });
+
+  const area = document.getElementById("chatArea");
+  const column = document.getElementById("chatMessages");
+  const composer = document.getElementById("composer");
+  const jumpBtn = document.getElementById("jumpBtn");
+  const logEl = document.getElementById("policyLog");
+  const chipAttached = document.getElementById("chipAttached");
+  const chipWindow = document.getElementById("chipWindow");
+  const olderBtn = document.getElementById("olderBtn");
+  const EPSILON = 8;
+  const lines = [];
+  let attached = true;
+  let jumping = false;
+  let pendingLatest = false;
+  let hasNewer = false;
+  let streaming = false;
+  let streamTimer = 0;
+  let pendingTimer = 0;
+  let n = 0;
+  let session = "A";
+  const saved = { A: null, B: null };
+  const transcripts = { A: [], B: [] };
+  let cancelJump = null;
+
+  function composerH() { return composer.getBoundingClientRect().height || 64; }
+  function padPx() {
+    return Math.max(area.clientHeight * 0.25, composerH() + 24);
+  }
+  function slack() { return Math.max(0, padPx() - composerH()) + EPSILON; }
+  function remaining() { return area.scrollHeight - area.scrollTop - area.clientHeight; }
+  function isAtBottom() { return !hasNewer && remaining() <= slack(); }
+  function latestTop() { return Math.max(0, area.scrollHeight - area.clientHeight); }
+  function reduceMotion() {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }
+  function log(msg) {
+    lines.unshift(msg);
+    logEl.textContent = "Policy log: " + lines.slice(0, 6).join(" · ");
+  }
+  function applyPad() {
+    column.style.paddingBottom = padPx() + "px";
+    document.getElementById("chatView").style.setProperty("--demo-composer-h", composerH() + "px");
+  }
+  function syncChips() {
+    chipAttached.textContent = pendingLatest ? "pending latest" : attached ? "attached" : "detached";
+    chipAttached.className = "chip " + (attached && !pendingLatest ? "on" : "off");
+    chipWindow.textContent = hasNewer ? "older window" : "latest window";
+    jumpBtn.classList.toggle("show", !attached || jumping || pendingLatest);
+    jumpBtn.classList.toggle("is-live", streaming);
+    jumpBtn.innerHTML = streaming
+      ? '<span class="jump-live" aria-hidden="true"><i></i><i></i><i></i></span> Jump to latest'
+      : "Jump to latest";
+    olderBtn.setAttribute("aria-pressed", String(hasNewer));
+  }
+  function render() {
+    const rows = transcripts[session];
+    column.replaceChildren();
+    rows.forEach(function (row) {
+      const el = document.createElement("div");
+      el.className = "msg " + row.role;
+      el.textContent = row.text;
+      column.appendChild(el);
+    });
+    applyPad();
+    syncChips();
+  }
+  function snap() {
+    attached = true;
+    jumping = false;
+    if (cancelJump) { cancelJump(); cancelJump = null; }
+    area.scrollTop = latestTop();
+    syncChips();
+  }
+  function takeLatest(reason) {
+    if (cancelJump) { cancelJump(); cancelJump = null; jumping = false; }
+    if (hasNewer) {
+      pendingLatest = true;
+      attached = false;
+      log(reason + ": pending latest window, keep Jump, no stale snap");
+      syncChips();
+      if (pendingTimer) window.clearTimeout(pendingTimer);
+      pendingTimer = window.setTimeout(function () {
+        pendingTimer = 0;
+        hasNewer = false;
+        pendingLatest = false;
+        render();
+        snap();
+        log(reason + ": latest loaded, snap and attach");
+      }, 280);
+      return;
+    }
+    pendingLatest = false;
+    log(reason + ": instant snap, attach");
+    render();
+    snap();
+    requestAnimationFrame(function () { if (attached) area.scrollTop = latestTop(); });
+  }
+  function seed(target) {
+    const rows = [];
+    for (let i = 1; i <= 18; i += 1) {
+      rows.push({ role: "user", text: "User turn " + i + " on session " + target + "." });
+      rows.push({ role: "assistant", text: "Assistant reply " + i + ". Earlier turns exist so you can scroll away from the live edge." });
+    }
+    transcripts[target] = rows;
+  }
+  function send() {
+    n += 1;
+    transcripts[session].push({ role: "user", text: "Sent message " + n + " (optimistic 0ms row)." });
+    transcripts[session].push({ role: "pending", text: "Agentic is thinking…" });
+    takeLatest("send");
+    streaming = true;
+    syncChips();
+    window.setTimeout(function () {
+      const rows = transcripts[session];
+      const last = rows[rows.length - 1];
+      if (last && last.role === "pending") {
+        last.role = "assistant";
+        last.text = "";
+        render();
+        if (attached) snap();
+        startStream();
+      }
+    }, 280);
+  }
+  function startStream() {
+    stopStream();
+    let ticks = 0;
+    streamTimer = window.setInterval(function () {
+      ticks += 1;
+      const rows = transcripts[session];
+      const last = rows[rows.length - 1];
+      if (!last || last.role !== "assistant") { stopStream(); return; }
+      last.text += (last.text ? " " : "") + "token-" + ticks;
+      render();
+      if (attached && !jumping) area.scrollTop = latestTop();
+      if (ticks >= 24) stopStream();
+    }, 90);
+    log(attached ? "stream: pin (attached)" : "stream: hold (detached)");
+  }
+  function stopStream() {
+    if (streamTimer) window.clearInterval(streamTimer);
+    streamTimer = 0;
+    streaming = false;
+    syncChips();
+  }
+  function jump() {
+    if (hasNewer) {
+      pendingLatest = true;
+      attached = false;
+      jumping = false;
+      log("jump: pending latest window, keep Jump");
+      syncChips();
+      if (pendingTimer) window.clearTimeout(pendingTimer);
+      pendingTimer = window.setTimeout(function () {
+        pendingTimer = 0;
+        hasNewer = false;
+        pendingLatest = false;
+        render();
+        startJumpRide();
+      }, 280);
+      return;
+    }
+    startJumpRide();
+  }
+  function startJumpRide() {
+    attached = true;
+    jumping = true;
+    syncChips();
+    if (reduceMotion()) { snap(); log("jump: reduced-motion snap"); return; }
+    const to = latestTop();
+    if (Math.abs(area.scrollTop - to) < 2) { jumping = false; syncChips(); return; }
+    let done = false;
+    const finish = function () {
+      if (done) return;
+      done = true;
+      jumping = false;
+      attached = true;
+      area.removeEventListener("scrollend", finish);
+      window.clearTimeout(tid);
+      syncChips();
+      log("jump: smooth settle, attach");
+    };
+    area.addEventListener("scrollend", finish, { once: true });
+    const tid = window.setTimeout(finish, 700);
+    cancelJump = function () { done = true; area.removeEventListener("scrollend", finish); window.clearTimeout(tid); };
+    area.scrollTo({ top: to, behavior: "smooth" });
+    log("jump: smooth re-attach, button stays until settle");
+  }
+  function cancelRideFromUser() {
+    if (!jumping) return;
+    if (cancelJump) { cancelJump(); cancelJump = null; }
+    jumping = false;
+    attached = isAtBottom();
+    syncChips();
+    log("jump: cancelled by pointer/wheel");
+  }
+
+  area.addEventListener("pointerdown", cancelRideFromUser, { passive: true });
+  area.addEventListener("wheel", cancelRideFromUser, { passive: true });
+  area.addEventListener("scroll", function () {
+    if (jumping || pendingLatest || area.clientHeight <= 0) return;
+    attached = isAtBottom();
+    saved[session] = area.scrollTop;
+    syncChips();
+  }, { passive: true });
+  area.addEventListener("keydown", function (ev) {
+    if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); send(); }
+  });
+
+  document.getElementById("seedBtn").addEventListener("click", function () {
+    seed(session); hasNewer = false; attached = true; render(); snap(); log("seed: 18 turns, attach at latest");
+  });
+  document.getElementById("sendBtn").addEventListener("click", send);
+  document.getElementById("sendBtn2").addEventListener("click", send);
+  document.getElementById("streamBtn").addEventListener("click", function () {
+    const rows = transcripts[session];
+    if (!rows.length) seed(session);
+    if (!rows.length || rows[rows.length - 1].role !== "assistant") {
+      rows.push({ role: "assistant", text: "" });
+    }
+    render();
+    streaming = true;
+    startStream();
+  });
+  olderBtn.addEventListener("click", function () {
+    hasNewer = !hasNewer;
+    attached = isAtBottom();
+    render();
+    log(hasNewer ? "window: older page, detach" : "window: back on latest");
+  });
+  document.getElementById("switchBtn").addEventListener("click", function () {
+    saved[session] = area.scrollTop;
+    session = session === "A" ? "B" : "A";
+    if (!transcripts[session].length) seed(session);
+    hasNewer = false;
+    render();
+    const restore = saved[session];
+    area.scrollTop = restore == null ? latestTop() : restore;
+    attached = isAtBottom();
+    syncChips();
+    log("switch: restore session " + session + " (not a send)");
+  });
+  jumpBtn.addEventListener("click", jump);
+  window.addEventListener("resize", function () { applyPad(); if (attached && !hasNewer) area.scrollTop = latestTop(); });
+
+  seed("A");
+  render();
+  snap();
+})();
+</script>
+</body>
+</html>

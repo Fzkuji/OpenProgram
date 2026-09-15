@@ -17,7 +17,6 @@ import { runtimeState, getSocket, type TreeEntry } from "./state";
 import { updateSessionGoal } from "./goal-state";
 import {
   formatProgramResultContent,
-  scrollToBottom,
   setWelcomeVisible,
 } from "./helpers";
 import {
@@ -607,7 +606,6 @@ export function loadSessionData(data: LegacyConv): void {
 
   const area = document.getElementById("chatArea");
   const savedScroll = readChatScroll(sessionStorage, id);
-  if (savedScroll !== null) runtimeState._skipScrollToBottom = true;
   renderSessionMessages(map[id]);
   const fts = (data.function_trees as TreeNode[] | undefined) || [];
   for (const ft of fts) {
@@ -751,13 +749,10 @@ export function renderSessionMessages(conv: LegacyConv): void {
       requestAnimationFrame(() => {
         (pivotEl as HTMLElement).scrollIntoView({ behavior: "auto", block: "start" });
       });
-      runtimeState._skipScrollToBottom = false;
       return;
     }
   }
 
-  if (!runtimeState._skipScrollToBottom) scrollToBottom({ force: true });
-  runtimeState._skipScrollToBottom = false;
 }
 
 /* ===== window bridge ============================================= */

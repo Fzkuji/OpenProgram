@@ -48,7 +48,6 @@ export function SpawnedFromCard({ msg }: { msg: ChatMsg }) {
         head: firstReply,
         anchor: sf.callerId,
       };
-      runtimeState._skipScrollToBottom = true;
     }
     wsSend({
       action: "checkout_branch",

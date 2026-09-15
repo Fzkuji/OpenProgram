@@ -44,6 +44,7 @@ const { runtimeState, setSocket } = await import("../../lib/runtime-bridge/state
 const { useSessionStore } = await import("../../lib/session-store/index.ts");
 const pending = await import("../../lib/chat/pending-user-text.ts");
 const { sendChatMessage } = await import("../../components/chat/composer/submit/send-chat-message.ts");
+const follow = await import("../../lib/chat/chat-scroll.ts");
 
 function reset(sid) {
   pending.clearPendingUserText(sid);
@@ -70,6 +71,23 @@ test("socket write immediately paints pending user row before delayed ACK", () =
   assert.equal(row.content, "delayed");
   assert.equal(row.status, "pending");
   assert.equal(sentCleanup, 1);
+  assert.equal(follow.peekTakeLatest(sid, sid)?.turnSeed, row.id);
+  assert.equal(follow.peekTakeLatest(sid, follow.defaultScrollerKey(sid, true)), null);
+});
+
+test("background send notes the peer scroller key, not live focus", () => {
+  const sid = "s_peer_drain";
+  reset(sid);
+  useSessionStore.setState({ currentSessionId: "other", activeChatKey: "other" });
+  setSocket({ readyState: 1, send() {} });
+  assert.equal(sendChatMessage({
+    text: "peer", sessionId: sid, thinking: "medium", toolsEnabled: true,
+    webSearchEnabled: false, background: true,
+  }), true);
+  const rowId = useSessionStore.getState().messageOrder[sid][0];
+  assert.equal(follow.peekTakeLatest(sid, follow.defaultScrollerKey(sid, true))?.turnSeed, rowId);
+  assert.equal(follow.peekTakeLatest(sid, "other"), null);
+  assert.equal(follow.peekTakeLatest("other", "other"), null);
 });
 
 test("socket failure leaves draft reservation and paints no optimistic row", () => {

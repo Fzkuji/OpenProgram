@@ -124,7 +124,6 @@ export function AgentBranchBanner() {
         head: info.firstReply,
         anchor: info.spawnCaller,
       };
-      runtimeState._skipScrollToBottom = true;
     }
     wsSend({
       action: "checkout_branch",

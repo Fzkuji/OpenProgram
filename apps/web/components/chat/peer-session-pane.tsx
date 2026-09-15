@@ -125,9 +125,12 @@ export function PeerSessionPane({
 
   const columnRef = useRef<HTMLDivElement | null>(null);
   const lastId = ids.at(-1) ?? null;
-  const lastRole = useSessionStore(s => lastId ? s.messagesById[lastId]?.role : null);
-  const { detached, jumpToLatest } = useChatAreaStick(scrollKey, lastId, lastRole === "user", true,
-    { sessionId, areaRef, columnRef });
+  const { detached, jumpToLatest } = useChatAreaStick(scrollKey, lastId, true, {
+    sessionId,
+    areaRef,
+    columnRef,
+    composerRootRef: composerHostRef,
+  });
   const streaming = useSessionStore((s) =>
     sessionId ? Boolean(s.runningTasks[sessionId]) : false,
   );

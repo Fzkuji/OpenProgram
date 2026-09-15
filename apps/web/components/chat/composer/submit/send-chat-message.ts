@@ -11,6 +11,7 @@ import {
   rememberSendSettings,
 } from "@/lib/chat/send-queue";
 import { appendLocalUserTurn } from "@/lib/net/chat-stream";
+import { defaultScrollerKey, noteTakeLatest } from "@/lib/chat/chat-scroll";
 import {
   draftChannelChoiceFor,
   draftChannelChoiceHost,
@@ -98,6 +99,8 @@ interface SendMessageBridgeArgs {
   /** Restore the captured draft after a pre-ACK backend rejection. */
   onReject?: () => void;
   hasAttachments?: boolean;
+  /** Submitting scroller. Defaults from sessionId + background. Drain must not pass live activeChatKey. */
+  scrollerKey?: string;
 }
 
 function reservePendingChatSend(
@@ -162,6 +165,7 @@ export function sendChatMessage({
   onSent,
   onReject,
   hasAttachments = Boolean(attachments?.length),
+  scrollerKey,
 }: SendMessageBridgeArgs): boolean {
   const ws = getSocket();
   if (!ws || ws.readyState !== WebSocket.OPEN) return false;
@@ -304,6 +308,11 @@ export function sendChatMessage({
   const optimisticMessageId = getPendingUserMessageId(sessionId ?? "");
   if (sessionId && optimisticMessageId) {
     appendLocalUserTurn(sessionId, optimisticMessageId, text, undefined, acceptedAt, "pending");
+    noteTakeLatest({
+      sessionId,
+      scrollerKey: scrollerKey ?? defaultScrollerKey(sessionId, background),
+      turnSeed: optimisticMessageId,
+    });
   }
   onSent?.();
   if (sessionId) {

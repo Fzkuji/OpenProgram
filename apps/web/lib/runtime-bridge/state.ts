@@ -52,7 +52,6 @@ export interface RuntimeState {
   availableFunctions: unknown[];
   pendingResponses: Record<string, unknown>;
   sidebarOpen: boolean;
-  _skipScrollToBottom: boolean;
   programsMeta: ProgramsMeta;
   _thinkingEffort: string | null;
   _execThinkingEffort: string | null;
@@ -146,7 +145,6 @@ export const runtimeState: RuntimeState = {
   availableFunctions: [],
   pendingResponses: {},
   sidebarOpen: initialSidebarOpen(),
-  _skipScrollToBottom: false,
   programsMeta: { favorites: [], folders: {} },
   _thinkingEffort: null,
   _execThinkingEffort: null,

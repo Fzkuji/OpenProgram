@@ -36,3 +36,39 @@ export function saveHistoryAnchor(id: string, anchor: HistoryAnchor | null): voi
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(Object.fromEntries(entries)));
   } catch { /* Storage may be disabled. */ }
 }
+
+export interface AreaRestoreState {
+  area: HTMLElement;
+  chatKey: string;
+  anchor: HistoryAnchor | null;
+  oldTop: number;
+  oldHeight: number;
+}
+
+export function captureAreaRestoreState(
+  area: HTMLElement,
+  chatKey: string,
+): AreaRestoreState {
+  return {
+    area,
+    chatKey,
+    anchor: captureHistoryAnchor(area),
+    oldTop: area.scrollTop,
+    oldHeight: area.scrollHeight,
+  };
+}
+
+export function restoreAreaWindow(
+  state: AreaRestoreState,
+  direction: string,
+  around?: string,
+): void {
+  const { area, anchor, oldTop, oldHeight } = state;
+  if (!area.isConnected) return;
+  if (direction === "around" && around) {
+    restoreHistoryAnchor(area, { id: around, offset: 0 });
+  } else if (!anchor || !restoreHistoryAnchor(area, anchor)) {
+    area.scrollTop = oldTop + area.scrollHeight - oldHeight;
+    area.dispatchEvent(new Event("scroll"));
+  }
+}

@@ -2,7 +2,7 @@ import { flushSync } from 'react-dom';
 import { convToChatMsgs } from '@/lib/chat/conv-mapper';
 import { useSessionHistory, updateSessionHistory, type HistoryPage } from '@/lib/chat/session-history';
 import { HistoryWindow, type HistoryDirection, type HistoryRow } from '@/lib/chat/history-window';
-import { captureHistoryAnchor, restoreHistoryAnchor } from '@/lib/chat/history-viewport';
+import { captureAreaRestoreState, restoreAreaWindow } from '@/lib/chat/history-viewport';
 import { clearHeights, retainRowHeights } from '@/lib/chat/message-window';
 import { useSessionStore } from '@/lib/session-store';
 import { wsRequest } from '@/lib/net/ws-request';
@@ -97,10 +97,13 @@ export async function loadSessionHistoryWindow(id: string, direction: HistoryDir
   const conv = runtimeState.conversations[id] as {messages?: HistoryRow[]} | undefined;
   if (!conv) { updateSessionHistory(id, expected.generation, {loading:false}); return false; }
   const registered=viewports.get(id);
-  const area = registered?.keys().next().value
-    ?? (runtimeState.currentSessionId === id ? document.getElementById('chatArea') : null);
-  const anchor = area ? captureHistoryAnchor(area) : null;
-  const oldHeight = area?.scrollHeight ?? 0, oldTop = area?.scrollTop ?? 0;
+  const captures = registered
+    ? [...registered.entries()].map(([area, chatKey]) => captureAreaRestoreState(area, chatKey))
+    : [];
+  if (!captures.length && runtimeState.currentSessionId === id) {
+    const area = document.getElementById('chatArea');
+    if (area) captures.push(captureAreaRestoreState(area, useSessionStore.getState().activeChatKey ?? id));
+  }
   const store = useSessionStore.getState();
   const current = (store.messageOrder[id] ?? []).map(mid=>store.messagesById[mid]).filter(Boolean);
   const previous = windows.get(id);
@@ -108,7 +111,7 @@ export async function loadSessionHistoryWindow(id: string, direction: HistoryDir
   let messages: HistoryRow[], history: HistoryPage;
   if (page.history.snapshot) {
     const historyWindow = previous ?? new HistoryWindow();
-    historyWindow.add(page.messages,page.history,direction, direction === 'around' ? around : anchor?.id);
+    historyWindow.add(page.messages,page.history,direction, direction === 'around' ? around : captures[0]?.anchor?.id);
     windows.delete(id); windows.set(id,historyWindow);
     messages=historyWindow.messages; history=historyWindow.history!;
   } else {
@@ -128,13 +131,14 @@ export async function loadSessionHistoryWindow(id: string, direction: HistoryDir
     store.setMessages(id,merged);
     updateSessionHistory(id,expected.generation,{...history,loading:false,error:false});
   });
-  const chatKey=(area ? registered?.get(area) : undefined) ?? (store.currentSessionId===id ? store.activeChatKey : id);
-  if (chatKey) retainRowHeights(chatKey,new Set(merged.map(m=>m.id)));
-  if (area && (registered?.has(area) || runtimeState.currentSessionId===id)) {
-    if (direction==='latest') area.scrollTop=area.scrollHeight;
-    else if (direction==='around' && around) restoreHistoryAnchor(area,{id:around,offset:0});
-    else if (!anchor || !restoreHistoryAnchor(area,anchor)) area.scrollTop=oldTop+area.scrollHeight-oldHeight;
-    area.dispatchEvent(new Event('scroll'));
+  const liveIds = new Set(merged.map(m=>m.id));
+  const liveRegistered = viewports.get(id);
+  for (const cap of captures) {
+    retainRowHeights(cap.chatKey, liveIds);
+    if (direction === 'latest') continue;
+    if (liveRegistered?.has(cap.area) || cap.area.isConnected) {
+      restoreAreaWindow(cap, direction, around);
+    }
   }
   trimHistoryWindows(id);
   return true;

@@ -6,13 +6,9 @@
  */
 
 import { useSessionStore } from "@/lib/session-store";
-import { isChatAtBottom, readBottomPadding, readComposerHeight } from "@/lib/chat/chat-scroll";
-import { escHtml, renderMathInChat } from "./markdown-render";
+import { escHtml } from "./markdown-render";
 
 export { escHtml, renderMathInChat, renderMd, sanitizeHtml } from "./markdown-render";
-
-/** Module-local flag replacing the old `window.__stickListenerInstalled`. */
-let stickListenerInstalled = false;
 
 export function escAttr(s: unknown): string {
   if (typeof s !== "string") s = String(s ?? "");
@@ -27,48 +23,6 @@ export function escAttr(s: unknown): string {
 export function truncate(s: string, len: number): string {
   if (!s) return "";
   return s.length > len ? s.slice(0, len - 3) + "..." : s;
-}
-
-let stickToBottom = true;
-
-function setupStickToBottomListener(): void {
-  if (stickListenerInstalled) return;
-  const area = document.getElementById("chatArea");
-  if (!area) return;
-  area.addEventListener(
-    "scroll",
-    () => {
-      const msgs = document.getElementById("chatMessages");
-      stickToBottom = isChatAtBottom(area, readBottomPadding(msgs), readComposerHeight());
-    },
-    { passive: true },
-  );
-  stickListenerInstalled = true;
-}
-
-export function scrollToBottom(opts?: { force?: boolean }): void {
-  renderMathInChat();
-  const area = document.getElementById("chatArea");
-  const messages = document.getElementById("chatMessages");
-  if (!area || !messages) return;
-  setupStickToBottomListener();
-  const force = !!(opts && opts.force);
-  if (!force && !stickToBottom) return;
-  requestAnimationFrame(() => {
-    const bubbles = messages.querySelectorAll<HTMLElement>(".message");
-    const last = bubbles.length ? bubbles[bubbles.length - 1] : null;
-    if (!last) {
-      area.scrollTop = area.scrollHeight;
-      return;
-    }
-    const areaRect = area.getBoundingClientRect();
-    const msgRect = last.getBoundingClientRect();
-    const delta = msgRect.bottom - areaRect.bottom + 16;
-    if (delta > 0) area.scrollTop += delta;
-    if (area.scrollTop > area.scrollHeight - area.clientHeight) {
-      area.scrollTop = area.scrollHeight - area.clientHeight;
-    }
-  });
 }
 
 // React <MessageList /> owns the message stream — legacy bubble
@@ -102,7 +56,6 @@ export function addSystemMessage(text: string): void {
   div.className = "system-message";
   div.textContent = text;
   appendToChat();
-  scrollToBottom();
 }
 
 export function parseRunCommandForDisplay(text: string): {

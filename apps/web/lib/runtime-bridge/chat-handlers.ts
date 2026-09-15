@@ -31,7 +31,7 @@ import {
   dropDraftChannelChoice,
 } from "./draft-channel-choice";
 import { runtimeState, getSocket } from "./state";
-import { escHtml, scrollToBottom, setWelcomeVisible } from "./helpers";
+import { escHtml, setWelcomeVisible } from "./helpers";
 import {
   setRunning,
   updateContextStats,
@@ -827,7 +827,6 @@ export function handleChatResponse(data: ChatResponseData): void {
         content: translateText("Compacting context…", "正在压缩上下文…"),
         status: "done",
       });
-      if (targetsActive) scrollToBottom();
     }
     return;
   }
@@ -861,7 +860,6 @@ export function handleChatResponse(data: ChatResponseData): void {
           sock.send(JSON.stringify({ action: "load_session", session_id: sid }));
         }
       }
-      if (targetsActive) scrollToBottom();
     }
     return;
   }
@@ -878,7 +876,6 @@ export function handleChatResponse(data: ChatResponseData): void {
           : translateText("Context compaction failed", "上下文压缩失败"),
         status: "done",
       });
-      if (targetsActive) scrollToBottom();
     }
     return;
   }
@@ -915,7 +912,6 @@ export function handleChatResponse(data: ChatResponseData): void {
         content,
         status: "done",
       });
-      if (targetsActiveLocal) scrollToBottom();
     }
     return;
   }
@@ -1173,7 +1169,6 @@ function handleStatusResponse(
       );
     }
   }
-  scrollToBottom();
 }
 
 /* ===== follow-up question ======================================== */
@@ -1207,7 +1202,6 @@ function handleFollowUpQuestion(data: { question?: string }): void {
   contentArea.insertAdjacentHTML("beforeend", fuHtml);
   const inp = document.getElementById("followUpInput") as HTMLInputElement | null;
   if (inp) inp.focus();
-  scrollToBottom();
 }
 
 /* ===== follow-up submit ========================================== */

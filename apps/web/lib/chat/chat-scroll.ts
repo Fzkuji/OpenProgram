@@ -154,7 +154,46 @@ export function readComposerHeight(): number {
 /** Same settle window as the left message rail. */
 export const CHAT_SMOOTH_SCROLL_FALLBACK_MS = 700;
 
-/** Fire once the area's native smooth scroll has stopped. */
+/** Exact Jump placement; do not substitute reattachment slack. */
+export const JUMP_PLACEMENT_TOLERANCE_PX = 2;
+
+export function latestScrollTop(area: ScrollMetrics): number {
+  if (!Number.isFinite(area.scrollHeight) || !Number.isFinite(area.clientHeight)) {
+    return 0;
+  }
+  return Math.max(0, area.scrollHeight - area.clientHeight);
+}
+
+export function snapToLatest(area: HTMLElement): void {
+  area.scrollTop = latestScrollTop(area);
+}
+
+/** Stop in-flight native smooth scrolling without a later correction. */
+export function stopAreaScroll(area: HTMLElement): void {
+  const top = area.scrollTop;
+  if (typeof area.scrollTo === "function") {
+    area.scrollTo({ top, behavior: "auto" });
+  } else {
+    area.scrollTop = top;
+  }
+}
+
+function prefersReducedMotion(): boolean {
+  return typeof matchMedia === "function"
+    && matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function placeAtLatest(
+  area: HTMLElement,
+  getTarget?: () => number,
+): void {
+  const target = getTarget ? getTarget() : latestScrollTop(area);
+  if (Math.abs(area.scrollTop - target) > JUMP_PLACEMENT_TOLERANCE_PX) {
+    area.scrollTop = target;
+  }
+}
+
+/** Fire once the area's native smooth scroll has stopped. Cancel stops motion. */
 export function whenAreaScrollSettles(
   area: HTMLElement,
   onDone: () => void,
@@ -165,29 +204,155 @@ export function whenAreaScrollSettles(
     if (done) return;
     done = true;
     area.removeEventListener("scrollend", fire);
-    window.clearTimeout(tid);
+    globalThis.clearTimeout(tid);
     onDone();
   };
   area.addEventListener("scrollend", fire, { once: true });
-  const tid = window.setTimeout(fire, fallbackMs);
+  const tid = globalThis.setTimeout(fire, fallbackMs);
   return () => {
+    if (done) return;
     done = true;
     area.removeEventListener("scrollend", fire);
-    window.clearTimeout(tid);
+    globalThis.clearTimeout(tid);
+    stopAreaScroll(area);
   };
 }
 
-/** Native smooth scroll — same curve as the left rail ticks. */
+export interface AnimateJumpOptions {
+  getTarget?: () => number;
+  reducedMotion?: boolean;
+}
+
+/**
+ * Native smooth scroll to the padding edge. At settle or watchdog timeout,
+ * recompute the target and apply one instant correction. Cancel stops
+ * browser motion and skips that correction.
+ */
 export function animateJumpToLatest(
   area: HTMLElement,
   onDone?: () => void,
+  options?: AnimateJumpOptions,
 ): () => void {
-  const to = Math.max(0, area.scrollHeight - area.clientHeight);
-  if (Math.abs(area.scrollTop - to) < 2) {
+  const getTarget = options?.getTarget ?? (() => latestScrollTop(area));
+  const reduced = options?.reducedMotion ?? prefersReducedMotion();
+  if (reduced) {
+    placeAtLatest(area, getTarget);
     onDone?.();
     return () => {};
   }
-  const cancel = whenAreaScrollSettles(area, () => onDone?.());
+  const to = getTarget();
+  if (Math.abs(area.scrollTop - to) <= JUMP_PLACEMENT_TOLERANCE_PX) {
+    placeAtLatest(area, getTarget);
+    onDone?.();
+    return () => {};
+  }
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    placeAtLatest(area, getTarget);
+    onDone?.();
+  };
+  const cancelSettle = whenAreaScrollSettles(area, finish);
   area.scrollTo({ top: to, behavior: "smooth" });
-  return cancel;
+  return () => {
+    if (finished) return;
+    finished = true;
+    cancelSettle();
+  };
+}
+
+export function defaultScrollerKey(sessionId: string, background: boolean): string {
+  return background ? `peer:${sessionId}` : sessionId;
+}
+
+export type TakeLatestNote = {
+  sessionId: string;
+  scrollerKey: string;
+  turnSeed: string;
+  generation: number;
+};
+
+type TakeLatestListener = (note: TakeLatestNote) => void;
+
+const takeLatestNotes = new Map<string, TakeLatestNote>();
+const takeLatestSettled = new Map<string, number>();
+const takeLatestListeners = new Set<TakeLatestListener>();
+let takeLatestGeneration = 0;
+
+function takeLatestMapKey(sessionId: string, scrollerKey: string): string {
+  return `${sessionId}\0${scrollerKey}`;
+}
+
+export function noteTakeLatest(
+  note: Omit<TakeLatestNote, "generation">,
+): TakeLatestNote {
+  takeLatestGeneration += 1;
+  const stamped: TakeLatestNote = {
+    sessionId: note.sessionId,
+    scrollerKey: note.scrollerKey,
+    turnSeed: note.turnSeed,
+    generation: takeLatestGeneration,
+  };
+  takeLatestNotes.set(takeLatestMapKey(note.sessionId, note.scrollerKey), stamped);
+  for (const listener of takeLatestListeners) listener(stamped);
+  return stamped;
+}
+
+export function peekTakeLatest(
+  sessionId: string,
+  scrollerKey: string,
+): TakeLatestNote | null {
+  return takeLatestNotes.get(takeLatestMapKey(sessionId, scrollerKey)) ?? null;
+}
+
+export function lastSettledTakeLatest(
+  sessionId: string,
+  scrollerKey: string,
+): number {
+  return takeLatestSettled.get(takeLatestMapKey(sessionId, scrollerKey)) ?? 0;
+}
+
+/** Record completion or cancellation. Does not delete the note. */
+export function settleTakeLatest(
+  sessionId: string,
+  scrollerKey: string,
+  generation: number,
+): void {
+  const key = takeLatestMapKey(sessionId, scrollerKey);
+  const prev = takeLatestSettled.get(key) ?? 0;
+  if (generation > prev) takeLatestSettled.set(key, generation);
+}
+
+export function subscribeTakeLatest(listener: TakeLatestListener): () => void {
+  takeLatestListeners.add(listener);
+  return () => {
+    takeLatestListeners.delete(listener);
+  };
+}
+
+/** Main overlay is `--main-composer-height`. Peer overlay is the composer root. */
+export function readComposerOverlay(
+  area: HTMLElement | null,
+  composerRoot?: HTMLElement | null,
+): number {
+  if (composerRoot && composerRoot.isConnected) {
+    const node = composerRoot.offsetHeight > 0
+      ? composerRoot
+      : composerRoot.firstElementChild;
+    const h = node && typeof (node as HTMLElement).offsetHeight === "number"
+      ? (node as HTMLElement).offsetHeight
+      : 0;
+    return Number.isFinite(h) && h > 0 ? h : 0;
+  }
+  if (area) {
+    const peer = area.closest(".peer-session-pane")?.querySelector(
+      ".peer-session-composer-host > *",
+    );
+    if (peer instanceof HTMLElement) {
+      const h = peer.offsetHeight;
+      if (Number.isFinite(h) && h > 0) return h;
+    }
+  }
+  return readComposerHeight();
 }

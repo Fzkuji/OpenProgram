@@ -757,13 +757,9 @@ export const MessageList = memo(function MessageList({
     lastId ? (s.messagesById[lastId]?.role ?? null) : null,
   );
   const loadingId = useSessionStore((s) => s.transcriptLoadingId);
-  // `lastRole === "user"` means the row that just arrived is the reader's
-  // own send — that follows to the bottom unconditionally, unlike an
-  // agent row, which only follows if they were already down there.
   const { detached, jumpToLatest } = useChatAreaStick(
     chatKey,
     lastId,
-    lastRole === "user",
     paintRows,
   );
   const [railTarget, setRailTarget] = useState<string | null>(null);

@@ -3,6 +3,7 @@
 Web UI 界面 — 界面系统、指示点、附件处理、聊天轮次视觉，以及 GUI-agent 上下文流转。
 
 - [`invariants.md`](invariants.md) — 跨模块 UI 不变量清单（改相关模块前先过一遍）
+- [`chat-transcript-follow.html`](chat-transcript-follow.html) — 统一的转录跟随：发送、流式、跳到最新、会话切换与历史窗口共用一套附着/脱离策略
 - [`chat-turn-visual-spec.html`](chat-turn-visual-spec.html) — 聊天轮次视觉规范（执行时间线、文件修改摘要表面、手动函数运行和消息导航）；文件历史语义见[运行时权威设计](../runtime/operations/file-management.html)
 - [`interaction-feedback.md`](interaction-feedback.md) — 交互反馈 0ms 规则（乐观状态先行，数据后补）
 - [`turn-occupancy.md`](turn-occupancy.md) — 停止、发送队列与 session 槽位占用（在取消意图上释放）
