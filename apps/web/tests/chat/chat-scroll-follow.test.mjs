@@ -36,6 +36,28 @@ test("F18 web production has no leftover follow writers", () => {
   );
 });
 
+test("F07 send during loading holds the lock then restore runs after unlock", () => {
+  const area = {
+    isConnected: true,
+    scrollTop: 15,
+    scrollHeight: 300,
+    querySelectorAll: () => [],
+    dispatchEvent() {},
+  };
+  setFollowLock("main", true);
+  restoreAreaWindow(
+    { area, chatKey: "main", anchor: null, oldTop: 15, oldHeight: 120 },
+    "older",
+  );
+  assert.equal(area.scrollTop, 15);
+  setFollowLock("main", false);
+  restoreAreaWindow(
+    { area, chatKey: "main", anchor: null, oldTop: 15, oldHeight: 120 },
+    "older",
+  );
+  assert.equal(area.scrollTop, 15 + 300 - 120);
+});
+
 test("F07/F17 follow lock skips restore and each area keeps its own fallback", () => {
   const areaA = {
     isConnected: true,

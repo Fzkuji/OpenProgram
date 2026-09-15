@@ -374,7 +374,7 @@ export function useChatAreaStick(
       const epoch = interactionRef.current;
       const effectGen = ++effectGenRef.current;
       const needsLatest = !!(history?.after || history?.loading);
-      setFollowLock(chatKey, true);
+      if (needsLatest) setFollowLock(chatKey, true);
       if (needsLatest) {
         stuckRef.current = false;
         setDetached(true);
@@ -412,6 +412,7 @@ export function useChatAreaStick(
           applySnap(live);
           setApplied(chatKey, note.generation);
           settleTakeLatest(sid, chatKey, note.generation);
+          setFollowLock(chatKey, false);
           opRef.current = {
             sessionId: sid,
             scrollerKey: chatKey,
