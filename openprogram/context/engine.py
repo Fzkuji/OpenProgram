@@ -102,9 +102,6 @@ class ContextEngine:
                 ) -> TurnPrep:
         raise NotImplementedError
 
-    def should_recommend(self, prep: TurnPrep) -> bool:
-        return False
-
     def should_auto_compact(self, prep: TurnPrep) -> bool:
         return False
 
@@ -139,19 +136,15 @@ class ContextEngine:
 # ---------------------------------------------------------------------------
 
 class DefaultContextEngine(ContextEngine):
-    """Production engine. Three-tier policy with full lifecycle.
+    """Production engine. Auto-compact and manual compact with full lifecycle.
 
     Thresholds (overridable via constructor):
-        RECOMMEND_PCT  = 0.70   surface "context filling up" event
         AUTO_COMPACT_PCT = 0.80 inline compaction before next LLM call
     """
 
     name = "default"
 
-    # Two-tier triggers (see README §4):
-    #   RECOMMEND_PCT       surface compaction_recommended event
-    #   AUTO_COMPACT_PCT    proactive compact — still have summary budget
-    RECOMMEND_PCT = 0.70
+    # AUTO_COMPACT_PCT    proactive compact — still have summary budget
     AUTO_COMPACT_PCT = 0.80
 
     def __init__(self,
@@ -161,7 +154,6 @@ class DefaultContextEngine(ContextEngine):
                  summarizer: Summarizer | None = None,
                  persister: Persister | None = None,
                  references: ReferenceTracker | None = None,
-                 recommend_pct: float | None = None,
                  auto_compact_pct: float | None = None,
                  ):
         self.usage = usage_tracker or _usage_tracker
@@ -169,8 +161,6 @@ class DefaultContextEngine(ContextEngine):
         self.summarizer = summarizer or default_summarizer
         self.persister = persister or default_persister
         self.references = references or _ref_tracker
-        if recommend_pct is not None:
-            self.RECOMMEND_PCT = recommend_pct
         if auto_compact_pct is not None:
             self.AUTO_COMPACT_PCT = auto_compact_pct
 
@@ -279,9 +269,6 @@ class DefaultContextEngine(ContextEngine):
             summary_id=summary_id,
             decision_path=decision,
         )
-
-    def should_recommend(self, prep: TurnPrep) -> bool:
-        return prep.budget_pct >= self.RECOMMEND_PCT
 
     def should_auto_compact(self, prep: TurnPrep) -> bool:
         return prep.budget_pct >= self.AUTO_COMPACT_PCT
@@ -491,29 +478,9 @@ class DefaultContextEngine(ContextEngine):
                    on_event: Optional[EventCallback] = None,
                    ) -> None:
         # Feed real numbers back into the tracker.
-        commit = self.usage.record_turn(session_id, usage=usage)
-        # Emit recommend if this turn pushed us over.
-        if prep is None or not on_event:
-            return
-        # Re-derive a fresh budget_pct from the post-turn numbers.
-        if prep.context_window > 0:
-            pct = commit.last_prompt_tokens / prep.context_window
-        else:
-            pct = 0.0
-        if pct >= self.RECOMMEND_PCT:
-            on_event({"type": "chat_response", "data": {
-                "type": "compaction_recommended",
-                "session_id": session_id,
-                "input_tokens": commit.last_prompt_tokens,
-                "context_window": prep.context_window,
-                "budget_pct": pct,
-                "source": commit.source,
-            }})
-            # 事件层 tap（懒 import 防循环）。emit_safe 自己吞异常。
-            from openprogram.events import emit_safe
-            emit_safe("context.compaction_recommended", "system",
-                      {"budget_pct": round(pct, 3)},
-                      {"session": session_id})
+        # prep/on_event stay on the dispatcher contract; they are unused here.
+        _ = (prep, on_event)
+        self.usage.record_turn(session_id, usage=usage)
 
     # ---- Internals -----------------------------------------------------
 

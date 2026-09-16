@@ -458,20 +458,9 @@ def finalize_turn(
         _log.debug("branch auto-name skipped for session %s",
                    req.session_id, exc_info=True)
 
-    # 6.6. Compaction signal: when context is approaching the model's
-    # window, surface a "compaction_recommended" event so the UI can
-    # offer the user a /compact action. We don't auto-compact mid-
-    # turn — that would block the response. The actual compaction
-    # call is exposed as ``trigger_compaction(session_id)`` for clients
-    # to invoke explicitly.
-    #
-    # Context-window resolution via context.tokens — reads
-    # ``model.context_window`` (the truth), not ``model.max_tokens``
-    # (which is the OUTPUT cap, typically 10-30% of the real window
-    # and would fire compaction at ~10-30% utilization).
-    # (Compaction-recommended emission moved into ctx_engine.after_turn,
-    # which uses provider-reported usage instead of re-estimating the
-    # whole branch here.)
+    # 6.6. Compaction itself is not run here. Auto-compact happens
+    # before the next model call; clients invoke ``trigger_compaction``
+    # for a manual compact. after_turn only feeds usage back.
 
     # 6.8. Git commit the turn — the session's git repo is the source
     # of truth (git-as-truth). Every successful turn becomes one

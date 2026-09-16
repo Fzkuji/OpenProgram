@@ -61,7 +61,7 @@ user types a sentence
    │       · head / token update
    │       · ContextCommit backfill                finalize.py:283
    │       · ctx_engine.after_turn(...)            finalize.py:308 → engine.py:437
-   │            ↑ this is where "context.compaction_recommended" is emitted (pct computed against the budget)
+   │            ↑ after_turn feeds provider usage back into the tracker
    │       · git commit_turn(:356) + project auto-commit (:369 commit_turn_changes)
    │       · auto-title, usage feedback, snapshot eviction
    │       db.update_session(status="idle"/"done")  :727/:729
@@ -181,8 +181,7 @@ Chat turns have no inner-loop hard cap (Codex / DeepSeek style). `runtime.exec` 
   subsystem does three things inside finalize**: (1) head/token update;
   (2) **ContextCommit backfill** (`finalize.py:283`, freezing this turn's
   compaction decision into an immutable per-turn commit); (3) **`after_turn`**
-  (`finalize.py:308` → `engine.py:437`, **where `context.compaction_recommended`
-  is emitted**: usage feedback + pct against the budget). Then git `commit_turn`
+  (`finalize.py:308` → `engine.py:437`, usage feedback). Then git `commit_turn`
   (`finalize.py:356`) + the project auto-commit (`:369`).
 
 ### DAG updates run throughout, not as a separate step
@@ -216,7 +215,6 @@ to the front end.
 | `question.asked` | questions `:164` (also `emit_ws_frame` `:161` for the front-end card) | channels question bridge (`_question_bridge.py:43`) | both on the bus and as a ws frame |
 | `question.replied` | questions `:275` (`resolve_question_and_broadcast:262`) | front end | **ws frame only** |
 | `question.rejected` | questions `:173/:276` | front end (handled as "withdrawn") | **ws frame only** |
-| `context.compaction_recommended` | **engine `after_turn` `:437`** (called from finalize) | UI / proactive | pct against the budget |
 | `context.compacted` | context engine | UI / observers | compaction happened |
 | `file.changed` | functions watcher and others | observers | file change |
 | `channel.message_inbound` | channels | observers | inbound message |
@@ -298,8 +296,8 @@ decisions.
   frozen into an immutable commit, backfilled by `finalize_turn`
   (`dispatcher/finalize.py:283`).
 - **`after_turn`** (`engine.py:437`, called from `dispatcher/finalize.py:308`):
-  usage feedback + emitting `context.compaction_recommended`.
-**Events**: `context.compaction_recommended`, `context.compacted`.
+  usage feedback.
+**Events**: `context.compacted`.
 
 ### ④ Agent run — loop + tool registration + subagents
 
@@ -375,8 +373,7 @@ a "sent" line in the initiator's chat stream.
   `send_message._resolve_parent` carries a head fallback for the same reason.
 - **`ContextEngine.after_turn` exists at two levels**: the abstract base stub
   (`engine.py:124`) is `pass`; the concrete engine implementation
-  (`engine.py:437`) is the one doing the work (usage feedback + emitting
-  compaction_recommended), called from `dispatcher/finalize.py:308`.
+  (`engine.py:437`) is the one doing the work (usage feedback), called from `dispatcher/finalize.py:308`.
 
 ---
 

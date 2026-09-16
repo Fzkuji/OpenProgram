@@ -114,7 +114,7 @@ class TurnPrep:
     references_protected: int = 0
     summary_id: Optional[str] = None
 
-    # Trace breadcrumbs for the compaction_recommended event payload
+    # Trace breadcrumbs for the compaction decision path
     decision_path: list[str] = field(default_factory=list)
 
     @property

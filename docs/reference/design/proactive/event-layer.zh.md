@@ -70,7 +70,7 @@ channel）根本没有意义。开放 dict 也让以后新增关联维度不用�
 | `model.response_started` / `model.response_completed` | notify | `{}` / `{is_error}` | `agent_loop`，循环内每次模型响应 |
 | `file.changed` | notify | `{path, op}` | write / edit / apply_patch 工具 |
 | `question.asked` | notify | `{session_id, question, ...}` | `agent/questions.py` |
-| `context.compacted` / `context.compaction_recommended` | notify | `{ok, tokens_before, tokens_after, ...}` / `{budget_pct}` | `context/engine.py` |
+| `context.compacted` | notify | `{ok, tokens_before, tokens_after, ...}` | `context/engine.py` |
 | `memory.ingest_started` / `memory.ingest_ended` | notify | `{messages}` / `{ok, retryable, reason}` | `memory/session_watcher.py` |
 | `channel.message_inbound` | notify | `{channel, peer_kind, chars}` | `channels/_conversation.py` |
 | `branches.listed` / `sessions.listed` | notify | `{session, count}` / `{count}` | agent-collab 的列表工具 |

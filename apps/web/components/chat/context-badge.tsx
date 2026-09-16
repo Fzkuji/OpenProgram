@@ -60,9 +60,6 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
   const compacting = useSessionStore((s) =>
     Boolean(sid && s.compactionUi[sid]?.running),
   );
-  const compactRecommended = useSessionStore((s) =>
-    Boolean(sid && s.compactionUi[sid]?.recommended),
-  );
 
   // Paint from the ring the moment this session is focused. GET /context
   // only fills category detail, and never blocks the click.
@@ -153,9 +150,7 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
   const pct = Math.max(0, Math.min(1, used / win));
 
   // 占用越高颜色越警示：<50% 绿，50–80% 黄，≥80% 红。
-  const arcColor = compactRecommended
-    ? "var(--warning-soft)"
-    : pct >= 0.8 ? "var(--danger-soft)" : pct >= 0.5 ? "var(--warning-soft)" : "var(--success-soft)";
+  const arcColor = pct >= 0.8 ? "var(--danger-soft)" : pct >= 0.5 ? "var(--warning-soft)" : "var(--success-soft)";
 
   // tooltip 用 Claude Code 那种「Context 用了多少/共多少 (百分比)」格式
   const fmtNum = (n: number) =>
@@ -165,10 +160,8 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
   const basisLabel = usage?.basis === "estimated" ? " · est." : "";
   const ringTooltip = compacting
     ? translateText("Compacting context…", "正在压缩上下文…")
-    : compactRecommended
-      ? `${translateText("Suggest compacting", "建议压缩")} · Context ${fmtNum(used)} / ${fmtNum(win)} (${(pct * 100).toFixed(0)}%)${basisLabel}`
-      : `Context ${fmtNum(used)} / ${fmtNum(win)} (${(pct * 100).toFixed(0)}%)${basisLabel}` +
-        (metaLine ? ` · ${metaLine}` : "");
+    : `Context ${fmtNum(used)} / ${fmtNum(win)} (${(pct * 100).toFixed(0)}%)${basisLabel}` +
+      (metaLine ? ` · ${metaLine}` : "");
 
   // 环形进度（Claude Code 实测：12px svg、描边 2、轨道 var(--border)、
   // 进度 var(--accent-orange)、-90° 起点）
@@ -185,7 +178,6 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
         ref={ringRef}
         className={
           "context-ring-badge"
-          + (compactRecommended ? " is-recommended" : "")
           + (compacting ? " is-busy" : "")
         }
         onClick={() => setPanelOpen(!panelOpen)}
@@ -198,7 +190,7 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
             cy="6"
             r={R}
             fill="none"
-            stroke={compactRecommended ? "var(--warning-soft)" : "var(--border)"}
+            stroke="var(--border)"
             strokeWidth={SW}
           />
           <circle

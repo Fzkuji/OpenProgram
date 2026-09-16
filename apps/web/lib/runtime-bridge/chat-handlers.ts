@@ -818,7 +818,7 @@ export function handleChatResponse(data: ChatResponseData): void {
   if (type === "compaction_started") {
     if (sid) {
       useSessionStore.getState().setCompactionUi(sid, {
-        running: true, recommended: false,
+        running: true,
       });
       useSessionStore.getState().appendMessage(sid, {
         id: "compaction_started_" + Date.now().toString(36),
@@ -840,7 +840,7 @@ export function handleChatResponse(data: ChatResponseData): void {
     }
     if (sid) {
       useSessionStore.getState().setCompactionUi(sid, {
-        running: false, recommended: false,
+        running: false,
       });
       const noOp = Boolean(data.no_op);
       if (noOp) {
@@ -876,12 +876,6 @@ export function handleChatResponse(data: ChatResponseData): void {
           : translateText("Context compaction failed", "上下文压缩失败"),
         status: "done",
       });
-    }
-    return;
-  }
-  if (type === "compaction_recommended") {
-    if (sid) {
-      useSessionStore.getState().setCompactionUi(sid, { recommended: true });
     }
     return;
   }

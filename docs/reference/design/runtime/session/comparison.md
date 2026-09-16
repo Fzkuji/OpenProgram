@@ -87,9 +87,9 @@ A comprehensive comparison of the session management mechanisms across four proj
 
 | | Claude Code | OpenCode | OpenClaw | OpenProgram |
 |---|---|---|---|---|
-| **Trigger** | Manual + automatic | Manual | Automatic (by token threshold) | Manual (`/compact`) + automatic (`compaction_recommended` signal) |
+| **Trigger** | Manual + automatic | Manual | Automatic (by token threshold) | Manual (`/compact`) + automatic (budget ≥ 80%) |
 | **Implementation** | Append a `system:compact_boundary` entry to the JSONL | Generate a summary with a dedicated `summarizeProvider`, write it as a new message, and point `summary_message_id` at it | Generate a summary, record a checkpoint (tokensBefore/tokensAfter/summary), update `compactionCount` | LLM generates a summary → write a compactionSummary node (source="compaction") → reattach the retained tail messages under the summary node → move head_id |
-| **Recorded information** | trigger/preTokens/postTokens/preservedSegment/durationMs | summary_message_id | compactionCount + the compactionCheckpoints array | Summary content lives in the node content; budget_pct/context_window live in the recommendation signal |
+| **Recorded information** | trigger/preTokens/postTokens/preservedSegment/durationMs | summary_message_id | compactionCount + the compactionCheckpoints array | Summary content lives in the node content; tokens_before/tokens_after live on the summary node |
 | **Old messages** | Kept in the JSONL, with preservedSegment marking which are active | Kept in the database, skipped before the summary on load | Kept in the transcript | Kept in the DAG (append-only), but not on the active branch |
 
 ## 8. Active Process Tracking

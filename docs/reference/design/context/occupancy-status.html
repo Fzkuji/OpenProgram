@@ -45,7 +45,7 @@
   .flow { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr; align-items: stretch; gap: 10px; }
   .flow .step { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; font-size: 14px; }
   .flow .arrow { align-self: center; color: var(--muted); font-family: var(--mono); }
-  .states { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .states { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
   .ring-mock { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; margin: 0 auto 10px; }
   .ring-mock svg { display: block; }
   @media (max-width: 760px) {
@@ -76,7 +76,7 @@
     <div class="grid-2">
       <article class="card">
         <strong>做</strong>
-        <p>一根占用尺子；无效压缩不再装成功；圆环接入建议 / 进行中；面板可以立刻压；四种系统行自动压和手动共用。</p>
+        <p>一根占用尺子；无效压缩不再装成功；圆环接入进行中；面板可以立刻压；四种系统行自动压和手动共用。</p>
       </article>
       <article class="card">
         <strong>不做</strong>
@@ -182,13 +182,13 @@
       </tbody>
     </table>
     <div class="note">
-      触发仍是三条：手动 <code>/compact</code> 或面板按钮；发请求前 budget ≥ 80%；413 / prompt_too_long 抢救。70% 只发 <code>compaction_recommended</code>，不自动压。
+      触发仍是三条：手动 <code>/compact</code> 或面板按钮；发请求前 budget ≥ 80%；413 / prompt_too_long 抢救。圆环按占用比例着色，不另发建议态。
     </div>
   </section>
 
   <section>
     <h2>03 · 圆环参与生命周期</h2>
-    <div class="states" aria-label="圆环三态">
+    <div class="states" aria-label="圆环两态">
       <article class="card">
         <div class="ring-mock" aria-hidden="true">
           <svg width="20" height="20" viewBox="0 0 12 12">
@@ -197,17 +197,7 @@
           </svg>
         </div>
         <strong>平常</strong>
-        <p>按占用比例着色。点开面板。数字来自同一把尺子。</p>
-      </article>
-      <article class="card">
-        <div class="ring-mock" aria-hidden="true">
-          <svg width="20" height="20" viewBox="0 0 12 12">
-            <circle cx="6" cy="6" r="5" fill="none" stroke="#d97706" stroke-width="2"/>
-            <circle cx="6" cy="6" r="5" fill="none" stroke="#d97706" stroke-width="2" stroke-dasharray="22 10" stroke-linecap="round" transform="rotate(-90 6 6)"/>
-          </svg>
-        </div>
-        <strong>建议压缩</strong>
-        <p>收到 <code>compaction_recommended</code>：描边琥珀色，tooltip「建议压缩 / Suggest compacting」。</p>
+        <p>中性底环，进度弧按占用比例着色。点开面板。数字来自同一把尺子。</p>
       </article>
       <article class="card">
         <div class="ring-mock" aria-hidden="true">
@@ -258,8 +248,8 @@
     <ol>
       <li>压缩成功后，圆环和面板总量明显回落，并与 <code>compaction_finished.tokens_after</code> 同口径。</li>
       <li>已压缩会话再压：不烧摘要 LLM，系统行是「无可压」，不是「盖住 0 条，X → X」。</li>
-      <li>占用到 70%：圆环进入建议态；点「立即压缩」能发出 compact。</li>
-      <li>压缩进行中圆环忙碌，按钮禁用；结束回到平常或建议态。</li>
+      <li>低占用和高占用都没有建议外框；进度弧仍按比例着色。点「立即压缩」能发出 compact。</li>
+      <li>压缩进行中圆环忙碌，按钮禁用；结束回到平常态。</li>
     </ol>
   </section>
 
@@ -293,7 +283,7 @@ apps/web/
       <li>自动压先 compact 再 snip：已有。</li>
       <li>一根尺子（折叠后计 + 压缩后 refresh + 与 tokens_after 同口径）：已落地。</li>
       <li>no_op 事件与第四种系统行：已落地。</li>
-      <li>圆环建议态 / 忙碌态、面板立即压缩：已落地。</li>
+      <li>圆环忙碌态、面板立即压缩：已落地。圆环没有建议外框。</li>
       <li>闲时自动压：不做。</li>
     </ul>
   </section>
