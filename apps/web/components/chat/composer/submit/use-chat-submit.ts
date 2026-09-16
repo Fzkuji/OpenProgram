@@ -128,8 +128,13 @@ export function useChatSubmit({
     // which is disabled while running.)
     if (isRunning) {
       if (!trimmed || !submitOwnerKey) return;
+      // Queue and steer bypass the ordinary send preparation below. Capture
+      // the full paste now: clearing the draft may GC its backing entry, and
+      // neither queue drain nor steer may send an unresolved placeholder.
+      if (missingPasteIds(trimmed).size > 0) return;
+      const queuedText = expandPasteTokens(trimmed);
       const queuedId = enqueueMessage(submitOwnerKey, {
-        text: trimmed,
+        text: queuedText,
         thinking,
         toolsEnabled,
         toolsProfile,
@@ -349,15 +354,25 @@ export function stopSession(
       messageId: optimisticMessage?.id,
       previousMessageStatus: optimisticMessage?.status,
     };
-    const sent = send({
-      type: "execution.command",
-      action: "execution.cancel",
-      command_id: commandId,
-      execution_id: executionId,
-      expected_version: expectedVersion,
-      payload: {},
-    } satisfies ExecutionCommand);
-    if (!sent) delete runtimeState._optimisticCancels[commandId];
+    let sent = false;
+    try {
+      sent = send({
+        type: "execution.command",
+        action: "execution.cancel",
+        command_id: commandId,
+        execution_id: executionId,
+        expected_version: expectedVersion,
+        payload: {},
+      } satisfies ExecutionCommand);
+    } catch {
+      // A transport exception does not establish that the run stopped.
+    }
+    if (!sent) {
+      delete runtimeState._optimisticCancels[commandId];
+      showToast("Could not send the stop request. The task may still be running; reconnect and try again.", { tone: "error" });
+      // Keep the task, reply and queue intact so Stop remains retryable.
+      return;
+    }
   } else if (task) {
     // The Stop button can win the ACK/activation race while the task still
     // has only its local placeholder. Keep a session-level pending-stop
