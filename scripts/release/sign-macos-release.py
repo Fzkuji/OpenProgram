@@ -20,9 +20,28 @@ MACHO = {bytes.fromhex(value) for value in (
 def run(*args: str) -> str:
     result = subprocess.run(args, capture_output=True, text=True, timeout=3600 if "notarytool" in args else 600)
     if result.returncode:
-        # Arguments can contain credentials. Never echo them or subprocess output.
-        raise RuntimeError(f'{Path(args[0]).name} failed (exit {result.returncode})')
+        # Arguments can contain credentials. Never echo them.
+        detail = ''
+        if not any(token in {'-P', '--password'} for token in args):
+            line = (result.stderr or result.stdout or '').strip().splitlines()
+            if line:
+                detail = ': ' + line[-1][:300]
+        raise RuntimeError(
+            f'{Path(args[0]).name} failed (exit {result.returncode}){detail}'
+        )
     return result.stdout
+
+
+def codesign(*options: str) -> str:
+    args = ['codesign']
+    keychain = os.environ.get('OPENPROGRAM_NOTARY_KEYCHAIN')
+    if keychain:
+        args.extend(['--keychain', keychain])
+    return run(*args, *options)
+
+
+def clear_extended_attributes(app: Path) -> None:
+    run('xattr', '-cr', str(app))
 
 
 def notarize(path: Path, profile: str) -> None:
@@ -73,11 +92,12 @@ def sign(app: Path, identity: str, entitlements: Path) -> None:
                     files.append(item)
         elif item.is_dir() and item.suffix in ('.app', '.framework', '.xpc', '.bundle'):
             bundles.append(item)
+    clear_extended_attributes(app)
     for item in files + sorted(bundles, key=lambda p: len(p.parts), reverse=True) + [app]:
         print(f'Signing {item.relative_to(app) if item != app else app.name}', flush=True)
-        run('codesign', '--force', '--sign', identity, '--timestamp', '--options', 'runtime',
-            '--entitlements', str(entitlements), str(item))
-    run('codesign', '--verify', '--deep', '--strict', str(app))
+        codesign('--force', '--sign', identity, '--timestamp', '--options', 'runtime',
+                 '--entitlements', str(entitlements), str(item))
+    codesign('--verify', '--deep', '--strict', str(app))
 
 
 def main() -> None:
@@ -117,7 +137,7 @@ def main() -> None:
         (image / 'Applications').symlink_to('/Applications')
         run('hdiutil', 'create', '-volname', 'OpenProgram', '-srcfolder', str(image),
             '-format', 'UDZO', str(dmg_path))
-        run('codesign', '--force', '--sign', args.identity, '--timestamp', str(dmg_path))
+        codesign('--force', '--sign', args.identity, '--timestamp', str(dmg_path))
         notarize(dmg_path, args.profile)
         run('xcrun', 'stapler', 'staple', str(dmg_path))
         run('xcrun', 'stapler', 'validate', str(dmg_path))
