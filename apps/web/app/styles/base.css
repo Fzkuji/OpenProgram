@@ -159,6 +159,13 @@
   /* Collapsed `off` effort-pill chip. Solid, a step above --bg-input
      so it reads as a distinct chip on the dark composer. */
   --effort-off-bg: #3a3a38;
+  /* Effort slider thumb. Dark themes get a paper chip instead of raw
+     white; light themes keep Claude's white knob. Stays on :root so
+     theme files don't grow a new contract token. */
+  --effort-thumb: light-dark(
+    #ffffff,
+    color-mix(in srgb, var(--text-bright) 88%, var(--surface-popover))
+  );
   /* Text colour on filled primary buttons. Aurora overrides this for its
      lighter teal fill. */
   --primary-foreground: #ffffff;

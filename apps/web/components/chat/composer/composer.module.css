@@ -13,7 +13,8 @@
    只限 envChips——controlsRow（模型/权限等）的菜单又高又罩在输入
    框上方，提升会让输入框反盖菜单下缘。按钮的 z-index 单独抬没
    用——它锁在本上下文（z:5）里，永远比不过 body 层的 portal。 */
-.inputArea:has([data-environment-row] [aria-expanded="true"]) {
+.inputArea:has([data-environment-row] [aria-expanded="true"]),
+.inputArea:has([data-effort-expanded="true"]) {
   z-index: 51;
 }
 .inputArea {
@@ -621,25 +622,6 @@
 }
 .controlsRow .effortText {
   display: inline-flex;
-}
-.fastIndicator {
-  display: inline-grid;
-  align-items: center;
-  flex-shrink: 0;
-  grid-template-columns: 0fr;
-  opacity: 0;
-  overflow: hidden;
-  transform: translateX(-3px);
-  pointer-events: none;
-  transition: grid-template-columns 180ms ease-out, opacity 180ms ease-out, transform 180ms ease-out;
-}
-.fastIndicator[data-active="true"] {
-  grid-template-columns: 1fr;
-  opacity: 1;
-  transform: translateX(0);
-}
-@media (prefers-reduced-motion: reduce) {
-  .fastIndicator { transition: none; }
 }
 .controlsRow .effortText:hover {
   background: var(--bg-hover);
