@@ -265,7 +265,7 @@ reproductions, tests, documentation, reviews, and suggestions.
 
 <p align="center">
   <a href="https://github.com/Fzkuji/OpenProgram/graphs/contributors">
-    <img src="https://openprogram.io/docs/contributors.svg" alt="OpenProgram contributors" />
+    <img src="https://openprogram.io/docs/contributors.svg" alt="OpenProgram contributors" height="56" />
   </a>
 </p>
 

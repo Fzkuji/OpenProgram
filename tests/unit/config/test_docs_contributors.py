@@ -25,4 +25,5 @@ def test_svg_lists_people_and_skips_empty_sheet_placeholder_when_populated() -> 
     assert "claude" not in svg
     assert "graphs/contributors" not in svg
     long = render_svg([{"login": "binyangzhu000-sudo"}], [None])
-    assert ">binyangzhu000-sudo</text>" in long
+    assert "binyangzhu00" in long
+    assert 'r="16"' in long

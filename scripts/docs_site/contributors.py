@@ -19,10 +19,11 @@ from typing import Any
 
 REPO = os.environ.get("OPENPROGRAM_GITHUB_REPO", "Fzkuji/OpenProgram")
 CONTRIBUTORS_URL = f"https://api.github.com/repos/{REPO}/contributors?per_page=100"
-AVATAR_SIZE = 80
-CELL_W = 124
-CELL_H = 128
-COLUMNS = 5
+AVATAR_SIZE = 48
+CELL_W = 88
+CELL_H = 68
+COLUMNS = 8
+RADIUS = 16
 TIMEOUT_S = 20
 
 # GitHub logins that are coding agents or bots, not people.
@@ -101,7 +102,7 @@ def render_svg(people: list[dict[str, Any]], avatars: list[str | None]) -> str:
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
         f'viewBox="0 0 {width} {height}" role="img" aria-label="OpenProgram contributors">',
         "<style>text{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;"
-        "font-size:12px;fill:#57606a}</style>",
+        "font-size:10px;fill:#57606a}</style>",
     ]
     if not people:
         parts.append(
@@ -110,25 +111,27 @@ def render_svg(people: list[dict[str, Any]], avatars: list[str | None]) -> str:
     for index, (person, avatar) in enumerate(zip(people, avatars)):
         col, row = index % cols, index // cols
         cx = col * CELL_W + CELL_W // 2
-        cy = row * CELL_H + 44
+        cy = row * CELL_H + 22
         login = str(person.get("login") or "")
-        label = login if len(login) <= 20 else login[:18] + "…"
+        label = login if len(login) <= 14 else login[:12] + "…"
         clip = f"c{index}"
-        parts.append(f'<clipPath id="{clip}"><circle cx="{cx}" cy="{cy}" r="36"/></clipPath>')
+        parts.append(
+            f'<clipPath id="{clip}"><circle cx="{cx}" cy="{cy}" r="{RADIUS}"/></clipPath>'
+        )
         if avatar:
             parts.append(
-                f'<image href="{avatar}" x="{cx - 36}" y="{cy - 36}" '
-                f'width="72" height="72" clip-path="url(#{clip})"/>'
+                f'<image href="{avatar}" x="{cx - RADIUS}" y="{cy - RADIUS}" '
+                f'width="{RADIUS * 2}" height="{RADIUS * 2}" clip-path="url(#{clip})"/>'
             )
         else:
             initial = xml.escape((login[:1] or "?").upper())
-            parts.append(f'<circle cx="{cx}" cy="{cy}" r="36" fill="#d0d7de"/>')
+            parts.append(f'<circle cx="{cx}" cy="{cy}" r="{RADIUS}" fill="#d0d7de"/>')
             parts.append(
-                f'<text x="{cx}" y="{cy + 5}" text-anchor="middle" '
-                f'style="font-size:22px;fill:#57606a">{initial}</text>'
+                f'<text x="{cx}" y="{cy + 4}" text-anchor="middle" '
+                f'style="font-size:12px;fill:#57606a">{initial}</text>'
             )
         parts.append(
-            f'<text x="{cx}" y="{cy + 54}" text-anchor="middle">{xml.escape(label)}</text>'
+            f'<text x="{cx}" y="{cy + RADIUS + 14}" text-anchor="middle">{xml.escape(label)}</text>'
         )
     parts.append("</svg>")
     return "\n".join(parts) + "\n"
