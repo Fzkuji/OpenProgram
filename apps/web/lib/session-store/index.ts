@@ -181,10 +181,10 @@ interface ConvState {
     contextWindow?: number | null,
   ) => void;
   /** Ring + panel compact lifecycle. Not occupancy. */
-  compactionUi: Record<string, { recommended?: boolean; running?: boolean }>;
+  compactionUi: Record<string, { running?: boolean }>;
   setCompactionUi: (
     sessionId: string,
-    patch: { recommended?: boolean; running?: boolean },
+    patch: { running?: boolean },
   ) => void;
 
   setWsStatus: (s: ConvState["wsStatus"]) => void;

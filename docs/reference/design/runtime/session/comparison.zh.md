@@ -87,9 +87,9 @@ Claude Code、OpenCode、OpenClaw、OpenProgram（我们的设计）四个项目
 
 | | Claude Code | OpenCode | OpenClaw | OpenProgram |
 |---|---|---|---|---|
-| **触发** | 手动 + 自动 | 手动 | 自动（按 token 阈值） | 手动（`/compact`）+ 自动（`compaction_recommended` 信号） |
+| **触发** | 手动 + 自动 | 手动 | 自动（按 token 阈值） | 手动（`/compact`）+ 自动（budget ≥ 80%） |
 | **实现** | append `system:compact_boundary` 条目到 JSONL | 用专用 `summarizeProvider` 生成摘要，写入新 message，`summary_message_id` 指向它 | 生成摘要，记录 checkpoint（tokensBefore/tokensAfter/summary），更新 `compactionCount` | LLM 生成摘要 → 写入 compactionSummary 节点（source="compaction"）→ 保留尾部消息重新挂到摘要节点下 → 移动 head_id |
-| **记录的信息** | trigger/preTokens/postTokens/preservedSegment/durationMs | summary_message_id | compactionCount + compactionCheckpoints 数组 | 摘要内容在节点 content 里，budget_pct/context_window 在推荐信号里 |
+| **记录的信息** | trigger/preTokens/postTokens/preservedSegment/durationMs | summary_message_id | compactionCount + compactionCheckpoints 数组 | 摘要内容在节点 content 里，tokens_before/tokens_after 在摘要节点上 |
 | **旧消息** | 保留在 JSONL 里，通过 preservedSegment 标记哪些活跃 | 保留在数据库，加载时跳过 summary 之前的 | 保留在 transcript 里 | 保留在 DAG 中（append-only），但不在活跃分支上 |
 
 ## 8. 活跃进程跟踪

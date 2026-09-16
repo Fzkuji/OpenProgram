@@ -30,7 +30,7 @@ dispatcher.process_user_turn
   → agent_loop → Context(system, messages, tools) → provider
 ```
 
-Thresholds: 70% warning / 80% auto-compaction / 95% emergency (`engine.py`).
+Thresholds: 80% auto-compaction / 95% emergency (`engine.py`).
 
 **Main path vs. auxiliary paths**: outside the main path, 8–10 features each make their own single LLM call (summarization /
 memory sleep / branch summary / mixture-of-agents / agentic runtime). They bypass

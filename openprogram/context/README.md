@@ -201,7 +201,7 @@ render_range['subcalls']        in-frame 节点最多保留多少（默认 -1 �
    - `≥ 0.80`（`AUTO_COMPACT_PCT`）→ 内联跑 `engine.compact(user_initiated=False)`，把 LLM summary 写进 DAG，再次 `prepare`
    - 否则继续
 4. dispatcher 把 `prep.agent_messages` 喂给 agent_loop，跑 LLM
-5. `engine.after_turn(session_id, usage, prep, on_event)` — 真实 provider usage 喂回 UsageTracker；越过 0.70 阈值时发 `compaction_recommended` 事件
+5. `engine.after_turn(session_id, usage, prep, on_event)` — 真实 provider usage 喂回 UsageTracker
 6. 用户手动点 `/compact` → `trigger_compaction()` 走 `engine.compact(user_initiated=True)`
 
 下面按职责分层逐层展开。
@@ -370,7 +370,6 @@ turn 距离闸门           有            有            无         无
 trigger_pct           0.80          Hermes 50% 太激进 cache 失效频繁
                                     Claude Code 93% 太晚 compact 时已紧张
 emergency_pct         0.95          紧急 fallback，保证下一轮不会爆窗
-recommend_pct         0.70          只发 UI 事件不动手
 keep_min_tokens       8_000         Claude Code 的 minTokens 思路
 keep_max_tokens       40_000        Claude Code 的 maxTokens 直接采用
 keep_ratio            0.10          按 window × 比例算 tail
@@ -382,18 +381,15 @@ min_prompt_budget     8_000         OpenClaw 的 small-window cap
 min_prompt_ratio      0.25          head 至少留 25% 窗口给 system+新轮
 ```
 
-### 4.1 触发判定（两段式）
+### 4.1 触发判定
 
 ```python
 if prep.budget_pct >= AUTO_COMPACT_PCT:     # 0.80
     # 主动 compact — 仍有 budget 留给 summary call
     fire auto-compact
-elif prep.budget_pct >= RECOMMEND_PCT:      # 0.70
-    # 只发事件 UI 提示
-    emit compaction_recommended
 ```
 
-两段触发的意义：80% 时主动 compact 就享受充足的 summary 预算（call 本身要占 8-15K tokens），不必等到窗口逼近上限——那时连做摘要的余量都没有了。
+80% 时主动 compact 就享受充足的 summary 预算（call 本身要占 8-15K tokens），不必等到窗口逼近上限——那时连做摘要的余量都没有了。
 
 ### 4.2 找切点 `find_cut_index`
 
@@ -569,13 +565,12 @@ on_session_start(session_id)          会话载入/创建时调用一次，预�
 ingest(session_id, message)            新消息落 DB 时调用，默认 no-op；自定义引擎可以维护索引
 prepare(agent, session, history,       每个 LLM 调用前跑，返回 TurnPrep
         model, tools)
-should_recommend(prep)                 budget_pct ≥ 0.70？
 should_auto_compact(prep)              budget_pct ≥ 0.80？
 compact(agent, session_id, model,      触发 compaction，返回 CompactResult
         on_event, previous_summary,
         user_initiated, cancel_event,
         keep_recent_tokens)
-after_turn(session_id, usage, prep,    LLM 返回后调用，喂真实 usage、发推荐事件
+after_turn(session_id, usage, prep,    LLM 返回后调用，喂真实 usage
            on_event)
 on_session_end(session_id)             会话关闭时调用，flush in-memory state
 ```
@@ -594,7 +589,6 @@ DefaultContextEngine(
     summarizer=...,            # 换 summary 模型/prompt
     persister=...,             # 换持久化层
     references=...,            # 换引用追踪算法
-    recommend_pct=0.65,        # 阈值微调
     auto_compact_pct=0.80,
 )
 ```

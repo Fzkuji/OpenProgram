@@ -230,7 +230,7 @@ from openprogram.events import get_event_bus
 
 get_event_bus().subscribe(                       # returns an unsubscribe fn
     lambda e: alert(e.payload),
-    types={"context.compaction_recommended", "file.changed"},
+    types={"context.compacted", "file.changed"},
 )
 ```
 

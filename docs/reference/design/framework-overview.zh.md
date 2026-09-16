@@ -49,7 +49,7 @@
    │       · head/token 更新
    │       · ContextCommit 回填                      finalize.py:283
    │       · ctx_engine.after_turn(...)             finalize.py:308 → engine.py:437
-   │            ↑ 这里才 emit "context.compaction_recommended"（按预算算 pct）
+   │            ↑ after_turn 把 provider usage 回灌进 tracker
    │       · git commit_turn(:356) + 项目自动提交(:369 commit_turn_changes)
    │       · auto-title、usage 反馈、快照淘汰
    │       db.update_session(status="idle"/"done")  :727/:729
@@ -116,7 +116,7 @@
 ### 持久化 + finalize（context 子系统在这步做三件事）
 
 - 出错路径（`:605–639`）：错误折进占位行或独立 error 节点，`head_id` 移到失败 turn（`:612/:618/:622`）。
-- 成功路径：`persist_assistant_message`（`:676`，`dispatcher/persistence.py:31`）写 assistant 消息 → `finalize_turn`（`:711`，`dispatcher/finalize.py:175`）。**finalize 里 context 子系统做三件事**：① head/token 更新 ② **ContextCommit 回填**（`finalize.py:283`，把这轮压缩决策固化成不可变 per-turn commit）③ **`after_turn`**（`finalize.py:308` → `engine.py:437`，**这里才发 `context.compaction_recommended`**：usage 回灌 + 按预算算 pct）。随后 git `commit_turn`（`finalize.py:356`）+ 项目自动提交（`:369`）。
+- 成功路径：`persist_assistant_message`（`:676`，`dispatcher/persistence.py:31`）写 assistant 消息 → `finalize_turn`（`:711`，`dispatcher/finalize.py:175`）。**finalize 里 context 子系统做三件事**：① head/token 更新 ② **ContextCommit 回填**（`finalize.py:283`，把这轮压缩决策固化成不可变 per-turn commit）③ **`after_turn`**（`finalize.py:308` → `engine.py:437`，usage 回灌）。随后 git `commit_turn`（`finalize.py:356`）+ 项目自动提交（`:369`）。
 
 ### DAG 更新——贯穿全程，不是单独一步
 
@@ -142,7 +142,6 @@ user 节点（`:298`）、assistant 占位、每个工具结果、`@agentic_func
 | `question.asked` | questions `:164`（同时 `emit_ws_frame` `:161` 成前端卡片） | channels question bridge（`_question_bridge.py:43`） | 既进总线又发 ws 帧 |
 | `question.replied` | questions `:275`（`resolve_question_and_broadcast:262`） | 前端 | **只走 ws 帧** |
 | `question.rejected` | questions `:173/:276` | 前端按"收回"处理 | **只走 ws 帧** |
-| `context.compaction_recommended` | **engine `after_turn` `:437`**（finalize 里调） | UI / proactive | 按预算算 pct |
 | `context.compacted` | context 引擎 | UI / 旁观 | 压缩已发生 |
 | `file.changed` | functions watcher 等 | 旁观 | 文件变更 |
 | `channel.message_inbound` | channels | 旁观 | 入站消息 |
@@ -187,8 +186,8 @@ user 节点（`:298`）、assistant 占位、每个工具结果、`@agentic_func
   - **idle-gap microcompact（次）**：`microcompact.py:76`，**仅空闲 > 3600s 触发**（`GAP_THRESHOLD_SECONDS:45`，prompt 缓存到期后清理"零额外成本"），保留最近 5 个 tool_result，更老的大结果替占位符。**非破坏性**（返回拷贝，不动 DAG 节点）。
 - **引用扫描**：`ReferenceTracker.build`（`references.py:114`）廉价子串扫描，标记被后文引用的 tool_result 避免被压。（注：目前结果仅用于日志，ContextCommit 规则尚未消费它，见已知边界。）
 - **ContextCommit**（`commit/types.py:104`）：每 turn 的压缩决策固化成不可变 commit；`finalize_turn` 回填（`dispatcher/finalize.py:283`）。
-- **`after_turn`**（`engine.py:437`，finalize 里调 `dispatcher/finalize.py:308`）：usage 回灌 + 发 `context.compaction_recommended`。
-**对外事件**：`context.compaction_recommended`、`context.compacted`。
+- **`after_turn`**（`engine.py:437`，finalize 里调 `dispatcher/finalize.py:308`）：usage 回灌。
+**对外事件**：`context.compacted`。
 
 ### ④ agent 运行　loop + 工具注册 + 子 agent
 
@@ -224,7 +223,7 @@ user 节点（`:298`）、assistant 占位、每个工具结果、`@agentic_func
 - **DAG 渲染回退路径与正常路径并存**：坏 commit 时 fall back 到 legacy（`engine.py:218–220`）。
 - **核心入口无覆盖测试**：`process_user_turn` / `agent_loop` 若干路径标注「⚠️ no covering tests found」。
 - **worker 线程 ContextVar 不可靠**：`subagent.started/ended` 因此由 session 显式传参（`agent/job/runner.py:111–115`）；`send_message._resolve_parent` 为此加了 head 回退。
-- **`ContextEngine.after_turn` 有两层**：抽象基类桩 `engine.py:124` 为 `pass`；**具体引擎实现 `engine.py:437` 才是真正在干活的**（usage 回灌 + 发 compaction_recommended），由 `dispatcher/finalize.py:308` 调用。
+- **`ContextEngine.after_turn` 有两层**：抽象基类桩 `engine.py:124` 为 `pass`；**具体引擎实现 `engine.py:437` 才是真正在干活的**（usage 回灌），由 `dispatcher/finalize.py:308` 调用。
 
 ---
 

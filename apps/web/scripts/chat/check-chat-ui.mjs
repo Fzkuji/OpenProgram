@@ -188,6 +188,15 @@ assert.match(contextBreakdownPanel, /!compacting && !recentlyCompacted/);
 assert.match(contextBreakdownPanel, /Recently compacted/);
 assert.match(contextBreakdownPanel, /Compacting…/);
 assert.match(source("components/chat/context-badge.tsx"), /warmContextBreakdown\(/);
+assert.doesNotMatch(contextBadge, /is-recommended|Suggest compacting|compactRecommended/);
+assert.doesNotMatch(
+  source("app/styles/chat/context-badge.css"),
+  /\.is-recommended/,
+);
+assert.doesNotMatch(
+  source("lib/runtime-bridge/chat-handlers.ts"),
+  /compaction_recommended/,
+);
 
 assert.match(
   contextBadge,

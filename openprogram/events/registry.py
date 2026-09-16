@@ -123,11 +123,6 @@ EVENTS: dict[str, EventSpec] = {
         payload_doc="{ok, tokens_before, tokens_after, ...} — a compaction "
                     "run finished",
     ),
-    "context.compaction_recommended": EventSpec(
-        kind="notify",
-        payload_doc="{budget_pct} — the context budget crossed the "
-                    "auto-compact threshold before a turn",
-    ),
     "memory.ingest_started": EventSpec(
         kind="notify",
         payload_doc="{messages: int} — the session memory watcher began "

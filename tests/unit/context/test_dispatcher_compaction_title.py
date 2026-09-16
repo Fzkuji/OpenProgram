@@ -1,14 +1,12 @@
-"""Auto-title + compaction signal + trigger_compaction.
+"""Auto-title + after_turn usage + trigger_compaction.
 
 Auto-title: dispatcher stamps a 50-char title from the user's first
 message on the first non-empty turn, idempotently. User-set titles
 (via /rename) win because we mark _titled=True after the first
 auto-stamp.
 
-Compaction signal: after each turn, dispatcher fires a
-"compaction_recommended" envelope when the active branch crosses
-70% of the model's context window. Doesn't auto-compact — the UI is
-expected to surface a /compact button.
+after_turn feeds provider usage back into the tracker. It does not
+emit a UI recommend envelope.
 
 trigger_compaction: explicit user-driven compaction. Persists a
 synthesized compactionSummary message + re-parented kept tail,
@@ -372,35 +370,29 @@ def test_auto_title_skips_empty_input(tmp_db: SessionDB) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Compaction recommendation signal
+# after_turn does not surface a recommend envelope
 # ---------------------------------------------------------------------------
 
-def test_compaction_recommended_fires_when_branch_large(
+def test_after_turn_does_not_emit_compaction_recommended(
     tmp_db: SessionDB, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """With a tiny context_window stub + a few seeded messages, the
-    signal should fire after the next turn."""
+    """High occupancy still feeds usage back without a recommend event."""
     monkeypatch.setattr(D, "_resolve_model",
                         lambda profile, override=None: _stub_model(max_tokens=12000))
 
-    # Seed history; reported usage below drives the recommendation independently
-    # of the estimated preflight input budget.
     tmp_db.create_session("c1", "main")
     last = None
     for i in range(50):
         mid = f"m{i}"
         tmp_db.append_message("c1", {
             "id": mid, "role": "user" if i % 2 == 0 else "assistant",
-            "content": "x" * 200,   # ~50 tokens each
+            "content": "x" * 200,
             "timestamp": float(i), "predecessor": last,
         })
         last = mid
     tmp_db.set_head("c1", last)
 
     captured: list[dict] = []
-    # Report 10000 input tokens on the assistant turn — crosses 70% of
-    # the 12000-token window stub so engine.after_turn emits the
-    # recommendation envelope.
     fake = make_text_stream("ok", input_tokens=10000)
     orig = D._run_loop_blocking
 
@@ -418,17 +410,11 @@ def test_compaction_recommended_fires_when_branch_large(
     recs = [e for e in captured
             if e.get("type") == "chat_response"
             and e["data"].get("type") == "compaction_recommended"]
-    assert recs, "expected at least one compaction_recommended envelope"
-    assert recs[0]["data"]["session_id"] == "c1"
-    # New schema (from engine.after_turn): includes budget_pct + window.
-    # The legacy ``branch_messages`` field is gone — engine now reasons
-    # in tokens, not message counts.
-    assert recs[0]["data"]["budget_pct"] >= 0.70
-    assert recs[0]["data"]["context_window"] == 12000
+    assert recs == []
 
 
 def test_compaction_signal_silent_under_threshold(tmp_db: SessionDB) -> None:
-    """Short conversation → no signal."""
+    """Short conversation → no recommend envelope."""
     captured: list[dict] = []
     fake = make_text_stream("ok")
     orig = D._run_loop_blocking

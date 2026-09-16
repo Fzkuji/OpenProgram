@@ -29,7 +29,7 @@ dispatcher.process_user_turn
   → agent_loop → Context(system, messages, tools) → provider
 ```
 
-阈值:70% 提示 / 80% 自动压缩 / 95% 急救(`engine.py`)。
+阈值:80% 自动压缩 / 95% 急救(`engine.py`)。
 
 **主路径 vs 辅助路径**:主路径之外,有 8-10 处功能各自单独调一次 LLM(总结 /
 记忆 sleep / 分支总结 / mixture-of-agents / agentic runtime),它们绕过
