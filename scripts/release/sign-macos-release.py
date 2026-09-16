@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import time
 import zipfile
 
 MACHO = {bytes.fromhex(value) for value in (
@@ -33,6 +34,27 @@ def run(*args: str) -> str:
             f'{Path(args[0]).name} failed (exit {result.returncode}){detail}'
         )
     return result.stdout
+
+
+def create_dmg(image: Path, dmg_path: Path) -> None:
+    args = (
+        'hdiutil', 'create', '-volname', 'OpenProgram', '-srcfolder', str(image),
+        '-format', 'UDZO', str(dmg_path),
+    )
+    last_error: RuntimeError | None = None
+    for attempt in range(1, 6):
+        try:
+            run(*args)
+            return
+        except RuntimeError as exc:
+            last_error = exc
+            if 'Resource busy' not in str(exc) or attempt == 5:
+                raise
+            print(f'hdiutil create retry {attempt} after resource busy', flush=True)
+            time.sleep(2 * attempt)
+            if dmg_path.exists():
+                dmg_path.unlink()
+    raise last_error or RuntimeError('hdiutil create failed')
 
 
 def codesign(*options: str) -> str:
@@ -261,8 +283,7 @@ def main() -> None:
         image.mkdir()
         run('ditto', str(args.app), str(image / 'OpenProgram.app'))
         (image / 'Applications').symlink_to('/Applications')
-        run('hdiutil', 'create', '-volname', 'OpenProgram', '-srcfolder', str(image),
-            '-format', 'UDZO', str(dmg_path))
+        create_dmg(image, dmg_path)
         codesign('--force', '--sign', args.identity, '--timestamp', str(dmg_path))
         notarize(dmg_path, args.profile)
         run('xcrun', 'stapler', 'staple', str(dmg_path))

@@ -220,6 +220,23 @@ def test_run_includes_stderr_without_arguments(monkeypatch):
     assert 'codesign failed (exit 1)' in message
 
 
+def test_create_dmg_retries_resource_busy(monkeypatch, tmp_path):
+    ns = runpy.run_path(str(ROOT / 'scripts/release/sign-macos-release.py'))
+    calls = []
+
+    def command(*args):
+        calls.append(args)
+        if len(calls) < 3:
+            raise RuntimeError('hdiutil failed (exit 1): hdiutil: create failed - Resource busy')
+        return ''
+
+    monkeypatch.setitem(ns['create_dmg'].__globals__, 'run', command)
+    monkeypatch.setattr(ns['time'], 'sleep', lambda seconds: None)
+    ns['create_dmg'](tmp_path / 'image', tmp_path / 'OpenProgram.dmg')
+    assert len(calls) == 3
+    assert all(call[0] == 'hdiutil' and 'create' in call for call in calls)
+
+
 def test_resign_tar_gz_signs_packed_dylib_and_updates_manifest(monkeypatch, tmp_path):
     import hashlib
     import json

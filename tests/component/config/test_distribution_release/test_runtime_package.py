@@ -578,6 +578,7 @@ def test_packaged_smoke_rejects_unreleased_linux_desktop() -> None:
     assert "python3 -c" not in smoke
     assert "run_with_timeout" in smoke
     assert "timed out after" in smoke
+    assert "OPENPROGRAM_SELF_UPDATE_DEFER_BROWSER:=1" in smoke
 
 
 
@@ -713,7 +714,7 @@ def test_packaged_smoke_passes_verifier_arguments_with_system_bash(
         ["/bin/bash", str(ROOT / "scripts/release/smoke-packaged-runtime.sh"),
          "mac", str(tmp_path / "dist")],
         env={**os.environ, "TMPDIR": str(tmp_path), "CAPTURE": str(capture),
-             "OPENPROGRAM_SELF_UPDATE_DEFER_BROWSER": "1" if deferred else ""},
+             "OPENPROGRAM_SELF_UPDATE_DEFER_BROWSER": "1" if deferred else "0"},
         capture_output=True, text=True, check=False,
     )
     assert result.returncode == 37, result.stderr

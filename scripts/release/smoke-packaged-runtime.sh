@@ -36,6 +36,10 @@ test -x "$embedded_python" || {
 }
 PLAYWRIGHT_BROWSERS_PATH="$resources/runtime/assets/playwright"
 GPA_MODEL_PATH="$resources/runtime/assets/gpa/model.pt"
+# Packaged desktop smoke runs after Developer ID signing. Launching Playwright
+# Chromium on ARM GitHub runners hangs until killed; the product-runtime job
+# already launched Chromium before signing.
+: "${OPENPROGRAM_SELF_UPDATE_DEFER_BROWSER:=1}"
 export PLAYWRIGHT_BROWSERS_PATH GPA_MODEL_PATH
 
 run_with_timeout() {
