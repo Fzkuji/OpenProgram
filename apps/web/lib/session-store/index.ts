@@ -16,6 +16,7 @@ import {
   type DraftChannelChoiceHost,
 } from "../runtime-bridge/draft-channel-choice";
 import type { SessionTransferSnapshot } from "../tabs/tab-transfer-journal";
+import { forgetTakeLatestSession } from "@/lib/chat/chat-scroll";
 import {
   dropSessionStore,
   installScopeWriteThrough,
@@ -577,6 +578,7 @@ export const useSessionStore = createWithEqualityFn<ConvState>((set) => ({
 
   removeConversation: (id) =>
     set((s) => {
+      forgetTakeLatestSession(id);
       const rest = { ...s.conversations };
       delete rest[id];
       const order = { ...s.messageOrder };
@@ -622,6 +624,7 @@ export const useSessionStore = createWithEqualityFn<ConvState>((set) => ({
 
   clearConversations: () =>
     set((s) => {
+      for (const id of Object.keys(s.messageOrder)) forgetTakeLatestSession(id);
       // Clear persisted conversations without deleting independent unsent tabs.
       const nextDrafts = Object.fromEntries(
         Object.entries(s.composerDrafts).filter(([key]) =>
@@ -661,6 +664,7 @@ export const useSessionStore = createWithEqualityFn<ConvState>((set) => ({
 
   dropChatDraft: (key) =>
     set((s) => {
+      forgetTakeLatestSession(key);
       const drafts = { ...s.composerDrafts };
       const settings = { ...s.composerSettingsBySession };
       const pendingProjects = { ...s.pendingProjectsByChat };

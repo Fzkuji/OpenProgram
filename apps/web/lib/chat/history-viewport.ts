@@ -55,11 +55,14 @@ export interface AreaRestoreState {
   anchor: HistoryAnchor | null;
   oldTop: number;
   oldHeight: number;
+  /** True when this area was in the session viewport registry at capture. */
+  fromRegistry: boolean;
 }
 
 export function captureAreaRestoreState(
   area: HTMLElement,
   chatKey: string,
+  fromRegistry = false,
 ): AreaRestoreState {
   return {
     area,
@@ -67,7 +70,32 @@ export function captureAreaRestoreState(
     anchor: captureHistoryAnchor(area),
     oldTop: area.scrollTop,
     oldHeight: area.scrollHeight,
+    fromRegistry,
   };
+}
+
+function isCurrentChatArea(area: HTMLElement): boolean {
+  return typeof document !== "undefined"
+    && typeof document.getElementById === "function"
+    && document.getElementById("chatArea") === area;
+}
+
+/** Restore only when this area still shows the captured session and chatKey. */
+export function historyAreaStillOwned(
+  cap: Pick<AreaRestoreState, "area" | "chatKey" | "fromRegistry">,
+  liveRegistered: Map<HTMLElement, string> | undefined,
+  owner: {
+    sessionId: string;
+    focusedSessionId: string | null;
+    focusedChatKey: string | null;
+  },
+): boolean {
+  const registeredKey = liveRegistered?.get(cap.area);
+  if (registeredKey != null) return registeredKey === cap.chatKey;
+  if (cap.fromRegistry) return false;
+  if (!isCurrentChatArea(cap.area) || !cap.area.isConnected) return false;
+  if (owner.focusedSessionId !== owner.sessionId) return false;
+  return (owner.focusedChatKey ?? owner.sessionId) === cap.chatKey;
 }
 
 export function restoreAreaWindow(
