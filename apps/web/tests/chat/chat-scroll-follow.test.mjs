@@ -4,19 +4,125 @@ import test from "node:test";
 
 import {
   JUMP_PLACEMENT_TOLERANCE_PX,
+  TAKE_LATEST_IDLE_LIMIT,
   chatAtBottomSlack,
   defaultScrollerKey,
+  forgetTakeLatestSession,
   isChatAtBottom,
+  isProvisionalSessionBind,
+  lastSettledTakeLatest,
   latestScrollTop,
   noteTakeLatest,
   peekTakeLatest,
   readComposerOverlay,
+  retainTakeLatestViewport,
+  settleTakeLatest,
   snapToLatest,
   stopAreaScroll,
   subscribeTakeLatest,
   animateJumpToLatest,
 } from "../../lib/chat/chat-scroll.ts";
-import { restoreAreaWindow, setFollowLock, isFollowLocked } from "../../lib/chat/history-viewport.ts";
+import {
+  historyAreaStillOwned,
+  restoreAreaWindow,
+  setFollowLock,
+  isFollowLocked,
+} from "../../lib/chat/history-viewport.ts";
+
+test("draft-to-existing switch is not a provisional bind", () => {
+  assert.equal(
+    isProvisionalSessionBind("local_draft", "local_draft", "sess_real", "sess_real"),
+    false,
+  );
+  assert.equal(
+    isProvisionalSessionBind("local_draft", "local_draft", "local_draft", "local_draft"),
+    true,
+  );
+  assert.equal(
+    isProvisionalSessionBind("local_a", "local_a", "local_b", "local_b"),
+    false,
+  );
+  assert.equal(isProvisionalSessionBind("local_draft", null, null, "sess_real"), false);
+});
+
+test("history restore requires session and chatKey ownership, not isConnected", () => {
+  const area = { isConnected: true };
+  const cap = { area, chatKey: "s" };
+  const registered = new Map([[area, "s"]]);
+  assert.equal(
+    historyAreaStillOwned(cap, registered, {
+      sessionId: "s",
+      focusedSessionId: "other",
+      focusedChatKey: "other",
+    }),
+    true,
+  );
+  registered.set(area, "peer:s");
+  assert.equal(
+    historyAreaStillOwned(cap, registered, {
+      sessionId: "s",
+      focusedSessionId: "s",
+      focusedChatKey: "s",
+    }),
+    false,
+  );
+  registered.delete(area);
+  assert.equal(
+    historyAreaStillOwned(cap, registered, {
+      sessionId: "s",
+      focusedSessionId: "other",
+      focusedChatKey: "s",
+    }),
+    false,
+  );
+  assert.equal(
+    historyAreaStillOwned(cap, undefined, {
+      sessionId: "s",
+      focusedSessionId: "s",
+      focusedChatKey: "s",
+    }),
+    true,
+  );
+});
+
+test("deleting a session drops its take-latest records", () => {
+  const sid = `del-${Date.now()}-${Math.random()}`;
+  const note = noteTakeLatest({ sessionId: sid, scrollerKey: sid, turnSeed: "u" });
+  settleTakeLatest(sid, sid, note.generation);
+  assert.equal(peekTakeLatest(sid, sid)?.generation, note.generation);
+  forgetTakeLatestSession(sid);
+  assert.equal(peekTakeLatest(sid, sid), null);
+  assert.equal(lastSettledTakeLatest(sid, sid), 0);
+});
+
+test("idle settled notes are capped; waiting notes and live viewports remain", () => {
+  const waitingSid = `wait-${Date.now()}-${Math.random()}`;
+  const waiting = noteTakeLatest({
+    sessionId: waitingSid,
+    scrollerKey: waitingSid,
+    turnSeed: "w",
+  });
+  const liveSid = `live-${Date.now()}-${Math.random()}`;
+  const live = noteTakeLatest({
+    sessionId: liveSid,
+    scrollerKey: liveSid,
+    turnSeed: "l",
+  });
+  settleTakeLatest(liveSid, liveSid, live.generation);
+  const release = retainTakeLatestViewport(liveSid, liveSid);
+  const idlePrefix = `idle-${Date.now()}-${Math.random()}`;
+  const firstIdle = `${idlePrefix}-0`;
+  for (let i = 0; i < TAKE_LATEST_IDLE_LIMIT + 5; i++) {
+    const sid = `${idlePrefix}-${i}`;
+    const note = noteTakeLatest({ sessionId: sid, scrollerKey: sid, turnSeed: `t${i}` });
+    settleTakeLatest(sid, sid, note.generation);
+  }
+  assert.equal(peekTakeLatest(waitingSid, waitingSid)?.generation, waiting.generation);
+  assert.equal(lastSettledTakeLatest(liveSid, liveSid), live.generation);
+  assert.equal(peekTakeLatest(firstIdle, firstIdle), null);
+  assert.equal(lastSettledTakeLatest(firstIdle, firstIdle), 0);
+  release();
+});
 
 test("F18 web production has no leftover follow writers", () => {
   const files = [
@@ -34,6 +140,32 @@ test("F18 web production has no leftover follow writers", () => {
     readFileSync(new URL("../../lib/runtime-bridge/session-history-loader.ts", import.meta.url), "utf8"),
     /direction===['"]latest['"]\) area\.scrollTop/,
   );
+});
+
+test("follow ownership contracts stay in the production files", () => {
+  const stick = readFileSync(
+    new URL("../../components/chat/messages/use-chat-area-stick.ts", import.meta.url),
+    "utf8",
+  );
+  const loader = readFileSync(
+    new URL("../../lib/runtime-bridge/session-history-loader.ts", import.meta.url),
+    "utf8",
+  );
+  const store = readFileSync(
+    new URL("../../lib/session-store/index.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(stick, /isProvisionalSessionBind\(/);
+  assert.doesNotMatch(
+    stick,
+    /outgoingKey\?\.startsWith\("local_"\)[\s\S]{0,120}!chatKey\.startsWith\("local_"\)/,
+  );
+  assert.match(stick, /typesetMath\(msgs\)/);
+  assert.doesNotMatch(stick, /renderMathInChat\(\)/);
+  assert.doesNotMatch(stick, /stopJump = \(correct/);
+  assert.match(loader, /historyAreaStillOwned\(/);
+  assert.doesNotMatch(loader, /liveRegistered\?\.has\(cap\.area\) \|\| cap\.area\.isConnected/);
+  assert.match(store, /forgetTakeLatestSession\(/);
 });
 
 test("F07 send during loading holds the lock then restore runs after unlock", () => {

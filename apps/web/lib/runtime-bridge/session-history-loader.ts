@@ -2,7 +2,7 @@ import { flushSync } from 'react-dom';
 import { convToChatMsgs } from '@/lib/chat/conv-mapper';
 import { useSessionHistory, updateSessionHistory, type HistoryPage } from '@/lib/chat/session-history';
 import { HistoryWindow, type HistoryDirection, type HistoryRow } from '@/lib/chat/history-window';
-import { captureAreaRestoreState, restoreAreaWindow } from '@/lib/chat/history-viewport';
+import { captureAreaRestoreState, historyAreaStillOwned, restoreAreaWindow } from '@/lib/chat/history-viewport';
 import { clearHeights, retainRowHeights } from '@/lib/chat/message-window';
 import { useSessionStore } from '@/lib/session-store';
 import { wsRequest } from '@/lib/net/ws-request';
@@ -144,7 +144,11 @@ export async function loadSessionHistoryWindow(id: string, direction: HistoryDir
   for (const cap of captures) {
     retainRowHeights(cap.chatKey, liveIds);
     if (direction === 'latest') continue;
-    if (liveRegistered?.has(cap.area) || cap.area.isConnected) {
+    if (historyAreaStillOwned(cap, liveRegistered, {
+      sessionId: id,
+      focusedSessionId: runtimeState.currentSessionId,
+      focusedChatKey: useSessionStore.getState().activeChatKey,
+    })) {
       restoreAreaWindow(cap, direction, around);
     }
   }

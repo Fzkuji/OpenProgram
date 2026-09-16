@@ -266,6 +266,17 @@ export function defaultScrollerKey(sessionId: string, background: boolean): stri
   return background ? `peer:${sessionId}` : sessionId;
 }
 
+/** True only when the incoming session is this draft's adopted identity. */
+export function isProvisionalSessionBind(
+  fromKey: string | null | undefined,
+  fromSid: string | null | undefined,
+  toKey: string | null | undefined,
+  toSid: string | null | undefined,
+): boolean {
+  if (!fromKey?.startsWith("local_") || !toKey || !toSid) return false;
+  return fromKey === toKey || fromKey === toSid || (!!fromSid && fromSid === toSid);
+}
+
 export type TakeLatestNote = {
   sessionId: string;
   scrollerKey: string;
@@ -277,8 +288,12 @@ type TakeLatestListener = (note: TakeLatestNote) => void;
 
 const takeLatestNotes = new Map<string, TakeLatestNote>();
 const takeLatestSettled = new Map<string, number>();
+const takeLatestLive = new Map<string, number>();
 const takeLatestListeners = new Set<TakeLatestListener>();
 let takeLatestGeneration = 0;
+
+/** Idle completed records kept after session delete / viewport release. */
+export const TAKE_LATEST_IDLE_LIMIT = 32;
 
 function takeLatestMapKey(sessionId: string, scrollerKey: string): string {
   return `${sessionId}\0${scrollerKey}`;
@@ -295,6 +310,7 @@ export function noteTakeLatest(
     generation: takeLatestGeneration,
   };
   takeLatestNotes.set(takeLatestMapKey(note.sessionId, note.scrollerKey), stamped);
+  pruneTakeLatest();
   for (const listener of takeLatestListeners) listener(stamped);
   return stamped;
 }
@@ -322,6 +338,52 @@ export function settleTakeLatest(
   const key = takeLatestMapKey(sessionId, scrollerKey);
   const prev = takeLatestSettled.get(key) ?? 0;
   if (generation > prev) takeLatestSettled.set(key, generation);
+  pruneTakeLatest();
+}
+
+export function retainTakeLatestViewport(
+  sessionId: string,
+  scrollerKey: string,
+): () => void {
+  const key = takeLatestMapKey(sessionId, scrollerKey);
+  takeLatestLive.set(key, (takeLatestLive.get(key) ?? 0) + 1);
+  return () => {
+    const n = (takeLatestLive.get(key) ?? 1) - 1;
+    if (n <= 0) takeLatestLive.delete(key);
+    else takeLatestLive.set(key, n);
+  };
+}
+
+export function forgetTakeLatestSession(sessionId: string): void {
+  if (!sessionId) return;
+  const prefix = `${sessionId}\0`;
+  for (const key of [...takeLatestNotes.keys()]) {
+    if (key.startsWith(prefix)) takeLatestNotes.delete(key);
+  }
+  for (const key of [...takeLatestSettled.keys()]) {
+    if (key.startsWith(prefix)) takeLatestSettled.delete(key);
+  }
+}
+
+function isWaitingTakeLatest(key: string): boolean {
+  const note = takeLatestNotes.get(key);
+  const settled = takeLatestSettled.get(key) ?? 0;
+  return !!note && note.generation > settled;
+}
+
+function pruneTakeLatest(): void {
+  const idle: string[] = [];
+  for (const key of new Set([...takeLatestNotes.keys(), ...takeLatestSettled.keys()])) {
+    if (isWaitingTakeLatest(key)) continue;
+    if ((takeLatestLive.get(key) ?? 0) > 0) continue;
+    idle.push(key);
+  }
+  const excess = idle.length - TAKE_LATEST_IDLE_LIMIT;
+  if (excess <= 0) return;
+  for (const key of idle.slice(0, excess)) {
+    takeLatestNotes.delete(key);
+    takeLatestSettled.delete(key);
+  }
 }
 
 /** Move an open note to a new session/scroller without a new generation (provisional bind). */
@@ -346,6 +408,7 @@ export function relocateTakeLatest(
     takeLatestSettled.delete(from);
     takeLatestSettled.set(takeLatestMapKey(toSessionId, toScrollerKey), settled);
   }
+  pruneTakeLatest();
   for (const listener of takeLatestListeners) listener(moved);
   return moved;
 }

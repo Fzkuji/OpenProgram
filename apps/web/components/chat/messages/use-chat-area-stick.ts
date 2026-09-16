@@ -3,6 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObje
 import {
   animateJumpToLatest,
   isChatAtBottom,
+  isProvisionalSessionBind,
   lastSettledTakeLatest,
   latestScrollTop,
   peekTakeLatest,
@@ -11,12 +12,13 @@ import {
   readComposerOverlay,
   resolveChatScrollTop,
   relocateTakeLatest,
+  retainTakeLatestViewport,
   settleTakeLatest,
   snapToLatest,
   subscribeTakeLatest,
   writeChatScroll,
 } from "@/lib/chat/chat-scroll";
-import { renderMathInChat } from "@/lib/runtime-bridge/markdown-render";
+import { typesetMath } from "@/lib/runtime-bridge/markdown-render";
 import { useSessionHistory } from "@/lib/chat/session-history";
 import { loadSessionHistoryWindow } from "@/lib/runtime-bridge/session-history-loader";
 import { useSessionStore } from "@/lib/session-store";
@@ -117,22 +119,26 @@ export function useChatAreaStick(
     }
   };
 
-  const stopJump = (correct: boolean) => {
+  const stopJump = () => {
     const cancel = cancelJumpRef.current;
     cancelJumpRef.current = null;
     jumpingRef.current = false;
-    if (!correct) cancel?.();
-    else cancel?.();
+    cancel?.();
   };
 
   useEffect(() => {
     if (!chatKey) return;
     const sid = sessionId ?? chatKey;
-    return subscribeTakeLatest((note) => {
+    const releaseViewport = retainTakeLatestViewport(sid, chatKey);
+    const unsubscribe = subscribeTakeLatest((note) => {
       if (note.scrollerKey === chatKey && note.sessionId === sid) {
         setNoteTick((n) => n + 1);
       }
     });
+    return () => {
+      unsubscribe();
+      releaseViewport();
+    };
   }, [chatKey, sessionId]);
 
   useEffect(() => {
@@ -169,7 +175,7 @@ export function useChatAreaStick(
       interactionRef.current += 1;
       pendingJumpRef.current = false;
       if (jumpingRef.current) {
-        stopJump(false);
+        stopJump();
         stuckRef.current = false;
       }
       if (op && op.generation > 0) {
@@ -195,7 +201,7 @@ export function useChatAreaStick(
     };
 
     const pin = () => {
-      renderMathInChat();
+      typesetMath(msgs);
       if (area.clientHeight <= 0) return;
       const op = opRef.current;
       if (jumpingRef.current) {
@@ -299,16 +305,18 @@ export function useChatAreaStick(
       );
       const outgoingKey = previousKeyRef.current;
       const outgoingSid = previousSidRef.current;
-      const provisional = !!(
-        outgoingKey?.startsWith("local_")
-        && chatKey
+      if (
+        outgoingSid
+        && outgoingKey
         && sid
-        && !chatKey.startsWith("local_")
-      );
-      if (provisional && outgoingSid && outgoingKey && sid && chatKey) {
-        relocateTakeLatest(outgoingSid, outgoingKey, sid, chatKey);
+        && chatKey
+        && isProvisionalSessionBind(outgoingKey, outgoingSid, chatKey, sid)
+      ) {
+        const moved = relocateTakeLatest(outgoingSid, outgoingKey, sid, chatKey);
         setFollowLock(outgoingKey, false);
-        setFollowLock(chatKey, true);
+        if (moved && lastSettledTakeLatest(sid, chatKey) < moved.generation) {
+          setFollowLock(chatKey, true);
+        }
       } else if (outgoingSid && outgoingKey) {
         const outgoing = peekTakeLatest(outgoingSid, outgoingKey);
         if (outgoing) settleTakeLatest(outgoingSid, outgoingKey, outgoing.generation);

@@ -70,6 +70,23 @@ export function captureAreaRestoreState(
   };
 }
 
+/** Restore only when this area still shows the captured session and chatKey. */
+export function historyAreaStillOwned(
+  cap: Pick<AreaRestoreState, "area" | "chatKey">,
+  liveRegistered: Map<HTMLElement, string> | undefined,
+  owner: {
+    sessionId: string;
+    focusedSessionId: string | null;
+    focusedChatKey: string | null;
+  },
+): boolean {
+  const registeredKey = liveRegistered?.get(cap.area);
+  if (registeredKey != null) return registeredKey === cap.chatKey;
+  if (!cap.area.isConnected) return false;
+  if (owner.focusedSessionId !== owner.sessionId) return false;
+  return (owner.focusedChatKey ?? owner.sessionId) === cap.chatKey;
+}
+
 export function restoreAreaWindow(
   state: AreaRestoreState,
   direction: string,
