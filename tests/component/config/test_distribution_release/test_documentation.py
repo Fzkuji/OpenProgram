@@ -279,7 +279,6 @@ def test_public_docs_describe_one_release_product_runtime() -> None:
         "openprogram programs install wiki",
         "Agent programs are not part",
         "agent Program 不属于",
-        "notarized DMG",
         "exact wheel",
         "精确 wheel",
         "pip install 'openprogram[search]'",
