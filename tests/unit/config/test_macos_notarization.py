@@ -18,13 +18,18 @@ def test_nonaccepted_submission_stops_publication(monkeypatch, capsys, status):
             return '{"id":"submission-123"}'
         if 'wait' in args:
             raise RuntimeError('wait timed out')
+        if 'log' in args:
+            return '{"status":"Invalid","issues":[{"message":"invalid entitlement"}]}'
         return '{"status":"' + status + '"}'
 
     monkeypatch.setitem(notarize.__globals__, 'run', command)
     with pytest.raises(RuntimeError, match=status + ': submission-123'):
         notarize(Path('/staged/app.zip'), 'test-profile')
-    assert 'Notarization submitted: submission-123' in capsys.readouterr().out
+    captured = capsys.readouterr().out
+    assert 'Notarization submitted: submission-123' in captured
+    assert 'invalid entitlement' in captured
     assert any('info' in call for call in calls)
+    assert any('log' in call for call in calls)
 
 
 def test_accepted_status_after_wait_error_allows_publication(monkeypatch):
@@ -87,33 +92,53 @@ def _staged_app(tmp_path, nested_framework=False):
     with (app / 'Contents' / 'Info.plist').open('wb') as stream:
         plistlib.dump({
             'CFBundleIdentifier': 'ai.openprogram.desktop',
-            'CFBundleShortVersionString': '0.9.4',
+            'CFBundleShortVersionString': '0.9.5',
         }, stream)
     macho = bytes.fromhex('feedfacf') + b'\0' * 16
     (macos / 'OpenProgram').write_bytes(macho)
-    framework_binary = None
     if nested_framework:
         framework = (
             app / 'Contents' / 'Frameworks' / 'Electron Framework.framework'
             / 'Versions' / 'A'
         )
         framework.mkdir(parents=True)
-        framework_binary = framework / 'Electron Framework'
-        framework_binary.write_bytes(macho)
+        (framework / 'Electron Framework').write_bytes(macho)
+        helper = (
+            app / 'Contents' / 'Frameworks' / 'OpenProgram Helper.app'
+            / 'Contents' / 'MacOS'
+        )
+        helper.mkdir(parents=True)
+        (helper / 'OpenProgram Helper').write_bytes(macho)
+        chrome = (
+            app / 'Contents' / 'Resources' / 'Google Chrome for Testing Helper.app'
+            / 'Contents' / 'MacOS'
+        )
+        chrome.mkdir(parents=True)
+        (chrome / 'Google Chrome for Testing Helper').write_bytes(macho)
+        (app / 'Contents' / 'Resources').mkdir(parents=True, exist_ok=True)
+        (app / 'Contents' / 'Resources' / 'native.so').write_bytes(macho)
     resolved = app.resolve()
-    return (
-        resolved,
-        (resolved / 'Contents' / 'MacOS' / 'OpenProgram'),
-        None if framework_binary is None else (
-            resolved / 'Contents' / 'Frameworks' / 'Electron Framework.framework'
-            / 'Versions' / 'A' / 'Electron Framework'
-        ),
-    )
+    extras = {}
+    if nested_framework:
+        extras = {
+            'framework': (
+                resolved / 'Contents' / 'Frameworks'
+                / 'Electron Framework.framework' / 'Versions' / 'A'
+                / 'Electron Framework'
+            ),
+            'helper_app': resolved / 'Contents' / 'Frameworks' / 'OpenProgram Helper.app',
+            'chrome_app': (
+                resolved / 'Contents' / 'Resources'
+                / 'Google Chrome for Testing Helper.app'
+            ),
+            'native': resolved / 'Contents' / 'Resources' / 'native.so',
+        }
+    return resolved, resolved / 'Contents' / 'MacOS' / 'OpenProgram', extras
 
 
 def test_sign_clears_xattrs_and_uses_keychain(monkeypatch, tmp_path):
     ns = runpy.run_path(str(ROOT / 'scripts/release/sign-macos-release.py'))
-    app, _main, _framework = _staged_app(tmp_path)
+    app, _main, _extras = _staged_app(tmp_path)
     calls = []
 
     def command(*args):
@@ -133,9 +158,16 @@ def test_sign_clears_xattrs_and_uses_keychain(monkeypatch, tmp_path):
     assert all('--keychain' in call and '/private/ci.keychain-db' in call for call in signed)
 
 
+def _sign_calls(calls):
+    return [
+        call for call in calls
+        if call and call[0] == 'codesign' and '--sign' in call
+    ]
+
+
 def test_sign_nested_framework_before_outer_app(monkeypatch, tmp_path):
     ns = runpy.run_path(str(ROOT / 'scripts/release/sign-macos-release.py'))
-    app, main_binary, framework_binary = _staged_app(tmp_path, nested_framework=True)
+    app, main_binary, extras = _staged_app(tmp_path, nested_framework=True)
     calls = []
 
     def command(*args):
@@ -143,22 +175,27 @@ def test_sign_nested_framework_before_outer_app(monkeypatch, tmp_path):
         return ''
 
     monkeypatch.setitem(ns['sign'].__globals__, 'run', command)
-    ns['sign'](
-        app,
-        'Developer ID Application: Example',
-        ROOT / 'apps' / 'desktop' / 'build' / 'entitlements.mac.plist',
-    )
-    signed = [
-        call[-1] for call in calls
-        if call and call[0] == 'codesign' and '--sign' in call
-    ]
-    assert signed[0] == str(framework_binary)
-    assert signed[-1] == str(app)
-    assert str(main_binary) not in signed
+    entitlements = ROOT / 'apps' / 'desktop' / 'build' / 'entitlements.mac.plist'
+    ns['sign'](app, 'Developer ID Application: Example', entitlements)
+    signed = _sign_calls(calls)
+    targets = [call[-1] for call in signed]
+    framework_binary = extras['framework']
     framework_bundle = app / 'Contents' / 'Frameworks' / 'Electron Framework.framework'
-    assert str(framework_bundle) in signed
-    assert signed.index(str(framework_binary)) < signed.index(str(framework_bundle))
-    assert signed.index(str(framework_bundle)) < signed.index(str(app))
+    assert targets[-1] == str(app)
+    assert str(main_binary) not in targets
+    assert str(framework_bundle) in targets
+    assert targets.index(str(framework_binary)) < targets.index(str(framework_bundle))
+    assert targets.index(str(framework_bundle)) < targets.index(str(app))
+    assert targets.index(str(extras['helper_app'])) < targets.index(str(app))
+    assert targets.index(str(extras['chrome_app'])) < targets.index(str(app))
+    by_target = {call[-1]: call for call in signed}
+    assert '--entitlements' in by_target[str(app)]
+    assert str(entitlements) in by_target[str(app)]
+    assert '--entitlements' in by_target[str(extras['helper_app'])]
+    assert '--entitlements' not in by_target[str(framework_binary)]
+    assert '--entitlements' not in by_target[str(framework_bundle)]
+    assert '--entitlements' not in by_target[str(extras['chrome_app'])]
+    assert '--entitlements' not in by_target[str(extras['native'])]
 
 
 def test_run_includes_stderr_without_arguments(monkeypatch):

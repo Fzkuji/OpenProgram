@@ -44,6 +44,12 @@ def clear_extended_attributes(app: Path) -> None:
     run('xattr', '-cr', str(app))
 
 
+def uses_app_entitlements(item: Path, app: Path) -> bool:
+    if item == app:
+        return True
+    return item.suffix == '.app' and item.name.startswith('OpenProgram')
+
+
 def notarize(path: Path, profile: str) -> None:
     keychain = os.environ.get('OPENPROGRAM_NOTARY_KEYCHAIN')
     auth = ['--keychain-profile', profile]
@@ -64,6 +70,12 @@ def notarize(path: Path, profile: str) -> None:
     status = json.loads(run('xcrun', 'notarytool', 'info', submission,
                             *auth, '--output-format', 'json')).get('status')
     if status != 'Accepted':
+        try:
+            log = run('xcrun', 'notarytool', 'log', submission, *auth)
+        except RuntimeError:
+            log = ''
+        if log.strip():
+            print(log.strip()[:4000], flush=True)
         raise RuntimeError(f'Apple notarization {status}: {submission}. '
                            'No release artifacts were published; inspect this submission with notarytool info/log.')
     print(f'Notarization Accepted: {submission}', flush=True)
@@ -98,8 +110,10 @@ def sign(app: Path, identity: str, entitlements: Path) -> None:
     clear_extended_attributes(app)
     for item in nested + [app]:
         print(f'Signing {item.relative_to(app) if item != app else app.name}', flush=True)
-        codesign('--force', '--sign', identity, '--timestamp', '--options', 'runtime',
-                 '--entitlements', str(entitlements), str(item))
+        args = ['--force', '--sign', identity, '--timestamp', '--options', 'runtime']
+        if uses_app_entitlements(item, app):
+            args.extend(['--entitlements', str(entitlements)])
+        codesign(*args, str(item))
     codesign('--verify', '--deep', '--strict', str(app))
 
 
