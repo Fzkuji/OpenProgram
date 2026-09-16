@@ -218,3 +218,51 @@ def test_run_includes_stderr_without_arguments(monkeypatch):
     assert 'code object is not signed at all' in message
     assert 'Electron Framework.framework' in message
     assert 'codesign failed (exit 1)' in message
+
+
+def test_resign_tar_gz_signs_packed_dylib_and_updates_manifest(monkeypatch, tmp_path):
+    import hashlib
+    import json
+    import tarfile
+
+    ns = runpy.run_path(str(ROOT / 'scripts/release/sign-macos-release.py'))
+    archive_dir = tmp_path / 'macos-arm64'
+    archive_dir.mkdir()
+    dylib = 'libtree_sitter_python.dylib'
+    payload = bytes.fromhex('feedfacf') + b'\0' * 16
+    source = tmp_path / dylib
+    source.write_bytes(payload)
+    archive = archive_dir / 'bundle.tar.gz'
+    with tarfile.open(archive, 'w:gz') as tar:
+        tar.add(source, arcname=dylib)
+    original = hashlib.sha256(payload).hexdigest()
+    (archive_dir / 'manifest.json').write_text(json.dumps({
+        'platform': 'macos-arm64',
+        'archive': 'bundle.tar.gz',
+        'languages': {
+            'python': {
+                'file': dylib,
+                'symbol': 'tree_sitter_python',
+                'sha256': original,
+            },
+        },
+    }))
+    calls = []
+
+    def command(*args):
+        calls.append(args)
+        if args and args[0] == 'codesign':
+            path = Path(args[-1])
+            path.write_bytes(path.read_bytes() + b'SIGN')
+        return ''
+
+    monkeypatch.setitem(ns['resign_tar_gz'].__globals__, 'run', command)
+    ns['resign_tar_gz'](archive, 'Developer ID Application: Example')
+    assert any(call[0] == 'codesign' and call[-1].endswith(dylib) for call in calls)
+    with tarfile.open(archive, 'r:gz') as tar:
+        extracted = tar.extractfile(dylib).read()
+    assert extracted.endswith(b'SIGN')
+    manifest = json.loads((archive_dir / 'manifest.json').read_text())
+    digest = hashlib.sha256(extracted).hexdigest()
+    assert manifest['languages']['python']['sha256'] == digest
+    assert digest != original

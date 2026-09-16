@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
 import plistlib
 import shutil
 import subprocess
+import tarfile
 import tempfile
+import zipfile
 
 MACHO = {bytes.fromhex(value) for value in (
     'feedface', 'cefaedfe', 'feedfacf', 'cffaedfe', 'cafebabe', 'bebafeca',
@@ -50,6 +53,113 @@ def uses_app_entitlements(item: Path, app: Path) -> bool:
     return item.suffix == '.app' and item.name.startswith('OpenProgram')
 
 
+def macho_file(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    with path.open('rb') as stream:
+        return stream.read(4) in MACHO
+
+
+def file_digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open('rb') as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def update_adjacent_manifest(archive: Path, digests: dict[str, str]) -> None:
+    manifest_path = archive.parent / 'manifest.json'
+    if not manifest_path.is_file():
+        return
+    try:
+        data = json.loads(manifest_path.read_text(encoding='utf-8'))
+    except json.JSONDecodeError:
+        return
+    languages = data.get('languages')
+    if not isinstance(languages, dict):
+        return
+    changed = False
+    for entry in languages.values():
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get('file')
+        if name in digests:
+            entry['sha256'] = digests[name]
+            changed = True
+    if changed:
+        manifest_path.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
+
+
+def sign_binary(path: Path, identity: str) -> None:
+    codesign('--force', '--sign', identity, '--timestamp', '--options', 'runtime', str(path))
+
+
+def resign_tar_gz(archive: Path, identity: str) -> None:
+    with tempfile.TemporaryDirectory(prefix='openprogram-archive-') as directory:
+        work = Path(directory)
+        extracted = work / 'extracted'
+        extracted.mkdir()
+        with tarfile.open(archive, 'r:gz') as tar:
+            try:
+                tar.extractall(extracted, filter='data')
+            except TypeError:
+                tar.extractall(extracted)
+        digests: dict[str, str] = {}
+        for item in extracted.rglob('*'):
+            if not macho_file(item):
+                continue
+            sign_binary(item, identity)
+            digest = file_digest(item)
+            digests[item.name] = digest
+            digests[str(item.relative_to(extracted))] = digest
+        if not digests:
+            return
+        rebuilt = work / 'rebuilt.tar.gz'
+        with tarfile.open(rebuilt, 'w:gz') as tar:
+            for item in sorted(extracted.rglob('*')):
+                tar.add(item, arcname=str(item.relative_to(extracted)), recursive=False)
+        shutil.copyfile(rebuilt, archive)
+        update_adjacent_manifest(archive, digests)
+
+
+def resign_zip(archive: Path, identity: str) -> None:
+    with tempfile.TemporaryDirectory(prefix='openprogram-archive-') as directory:
+        work = Path(directory)
+        extracted = work / 'extracted'
+        extracted.mkdir()
+        with zipfile.ZipFile(archive) as bundle:
+            bundle.extractall(extracted)
+        digests: dict[str, str] = {}
+        for item in extracted.rglob('*'):
+            if not macho_file(item):
+                continue
+            sign_binary(item, identity)
+            digest = file_digest(item)
+            digests[item.name] = digest
+            digests[str(item.relative_to(extracted))] = digest
+        if not digests:
+            return
+        rebuilt = work / 'rebuilt.zip'
+        with zipfile.ZipFile(rebuilt, 'w') as bundle:
+            for item in sorted(extracted.rglob('*')):
+                if item.is_file():
+                    bundle.write(item, arcname=str(item.relative_to(extracted)))
+        shutil.copyfile(rebuilt, archive)
+        update_adjacent_manifest(archive, digests)
+
+
+def resign_packed_archives(app: Path, identity: str) -> None:
+    for item in app.rglob('*'):
+        if not item.is_file():
+            continue
+        name = item.name.lower()
+        if name.endswith('.tar.gz') or name.endswith('.tgz'):
+            resign_tar_gz(item, identity)
+        elif name.endswith('.zip'):
+            resign_zip(item, identity)
+
+
 def notarize(path: Path, profile: str) -> None:
     keychain = os.environ.get('OPENPROGRAM_NOTARY_KEYCHAIN')
     auth = ['--keychain-profile', profile]
@@ -75,7 +185,7 @@ def notarize(path: Path, profile: str) -> None:
         except RuntimeError:
             log = ''
         if log.strip():
-            print(log.strip()[:4000], flush=True)
+            print(log.strip()[:20000], flush=True)
         raise RuntimeError(f'Apple notarization {status}: {submission}. '
                            'No release artifacts were published; inspect this submission with notarytool info/log.')
     print(f'Notarization Accepted: {submission}', flush=True)
@@ -108,6 +218,7 @@ def sign(app: Path, identity: str, entitlements: Path) -> None:
     nested = [item for item in files if item.parent != root_macos] + bundles
     nested.sort(key=lambda p: len(p.parts), reverse=True)
     clear_extended_attributes(app)
+    resign_packed_archives(app, identity)
     for item in nested + [app]:
         print(f'Signing {item.relative_to(app) if item != app else app.name}', flush=True)
         args = ['--force', '--sign', identity, '--timestamp', '--options', 'runtime']
