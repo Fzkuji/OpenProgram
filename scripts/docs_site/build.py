@@ -683,8 +683,6 @@ def _build_into_out_root() -> int:
     searchmod.write_index(search_records, OUT_ROOT)
     _write_home(tabs)
     _copy_static_root()
-    from .contributors import write_contributors_svg
-    write_contributors_svg(OUT_ROOT / "contributors.svg")
     _write_sitemap()
 
     print(f"built {rendered} pages → {OUT_ROOT}")

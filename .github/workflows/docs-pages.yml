@@ -25,7 +25,6 @@ jobs:
     env:
       OPENPROGRAM_DOCS_BASE: /docs/
       OPENPROGRAM_DOCS_ORIGIN: https://openprogram.io
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6

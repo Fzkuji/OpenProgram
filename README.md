@@ -263,13 +263,10 @@ Using OpenProgram in your work, or building on the code? Please cite our paper â
 Thank you to everyone who helps improve OpenProgram through code, bug reports,
 reproductions, tests, documentation, reviews, and suggestions.
 
-<p align="center">
-  <a href="https://github.com/Fzkuji/OpenProgram/graphs/contributors">
-    <img src="https://openprogram.io/docs/contributors.svg" alt="OpenProgram contributors" height="56" />
-  </a>
-</p>
+<a href="https://github.com/Fzkuji/OpenProgram/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=Fzkuji/OpenProgram" alt="Contributors" />
+</a>
 
-The sheet is rebuilt from GitHub on each documentation publish. Automated
-accounts are omitted. Thank you also to everyone who helps through
+Thank you also to everyone who helps through
 [issues](https://github.com/Fzkuji/OpenProgram/issues?q=is%3Aissue) and
 [pull requests](https://github.com/Fzkuji/OpenProgram/pulls?q=is%3Apr).
