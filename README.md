@@ -48,6 +48,7 @@
   - [4. Event Infrastructure â€” for proactive agents](#4-event-infrastructure--for-proactive-agents)
 - [Citation](#citation)
 - [License](#license)
+- [Acknowledgements](#acknowledgements)
 
 ## Install
 
@@ -260,10 +261,15 @@ Using OpenProgram in your work, or building on the code? Please cite our paper â
 ## Acknowledgements
 
 Thank you to everyone who helps improve OpenProgram through code, bug reports,
-reproductions, tests, documentation, reviews, and suggestions. These contributions
-make the framework more reliable and easier to use.
+reproductions, tests, documentation, reviews, and suggestions.
 
-We appreciate our [code contributors](https://github.com/Fzkuji/OpenProgram/graphs/contributors)
-and everyone who contributes through [issues](https://github.com/Fzkuji/OpenProgram/issues?q=is%3Aissue)
-and [pull requests](https://github.com/Fzkuji/OpenProgram/pulls?q=is%3Apr), including
-contributions that do not appear in the commit history.
+<p align="center">
+  <a href="https://github.com/Fzkuji/OpenProgram/graphs/contributors">
+    <img src="https://openprogram.io/docs/contributors.svg" alt="OpenProgram contributors" />
+  </a>
+</p>
+
+The sheet is rebuilt from GitHub on each documentation publish. Automated
+accounts are omitted. Thank you also to everyone who helps through
+[issues](https://github.com/Fzkuji/OpenProgram/issues?q=is%3Aissue) and
+[pull requests](https://github.com/Fzkuji/OpenProgram/pulls?q=is%3Apr).
