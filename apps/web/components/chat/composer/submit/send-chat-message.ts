@@ -169,6 +169,16 @@ export function sendChatMessage({
 }: SendMessageBridgeArgs): boolean {
   const ws = getSocket();
   if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+  // `background` captures the submitting pane, not the focus at drain time.
+  // Re-read ownership at each shell write: queue drain, async preparation,
+  // or onSent can run after the user has switched to a different chat.
+  const ownsFocusedShell = () => {
+    const focused = useSessionStore.getState();
+    return !background && sessionId === (
+      focused.activeChatKey ?? focused.currentSessionId
+      ?? runtimeState.currentSessionId ?? null
+    );
+  };
   // Remember the knobs this turn rode out under, so a `run_active`
   // rejection (which echoes only the text back) can be re-queued with
   // the same settings instead of guessed defaults.
@@ -194,7 +204,7 @@ export function sendChatMessage({
   // Hide the welcome panel right away — before the ack round-trip.
   // Skipped for background sends: the welcome panel belongs to the
   // focused chat shell, not to the peer session being written to.
-  if (!background) setWelcomeVisible(false);
+  if (ownsFocusedShell()) setWelcomeVisible(false);
 
   // Exact registered `name(...)` input is intercepted by useChatSubmit and
   // never reaches this chat bridge. The removed legacy `run ...` syntax is
@@ -253,7 +263,7 @@ export function sendChatMessage({
   // Additional working directories picked before the session exists ride
   // the chat frame (backend persists them via save_session_run_config on
   // session create). Harmless on existing sessions — same list the
-  // backend already has. Keyed by the same chat key as pendingProjects:
+  // backend has. Keyed by the same chat key as pendingProjects:
   // drafts use their local_* key, which the backend adopts as the id.
   const additionalWorkingDirs = sessionId
     ? useSessionStore.getState().additionalWorkingDirsBySession[sessionId]
@@ -344,7 +354,12 @@ export function sendChatMessage({
   // button). A background turn must not flip it — the focused chat isn't the
   // one running. Per-session run state still lands via the store's
   // `setRunningTaskFor` on chat_ack, which is what the peer pane reads.
-  if (!background) setRunning(true);
+  // The legacy setter also writes the runtime's focused session. During a
+  // focus hand-off it can lag the React key; the keyed task above is enough
+  // until those identities agree, and must never create a task in another chat.
+  if (ownsFocusedShell() && (
+    !runtimeState.currentSessionId || runtimeState.currentSessionId === sessionId
+  )) setRunning(true);
   return true;
 }
 

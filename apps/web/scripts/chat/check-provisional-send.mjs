@@ -958,15 +958,31 @@ const legacySend = readFileSync(
   new URL("../../components/chat/composer/submit/send-chat-message.ts", import.meta.url),
   "utf8",
 );
+// The pane's captured background flag is not current focus: a queued send
+// can drain after a tab switch. Check the fresh ownership guard and both
+// call sites; submit-reliability.test.mjs also executes these scenarios.
+const shellOwnership = legacySend.match(
+  /const ownsFocusedShell = \(\) => \{([\s\S]*?)\n  \};/,
+)?.[1] ?? "";
+assert.match(
+  shellOwnership,
+  /const focused = useSessionStore\.getState\(\);/,
+  "shell ownership must re-read current focus for each side effect",
+);
+assert.match(
+  shellOwnership,
+  /return !background && sessionId === \([\s\S]*focused\.activeChatKey \?\? focused\.currentSessionId[\s\S]*\?\? runtimeState\.currentSessionId \?\? null/,
+  "only the submitting session in the focused shell may change singleton UI",
+);
 assert.match(
   legacySend,
-  /if \(!background\) setWelcomeVisible\(false\);/,
+  /if \(ownsFocusedShell\(\)\) setWelcomeVisible\(false\);/,
   "background sends must not hide the focused shell's welcome panel",
 );
 assert.match(
   legacySend,
-  /if \(!background\) setRunning\(true\);/,
-  "background sends must not flip the focused shell's run flag",
+  /if \(ownsFocusedShell\(\) && \(\s*!runtimeState\.currentSessionId \|\| runtimeState\.currentSessionId === sessionId\s*\)\) setRunning\(true\);/,
+  "run writes require both current shell ownership and matching legacy focus",
 );
 assert.match(
   legacySend,
