@@ -48,9 +48,7 @@ def clear_extended_attributes(app: Path) -> None:
 
 
 def uses_app_entitlements(item: Path, app: Path) -> bool:
-    if item == app:
-        return True
-    return item.suffix == '.app' and item.name.startswith('OpenProgram')
+    return item == app or item.suffix == '.app'
 
 
 def macho_file(path: Path) -> bool:

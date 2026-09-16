@@ -158,6 +158,7 @@ jobs:
 
   desktop:
     needs: [platforms, product-runtime]
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.platforms.outputs.desktop) }}

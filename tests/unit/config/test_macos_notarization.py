@@ -192,9 +192,9 @@ def test_sign_nested_framework_before_outer_app(monkeypatch, tmp_path):
     assert '--entitlements' in by_target[str(app)]
     assert str(entitlements) in by_target[str(app)]
     assert '--entitlements' in by_target[str(extras['helper_app'])]
+    assert '--entitlements' in by_target[str(extras['chrome_app'])]
     assert '--entitlements' not in by_target[str(framework_binary)]
     assert '--entitlements' not in by_target[str(framework_bundle)]
-    assert '--entitlements' not in by_target[str(extras['chrome_app'])]
     assert '--entitlements' not in by_target[str(extras['native'])]
 
 

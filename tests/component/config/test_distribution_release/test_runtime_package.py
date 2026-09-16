@@ -576,6 +576,8 @@ def test_packaged_smoke_rejects_unreleased_linux_desktop() -> None:
     assert "AppImage" not in smoke
     assert "linux)" not in smoke
     assert "python3 -c" not in smoke
+    assert "run_with_timeout" in smoke
+    assert "timed out after" in smoke
 
 
 

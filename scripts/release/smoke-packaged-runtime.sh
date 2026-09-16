@@ -37,13 +37,37 @@ test -x "$embedded_python" || {
 PLAYWRIGHT_BROWSERS_PATH="$resources/runtime/assets/playwright"
 GPA_MODEL_PATH="$resources/runtime/assets/gpa/model.pt"
 export PLAYWRIGHT_BROWSERS_PATH GPA_MODEL_PATH
+
+run_with_timeout() {
+  local seconds="$1"
+  shift
+  local pid elapsed=0
+  "$@" &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null; do
+    if test "$elapsed" -ge "$seconds"; then
+      pkill -TERM -P "$pid" 2>/dev/null || true
+      kill -TERM "$pid" 2>/dev/null || true
+      sleep 2
+      pkill -KILL -P "$pid" 2>/dev/null || true
+      kill -KILL "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      printf 'timed out after %ss: %s\n' "$seconds" "$*" >&2
+      return 124
+    fi
+    sleep 1
+    elapsed=$((elapsed + 1))
+  done
+  wait "$pid"
+}
+
 verify_args=("$resources/runtime")
 if test "${OPENPROGRAM_SELF_UPDATE_DEFER_BROWSER:-}" = 1; then
   verify_args+=(--allow-deferred-browser)
 fi
-"$embedded_python" -I "$resources/runtime/bin/verify-product-runtime.py" \
+run_with_timeout 180 "$embedded_python" -I "$resources/runtime/bin/verify-product-runtime.py" \
   "${verify_args[@]}"
-"$resources/runtime/bin/node" "$resources/runtime/assets/tui/index.cjs" --probe
+run_with_timeout 30 "$resources/runtime/bin/node" "$resources/runtime/assets/tui/index.cjs" --probe
 
 port="${OPENPROGRAM_SMOKE_PORT:-$((19000 + RANDOM % 500))}"
 case "$port" in ''|*[!0-9]*) printf 'invalid packaged smoke port\n' >&2; exit 1 ;; esac
@@ -59,7 +83,7 @@ cleanup() {
 trap cleanup EXIT
 
 HOME="$state_home" OPENPROGRAM_WEB_PORT="$port" OPENPROGRAM_IMMUTABLE_RUNTIME=1 \
-  "$embedded_python" -I -B -m openprogram worker start
+  run_with_timeout 90 "$embedded_python" -I -B -m openprogram worker start
 
 ready=0
 for _attempt in $(seq 1 120); do

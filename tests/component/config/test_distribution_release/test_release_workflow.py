@@ -32,6 +32,7 @@ def test_native_release_workflow_has_platform_jobs() -> None:
     assert "scripts/release/verify-release-version.py" in workflow
     assert "scripts/release/create-release-manifest.py" in workflow
     assert "scripts/release/smoke-packaged-runtime.sh" in workflow
+    assert "timeout-minutes: 90" in workflow
     assert "sha256" in workflow.lower()
     assert "electron-builder --mac --dir" in workflow
     assert "scripts/release/ci-sign-macos.py" in workflow
