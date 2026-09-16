@@ -145,6 +145,14 @@ export function useChatSubmit({
         showToast("Attachments can't be queued — stop the current turn or wait for it to finish.");
         return;
       }
+      // This accepted submit does not reach sendChatMessage until queue drain
+      // (and a successful steer may never reach it). Follow the submitting
+      // scroller now, even though messageOrder/lastId has not changed yet.
+      noteTakeLatest({
+        sessionId: submitOwnerKey,
+        scrollerKey: defaultScrollerKey(submitOwnerKey, bound !== null),
+        turnSeed: `queue:${queuedId}`,
+      });
       setComposerInputFor(submitOwnerKey, "");
       setHistoryIndex(-1);
       if (runningMessageMode === "steer") {
