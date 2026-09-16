@@ -263,9 +263,15 @@ Using OpenProgram in your work, or building on the code? Please cite our paper â
 Thank you to everyone who helps improve OpenProgram through code, bug reports,
 reproductions, tests, documentation, reviews, and suggestions.
 
-<a href="https://github.com/Fzkuji/OpenProgram/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=Fzkuji/OpenProgram" alt="Contributors" />
-</a>
+<!-- contributors-avatars -->
+<p>
+<a href="https://github.com/Fzkuji"><img src="https://github.com/Fzkuji.png?size=48" width="24" height="24" alt="Fzkuji" /></a>
+<a href="https://github.com/Qi202"><img src="https://github.com/Qi202.png?size=48" width="24" height="24" alt="Qi202" /></a>
+<a href="https://github.com/GithungDang"><img src="https://github.com/GithungDang.png?size=48" width="24" height="24" alt="GithungDang" /></a>
+<a href="https://github.com/basil-k-aji-dev"><img src="https://github.com/basil-k-aji-dev.png?size=48" width="24" height="24" alt="basil-k-aji-dev" /></a>
+<a href="https://github.com/binyangzhu000-sudo"><img src="https://github.com/binyangzhu000-sudo.png?size=48" width="24" height="24" alt="binyangzhu000-sudo" /></a>
+</p>
+<!-- /contributors-avatars -->
 
 Thank you also to everyone who helps through
 [issues](https://github.com/Fzkuji/OpenProgram/issues?q=is%3Aissue) and
