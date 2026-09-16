@@ -79,18 +79,41 @@ def test_codesign_passes_ci_keychain(monkeypatch):
     assert calls[-1] == ('codesign', '--verify', 'OpenProgram.app')
 
 
-def test_sign_clears_xattrs_and_uses_keychain(monkeypatch, tmp_path):
-    ns = runpy.run_path(str(ROOT / 'scripts/release/sign-macos-release.py'))
+def _staged_app(tmp_path, nested_framework=False):
+    import plistlib
     app = tmp_path / 'OpenProgram.app'
     macos = app / 'Contents' / 'MacOS'
     macos.mkdir(parents=True)
-    import plistlib
     with (app / 'Contents' / 'Info.plist').open('wb') as stream:
         plistlib.dump({
             'CFBundleIdentifier': 'ai.openprogram.desktop',
-            'CFBundleShortVersionString': '0.9.3',
+            'CFBundleShortVersionString': '0.9.4',
         }, stream)
-    (macos / 'OpenProgram').write_bytes(bytes.fromhex('feedfacf') + b'\0' * 16)
+    macho = bytes.fromhex('feedfacf') + b'\0' * 16
+    (macos / 'OpenProgram').write_bytes(macho)
+    framework_binary = None
+    if nested_framework:
+        framework = (
+            app / 'Contents' / 'Frameworks' / 'Electron Framework.framework'
+            / 'Versions' / 'A'
+        )
+        framework.mkdir(parents=True)
+        framework_binary = framework / 'Electron Framework'
+        framework_binary.write_bytes(macho)
+    resolved = app.resolve()
+    return (
+        resolved,
+        (resolved / 'Contents' / 'MacOS' / 'OpenProgram'),
+        None if framework_binary is None else (
+            resolved / 'Contents' / 'Frameworks' / 'Electron Framework.framework'
+            / 'Versions' / 'A' / 'Electron Framework'
+        ),
+    )
+
+
+def test_sign_clears_xattrs_and_uses_keychain(monkeypatch, tmp_path):
+    ns = runpy.run_path(str(ROOT / 'scripts/release/sign-macos-release.py'))
+    app, _main, _framework = _staged_app(tmp_path)
     calls = []
 
     def command(*args):
@@ -104,10 +127,38 @@ def test_sign_clears_xattrs_and_uses_keychain(monkeypatch, tmp_path):
         'Developer ID Application: Example',
         ROOT / 'apps' / 'desktop' / 'build' / 'entitlements.mac.plist',
     )
-    assert calls[0] == ('xattr', '-cr', str(app.resolve()))
+    assert calls[0] == ('xattr', '-cr', str(app))
     signed = [call for call in calls if call and call[0] == 'codesign']
     assert signed
     assert all('--keychain' in call and '/private/ci.keychain-db' in call for call in signed)
+
+
+def test_sign_nested_framework_before_outer_app(monkeypatch, tmp_path):
+    ns = runpy.run_path(str(ROOT / 'scripts/release/sign-macos-release.py'))
+    app, main_binary, framework_binary = _staged_app(tmp_path, nested_framework=True)
+    calls = []
+
+    def command(*args):
+        calls.append(args)
+        return ''
+
+    monkeypatch.setitem(ns['sign'].__globals__, 'run', command)
+    ns['sign'](
+        app,
+        'Developer ID Application: Example',
+        ROOT / 'apps' / 'desktop' / 'build' / 'entitlements.mac.plist',
+    )
+    signed = [
+        call[-1] for call in calls
+        if call and call[0] == 'codesign' and '--sign' in call
+    ]
+    assert signed[0] == str(framework_binary)
+    assert signed[-1] == str(app)
+    assert str(main_binary) not in signed
+    framework_bundle = app / 'Contents' / 'Frameworks' / 'Electron Framework.framework'
+    assert str(framework_bundle) in signed
+    assert signed.index(str(framework_binary)) < signed.index(str(framework_bundle))
+    assert signed.index(str(framework_bundle)) < signed.index(str(app))
 
 
 def test_run_includes_stderr_without_arguments(monkeypatch):
@@ -115,7 +166,11 @@ def test_run_includes_stderr_without_arguments(monkeypatch):
 
     class Result:
         returncode = 1
-        stderr = 'resource fork, Finder information, or similar detritus not allowed\n'
+        stderr = (
+            'code object is not signed at all\n'
+            'In subcomponent: /tmp/OpenProgram.app/Contents/Frameworks/'
+            'Electron Framework.framework\n'
+        )
         stdout = ''
 
     monkeypatch.setattr(ns['subprocess'], 'run', lambda *args, **kwargs: Result())
@@ -123,5 +178,6 @@ def test_run_includes_stderr_without_arguments(monkeypatch):
         ns['run']('codesign', '--sign', 'secret-identity', 'target')
     message = str(error.value)
     assert 'secret-identity' not in message
-    assert 'detritus not allowed' in message
+    assert 'code object is not signed at all' in message
+    assert 'Electron Framework.framework' in message
     assert 'codesign failed (exit 1)' in message

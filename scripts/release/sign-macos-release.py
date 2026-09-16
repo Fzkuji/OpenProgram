@@ -23,9 +23,9 @@ def run(*args: str) -> str:
         # Arguments can contain credentials. Never echo them.
         detail = ''
         if not any(token in {'-P', '--password'} for token in args):
-            line = (result.stderr or result.stdout or '').strip().splitlines()
-            if line:
-                detail = ': ' + line[-1][:300]
+            lines = (result.stderr or result.stdout or '').strip().splitlines()
+            if lines:
+                detail = ': ' + ' | '.join(line[:200] for line in lines[-2:])
         raise RuntimeError(
             f'{Path(args[0]).name} failed (exit {result.returncode}){detail}'
         )
@@ -92,8 +92,11 @@ def sign(app: Path, identity: str, entitlements: Path) -> None:
                     files.append(item)
         elif item.is_dir() and item.suffix in ('.app', '.framework', '.xpc', '.bundle'):
             bundles.append(item)
+    root_macos = app / 'Contents' / 'MacOS'
+    nested = [item for item in files if item.parent != root_macos] + bundles
+    nested.sort(key=lambda p: len(p.parts), reverse=True)
     clear_extended_attributes(app)
-    for item in files + sorted(bundles, key=lambda p: len(p.parts), reverse=True) + [app]:
+    for item in nested + [app]:
         print(f'Signing {item.relative_to(app) if item != app else app.name}', flush=True)
         codesign('--force', '--sign', identity, '--timestamp', '--options', 'runtime',
                  '--entitlements', str(entitlements), str(item))
