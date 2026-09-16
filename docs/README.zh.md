@@ -62,7 +62,7 @@ Windows x86_64 CLI/server：
 irm https://openprogram.io/install.ps1 | iex
 ```
 
-Desktop：macOS release 使用 unsigned DMG；Windows 在 [GitHub Release](https://github.com/Fzkuji/OpenProgram/releases) 附带该产物时使用带签名的 `win-x64.exe`。Linux 与没有该 EXE 的 Windows 版本使用完整 CLI/server runtime 和 Web UI。
+Desktop：macOS release 使用已签名并公证的 DMG；Windows 在 [GitHub Release](https://github.com/Fzkuji/OpenProgram/releases) 附带该产物时使用带签名的 `win-x64.exe`。Linux 与没有该 EXE 的 Windows 版本使用完整 CLI/server runtime 和 Web UI。
 
 平台矩阵、PATH、`openprogram doctor`、source checkout 见 **[安装](install/install.zh.md)**。
 

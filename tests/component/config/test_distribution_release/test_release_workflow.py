@@ -56,8 +56,10 @@ def test_release_workflow_publishes_structured_release_notes() -> None:
     assert notes_path.is_file()
     notes = notes_path.read_text(encoding="utf-8")
     assert notes.startswith(f"# OpenProgram {version} Release Notes\n")
-    assert f"OpenProgram-{version}-mac-arm64-unsigned.dmg" in notes
-    assert f"OpenProgram-{version}-mac-x64-unsigned.dmg" in notes
+    assert f"OpenProgram-{version}-mac-arm64.dmg" in notes
+    assert f"OpenProgram-{version}-mac-x64.dmg" in notes
+    assert f"OpenProgram-{version}-mac-arm64-unsigned.dmg" not in notes
+    assert f"OpenProgram-{version}-mac-x64-unsigned.dmg" not in notes
     for section in (
         "## 🐞 Bug fixes",
         "## ✨ New features",
@@ -72,7 +74,7 @@ def test_release_workflow_publishes_structured_release_notes() -> None:
     assert all(url.startswith(release_prefix) for url in download_urls)
     for arch in ("arm64", "x64"):
         for extension in ("dmg", "zip"):
-            assert f"{release_prefix}OpenProgram-{version}-mac-{arch}-unsigned.{extension}" in download_urls
+            assert f"{release_prefix}OpenProgram-{version}-mac-{arch}.{extension}" in download_urls
     for platform in ("macos", "linux"):
         for arch in ("arm64", "x86_64"):
             archive = f"{release_prefix}OpenProgram-{version}-runtime-{platform}-{arch}.tar.gz"

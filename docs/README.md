@@ -64,7 +64,7 @@ Windows x86_64 CLI/server:
 irm https://openprogram.io/install.ps1 | iex
 ```
 
-Desktop: macOS releases use the unsigned DMG; Windows uses a signed `win-x64.exe` when that artifact is attached to the [GitHub Release](https://github.com/Fzkuji/OpenProgram/releases). Linux and Windows without that EXE use the complete CLI/server runtime and Web UI.
+Desktop: macOS releases use the signed and notarized DMG; Windows uses a signed `win-x64.exe` when that artifact is attached to the [GitHub Release](https://github.com/Fzkuji/OpenProgram/releases). Linux and Windows without that EXE use the complete CLI/server runtime and Web UI.
 
 Platform matrix, PATH, `openprogram doctor`, and source-checkout install: **[Installation](install/install.md)**.
 
