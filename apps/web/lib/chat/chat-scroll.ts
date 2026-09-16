@@ -291,6 +291,7 @@ const takeLatestSettled = new Map<string, number>();
 const takeLatestLive = new Map<string, number>();
 const takeLatestListeners = new Set<TakeLatestListener>();
 let takeLatestGeneration = 0;
+let pruneTakeLatestQueued = false;
 
 /** Idle completed records kept after session delete / viewport release. */
 export const TAKE_LATEST_IDLE_LIMIT = 32;
@@ -351,6 +352,7 @@ export function retainTakeLatestViewport(
     const n = (takeLatestLive.get(key) ?? 1) - 1;
     if (n <= 0) takeLatestLive.delete(key);
     else takeLatestLive.set(key, n);
+    schedulePruneTakeLatest();
   };
 }
 
@@ -384,6 +386,15 @@ function pruneTakeLatest(): void {
     takeLatestNotes.delete(key);
     takeLatestSettled.delete(key);
   }
+}
+
+function schedulePruneTakeLatest(): void {
+  if (pruneTakeLatestQueued) return;
+  pruneTakeLatestQueued = true;
+  queueMicrotask(() => {
+    pruneTakeLatestQueued = false;
+    pruneTakeLatest();
+  });
 }
 
 /** Move an open note to a new session/scroller without a new generation (provisional bind). */

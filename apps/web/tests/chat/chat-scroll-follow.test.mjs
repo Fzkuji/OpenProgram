@@ -46,8 +46,8 @@ test("draft-to-existing switch is not a provisional bind", () => {
 });
 
 test("history restore requires session and chatKey ownership, not isConnected", () => {
-  const area = { isConnected: true };
-  const cap = { area, chatKey: "s" };
+  const area = { isConnected: true, id: "peer" };
+  const cap = { area, chatKey: "s", fromRegistry: true };
   const registered = new Map([[area, "s"]]);
   assert.equal(
     historyAreaStillOwned(cap, registered, {
@@ -70,19 +70,39 @@ test("history restore requires session and chatKey ownership, not isConnected", 
   assert.equal(
     historyAreaStillOwned(cap, registered, {
       sessionId: "s",
-      focusedSessionId: "other",
-      focusedChatKey: "s",
-    }),
-    false,
-  );
-  assert.equal(
-    historyAreaStillOwned(cap, undefined, {
-      sessionId: "s",
       focusedSessionId: "s",
       focusedChatKey: "s",
     }),
-    true,
+    false,
+    "a previously registered area that lost registration must not restore",
   );
+  const main = { isConnected: true, id: "chatArea" };
+  const previousDocument = globalThis.document;
+  globalThis.document = {
+    getElementById: (id) => (id === "chatArea" ? main : null),
+  };
+  try {
+    assert.equal(
+      historyAreaStillOwned(
+        { area: main, chatKey: "s", fromRegistry: false },
+        undefined,
+        { sessionId: "s", focusedSessionId: "s", focusedChatKey: "s" },
+      ),
+      true,
+    );
+    assert.equal(
+      historyAreaStillOwned(
+        { area: { isConnected: true, id: "chatArea" }, chatKey: "s", fromRegistry: false },
+        undefined,
+        { sessionId: "s", focusedSessionId: "s", focusedChatKey: "s" },
+      ),
+      false,
+      "fallback restore is only the live #chatArea node",
+    );
+  } finally {
+    if (previousDocument === undefined) delete globalThis.document;
+    else globalThis.document = previousDocument;
+  }
 });
 
 test("deleting a session drops its take-latest records", () => {
@@ -122,6 +142,29 @@ test("idle settled notes are capped; waiting notes and live viewports remain", (
   assert.equal(peekTakeLatest(firstIdle, firstIdle), null);
   assert.equal(lastSettledTakeLatest(firstIdle, firstIdle), 0);
   release();
+});
+
+test("releasing viewports prunes idle notes after this turn, not during remount", async () => {
+  const prefix = `rel-${Date.now()}-${Math.random()}`;
+  const ids = Array.from({ length: TAKE_LATEST_IDLE_LIMIT + 5 }, (_, i) => `${prefix}-${i}`);
+  const present = () => ids.filter((id) => (
+    peekTakeLatest(id, id) != null || lastSettledTakeLatest(id, id) > 0
+  ));
+  const releases = [];
+  for (const sid of ids) {
+    const note = noteTakeLatest({ sessionId: sid, scrollerKey: sid, turnSeed: sid });
+    settleTakeLatest(sid, sid, note.generation);
+    releases.push(retainTakeLatestViewport(sid, sid));
+  }
+  assert.equal(present().length, ids.length);
+  for (const release of releases) release();
+  assert.equal(present().length, ids.length, "prune waits so a remount can retain again");
+  const keep = retainTakeLatestViewport(ids[0], ids[0]);
+  await Promise.resolve();
+  assert.ok(present().includes(ids[0]), "same-tick retain keeps the record");
+  keep();
+  await Promise.resolve();
+  assert.ok(present().length <= TAKE_LATEST_IDLE_LIMIT);
 });
 
 test("F18 web production has no leftover follow writers", () => {
@@ -164,6 +207,7 @@ test("follow ownership contracts stay in the production files", () => {
   assert.doesNotMatch(stick, /renderMathInChat\(\)/);
   assert.doesNotMatch(stick, /stopJump = \(correct/);
   assert.match(loader, /historyAreaStillOwned\(/);
+  assert.match(loader, /captureAreaRestoreState\(area, chatKey, true\)/);
   assert.doesNotMatch(loader, /liveRegistered\?\.has\(cap\.area\) \|\| cap\.area\.isConnected/);
   assert.match(store, /forgetTakeLatestSession\(/);
 });
@@ -178,13 +222,13 @@ test("F07 send during loading holds the lock then restore runs after unlock", ()
   };
   setFollowLock("main", true);
   restoreAreaWindow(
-    { area, chatKey: "main", anchor: null, oldTop: 15, oldHeight: 120 },
+    { area, chatKey: "main", anchor: null, oldTop: 15, oldHeight: 120, fromRegistry: true },
     "older",
   );
   assert.equal(area.scrollTop, 15);
   setFollowLock("main", false);
   restoreAreaWindow(
-    { area, chatKey: "main", anchor: null, oldTop: 15, oldHeight: 120 },
+    { area, chatKey: "main", anchor: null, oldTop: 15, oldHeight: 120, fromRegistry: true },
     "older",
   );
   assert.equal(area.scrollTop, 15 + 300 - 120);

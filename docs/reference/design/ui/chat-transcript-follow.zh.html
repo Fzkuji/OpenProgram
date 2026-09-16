@@ -455,7 +455,7 @@ area.scrollTop = resolveChatScrollTop({ ... });</code></pre>
 <ol>
 <li>每个活动操作捕获 session id、scroller key、generation、view interaction epoch。异步完成、下一次 resize 重试、welcome 重试、动画回调写入前都验证这四项。较新发送替换本 scroller 的旧操作；Jump 替换 pending send；发送替换 Jump，并先停止原生动画再瞬间定位。</li>
 <li>转录区中的滚轮、触摸/指针滚动意图、滚动按键，在后续 resize 或网络回调之前使 pending 操作失效，并清除强制 resize/welcome 重试。实际滚动后按几何位置确定 attached；点击执行控件仍保留现有的短暂增高抑制。程序触发的 scroll 事件本身不算取消。发送后用户上翻，迟到增长不得强制再附着。</li>
-<li>切 key 或真正卸载使旧 view 的操作失效。返回 chat 恢复像素位置，不重放已完成或已取消的 note。记录保持可读，不在读取时删除；明确维护完成/取消状态与各 view 的 applied-generation。Strict Mode effect cleanup 清理该次 effect 的资源；setup 必须恢复仍有效的 pending 操作，不新增逻辑发送、不丢重试、不遗留请求。开始 latest 请求时不能直接把 generation 标为完成。删除会话或丢掉草稿时清除该 session 的 note。已完成且没有活动视口的空闲记录设上限；仍在等待的发送记录保留。</li>
+<li>切 key 或真正卸载使旧 view 的操作失效。返回 chat 恢复像素位置，不重放已完成或已取消的 note。记录保持可读，不在读取时删除；明确维护完成/取消状态与各 view 的 applied-generation。Strict Mode effect cleanup 清理该次 effect 的资源；setup 必须恢复仍有效的 pending 操作，不新增逻辑发送、不丢重试、不遗留请求。开始 latest 请求时不能直接把 generation 标为完成。删除会话或丢掉草稿时清除该 session 的 note。已完成且没有活动视口的空闲记录设上限；仍在等待的发送记录保留。释放视口后在本轮结束再执行该上限，以便同一轮重挂可以再次 retain。</li>
 <li>欢迎页首次发送可能早于 transcript 可见。只保留这次仍 pending 的交接，直到匹配 view 就绪；挂载时初始化订阅基线不能丢掉它。可见和 layout 就绪后重试一次，后续用户手势或离开 session 则取消。现有 provisional 到真实 session 的绑定应保留 pending 操作身份，不新增发送、不重放已完成操作。绑定依据是该草稿被采纳后的 session 身份，不是「任意 <code>local_*</code> 切到任意非草稿」。ack 替换 message id 后，不要求 turnSeed 继续等于最后一行 id。</li>
 <li>已有 older/around 请求进行中时，即使当前页暂时没有 after，发送也要等待确认 latest 窗口。以 <code>history.after || history.loading</code> 进入异步协调，然后验证返回窗口和操作身份。取消/失败不遗留强制重试、不隐藏 Jump；后续新手势仍可成功，旧完成回调不得把新操作设为 detached 或清除它。</li>
 </ol>
@@ -466,7 +466,7 @@ area.scrollTop = resolveChatScrollTop({ ... });</code></pre>
 <p>超时仅用于结束异常等待，不证明已经到达。超时后，仍有效的操作先停止原生运动，再补齐到当前目标、验证并完成。取消既要停止回调，也要停止浏览器动画；只删除 scrollend listener 不算取消。已取消操作不得补齐。后续增长恢复普通 attached pin。定位允许 2px 几何误差，不用更大的再附着 slack 代替 Jump 到达验证。</p>
 
 <h3 id="history-ownership">History 恢复的执行归属</h3>
-<p><code>loadSessionHistoryWindow</code> 协调请求并发布行及窗口元数据，不执行 latest 定位，不检查 send/jump note。只有 <code>useChatAreaStick</code> 在 latest 成功后选择并执行发送 snap 或 Jump smooth。older/newer/around 窗口替换继续由现有 history-viewport helper 恢复锚点：更新前分别捕获每个 registered area 的 anchor、oldTop、oldHeight；flushSync 后仅当该 area 仍属于原 session 且 chatKey 一致时才恢复。节点仍连接但已被复用时不得写入。高度缓存也使用各自 chatKey，不能复用第一视口的 anchor 或高度差。</p>
+<p><code>loadSessionHistoryWindow</code> 协调请求并发布行及窗口元数据，不执行 latest 定位，不检查 send/jump note。只有 <code>useChatAreaStick</code> 在 latest 成功后选择并执行发送 snap 或 Jump smooth。older/newer/around 窗口替换继续由现有 history-viewport helper 恢复锚点：更新前分别捕获每个 registered area 的 anchor、oldTop、oldHeight；flushSync 后仅当该 area 仍注册在同一 session 且 chatKey 一致时才恢复。曾经注册、后来失去注册的 area 不得恢复。未注册的 <code>#chatArea</code> 回退只用于捕获时本来就没有注册、且节点仍是当前主栏滚动器的情况。节点仍连接但已被复用时不得写入。高度缓存也使用各自 chatKey，不能复用第一视口的 anchor 或高度差。</p>
 <p>窗口替换恢复是明确保留的滚动写入，不是另一套跟随策略。它不执行 latest snap，也不能覆盖较新的活动跟随操作。同 session 的主栏与 peer 共享历史数据，替换行可能影响两者；非请求方在原锚点仍存在时保留其可见位置。淘汰导致锚点消失时沿用现有有界回退，并在验收证据中说明；scroller 隔离不承诺独立历史数据集。</p>
 
 <h3 id="trust">信任边界、数据流、失败</h3>

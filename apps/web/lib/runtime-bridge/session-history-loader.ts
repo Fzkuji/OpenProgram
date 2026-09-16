@@ -106,11 +106,11 @@ export async function loadSessionHistoryWindow(id: string, direction: HistoryDir
   if (!conv) { updateSessionHistory(id, expected.generation, {loading:false}); return false; }
   const registered=viewports.get(id);
   const captures = registered
-    ? [...registered.entries()].map(([area, chatKey]) => captureAreaRestoreState(area, chatKey))
+    ? [...registered.entries()].map(([area, chatKey]) => captureAreaRestoreState(area, chatKey, true))
     : [];
   if (!captures.length && runtimeState.currentSessionId === id) {
     const area = document.getElementById('chatArea');
-    if (area) captures.push(captureAreaRestoreState(area, useSessionStore.getState().activeChatKey ?? id));
+    if (area) captures.push(captureAreaRestoreState(area, useSessionStore.getState().activeChatKey ?? id, false));
   }
   const store = useSessionStore.getState();
   const current = (store.messageOrder[id] ?? []).map(mid=>store.messagesById[mid]).filter(Boolean);
