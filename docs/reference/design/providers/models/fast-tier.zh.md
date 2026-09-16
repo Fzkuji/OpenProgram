@@ -13,14 +13,15 @@
 | GPT 5.4 / 5.5 / 5.6 系 | 请求体 `service_tier: "priority"`（OpenAI 叫 priority processing） | Codex 订阅端把它列成每模型的档（"1.5x 速度、增加用量"）；哪些模型有这个档直接来自 `service_tiers`（§2.1），不靠猜 |
 | Claude Opus 4.6 / 4.7 / 4.8 | 请求体 `speed: "fast"` + 头 `anthropic-beta: fast-mode-2026-02-01` | 同样按量计费；订阅账户没充 usage credits 时 Anthropic 返回 429 "Usage credits are required for fast mode"，**如实透传给界面** —— 报错是账户问题，不代表模型不支持 |
 
-未列入表格不代表厂商没有高速档。xAI 官方 API 已有 Priority Processing；Grok 订阅线路是另一条尚未验证的接口。界面及按线路判定的扩展见 [Composer 速度控件设计](../../ui/composer-fast-control.html)，实现验证状态见设计页。
+未列入表格不代表厂商没有高速档。xAI 官方 API 已有 Priority Processing；Grok 订阅线路的 Grok 4.6 走 CLI chat proxy，同样接受 `service_tier`，其他订阅模型仍保持未知。界面及按线路判定的扩展见 [Composer 速度控件设计](../../ui/composer-fast-control.html)，实现验证状态见设计页。
 
 ## 2. 按线路判定
 
 `providers.fast.fast_capability` 由 agent settings 与请求分发共同使用，
 `supports_fast` 保留为布尔兼容投影。配置显式 false 禁用；Codex 使用账号目录；
 线路显式 true 可声明支持；Claude 保留已有声明。官方 xAI API 的 Grok 4.6
-按 provider 和 endpoint 确认支持，独立的 Grok 订阅接口保持未知，其他线路保留目录查询。
+按 provider 和 endpoint 确认支持；Grok 订阅线路的 Grok 4.6 同样确认支持，
+其他订阅模型保持未知，其他线路保留目录查询。
 
 思考弹窗里的帮助图标改为用户提供的 GaugeIcon。开启不加边框或背景，指针保持
 转动后的状态。设置按会话及 provider/model 保存，标准档覆盖 agent 默认值。

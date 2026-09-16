@@ -16,8 +16,9 @@ vendor's high-speed knob:
 | Claude Opus 4.6 / 4.7 / 4.8 | body `speed: "fast"` + header `anthropic-beta: fast-mode-2026-02-01` | Also pay-as-you-go; a subscription account without usage credits gets Anthropic's 429 "Usage credits are required for fast mode", surfaced **as-is** — an account problem, not lack of support |
 
 Absence from this table does not prove that a provider lacks a fast tier.
-xAI documents Priority Processing for its official API; the Grok subscription
-route is a separate, unverified endpoint. The UI and route-aware
+xAI documents Priority Processing for its official API. Grok 4.6 on the
+subscription CLI chat proxy accepts the same `service_tier` values; other
+Grok subscription models stay unverified. The UI and route-aware
 behavior are specified in [Composer speed control](../../ui/composer-fast-control.html).
 Implementation verification is tracked in the linked design status.
 
@@ -27,8 +28,9 @@ Implementation verification is tracked in the linked design status.
 turn dispatch. `supports_fast` is its boolean compatibility projection. Explicit
 configuration false disables support. Codex uses the account catalogue; explicit
 route true can declare support; Claude retains its existing declaration. Official
-xAI API Grok 4.6 has a provider-and-endpoint-scoped declaration. The separate
-Grok subscription endpoint remains unknown. Other routes retain catalogue lookup.
+xAI API Grok 4.6 has a provider-and-endpoint-scoped declaration. Grok 4.6 on
+the Grok subscription route is supported; other subscription models remain
+unknown. Other routes retain catalogue lookup.
 
 The thinking panel replaces its help icon with the supplied GaugeIcon. Activation
 adds no border or background; the needle remains advanced. The preference is

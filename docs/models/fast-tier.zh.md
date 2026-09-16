@@ -9,7 +9,7 @@
 - Codex 根据账号模型目录判断。
 - Claude 保留已有的高速模型及原生 speed 参数。
 - 官方 xAI API 的 Grok 4.6 支持 Priority Processing，开启发送 `service_tier: "priority"`，标准档发送 `"default"`。
-- Grok 订阅及未知网关保持“尚未确认”，除非线路配置显式声明支持。图标保持可见，并提示原因。
+- Grok 订阅线路的 Grok 4.6 走 CLI chat proxy，同样支持 `service_tier: "priority"` / `"default"`。其他 Grok 订阅模型及未知网关保持“尚未确认”，除非线路配置显式声明支持。图标保持可见，并提示原因。
 
 高速可能增加用量或费用。xAI 优先处理的 token 单价为标准档的 2 倍，见 [xAI 定价](https://docs.x.ai/developers/pricing)。图标表示请求偏好，不保证实际速度。Completions 和 Responses 在响应 usage 中保留实际返回的档位；缺少元数据时不推定成功提速。xAI 返回的请求费用也单独保留。
 

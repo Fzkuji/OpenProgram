@@ -34,7 +34,11 @@ def fast_capability(provider: str | None, model_id: str | None, *, model=None) -
             and url.scheme == 'https' and url.netloc == 'api.x.ai'
             and url.path.rstrip('/') == '/v1'):
         return result('supported', 'xai-api')
+    # Completions always rewrites this provider onto cli-chat-proxy; do not
+    # require the catalog base_url (older logins may still list api.x.ai).
     if provider == 'xai-subscription':
+        if model_id == 'grok-4.6':
+            return result('supported', 'xai-subscription')
         return result('unknown', 'subscription-unverified')
     from .sources import models_dev
     try:
