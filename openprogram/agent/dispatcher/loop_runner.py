@@ -251,6 +251,21 @@ def _configure_web_use_tools(tools, surface_context, *, enabled: bool | None = N
     return current, web_use_tool is not None
 
 
+def _retain_saved_contract_tools(tools, saved_runtime_contract: Mapping | None):
+    """Keep the checkpoint's tool set. Extra live tools do not block resume."""
+    if saved_runtime_contract is None:
+        return tools
+    saved = saved_runtime_contract.get("tools")
+    if not isinstance(saved, list):
+        return tools
+    names = [
+        item.get("name") for item in saved
+        if isinstance(item, Mapping) and isinstance(item.get("name"), str) and item["name"]
+    ]
+    live = {tool.name: tool for tool in tools or []}
+    return [live[name] for name in names if name in live]
+
+
 def resolve_agent_runtime(
     req: "TurnRequest", *, assistant_msg_id: Optional[str] = None,
     on_event: Optional["EventCallback"] = None,
@@ -282,6 +297,7 @@ def resolve_agent_runtime(
 
         tools = apply_tool_policy(tools or [], source=req.source)
         web_use_enabled = False
+    tools = _retain_saved_contract_tools(tools, saved_runtime_contract)
     from openprogram.programs import install_allowed_tool_names
     install_allowed_tool_names({tool.name for tool in tools or []})
     _log_resolved_tools(req, tools)

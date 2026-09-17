@@ -543,6 +543,66 @@ def test_continue_rejects_changed_session_project_workdir(real_agent_chat, tmp_p
     assert real_agent_chat.tools.calls == []
 
 
+def test_continue_accepts_added_unrelated_tools(real_agent_chat, monkeypatch):
+    from tests.component.providers.scripted_provider import ScriptedText
+    import openprogram.agent.dispatcher.loop_runner as loop_runner
+
+    extra = {"include": False}
+    monkeypatch.setattr(
+        loop_runner,
+        "_resolve_tools",
+        lambda *_args, **_kwargs: (
+            [real_agent_chat.tools.tool("first"), real_agent_chat.tools.tool("second")]
+            + ([real_agent_chat.tools.tool("weekly_report")] if extra["include"] else [])
+        ),
+    )
+    real_agent_chat.provider.add_response(ScriptedText("saved answer"))
+    real_agent_chat.provider.block_calls.add(0)
+    execution = _chat(real_agent_chat)
+    _wait(real_agent_chat.provider.entered.is_set)
+    _command(real_agent_chat, "execution.pause", execution, "pause-extra-tools")
+    real_agent_chat.provider.release.set()
+    paused = _wait(lambda: (
+        item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status is ExecutionStatus.PAUSED else None
+    ))
+    extra["include"] = True
+    command = _command(real_agent_chat, "execution.continue", paused, "continue-extra-tools")
+    assert command["status"] in {"accepted", "applying", "applied"}
+    assert command.get("rejection_code") != "continuation_contract_mismatch"
+    _wait(lambda: real_agent_chat.store.get_execution(execution.execution_id).status is ExecutionStatus.COMPLETED)
+
+
+def test_mismatch_notice_after_restart_paused_marker(real_agent_chat):
+    from openprogram.store import SessionNodeWriter
+    from tests.component.providers.scripted_provider import ScriptedText
+
+    real_agent_chat.provider.add_response(ScriptedText("saved answer"))
+    real_agent_chat.provider.block_calls.add(0)
+    execution = _chat(real_agent_chat)
+    _wait(real_agent_chat.provider.entered.is_set)
+    _command(real_agent_chat, "execution.pause", execution, "pause-restart-marker")
+    real_agent_chat.provider.release.set()
+    paused = _wait(lambda: (
+        item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status is ExecutionStatus.PAUSED else None
+    ))
+    source = real_agent_chat.store.get_execution_input(execution.execution_id)
+    writer = SessionNodeWriter(real_agent_chat.sessions, real_agent_chat.session_id, advance_head=False)
+    writer.update(source.assistant_message_id, metadata={"status": "paused"})
+    real_agent_chat.tools.schema_variant = "changed"
+    command = _command(real_agent_chat, "execution.continue", paused, "continue-after-paused-marker")
+    assert command["status"] == "rejected"
+    assert command["rejection_code"] == "continuation_contract_mismatch"
+    from openprogram.execution.outbox import ProjectionDispatcher
+    from openprogram.execution.projections import projection_handlers
+    projections = ProjectionDispatcher(real_agent_chat.store, projection_handlers(real_agent_chat.store))
+    projections.dispatch_once(owner_id="test-paused-notice", limit=1000)
+    projections.dispatch_once(owner_id="test-paused-notice", limit=1000)
+    reply = next(item for item in real_agent_chat.sessions.get_branch(real_agent_chat.session_id)
+                 if item.get("id") == source.assistant_message_id)
+    assert "Execution could not resume." in reply["content"]
+    assert reply.get("error") == "continuation_contract_mismatch"
+
+
 def test_continue_accepts_an_unchanged_runtime_contract(real_agent_chat):
     from tests.component.providers.scripted_provider import ScriptedText
 

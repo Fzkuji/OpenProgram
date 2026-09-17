@@ -514,6 +514,9 @@ def _repair_canonical_node(node, execution, shim) -> bool:
         patch["status"] = target
     if synthetic_error:
         patch.update(error=None, error_type=None, interrupted_at=None)
+    reason = getattr(execution, "reason_code", None)
+    if target == "paused" and isinstance(reason, str) and reason and meta.get("pause_reason") != reason:
+        patch["pause_reason"] = reason
     if not patch and not synthetic_output:
         return False
     fields = {"metadata": patch} if patch else {}

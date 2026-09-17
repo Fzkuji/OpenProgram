@@ -9,11 +9,11 @@ assert.ok(
   "desktop worker-start URL helper is missing",
 );
 
-const { resolveAuthenticatedStartUrl } = require(helperPath);
+const { resolveAuthenticatedStartUrl, ownerAuthTokenFromStartUrl } = require(helperPath);
+const token = "A".repeat(43);
 
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "openprogram-desktop-auth-"));
 try {
-  const token = "A".repeat(43);
   const fakeBin = path.join(temp, "openprogram");
   const windowsAuthHelper = path.join(temp, "auth-helper.js");
   if (process.platform === "win32") {
@@ -88,5 +88,17 @@ try {
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }
+
+assert.equal(
+  ownerAuthTokenFromStartUrl(`http://127.0.0.1:18100/chat#token=${token}`),
+  token,
+);
+assert.equal(ownerAuthTokenFromStartUrl("http://127.0.0.1:18100/chat"), null);
+assert.equal(ownerAuthTokenFromStartUrl("not a url"), null);
+
+const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
+assert.match(preload, /refreshOwnerAuth:\s*\(\)\s*=>\s*ipcRenderer\.invoke\("owner-auth:refresh"\)/);
+const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+assert.match(main, /ipcMain\.handle\("owner-auth:refresh"/);
 
 console.log("worker start URL check passed");

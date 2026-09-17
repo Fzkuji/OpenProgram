@@ -19,7 +19,7 @@ const http = require("http");
 const https = require("https");
 const path = require("path");
 const { Buffer } = require("buffer");
-const { resolveAuthenticatedStartUrl } = require("./worker-start-url");
+const { resolveAuthenticatedStartUrl, ownerAuthTokenFromStartUrl } = require("./worker-start-url");
 const { createSelfUpdateReopen, registerReopenIpc } = require("./self-update-reopen");
 const { registerUiVerificationIpc } = require("./self-update-ui");
 const { createUiVerificationGuard } = require("./self-update-ui-guard");
@@ -1653,6 +1653,16 @@ const ensureMainWindow = createMainWindowGate({
 registerReopenIpc({ ipcMain, windows, recovery: selfUpdateReopen, origin: UI_ORIGIN });
 registerUiVerificationIpc({ ipcMain, windows, app, origin: UI_ORIGIN,
   request: selfUpdateReopen.requestVerification, guard: uiVerificationGuard });
+ipcMain.handle("owner-auth:refresh", (event) => {
+  const senderUrl = event?.senderFrame?.url || event?.sender?.getURL?.() || "";
+  try {
+    if (new URL(senderUrl).origin !== UI_ORIGIN) return null;
+  } catch (_error) {
+    return null;
+  }
+  const startUrl = resolveWorkerStartUrl();
+  return startUrl ? ownerAuthTokenFromStartUrl(startUrl) : null;
+});
 
 async function createWindow(options = {}) {
   const state = loadWindowState();

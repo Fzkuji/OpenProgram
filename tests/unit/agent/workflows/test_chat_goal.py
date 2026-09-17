@@ -35,6 +35,42 @@ def test_chat_runtime_keeps_goal_tool_membership_on_approval_resume(monkeypatch,
     validate_runtime_contract(saved, resumed)
 
 
+def test_chat_runtime_keeps_saved_tools_when_live_catalog_grows(monkeypatch):
+    from openprogram.agent import dispatcher
+    from openprogram.agent.continuation import validate_runtime_contract
+    from openprogram.agent.dispatcher import loop_runner
+    from openprogram.agent.dispatcher.types import TurnRequest
+    from openprogram.agent.types import AgentTool
+    from openprogram.providers.types import Model
+
+    model = Model(id="fake", name="fake", api="openai-completions", provider="openai",
+                  base_url="https://example.invalid/v1")
+    tools = [AgentTool(name=name, label=name, description=name,
+                       parameters={"type": "object"}, execute=lambda *args: None)
+             for name in ("todo_create", "update_goal")]
+    extra = AgentTool(name="weekly_report", label="weekly_report", description="weekly_report",
+                      parameters={"type": "object"}, execute=lambda *args: None)
+    live = {"extra": False}
+
+    def resolve(*_args, **_kwargs):
+        return [*tools, extra] if live["extra"] else list(tools)
+
+    monkeypatch.setattr(dispatcher, "_load_agent_profile", lambda *a: {})
+    monkeypatch.setattr(dispatcher, "_resolve_model", lambda *a: model)
+    monkeypatch.setattr(loop_runner, "_resolve_tools", resolve)
+    monkeypatch.setattr(loop_runner, "_wrap_with_approval", lambda tool, *a: tool)
+    monkeypatch.setattr("openprogram.context.components.build_system_prompt", lambda *a, **k: "system")
+    monkeypatch.setattr("openprogram.programs.workflow.goal.chat.instructions", lambda *a: "")
+    request = TurnRequest("approval-goal", "calculate", "main", "web")
+    request._execution_revision_id = "test-revision"
+    saved = loop_runner.resolve_agent_runtime(request)[-1]
+    live["extra"] = True
+    resumed = loop_runner.resolve_agent_runtime(request, saved_runtime_contract=saved)[-1]
+    assert {tool["name"] for tool in resumed["tools"]} == {tool["name"] for tool in saved["tools"]}
+    assert "weekly_report" not in {tool["name"] for tool in resumed["tools"]}
+    validate_runtime_contract(saved, resumed)
+
+
 @pytest.fixture
 def session(tmp_path, monkeypatch):
     from openprogram.agent.session_db import SessionDB

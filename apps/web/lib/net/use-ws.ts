@@ -46,6 +46,8 @@ import { mirrorUpsertConv } from "@/lib/runtime-bridge/conv-store-mirror";
 import { runtimeState, setSocket } from "@/lib/runtime-bridge/state";
 import { applyChatWsMessage, clearSessionByMsgId } from "@/lib/net/chat-stream";
 import { waitForOwnerAuthBootstrap } from "@/lib/net/owner-auth-bootstrap";
+import { recoverOwnerAuth } from "@/lib/net/owner-auth-recovery";
+import { showToast } from "@/lib/format-utils/toast";
 import { notifyDesktopSessionLoaded } from "@/lib/desktop/self-update-reopen";
 import { translateText } from "@/lib/i18n";
 import { getQueryClient } from "@/lib/query-client";
@@ -98,6 +100,8 @@ export function useWS(): void {
     let socket: WebSocket | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let stopped = false;
+    let authNoticeShown = false;
+    let connectGeneration = 0;
 
     /** React-side dispatch for all WS message types. Known types have
      *  explicit handlers; unknown types are surfaced as `op:ws-message`
@@ -887,7 +891,40 @@ export function useWS(): void {
     }
 
     function connect(): void {
+      void connectAuthenticated();
+    }
+
+    async function connectAuthenticated(): Promise<void> {
+      const generation = ++connectGeneration;
       if (stopped) return;
+      try {
+        await waitForOwnerAuthBootstrap();
+        if (stopped || generation !== connectGeneration) return;
+        const probe = await fetch("/api/auth/session", {
+          credentials: "same-origin",
+          cache: "no-store",
+          redirect: "error",
+        });
+        if (probe.status === 401) {
+          const recovered = await recoverOwnerAuth();
+          if (stopped || generation !== connectGeneration) return;
+          if (!recovered) {
+            updateStatus("disconnected");
+            if (!authNoticeShown) {
+              authNoticeShown = true;
+              showToast(translateText(
+                "Owner authentication expired. Reopen OpenProgram to continue.",
+                "所有者认证已过期。请重新打开 OpenProgram 后再继续。",
+              ), { tone: "error" });
+            }
+            if (!stopped) reconnectTimer = setTimeout(connect, 5000);
+            return;
+          }
+        }
+      } catch {
+        /* Probe failure is not fatal; the WebSocket handshake still reports auth. */
+      }
+      if (stopped || generation !== connectGeneration) return;
       const proto = location.protocol === "https:" ? "wss:" : "ws:";
       const historyFragments = createHistoryFragmentDecoder();
       let replayingHistory = false;

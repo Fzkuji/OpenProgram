@@ -360,6 +360,11 @@ middleware:
 - `GET /healthz`, reduced to a non-identifying liveness response such as
   `{"status":"ok"}`.
 
+Authenticated clients can `GET /api/auth/session` after the owner cookie is
+established. `204` means the cookie still matches the live worker. `401` means
+credentials rotated; the desktop shell exchanges a fresh in-memory token and
+repeats bootstrap instead of reconnecting with a stale cookie.
+
 The ownership challenge accepts exactly one 32-byte unpadded-base64url nonce
 and at most one revision. When present, the revision must be the 40-character
 lowercase revision currently served by the process. Its successful response is

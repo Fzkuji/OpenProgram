@@ -5,6 +5,15 @@ const DEFAULT_COMMANDS = [
   { command: "/opt/miniconda3/bin/openprogram", args: [] },
 ];
 
+function ownerAuthTokenFromStartUrl(startUrl) {
+  try {
+    const match = /^#token=([A-Za-z0-9_-]{43})$/.exec(new URL(startUrl).hash);
+    return match ? match[1] : null;
+  } catch (_error) {
+    return null;
+  }
+}
+
 function resolveAuthenticatedStartUrl(
   startUrl,
   env = process.env,
@@ -37,4 +46,4 @@ function resolveAuthenticatedStartUrl(
   return null;
 }
 
-module.exports = { resolveAuthenticatedStartUrl };
+module.exports = { resolveAuthenticatedStartUrl, ownerAuthTokenFromStartUrl };

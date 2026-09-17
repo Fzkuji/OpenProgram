@@ -407,6 +407,20 @@ def _json_body(error: str) -> bytes:
     return json.dumps({"error": error}, separators=(",", ":")).encode("utf-8")
 
 
+async def _empty_response(send, status: int) -> None:
+    await send(
+        {
+            "type": "http.response.start",
+            "status": status,
+            "headers": [
+                (b"cache-control", b"no-store"),
+                (b"content-length", b"0"),
+            ],
+        }
+    )
+    await send({"type": "http.response.body", "body": b""})
+
+
 async def _http_response(send, status: int, error: str) -> None:
     body = _json_body(error)
     headers = [
@@ -636,6 +650,13 @@ class OwnerAuthMiddleware:
                 await _websocket_response(send, 403, "request_origin_rejected", scope)
             else:
                 await _http_response(send, 403, "request_origin_rejected")
+            return
+
+        if scope["type"] == "http" and path == "/api/auth/session":
+            if scope.get("method") != "GET":
+                await _http_response(send, 400, "invalid_challenge")
+                return
+            await _empty_response(send, 204)
             return
 
         scope.setdefault("state", {})["authority"] = dict(self.auth_state.authority)

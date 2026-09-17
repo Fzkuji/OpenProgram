@@ -296,6 +296,8 @@ information。只有实际 listener 是 loopback 时的精确 `localhost`，或�
   token-HMAC proof；
 - `GET /healthz`，缩减为 `{"status":"ok"}` 之类不暴露身份信息的 liveness response。
 
+已认证客户端可以在 cookie 建立后请求 `GET /api/auth/session`。`204` 表示 cookie 仍匹配当前 worker；`401` 表示凭据已轮换。桌面壳用内存中的新 token 重新 bootstrap，而不是拿失效 cookie 反复重连。
+
 Ownership challenge 只接受一个解码后为 32 字节的 unpadded-base64url nonce，最多再接受
 一个 revision；revision 存在时必须等于当前进程提供的 40 字符小写 revision。成功 response
 恰好是 `200 {"proof":"<43-character-base64url>"}`，decoded proof 等于

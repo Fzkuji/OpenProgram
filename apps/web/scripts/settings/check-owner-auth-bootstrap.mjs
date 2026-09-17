@@ -130,6 +130,32 @@ Object.defineProperty(globalThis, "sessionStorage", {
   assert.deepEqual(browser.events, []);
 }
 
+{
+  const browser = browserState("#settings");
+  const events = [];
+  const coordinator = createOwnerAuthBootstrapCoordinator({
+    location: browser.location,
+    history: browser.history,
+    fetch: async (url, init) => {
+      events.push({ url, body: init.body });
+      return { status: 204 };
+    },
+  });
+  await coordinator.wait();
+  await coordinator.adoptToken(TOKEN);
+  assert.equal(events.length, 1, "adoptToken must exchange a rotated owner token");
+  assert.equal(events[0].url, "/api/auth/bootstrap");
+  assert.equal(JSON.parse(events[0].body).token, TOKEN);
+  assert.equal(browser.location.hash, "#settings", "adoptToken must not write the token into the URL");
+  assert.throws(() => coordinator.adoptToken("short"), /Owner authentication failed/);
+}
+
+{
+  const useWs = readFileSync(new URL("../../lib/net/use-ws.ts", import.meta.url), "utf8");
+  assert.match(useWs, /\/api\/auth\/session/, "WebSocket reconnect must probe owner session before retrying");
+  assert.match(useWs, /recoverOwnerAuth/, "401 reconnect must refresh owner auth instead of looping");
+}
+
 for (const fragment of [
   `#token=${TOKEN}&extra=1`,
   `#token=${TOKEN}&token=${TOKEN}`,

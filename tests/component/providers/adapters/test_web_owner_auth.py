@@ -474,6 +474,26 @@ def test_duplicate_cookie_headers_return_generic_unauthorized():
         assert response.json() == {"error": "authentication_required"}
 
 
+def test_auth_session_reports_cookie_validity_without_leaking_the_token():
+    state = _state()
+    with TestClient(_app(state), base_url=LOCAL_ORIGIN) as client:
+        missing = client.get("/api/auth/session")
+        assert missing.status_code == 401
+        assert missing.json() == {"error": "authentication_required"}
+        assert state.token not in missing.text
+        client.post(
+            "/api/auth/bootstrap",
+            headers={"origin": LOCAL_ORIGIN},
+            json={"token": state.token},
+        )
+        ok = client.get("/api/auth/session")
+        assert ok.status_code == 204
+        assert ok.content == b""
+        assert state.token not in ok.text
+        rejected = client.post("/api/auth/session", headers={"origin": LOCAL_ORIGIN})
+        assert rejected.status_code == 400
+
+
 def test_bootstrap_sets_cookie_and_cookie_mutation_requires_exact_origin():
     state = _state()
     with TestClient(_app(state), base_url=LOCAL_ORIGIN) as client:

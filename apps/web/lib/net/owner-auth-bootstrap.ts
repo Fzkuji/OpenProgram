@@ -7,6 +7,7 @@ type BootstrapFetch = (
 
 export interface OwnerAuthBootstrapCoordinator {
   wait(): Promise<void>;
+  adoptToken(next: string): Promise<void>;
 }
 
 interface BootstrapDependencies {
@@ -16,6 +17,7 @@ interface BootstrapDependencies {
 }
 
 const OWNER_TOKEN_FRAGMENT = /^#token=([A-Za-z0-9_-]{43})$/;
+const OWNER_TOKEN_VALUE = /^[A-Za-z0-9_-]{43}$/;
 const BOOTSTRAP_FAILURE =
   "Owner authentication failed. Open a new authenticated URL and try again.";
 
@@ -82,6 +84,15 @@ export function createOwnerAuthBootstrapCoordinator({
 
       return readyPromise;
     },
+    adoptToken(next: string): Promise<void> {
+      if (!OWNER_TOKEN_VALUE.test(next)) {
+        throw new Error(BOOTSTRAP_FAILURE);
+      }
+      invalidFragment = false;
+      token = next;
+      readyPromise = null;
+      return this.wait();
+    },
   };
 }
 
@@ -98,4 +109,10 @@ if (browserCoordinator) void browserCoordinator.wait().catch(() => {});
 /** Resolve only after the browser has exchanged any fragment token for its cookie. */
 export function waitForOwnerAuthBootstrap(): Promise<void> {
   return browserCoordinator?.wait() ?? Promise.resolve();
+}
+
+/** Exchange a fresh in-memory owner token for a new cookie after credential rotation. */
+export function adoptOwnerAuthToken(next: string): Promise<void> {
+  if (!browserCoordinator) return Promise.resolve();
+  return browserCoordinator.adoptToken(next);
 }

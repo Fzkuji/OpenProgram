@@ -17,6 +17,8 @@ export interface DesktopBridge {
   readonly platform?: "darwin" | "win32" | "linux";
   readonly windowId: string;
   selfUpdateCapture?(nonce: string): Promise<{ ok: boolean; reason?: string }>;
+  /** One-time owner token after worker credential rotation. Never persisted. */
+  refreshOwnerAuth?(): Promise<string | null>;
   /** Update-triggered original-session recovery; absent in older shells. */
   selfUpdateReopen?: {
     getState(): Promise<DesktopReopenState | null>;
