@@ -1,4 +1,4 @@
-import { adoptOwnerAuthToken } from "./owner-auth-bootstrap";
+import { adoptOwnerAuthToken } from "./owner-auth-bootstrap.ts";
 
 /** Refresh the owner cookie after worker credential rotation. Desktop-only. */
 export async function recoverOwnerAuth(): Promise<boolean> {

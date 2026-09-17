@@ -159,6 +159,19 @@ function initializeDesktopUpdates() {
   powerMonitor.on("resume", () => scheduleAutomaticUpdateCheck());
 }
 
+function registerOwnerAuthIpc() {
+  ipcMain.handle("owner-auth:refresh", (event) => {
+    const senderUrl = event?.senderFrame?.url || event?.sender?.getURL?.() || "";
+    try {
+      if (new URL(senderUrl).origin !== UI_ORIGIN) return null;
+    } catch (_error) {
+      return null;
+    }
+    const startUrl = resolveWorkerStartUrl();
+    return startUrl ? ownerAuthTokenFromStartUrl(startUrl) : null;
+  });
+}
+
 function registerUpdateIpc() {
   ipcMain.handle("updates:get-state", () => desktopUpdates?.getState() || null);
   ipcMain.handle("updates:check", async () => {
@@ -1653,16 +1666,6 @@ const ensureMainWindow = createMainWindowGate({
 registerReopenIpc({ ipcMain, windows, recovery: selfUpdateReopen, origin: UI_ORIGIN });
 registerUiVerificationIpc({ ipcMain, windows, app, origin: UI_ORIGIN,
   request: selfUpdateReopen.requestVerification, guard: uiVerificationGuard });
-ipcMain.handle("owner-auth:refresh", (event) => {
-  const senderUrl = event?.senderFrame?.url || event?.sender?.getURL?.() || "";
-  try {
-    if (new URL(senderUrl).origin !== UI_ORIGIN) return null;
-  } catch (_error) {
-    return null;
-  }
-  const startUrl = resolveWorkerStartUrl();
-  return startUrl ? ownerAuthTokenFromStartUrl(startUrl) : null;
-});
 
 async function createWindow(options = {}) {
   const state = loadWindowState();
@@ -1850,6 +1853,7 @@ registerSingleMainWindow({
     registerDownloads();
     registerWebTabIpc();
     registerTabTransferIpc();
+    registerOwnerAuthIpc();
     registerUpdateIpc();
     ipcMain.on("theme:trace", (event, payload) => {
       // Only the app document can write diagnostics, not embedded websites.

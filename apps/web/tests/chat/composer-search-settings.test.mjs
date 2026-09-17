@@ -18,7 +18,7 @@ registerHooks({
    '@/lib/i18n': 'export const useTranslation = () => globalThis.searchTranslation',
    '@/lib/prefs/settings-cache': 'export const cachedFetch = async () => globalThis.searchCatalog; export const invalidate = () => {}',
    '@/components/ui/search-input': 'export const SearchInput = () => null',
-   './owner-auth-bootstrap.ts': 'export const waitForOwnerAuthBootstrap = async () => {}',
+   './owner-auth-bootstrap.ts': 'export const waitForOwnerAuthBootstrap = async () => {}; export const adoptOwnerAuthToken = async () => {}',
    '@/lib/runtime-bridge/state': 'export const getSocket = () => globalThis.searchSocket',
   };
   if (s.endsWith('.module.css')) return {url:'data:text/javascript,export default {}',shortCircuit:true};

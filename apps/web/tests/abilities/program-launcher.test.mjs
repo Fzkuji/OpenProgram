@@ -17,8 +17,8 @@ registerHooks({
         return { shortCircuit: true, url: "data:text/javascript,export const newSession = (id) => globalThis.launcherNewSession(id);" };
       }
     }
-    if (specifier.endsWith("owner-auth-bootstrap.ts")) {
-      return { shortCircuit: true, url: "data:text/javascript,export const waitForOwnerAuthBootstrap = async () => {};" };
+    if (specifier.endsWith("owner-auth-bootstrap.ts") || specifier.endsWith("owner-auth-bootstrap")) {
+      return { shortCircuit: true, url: "data:text/javascript,export const waitForOwnerAuthBootstrap = async () => {}; export const adoptOwnerAuthToken = async () => {};" };
     }
     if (specifier === "@/lib/session-store") {
       return { shortCircuit: true, url: "data:text/javascript,export const useSessionStore = {getState: () => globalThis.launcherSession};" };
