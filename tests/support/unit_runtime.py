@@ -80,8 +80,9 @@ def reject_unit_background_threads(
             pool.shutdown(wait=False, cancel_futures=True)
 
         for thread in started_threads:
-            if isinstance(thread, threading.Timer) and thread.is_alive():
-                thread.cancel()
+            cancel = getattr(thread, "cancel", None)
+            if callable(cancel) and thread.is_alive():
+                cancel()
             if thread.is_alive():
                 thread.join(timeout=0.1)
         leaked_threads = [thread for thread in started_threads if thread.is_alive()]

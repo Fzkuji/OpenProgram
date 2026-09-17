@@ -49,7 +49,8 @@ def store(tmp_path, monkeypatch):
     monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: s)
     import openprogram.store.session.session_store as ss_mod
     monkeypatch.setattr(ss_mod.shared, "_default_store", s)
-    return s
+    yield s
+    s.close()
 
 
 @pytest.fixture
