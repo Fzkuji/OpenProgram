@@ -49,6 +49,18 @@ The same History view combines manual edits and confirmed model file changes for
 | `process` | Manage background shell sessions (long-running services, pollable output) | Nothing |
 | `execute_code` | Run a Python snippet in an isolated subprocess | Nothing |
 
+### One-shot command directories
+
+`bash` starts a new shell for every call. Use the optional `workdir` argument to select the starting directory for that call, for example `bash(command="npm test", workdir="apps/web")`. This is tool-call notation; the ordinary Python export is an AgentTool, not a direct shell function.
+
+Local relative paths resolve from the currently bound worktree, or the host process directory when no worktree is bound. Absolute paths are also accepted. Paths are literal: `~`, environment variables and shell expressions are not expanded. Omit `workdir` to retain the existing worktree/backend default. A directory change or `export` inside one command does not affect another call. `workdir` does not change the worktree binding or the base used by file tools.
+
+Missing, non-directory or denied workdirs fail without running the requested command; the tool does not create them or fall back to a different location. Selecting a directory does not grant access to it. Under a local sandbox policy, explicit workdirs must already satisfy the original workspace's read/write policy, including symlinks and extra authorized roots. Execution remains inside that original sandbox boundary. An unavailable configured sandbox is not bypassed for an explicit workdir.
+
+SSH and Docker interpret explicit workdirs as POSIX paths in the backend filesystem, not paths on the host. Relative remote paths require an absolute POSIX worktree binding. A guarded directory change prevents the command list from running if that directory is unavailable; Docker does not create the requested directory via `-w`. When a host sandbox policy is active, explicit remote workdirs are refused until backend-native path authorization is available. Omitting `workdir` preserves the existing backend behavior.
+
+Results include the selected local starting `cwd`, or `requested_cwd` for remote paths whose canonical location is not independently observed. This is not an ending-directory report or a promise of persistent shell state. Long-running processes remain the separate `process` tool's responsibility; `bash` does not control the Desktop integrated terminal.
+
 ## Web
 
 | Tool | What it does | Requires |

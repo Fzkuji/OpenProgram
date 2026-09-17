@@ -6,6 +6,7 @@ this function's signature + docstring.
 
 from __future__ import annotations
 
+import json
 import sys
 
 from openprogram.backend import get_active_backend
@@ -13,6 +14,7 @@ from openprogram.programs._runtime import function
 from openprogram.worktree.context import current_worktree_path
 
 from .prompt import DEFAULT_MAX_TIMEOUT_MS, DEFAULT_TIMEOUT_MS, DESCRIPTION
+from .workdir import prepare_command
 
 
 # Bash output can be huge (find /, full log dump). 30K matches Claude
@@ -26,42 +28,59 @@ from .prompt import DEFAULT_MAX_TIMEOUT_MS, DEFAULT_TIMEOUT_MS, DESCRIPTION
     persist_full=True,
     toolset=["core"],
     unsafe_in=["wechat", "telegram", "plan"],  # destructive in public channels; hidden in plan mode
-    # Exempt: paths live inside `command`, not on the parameter surface.
-    # wrap_command + the OS sandbox already inspect the argv/cwd tree.
+    # workdir is resolved and checked in prepare_command against the ORIGINAL
+    # workspace; generic parameter checks cannot resolve remote filesystem paths.
+    # Commands still pass through the backend / OS sandbox.
     path_params={},
     url_params=[],
 )
 def bash(command: str,
         timeout: float | None = None,
-        description: str | None = None) -> str:
+        description: str | None = None,
+        workdir: str | None = None) -> str:
     """Run a shell command via the active backend (local / docker / ssh).
 
     Args:
         command: The shell command to execute.
-        timeout: Optional timeout in milliseconds (default 30000, max 600000).
+        timeout: Optional timeout in milliseconds (default 120000, max 600000).
         description: Short active-voice description shown in UI (display only).
+        workdir: Starting directory for this call only. Relative paths use the
+            bound worktree, or the local process directory when unbound. No
+            shell expansion is performed. Omit to use the backend default.
     """
     # Bash output is not attributed to the current turn's exact mutation
     # journal. Only trusted file-mutating tools create recoverable receipts.
     timeout_ms = min(timeout or DEFAULT_TIMEOUT_MS, DEFAULT_MAX_TIMEOUT_MS)
     timeout_sec = timeout_ms / 1000.0
 
-    backend = get_active_backend()
-    # When an active agent worktree is bound to the current context
-    # (set by the dispatcher / task runner), tools default their cwd
-    # to it. The LLM-supplied command can still ``cd ..`` out; this
-    # just sets the starting directory. A new subprocess is spawned
-    # per invocation, so any ``cd`` inside the command is local to
-    # that one call.
-    wt_cwd = current_worktree_path()
-    result = backend.run(command, timeout=timeout_sec, cwd=wt_cwd)
-
     from openprogram.agent.types import AgentToolResult
     from openprogram.providers.types import TextContent
+
+    backend = get_active_backend()
+    # A cwd override belongs to this call, never the worktree ContextVar or
+    # the Python process. Consecutive and parallel calls remain independent.
+    start_cwd = None
+    try:
+        run_command, run_cwd, start_cwd = prepare_command(
+            command, workdir, backend_id=backend.backend_id,
+            worktree=current_worktree_path(),
+        )
+        result = backend.run(run_command, timeout=timeout_sec, cwd=run_cwd)
+    except (OSError, ValueError, RuntimeError) as exc:
+        return AgentToolResult(
+            content=[TextContent(text=f"Error: shell launch failed: {exc}")],
+            details={"backend": backend.backend_id, "cwd": start_cwd,
+                     "error": type(exc).__name__},
+            is_error=True,
+        )
+    location_key = "cwd=" if backend.backend_id == "local" else "requested_cwd="
+    location = location_key + (json.dumps(start_cwd, ensure_ascii=False)
+                         if start_cwd is not None else "(backend default)")
 
     if result.timed_out:
         text = (
             f"[timeout after {timeout_sec:.1f}s via {backend.backend_id}]\n"
+            f"{location}\n"
             f"--- stdout (partial) ---\n{result.stdout}\n"
             f"--- stderr (partial) ---\n{result.stderr}"
         )
@@ -71,6 +90,7 @@ def bash(command: str,
                 "timeout": True,
                 "exit_code": result.exit_code,
                 "backend": backend.backend_id,
+                "cwd": start_cwd,
             },
             is_error=True,
         )
@@ -78,6 +98,7 @@ def bash(command: str,
     parts = [f"exit_code={result.exit_code}"]
     if backend.backend_id != "local":
         parts[0] += f" (backend={backend.backend_id})"
+    parts.append(location)
     if result.stdout:
         parts.append(f"--- stdout ---\n{result.stdout.rstrip()}")
     if result.stderr:
@@ -99,7 +120,7 @@ def bash(command: str,
             sandbox["rule"] = result.sandbox_rule
         return AgentToolResult(
             content=[TextContent(text=text)],
-            details={"sandbox": sandbox},
+            details={"sandbox": sandbox, "cwd": start_cwd},
             is_error=True,
         )
     if result.exit_code != 0:
@@ -108,6 +129,7 @@ def bash(command: str,
             details={
                 "exit_code": result.exit_code,
                 "backend": backend.backend_id,
+                "cwd": start_cwd,
             },
             is_error=True,
         )
