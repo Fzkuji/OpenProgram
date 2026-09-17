@@ -33,6 +33,14 @@ for (const path of expected) {
 
 const composer = source("components/chat/composer/index.tsx");
 const composerCss = source("components/chat/composer/composer.module.css");
+const gaugeIcon = source("components/animated-icons/gauge-icon.tsx");
+assert.match(gaugeIcon, /originX:\s*0/, "Fast gauge needle must rotate around the hub, not the SVG origin");
+assert.match(gaugeIcon, /originY:\s*1/, "Fast gauge needle hub is the start of m12 14 4-4");
+assert.doesNotMatch(
+  gaugeIcon,
+  /translateX:\s*0\.5/,
+  "compensating translation flies the Fast needle out of a 14px viewBox",
+);
 assert.match(composer, /\.\/input\/use-composer-keydown/);
 assert.match(composer, /\.\/input\/use-history-recall/);
 assert.match(composer, /\.\/submit\/use-chat-submit/);

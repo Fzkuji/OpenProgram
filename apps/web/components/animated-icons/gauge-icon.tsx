@@ -21,7 +21,8 @@ export const GaugeIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconProps 
         strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true"
         style={{ color: active ? "#ef4444" : undefined }}>
         <motion.path d="m12 14 4-4" initial={false}
-          animate={active || hovered ? { translateX: 0.5, translateY: 3, rotate: 72 } : { translateX: 0, translateY: 0, rotate: 0 }}
+          style={{ originX: 0, originY: 1 }}
+          animate={active || hovered ? { rotate: 72 } : { rotate: 0 }}
           transition={reduced ? { duration: 0 } : { type: "spring", stiffness: 160, damping: 17, mass: 1 }} />
         <path d="M3.34 19a10 10 0 1 1 17.32 0" />
       </svg>
