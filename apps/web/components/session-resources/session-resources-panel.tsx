@@ -28,6 +28,8 @@ import { revealExistingWebTab } from "@/lib/browser/web-page-management";
 import { desktopBridge, retryRestoreWebTab } from "@/lib/desktop/desktop-bridge";
 import { useSessionResources } from "@/lib/chat/use-session-resources";
 import { useTranslation } from "@/lib/i18n";
+import { useTerminalResources } from "@/lib/desktop/terminal-resources";
+import { TerminalResourceList } from "./terminal-resources";
 import styles from "./session-resources.module.css";
 
 function retryRecoverablePage(row: SessionResource, tabs: { id: string }[]): void {
@@ -74,6 +76,8 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
   const tabs = useCenterTabs(s => s.tabs);
   const backend = useSessionResources(sessionId);
   useBrowserResourceStore(s => s.ingestClock);
+  const hasTerminals = useTerminalResources(s => !!sessionId
+    && Object.values(s.rows).some(row => row.session_ids.includes(sessionId)));
   const pendingClose = pendingCloseRequest();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [selected, setSelected] = useState<SessionResource | null>(null);
@@ -117,7 +121,7 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
         : text("Waiting for Agent to pause before closing the page…", "正在暂停 Agent，完成后关闭页面…")}
     </p>}
     <div className={styles.list}>
-      {groups.length === 0 && <p className={styles.empty}>{!backend.loaded ? text("Loading resources…", "正在加载资源…")
+      {groups.length === 0 && !hasTerminals && <p className={styles.empty}>{!backend.loaded ? text("Loading resources…", "正在加载资源…")
           : sessionId ? text("This session has no resources in use.", "当前会话没有正在使用的资源。") : text("Select a session to view its resources.", "选择会话以查看其资源。")}</p>}
       {groups.map(group => {
         const open = group.key === "unavailable" ? collapsed[group.key] === false : !collapsed[group.key];
@@ -202,6 +206,7 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
         })}
       </div>;
       })}
+      <TerminalResourceList sessionId={sessionId} />
     </div>
     {selected && <div className={styles.detail}>
       <button type="button" className={styles.action} aria-label={text("Close resource details", "关闭资源详情")} onClick={() => setSelected(null)}><X size={14} /></button>

@@ -67,7 +67,45 @@ class TerminalTickets:
         return copy.deepcopy(entry.plan)
 
 
+class TerminalResults:
+    """Correlate one native receipt without trusting a browser's reply fields."""
+
+    def __init__(self, *, limit: int = 128):
+        self._pending: dict[str, tuple[str, threading.Event, dict]] = {}
+        self._lock = threading.Lock()
+        self.limit = limit
+
+    def reserve(self, window_id: str) -> tuple[str, threading.Event, dict]:
+        with self._lock:
+            if len(self._pending) >= self.limit:
+                raise RuntimeError("terminal_dispatch_busy")
+            token = secrets.token_hex(32)
+            ready, holder = threading.Event(), {}
+            self._pending[token] = (window_id, ready, holder)
+            return token, ready, holder
+
+    def deliver(self, token: str, window_id: str, result: dict) -> None:
+        if (not isinstance(token, str) or not re.fullmatch(r"[0-9a-f]{64}", token)
+                or not isinstance(result, dict) or type(result.get("ok")) is not bool):
+            raise ValueError("invalid_terminal_result")
+        # A bounded JSON copy also detaches the receipt from caller mutations.
+        encoded = json.dumps(result, ensure_ascii=False, allow_nan=False)
+        if len(encoded.encode("utf-8")) > 256_000:
+            raise ValueError("terminal_result_too_large")
+        with self._lock:
+            entry = self._pending.get(token)
+            if entry is None or entry[0] != window_id or "result" in entry[2]:
+                raise PermissionError("invalid_terminal_result")
+            entry[2]["result"] = json.loads(encoded)
+            entry[1].set()
+
+    def release(self, token: str) -> None:
+        with self._lock:
+            self._pending.pop(token, None)
+
+
 _tickets = TerminalTickets()
+_results = TerminalResults()
 _receipts: OrderedDict[tuple[str, str], tuple[str, dict[str, Any]]] = OrderedDict()
 _inflight: set[tuple[str, str]] = set()
 _receipt_lock = threading.Lock()
@@ -139,19 +177,29 @@ def _dispatch(plan: dict[str, Any], *, ws, window_id: str, revision: int, valid:
 
     if not still_valid():
         return {"ok": False, "error": "terminal_dispatch_revoked"}
-    ticket = _tickets.issue(plan, still_valid)
+    from openprogram.webui import server as server
+    from openprogram.webui.ws_delivery import send_to_connection
+
+    result_ticket, ready, holder = _results.reserve(window_id)
+    ticket = None
     try:
-        result = webtab.request_on_ws(ws, {
-            "op": "terminal", "ticket": ticket, "window_id": window_id,
-        }, timeout=12.0)
-        if not isinstance(result, dict) or result.get("terminal_reply") is not True:
-            return {"ok": False, "error": "terminal_result_unconfirmed",
-                    "terminal_id": plan["terminal_id"], "operation_id": plan["operation_id"],
-                    "result_unconfirmed": True,
-                    "message": "Inspect the terminal before another input. This request was not replayed."}
-        return result
+        ticket = _tickets.issue({**plan, "result_ticket": result_ticket}, still_valid)
+        payload = json.dumps({"type": "terminal.command", "data": {
+            "ticket": ticket, "window_id": window_id,
+        }})
+        # Target the original authenticated connection. A disconnected or
+        # replaced connection never receives an automatic replay.
+        sent = send_to_connection(ws, payload, server._loop)
+        if sent and ready.wait(12.0):
+            return holder["result"]
+        return {"ok": False, "error": "terminal_result_unconfirmed",
+                "terminal_id": plan["terminal_id"], "operation_id": plan["operation_id"],
+                "result_unconfirmed": True,
+                "message": "Inspect the terminal before another input. This request was not replayed."}
     finally:
-        _tickets.revoke(ticket)
+        if ticket is not None:
+            _tickets.revoke(ticket)
+        _results.release(result_ticket)
 
 
 def execute(action: str, terminal_id: str = "", generation: str = "", binding_id: str = "",
@@ -232,28 +280,49 @@ def execute(action: str, terminal_id: str = "", generation: str = "", binding_id
 
 
 def register_routes(app) -> None:
-    """Native Desktop redeems tickets. Browser cookies alone are insufficient."""
+    """Native Desktop redeems and acknowledges. Browser cookies do not suffice."""
     from fastapi.responses import JSONResponse
     from openprogram.backend_endpoint import is_loopback_host
 
-    @app.post("/api/terminal/claim")
-    async def claim_terminal_ticket(request: Request):
+    def authorized(request: Request) -> bool:
         auth = getattr(request.app.state, "owner_auth", None)
         headers = request.headers.getlist("authorization")
         peer = request.client.host if request.client else ""
-        if (not is_loopback_host(peer) or len(headers) != 1 or not headers[0].startswith("Bearer ")
-                or auth is None or not auth.verify_token(headers[0][7:])):
+        return bool(is_loopback_host(peer) and len(headers) == 1
+                    and headers[0].startswith("Bearer ") and auth is not None
+                    and auth.verify_token(headers[0][7:]))
+
+    async def read_body(request: Request, limit: int) -> dict:
+        raw = bytearray()
+        async for chunk in request.stream():
+            if len(raw) + len(chunk) > limit:
+                raise ValueError("request_too_large")
+            raw.extend(chunk)
+        body = json.loads(raw)
+        if not isinstance(body, dict) or not isinstance(body.get("window_id"), str):
+            raise ValueError("invalid_request")
+        return body
+
+    @app.post("/api/terminal/claim")
+    async def claim_terminal_ticket(request: Request):
+        if not authorized(request):
             return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=403)
         try:
-            raw = bytearray()
-            async for chunk in request.stream():
-                if len(raw) + len(chunk) > 2048:
-                    raise ValueError("request_too_large")
-                raw.extend(chunk)
-            body = json.loads(raw)
-            if not isinstance(body, dict) or not isinstance(body.get("window_id"), str):
-                raise ValueError("invalid_request")
+            body = await read_body(request, 2048)
             plan = _tickets.claim(body.get("ticket"), body["window_id"])
             return JSONResponse({"ok": True, "plan": plan}, headers={"Cache-Control": "no-store"})
         except (ValueError, PermissionError, TypeError):
             return JSONResponse({"ok": False, "error": "invalid_or_revoked_ticket"}, status_code=403)
+
+    @app.post("/api/terminal/result")
+    async def receive_terminal_result(request: Request):
+        if not authorized(request):
+            return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=403)
+        try:
+            body = await read_body(request, 260_000)
+            # Do not discard an already delivered effect just because the task
+            # has since paused. Admission and completion are different events.
+            _results.deliver(body.get("ticket"), body["window_id"], body.get("result"))
+            return JSONResponse({"ok": True}, headers={"Cache-Control": "no-store"})
+        except (ValueError, PermissionError, TypeError):
+            return JSONResponse({"ok": False, "error": "invalid_terminal_result"}, status_code=403)

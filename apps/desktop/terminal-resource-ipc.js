@@ -9,12 +9,13 @@ const { resolveTerminalCommand, waitForTerminalPid, killWindowsProcessTree } = r
 /** Redeem a single-use worker intention at the fixed local owner-auth endpoint.
  * Renderer input never supplies an executable, environment, principal or URL.
  */
-function redeemTerminalTicket(origin, token, ticket, windowId) {
+function nativeTerminalRequest(origin, token, route, payload) {
   let url;
-  try { url = new URL("/api/terminal/claim", origin); } catch { return Promise.reject(Error("terminal_authority_unavailable")); }
-  if (url.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)
+  try { url = new URL(`/api/terminal/${route}`, origin); } catch { return Promise.reject(Error("terminal_authority_unavailable")); }
+  if (!["claim", "result"].includes(route) || url.protocol !== "http:"
+    || !["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)
     || url.username || url.password || typeof token !== "string" || !token
-    || !/^[0-9a-f]{64}$/.test(ticket || "")) {
+    || !/^[0-9a-f]{64}$/.test(payload?.ticket || "")) {
     return Promise.reject(Error("terminal_authority_unavailable"));
   }
   return new Promise((resolve, reject) => {
@@ -23,7 +24,8 @@ function redeemTerminalTicket(origin, token, ticket, windowId) {
       if (settled) return;
       settled = true; clearTimeout(timer); error ? reject(error) : resolve(result);
     };
-    const body = JSON.stringify({ ticket, window_id: windowId });
+    const body = JSON.stringify(payload);
+    if (Buffer.byteLength(body) > 260_000) { finish(Error("terminal_result_too_large")); return; }
     const req = http.request(url, { method: "POST", headers: {
       Authorization: `Bearer ${token}`, "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body),
     } }, (res) => {
@@ -39,8 +41,8 @@ function redeemTerminalTicket(origin, token, ticket, windowId) {
         try {
           if (res.statusCode !== 200) throw Error("terminal_claim_rejected");
           const result = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-          if (result.ok !== true || !result.plan || result.plan.window_id !== windowId) throw Error("terminal_claim_rejected");
-          finish(null, result.plan);
+          if (result.ok !== true) throw Error("terminal_claim_rejected");
+          finish(null, result);
         } catch { finish(Error("terminal_claim_rejected")); }
       });
     });
@@ -50,9 +52,19 @@ function redeemTerminalTicket(origin, token, ticket, windowId) {
   });
 }
 
+async function redeemTerminalTicket(origin, token, ticket, windowId) {
+  const result = await nativeTerminalRequest(origin, token, "claim", { ticket, window_id: windowId });
+  if (!result.plan || result.plan.window_id !== windowId) throw Error("terminal_claim_rejected");
+  return result.plan;
+}
+
+async function acknowledgeTerminalResult(origin, token, ticket, windowId, result) {
+  return nativeTerminalRequest(origin, token, "result", { ticket, window_id: windowId, result });
+}
+
 function registerTerminalResourceIpc({ ipcMain, app, contextForSender, origin, getOwnerToken,
   spawn = (...args) => require("node-pty").spawn(...args),
-  redeem = redeemTerminalTicket, platform = process.platform,
+  redeem = redeemTerminalTicket, acknowledge = acknowledgeTerminalResult, platform = process.platform,
   env = process.env, fileSystem = fs, kill = process.kill.bind(process),
   listProcesses = () => execFileSync("/bin/ps", ["-axo", "pid=,ppid="], { encoding: "utf8" }),
   windowsKill = killWindowsProcessTree, waitForPid = waitForTerminalPid,
@@ -152,14 +164,22 @@ function registerTerminalResourceIpc({ ipcMain, app, contextForSender, origin, g
     const ctx = owner(event);
     if (!ctx || typeof ticket !== "string" || !/^[0-9a-f]{64}$/.test(ticket)) return { ok: false, error: "unauthorized_sender" };
     try {
-      const plan = await redeem(origin, getOwnerToken(), ticket, ctx.id);
-      if (!owner(event) || plan.window_id !== ctx.id) return { ok: false, error: "terminal_host_unavailable" };
-      return await manager.agent(plan, event.sender);
-    } catch { return { ok: false, error: "terminal_authority_unavailable" }; }
+      const token = getOwnerToken();
+      const plan = await redeem(origin, token, ticket, ctx.id);
+      if (!/^[0-9a-f]{64}$/.test(plan.result_ticket || "")) return { ok: false, error: "terminal_authority_unavailable" };
+      const result = !owner(event) || plan.window_id !== ctx.id
+        ? { ok: false, error: "terminal_host_unavailable" }
+        : await manager.agent(plan, event.sender);
+      // Completion travels native-to-worker with a separate one-use receipt.
+      // The renderer never receives the owner token or this receipt ticket.
+      await acknowledge(origin, token, plan.result_ticket, ctx.id, result);
+      return result;
+    } catch { return { ok: false, error: "terminal_result_unconfirmed", result_unconfirmed: true }; }
+
   });
   const timer = timers.setInterval(() => manager.sweep(), 30_000); timer?.unref?.();
   app.on("before-quit", () => { timers.clearInterval(timer); manager.dispose(); });
   return manager;
 }
 
-module.exports = { registerTerminalResourceIpc, redeemTerminalTicket };
+module.exports = { registerTerminalResourceIpc, redeemTerminalTicket, acknowledgeTerminalResult };

@@ -196,7 +196,9 @@ def _collect() -> list[dict]:
 
 def register(app):
     from . import processes
+    from openprogram.terminal_resources import register_routes
     processes.register(app)
+    register_routes(app)
 
     @app.get("/api/running")
     def api_running(request: Request):

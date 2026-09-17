@@ -27,10 +27,7 @@ async function checkTerminalProcessIdentity() {
   const write = testContext.ipcListeners.get("terminal:write");
   const resize = testContext.ipcListeners.get("terminal:resize");
   const stop = testContext.ipcListeners.get("terminal:stop");
-  testContext.assert.equal(typeof start, "function", "terminal start handler is registered");
-  testContext.assert.equal(typeof write, "function", "terminal write handler is registered");
-  testContext.assert.equal(typeof resize, "function", "terminal resize handler is registered");
-  testContext.assert.equal(typeof stop, "function", "terminal stop handler is registered");
+  for (const handler of [start, write, resize, stop]) testContext.assert.equal(typeof handler, "function");
 
   const unauthorizedSender = new testContext.EventEmitter();
   unauthorizedSender.id = 7000;
@@ -40,7 +37,6 @@ async function checkTerminalProcessIdentity() {
   const unauthorized = await start({ sender: unauthorizedSender }, {
     id: "terminal", cwd: testContext.transferUserData, preset: "shell", cols: 80, rows: 24,
   });
-  testContext.assert.equal(unauthorized.ok, false);
   testContext.assert.equal(unauthorized.error, "unauthorized_sender");
   testContext.assert.equal(testContext.spawnedPtys.length, spawnedBeforeUnauthorized);
 
@@ -54,39 +50,35 @@ async function checkTerminalProcessIdentity() {
   sender.emit = senderEvents.emit.bind(senderEvents);
   sender.listenerCount = senderEvents.listenerCount.bind(senderEvents);
   sender.getURL = () => "http://127.0.0.1:18100/chat";
+  sender.mainFrame = { get url() { return sender.getURL(); } };
   const sent = [];
   sender.send = (channel, payload) => sent.push([channel, payload]);
-  const event = { sender };
+  const event = { sender, senderFrame: sender.mainFrame };
   const claudeId = "terminal:terminal-owner:claude";
   const shellId = "terminal:terminal-owner:shell";
 
   sender.getURL = () => "http://127.0.0.1:18101/chat";
-  const wrongOrigin = await start(event, {
-    id: shellId, cwd: testContext.transferUserData, preset: "shell", cols: 80, rows: 24,
-  });
-  testContext.assert.equal(wrongOrigin.error, "unauthorized_sender");
+  testContext.assert.equal((await start(event, {
+    id: shellId, cwd: testContext.transferUserData, preset: "shell",
+  })).error, "unauthorized_sender");
   sender.getURL = () => "http://127.0.0.1:18100/chat";
+  testContext.assert.equal((await start({ sender, senderFrame: { url: sender.getURL() } }, {
+    id: shellId, cwd: testContext.transferUserData, preset: "shell",
+  })).error, "unauthorized_sender", "child-frame IPC cannot launch a terminal");
+  testContext.assert.equal((await start(event, {
+    id: claudeId, cwd: testContext.transferUserData, preset: "unknown",
+  })).error, "invalid_preset");
+  testContext.assert.equal((await start(event, {
+    id: "claude", cwd: testContext.transferUserData, preset: "claude",
+  })).error, "invalid_terminal");
 
-  const invalid = await start(event, {
-    id: claudeId, cwd: testContext.transferUserData, preset: "unknown", cols: 80, rows: 24,
+  const opened = await start(event, {
+    id: claudeId, cwd: testContext.transferUserData, preset: "claude", cols: 90, rows: 31,
   });
-  testContext.assert.equal(invalid.ok, false);
-  testContext.assert.equal(invalid.error, "invalid_preset");
-  const invalidId = await start(event, {
-    id: "claude", cwd: testContext.transferUserData, preset: "claude", cols: 80, rows: 24,
-  });
-  testContext.assert.equal(invalidId.error, "invalid_terminal");
-  testContext.assert.equal(
-    (await start(event, { id: claudeId, cwd: testContext.transferUserData, preset: "claude", cols: 90, rows: 31 })).ok,
-    true,
-  );
+  testContext.assert.equal(opened.ok, true);
   const first = testContext.spawnedPtys.at(-1);
-  testContext.assert.deepEqual(
-    Array.from(first.args),
-    testContext.process.platform === "win32"
-      ? ["-NoLogo", "-NoExit", "-Command", "claude"]
-      : ["-l", "-i", "-c", "exec claude"],
-  );
+  testContext.assert.deepEqual(Array.from(first.args), testContext.process.platform === "win32"
+    ? ["-NoLogo", "-NoExit", "-Command", "claude"] : ["-l", "-i", "-c", "exec claude"]);
   testContext.assert.equal(first.options.useConpty, testContext.process.platform === "win32");
   testContext.assert.equal(first.options.cwd, testContext.fs.realpathSync(testContext.transferUserData));
   testContext.assert.equal(first.options.name, "xterm-256color");
@@ -97,117 +89,94 @@ async function checkTerminalProcessIdentity() {
   testContext.assert.equal(sent.at(-1)[0], "terminal:data");
   testContext.assert.equal(sent.at(-1)[1].id, claudeId);
   testContext.assert.equal(sent.at(-1)[1].data, "Claude Code ready");
-  testContext.assert.equal(
-    (await start(event, { id: claudeId, cwd: testContext.transferUserData, preset: "claude", cols: 100, rows: 35 })).reused,
-    true,
-  );
-  testContext.assert.strictEqual(testContext.spawnedPtys.at(-1), first, "remounting a live terminal must reuse its PTY");
+  const attached = await start(event, {
+    id: claudeId, cwd: testContext.transferUserData, preset: "claude", cols: 100, rows: 35,
+  });
+  testContext.assert.equal(attached.reused, true);
+  testContext.assert.strictEqual(testContext.spawnedPtys.at(-1), first, "remount reuses its exact PTY");
   testContext.assert.deepEqual(first.resizes.at(-1), [100, 35]);
-  testContext.assert.equal(sent.at(-1)[1].data, "Claude Code ready", "remount replays buffered output");
+  testContext.assert.equal(sent.at(-1)[1].data, "Claude Code ready", "remount replays output, never input");
   write(event, claudeId, "hello\r");
   resize(event, claudeId, 120, 40);
   testContext.assert.deepEqual(first.writes, ["hello\r"]);
   testContext.assert.deepEqual(first.resizes, [[100, 35], [120, 40]]);
   write(event, claudeId, "你".repeat(22_000));
-  testContext.assert.deepEqual(
-    first.writes,
-    ["hello\r"],
-    "terminal input over 64 KiB in UTF-8 bytes must be rejected",
-  );
+  testContext.assert.deepEqual(first.writes, ["hello\r"], "input limit uses UTF-8 bytes");
   const boundaryInput = "a".repeat(65_536);
   write(event, claudeId, boundaryInput);
   testContext.assert.equal(first.writes.at(-1), boundaryInput, "exactly 64 KiB remains accepted");
 
-  const timersBeforeReplace = new Set(testContext.clock.pendingIds());
-  testContext.assert.equal(
-    (await start(event, {
-      id: claudeId,
-      cwd: testContext.path.dirname(testContext.transferUserData),
-      preset: "claude",
-      cols: 80,
-      rows: 24,
-    })).ok,
-    true,
-  );
-  const second = testContext.spawnedPtys.at(-1);
-  const firstKillTimer = testContext.clock.pendingIds().find((id) => !timersBeforeReplace.has(id));
-  testContext.assert.notEqual(firstKillTimer, undefined);
-  testContext.assert.deepEqual(first.kills, gracefulKills);
-  if (testContext.process.platform === "win32") {
-    testContext.assert.deepEqual(testContext.processSignals, []);
-  } else {
-    testContext.assert.deepEqual(testContext.processSignals.slice(-2), [
-      [-first.pid, "SIGTERM"],
-      [first.pid + 1_000, "SIGTERM"],
-    ]);
-  }
-  testContext.assert.equal(
-    sender.listenerCount("destroyed"),
-    1,
-    "replacing or remounting terminals must not accumulate sender listeners",
-  );
-  const sentBeforeStale = sent.length;
-  const signalsBeforeFirstExit = testContext.processSignals.length;
-  first.emit("data", "stale");
-  first.emit("exit", { exitCode: 0, signal: 0 });
-  testContext.assert.equal(sent.length, sentBeforeStale, "replaced PTY cannot write or exit into its successor");
-  testContext.assert.equal(
-    testContext.clock.pendingIds().includes(firstKillTimer),
-    false,
-    "a PTY that exits after SIGTERM cancels its SIGKILL timer",
-  );
-  testContext.clock.runCleared(firstKillTimer);
-  testContext.assert.deepEqual(first.kills, gracefulKills);
-  testContext.assert.equal(
-    testContext.processSignals.length,
-    signalsBeforeFirstExit,
-    "a cleared escalation callback cannot signal a reused process id",
-  );
+  const differentCwd = await start(event, {
+    id: claudeId, cwd: testContext.path.dirname(testContext.transferUserData),
+    preset: "claude", cols: 80, rows: 24,
+  });
+  testContext.assert.equal(differentCwd.reused, true);
+  testContext.assert.equal(differentCwd.pid, opened.pid);
+  testContext.assert.equal(differentCwd.start_cwd, first.options.cwd,
+    "reattaching with another requested cwd must not destroy a live environment");
+  testContext.assert.deepEqual(first.kills, []);
+
   const timersBeforeStop = new Set(testContext.clock.pendingIds());
   stop(event, claudeId);
+  testContext.assert.deepEqual(first.kills, gracefulKills);
+  const firstKillTimer = testContext.clock.pendingIds().find(id => !timersBeforeStop.has(id));
+  testContext.assert.notEqual(firstKillTimer, undefined);
+  if (testContext.process.platform !== "win32") testContext.assert.deepEqual(testContext.processSignals.slice(-2), [
+    [-first.pid, "SIGTERM"], [first.pid + 1_000, "SIGTERM"],
+  ]);
+  first.emit("exit", { exitCode: 0, signal: 0 });
+  testContext.assert.equal(testContext.clock.pendingIds().includes(firstKillTimer), false);
+  const signalsAtExit = testContext.processSignals.length;
+  testContext.clock.runCleared(firstKillTimer);
+  testContext.assert.deepEqual(first.kills, gracefulKills);
+  testContext.assert.equal(testContext.processSignals.length, signalsAtExit,
+    "a cleared escalation cannot signal a reused process id");
+
+  const replaced = await start(event, {
+    id: claudeId, cwd: testContext.path.dirname(testContext.transferUserData), preset: "claude",
+  });
+  testContext.assert.equal(replaced.ok, true);
+  testContext.assert.notEqual(replaced.generation, opened.generation);
+  const second = testContext.spawnedPtys.at(-1);
+  testContext.assert.notStrictEqual(second, first);
+  testContext.assert.equal(sender.listenerCount("destroyed"), 1);
+  const sentBeforeStale = sent.length;
+  first.emit("data", "stale");
+  first.emit("exit", { exitCode: 0, signal: 0 });
+  testContext.assert.equal(sent.length, sentBeforeStale, "old PTY events cannot enter the replacement view");
+
+  const timersBeforeSecond = new Set(testContext.clock.pendingIds());
+  stop(event, claudeId);
   testContext.assert.deepEqual(second.kills, gracefulKills);
-  const secondKillTimer = testContext.clock.pendingIds().find((id) => !timersBeforeStop.has(id));
+  const secondKillTimer = testContext.clock.pendingIds().find(id => !timersBeforeSecond.has(id));
   testContext.assert.notEqual(secondKillTimer, undefined);
   testContext.clock.runCleared(secondKillTimer);
   testContext.clock.clearTimeout(secondKillTimer);
   testContext.assert.deepEqual(second.kills, escalatedKills);
-  if (testContext.process.platform === "win32") {
-    testContext.assert.deepEqual(testContext.processSignals, []);
-  } else {
-    testContext.assert.deepEqual(testContext.processSignals.slice(-2), [
-      [-second.pid, "SIGKILL"],
-      [second.pid + 1_000, "SIGKILL"],
-    ]);
-  }
+  if (testContext.process.platform !== "win32") testContext.assert.deepEqual(testContext.processSignals.slice(-2), [
+    [-second.pid, "SIGKILL"], [second.pid + 1_000, "SIGKILL"],
+  ]);
   second.emit("exit", { exitCode: 137, signal: 9 });
 
-  await start(event, {
-    id: shellId, cwd: testContext.transferUserData, preset: "shell", cols: 80, rows: 24,
-  });
+  await start(event, { id: shellId, cwd: testContext.transferUserData, preset: "shell", cols: 80, rows: 24 });
   const third = testContext.spawnedPtys.at(-1);
   const timersBeforeDestroy = new Set(testContext.clock.pendingIds());
   sender.emit("destroyed");
-  testContext.assert.deepEqual(third.kills, gracefulKills, "renderer destruction kills all owned PTYs");
-  const thirdKillTimer = testContext.clock.pendingIds().find((id) => !timersBeforeDestroy.has(id));
+  testContext.assert.deepEqual(third.kills, gracefulKills, "renderer destruction closes its terminal resources");
+  const thirdKillTimer = testContext.clock.pendingIds().find(id => !timersBeforeDestroy.has(id));
   testContext.assert.notEqual(thirdKillTimer, undefined);
   testContext.clock.runCleared(thirdKillTimer);
   testContext.clock.clearTimeout(thirdKillTimer);
   testContext.assert.deepEqual(third.kills, escalatedKills);
-  if (testContext.process.platform === "win32") {
-    testContext.assert.deepEqual(testContext.processSignals, []);
-  } else {
-    testContext.assert.deepEqual(testContext.processSignals.slice(-2), [
-      [-third.pid, "SIGKILL"],
-      [third.pid + 1_000, "SIGKILL"],
-    ]);
-  }
+  if (testContext.process.platform !== "win32") testContext.assert.deepEqual(testContext.processSignals.slice(-2), [
+    [-third.pid, "SIGKILL"], [third.pid + 1_000, "SIGKILL"],
+  ]);
   third.emit("exit", { exitCode: 137, signal: 9 });
   if (testContext.process.platform === "win32") {
-    testContext.assert.deepEqual(
-      testContext.windowsTreeKills.slice(-6),
-      [first.pid, second.pid, second.pid, third.pid, third.pid].slice(-6),
-      "Windows stops each ConPTY process tree and retries during escalation",
-    );
+    testContext.assert.deepEqual(testContext.processSignals, []);
+    testContext.assert.deepEqual(testContext.windowsTreeKills.slice(-5),
+      [first.pid, second.pid, second.pid, third.pid, third.pid],
+      "Windows closes each ConPTY tree and retries during escalation");
   }
 }
 

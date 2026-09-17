@@ -265,3 +265,12 @@ ipcRenderer.on("menu:new-tab", () =>
 ipcRenderer.on("menu:close-tab", () =>
   window.dispatchEvent(new CustomEvent("op-desktop-close-tab"))
 );
+
+// Opaque Agent tickets and exact-instance human operations only. The native
+// host checks the sender and redeems tickets; no owner credentials cross here.
+contextBridge.exposeInMainWorld("openprogramTerminals", {
+  windowId,
+  agentTicket: (ticket) => ipcRenderer.invoke("terminal:agent-ticket", ticket),
+  resource: (action, request = {}) => ipcRenderer.invoke("terminal:resource", action, request),
+  onResource: subscribe("terminal:resource"),
+});
