@@ -44,6 +44,7 @@
   - [1. DAG 上下文 —— 原生多 agent 系统的地基](#1-dag-上下文--原生多-agent-系统的地基)
   - [2. Agentic 工作流 —— 可信且自我演化的 agent 的地基](#2-agentic-工作流--可信且自我演化的-agent-的地基)
   - [3. 事件基础设施 —— 主动 agent 的地基](#3-事件基础设施--主动-agent-的地基)
+- [另外还带着这些](#另外还带着这些)
 - [相关项目](comparisons/related-projects.md)
 - [致谢](comparisons/related-projects.md#acknowledgements)
 - [贡献](comparisons/related-projects.md#contributing)
@@ -141,6 +142,23 @@ OpenProgram 支持 macOS、Linux、原生 Windows x86_64 CLI/server、多 provid
 </p>
 
 一条**进程级事件总线**是一切之下的基底:agent 循环、auth、上下文、渠道、记忆都往上面发事件,任何组件都能按事件类型订阅(每个事件都是统一的 `Event(type, payload, ts)` 信封,带 `id` / `origin` / `metadata`)。这里刻意只做**地基**——监视事件流并主动行动的策略层,是这条总线的第一个预期消费者。管线已经就位;主动性留给你在上面搭。
+
+## 另外还带着这些
+
+上面三条是纲领。日常真正会碰到的是这些：
+
+- 🧠 **自己会写的 Memory。** Markdown 在 `~/.openprogram/memory/`，带出处，后台攒一批再写——没有「保存这条」工具。CLI、Memory 页、agent 工具读的是同一份工作区。[详情](start/features.zh.md#自己写自己的记忆)
+- 🗜️ **上下文压缩。** `/compact` 总结较早的完整轮次；占用高时自动压缩；同一条用户消息里的工具结果也可以压缩，不必再发一次 `/compact`。原始记录仍留在会话里。[详情](interfaces/tui.zh.md)
+- 🌿 **会话是 git DAG。** 侧栏可以 branch / attach / merge。会改文件的分支跑在隔离的 git worktree 里，两个 agent 不会抢同一棵树。[详情](start/features.zh.md#对话即-git-dag)
+- 🗺️ **右栏 Mini-DAG。** 用户消息、LLM 调用、函数调用都是节点，点一下就跳到对话里对应的那条。
+- 🌐 **内置浏览器。** 多窗格、书签、History，以及 Agent 对可见页面的操控——在 Desktop App 里，不是外挂 Chrome。
+- 🧩 **MCP、Skills、Plugins。** MCP 工具直接出现在聊天里；Skills 是按需加载的剧本；插件可以加命令、skill 和 server。[能力](capabilities/README.zh.md)
+- 🎯 **普通聊天里的 Goal。** 持久 Goal 绑着 todo 计划，进度看得见——不是单独的 Goal 模式。
+- 📄 **PDF 阅读。** 在 Files 里连续打开 PDF，批注会保存，有侧栏和大纲。
+- 🔑 **多账户 provider。** 一个 provider 多账户、多 key，可轮换；Web、TUI、CLI 同一套。[详情](start/features.zh.md#多账户--密钥轮换)
+- 📡 **渠道。** 同一个 agent 可以走微信等外部通道，不只是本机界面。
+- ⏸️ **暂停、继续、恢复。** 一轮执行是持久的：权限确认、暂停/继续、重启后恢复，进行中的工作不会丢。
+- 🔌 **一份 runtime，三个界面。** Desktop App、`openprogram web`、TUI 共用完整 runtime 和浏览器后端。
 
 ## 引用
 

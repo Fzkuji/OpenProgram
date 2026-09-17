@@ -46,6 +46,7 @@
   - [2. DAG Context — for native multi-agent systems](#2-dag-context--for-native-multi-agent-systems)
   - [3. Agentic Workflow — for trustworthy & self-evolving agents](#3-agentic-workflow--for-trustworthy--self-evolving-agents)
   - [4. Event Infrastructure — for proactive agents](#4-event-infrastructure--for-proactive-agents)
+- [Also in the product](#also-in-the-product)
 - [Citation](#citation)
 - [License](#license)
 - [Acknowledgements](#acknowledgements)
@@ -235,6 +236,23 @@ get_event_bus().subscribe(                       # returns an unsubscribe fn
 ```
 
 A **foundation, honestly labelled**: the plumbing is in place and the proactive policy layer is its first intended consumer — that part is yours to build.
+
+## Also in the product
+
+The four mechanisms above are the thesis. These are the pieces you actually hit day to day:
+
+- 🧠 **Memory that writes itself.** Markdown under `~/.openprogram/memory/`, cited by source, updated in background batches — there is no "save this" tool. Same workspace in the CLI, the Memory page, and agent tools. [Details](docs/start/features.md#memory-that-writes-itself)
+- 🗜️ **Context compaction.** `/compact` summarizes older complete turns; automatic compact runs at high occupancy; tool results inside a single turn can compact without another command. Original records stay in the session. [Details](docs/interfaces/tui.md)
+- 🌿 **Conversation as a git DAG.** Branch, attach, and merge from the sidebar. File-touching branches run in isolated git worktrees so two agents do not fight over the same tree. [Details](docs/start/features.md#conversation-as-a-git-dag)
+- 🗺️ **Mini-DAG in the right rail.** User messages, LLM calls, and function calls as nodes you can click to jump in the transcript.
+- 🌐 **Built-in browser.** Multiple panes, bookmarks, History, and Agent control of visible pages — inside the Desktop App, not a sidecar Chrome.
+- 🧩 **MCP, Skills, and Plugins.** MCP tools appear in chat; Skills are on-demand playbooks; plugins add commands, skills, and servers. [Capabilities](docs/capabilities/README.md)
+- 🎯 **Goals in ordinary chat.** Persistent goals with bound todo plans and visible progress — not a separate Goal-only mode.
+- 📄 **PDF reading.** Open PDFs continuously in Files, with saved annotations, sidebar, and outline.
+- 🔑 **Multi-account providers.** Several accounts and keys per provider, with rotation, from Web, TUI, and CLI. [Details](docs/start/features.md#multi-account--key-rotation)
+- 📡 **Channels.** The same agent over WeChat and other transports, not only the local UI.
+- ⏸️ **Pause, continue, recover.** Turns are durable: permission prompts, pause/continue, and restart recovery without losing in-flight work.
+- 🔌 **One runtime, three surfaces.** Desktop App, `openprogram web`, and the TUI share the complete runtime and browser backend.
 
 ## Citation
 
