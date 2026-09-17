@@ -91,14 +91,20 @@ async def handle_switch_model(ws, cmd: dict):
                     or (old_rt is None)
                 )
                 if need_new_rt:
-                    new_rt = await _build_rt(prov)
-                    if old_rt and hasattr(old_rt, "close"):
-                        try: old_rt.close()
-                        except Exception: pass
-                    conv["runtime"] = new_rt
+                    try:
+                        new_rt = await _build_rt(prov)
+                    except Exception as e:
+                        _s._log(f"[switch_model] runtime build skipped for {prov}: {e}")
+                        new_rt = None
+                    if new_rt is not None:
+                        if old_rt and hasattr(old_rt, "close"):
+                            try: old_rt.close()
+                            except Exception: pass
+                        conv["runtime"] = new_rt
                     conv["provider_name"] = prov
                 else:
-                    old_rt.model = bare_model
+                    if old_rt is not None:
+                        old_rt.model = bare_model
                 # The dispatcher reads the picker choice from
                 # provider_override / model_override, and restart
                 # restore only trusts those keys — provider_name alone

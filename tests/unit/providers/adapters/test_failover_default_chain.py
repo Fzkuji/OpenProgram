@@ -34,8 +34,15 @@ def _ids(models) -> list[str]:
     return [f"{m.provider}/{m.id}" for m in models]
 
 
-def test_implicit_chain_is_same_provider_only(monkeypatch, enabled):
+def test_implicit_chain_is_off_by_default(monkeypatch, enabled):
     monkeypatch.delenv("OPENPROGRAM_FALLBACK_MODELS", raising=False)
+    primary = FakeModel("acme", "big")
+    enabled(primary, FakeModel("acme", "mid"), FakeModel("other", "big"))
+    assert failover.resolve_fallback_models(primary) == []
+
+
+def test_same_provider_opt_in_is_same_provider_only(monkeypatch, enabled):
+    monkeypatch.setenv("OPENPROGRAM_FALLBACK_MODELS", "same-provider")
     primary = FakeModel("acme", "big")
     enabled(
         primary,
@@ -47,7 +54,7 @@ def test_implicit_chain_is_same_provider_only(monkeypatch, enabled):
 
 
 def test_implicit_chain_is_capped_at_two(monkeypatch, enabled):
-    monkeypatch.delenv("OPENPROGRAM_FALLBACK_MODELS", raising=False)
+    monkeypatch.setenv("OPENPROGRAM_FALLBACK_MODELS", "same-provider")
     primary = FakeModel("acme", "p")
     enabled(primary, *(FakeModel("acme", f"m{i}") for i in range(5)))
     assert _ids(failover.resolve_fallback_models(primary)) == ["acme/m0", "acme/m1"]

@@ -54,13 +54,20 @@ def _get_or_create_session(session_id: str = None,
                 or ((_sess or {}).get("agent_id") if isinstance(_sess, dict) else None)
                 or resolved_agent
             )
-            # Inherit a user-pinned (provider, model) from the most
-            # recent picker click that didn't have a session attached.
-            # Lets the welcome-page flow "pick Opus, then start a chat"
-            # actually run Opus — otherwise the new conv falls back to
-            # the agent profile's default model.
-            _inherit_prov = state._user_pinned_provider
-            _inherit_model = state._user_pinned_model
+            # New conversations copy the agent default, unless a draft
+            # picker left a one-shot pin. Existing rows keep their stored
+            # pin. Do not inherit the latest click onto a rehydrated thread.
+            from openprogram.agent.session_model import default_chat_model
+            _is_new = not isinstance(_sess, dict) or not _sess
+            _inherit_prov = None
+            _inherit_model = None
+            if _is_new:
+                _inherit_prov, _inherit_model = default_chat_model(resolved_agent)
+                if state._user_pinned_provider and state._user_pinned_model:
+                    _inherit_prov = state._user_pinned_provider
+                    _inherit_model = state._user_pinned_model
+                    state._user_pinned_provider = None
+                    state._user_pinned_model = None
             state._log(
                 f"[_get_or_create_session] creating {session_id!r} "
                 f"inherit_prov={_inherit_prov!r} inherit_model={_inherit_model!r}"
@@ -94,6 +101,12 @@ def _get_or_create_session(session_id: str = None,
                 "agent_id": resolved_agent,
                 "channel": channel,
             }, {"session": session_id})
+            if _is_new and _inherit_prov and _inherit_model:
+                try:
+                    from openprogram.agent.session_model import write_session_chat_model
+                    write_session_chat_model(session_id, _inherit_prov, _inherit_model)
+                except Exception:
+                    pass
         return state._sessions[session_id]
 
 
