@@ -245,6 +245,8 @@ The four mechanisms above are the thesis. Below are other designs that are not t
 - [x] ♾️ **Infinite Context.** Occupancy drives `/compact` and automatic compact; tool results inside a single turn can compact without another command; original records stay in the session. [Details](docs/interfaces/tui.md)
 - [x] 🌿 **Conversation stored as git.** History is a repo, not a list: branch, attach, and merge from the sidebar. [Details](docs/start/features.md#conversation-as-a-git-dag)
 - [x] 🎯 **Goals in ordinary chat.** Persistent goals with bound todo plans live in the same conversation, not a separate Goal mode.
+- [ ] 👁️ **Proactive policies.** The event bus is live; a layer that watches it and acts on its own is the next piece of that design.
+- [ ] 🖥️ **Agent terminal.** A host-owned PTY for the agent is underway — not yet a chat tool.
 
 ## Citation
 

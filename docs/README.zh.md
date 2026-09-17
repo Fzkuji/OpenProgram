@@ -151,6 +151,8 @@ OpenProgram 支持 macOS、Linux、原生 Windows x86_64 CLI/server、多 provid
 - [x] ♾️ **Infinite Context。** 占用率驱动 `/compact` 和自动压缩；同一轮里的工具结果也可以压，不必再发一次命令；原始记录仍留在会话里。[详情](interfaces/tui.zh.md)
 - [x] 🌿 **会话存在 git 里。** 历史是仓库不是列表：侧栏可以 branch / attach / merge。[详情](start/features.zh.md#对话即-git-dag)
 - [x] 🎯 **普通聊天里的 Goal。** 持久 Goal 和绑定的 todo 计划就在这场对话里，不是单独的 Goal 模式。
+- [ ] 👁️ **主动策略。** 事件总线已经在跑；盯着总线自己采取行动的那一层，是下一步。
+- [ ] 🖥️ **Agent terminal。** Agent 用的宿主 PTY 在做，还不是聊天里的工具。
 
 ## 引用
 
