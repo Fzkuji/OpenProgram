@@ -8,14 +8,21 @@ const MAX_READ = 24_000;
 const MAX_INPUT = 16_384;
 
 /** Owns Agent PTYs only. Manual terminal IDs never enter this registry.
- * Plans are obtained by the host from one-use worker tickets, not renderer
- * arguments. A receipt acknowledges input delivery, never command completion.
+ * The trusted host must authorize plans before dispatch; never expose this
+ * method to raw renderer arguments. Worker tickets and IPC wiring are separate.
+ * A receipt acknowledges input delivery, never command completion.
  */
 function createAgentTerminalManager({ spawn, stop, now = Date.now,
   waitForPid = async (pty) => pty.pid, leaseMs = 30 * 60_000,
-  maxSessions = 32, maxPerOwner = 4 } = {}) {
+  maxSessions = 32, maxPerOwner = 4, startupTimeoutMs = 5_000 } = {}) {
+  if (!Number.isFinite(startupTimeoutMs) || startupTimeoutMs <= 0) {
+    throw new TypeError("startupTimeoutMs must be a positive finite number");
+  }
   const records = new Map();
   const pendingOpens = new Set();
+  // A released native host must never reacquire a terminal through a late
+  // request. Weak membership does not keep closed BrowserWindows alive.
+  const releasedHosts = new WeakSet();
   let disposed = false;
 
   const ownerKey = (plan) => JSON.stringify([plan.session_id, plan.agent_id, plan.scope_id]);
@@ -25,7 +32,7 @@ function createAgentTerminalManager({ spawn, stop, now = Date.now,
     status: entry.status, controller: entry.controller,
     start_cwd: entry.cwd, pid: entry.pty.pid || null,
     exit_code: entry.exitCode ?? null, output_end: entry.end,
-    last_operation: entry.lastOperation,
+    last_operation: entry.lastOperation ? { ...entry.lastOperation } : null,
   });
   const validOwner = (entry, host, plan) => entry.host === host
     && entry.owner === ownerKey(plan) && entry.capability === plan.capability
@@ -51,12 +58,45 @@ function createAgentTerminalManager({ spawn, stop, now = Date.now,
       data: entry.buffer.slice(from - start, to - start),
       next_cursor: to, truncated: cursor < start, has_more: to < entry.end };
   }
+  function hostUnavailable(host) {
+    if (!host || typeof host !== "object" || releasedHosts.has(host)) return true;
+    try { return host.isDestroyed?.() === true; } catch { return true; }
+  }
+  function waitForReady(entry, deadline) {
+    const signal = entry.startupAbort.signal;
+    const timeoutMs = Math.max(0, Math.min(startupTimeoutMs, deadline - now(), 2_147_483_647));
+    return new Promise((resolve) => {
+      let finished = false;
+      let timer;
+      const finish = (pid) => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        signal.removeEventListener("abort", aborted);
+        resolve(pid);
+      };
+      const aborted = () => finish(null);
+      if (signal.aborted) return finish(null);
+      signal.addEventListener("abort", aborted, { once: true });
+      // Keep this timer referenced while the open call is pending. A PID
+      // adapter that ignores cancellation still cannot block the caller.
+      timer = setTimeout(() => finish(null), timeoutMs);
+      Promise.resolve().then(() => {
+        if (signal.aborted) return null;
+        return waitForPid(entry.pty, { signal, timeoutMs });
+      }).then(finish, () => finish(null));
+    });
+  }
   function beginStop(entry, reason) {
+    entry.startupAbort.abort();
     if (entry.status === "exited" || entry.status === "closed") return;
     if (entry.status === "stopping") return;
     entry.status = "stopping";
     entry.lastOperation = { action: "close", phase: "requested", reason };
     try { stop(entry.pty, "SIGTERM"); } catch { /* wait for confirmed exit */ }
+    // Some adapters emit exit synchronously from stop(). Do not schedule an
+    // escalation after its exit handler has already completed cleanup.
+    if (entry.status !== "stopping") return;
     entry.killTimer = setTimeout(() => {
       if (entry.status === "stopping") {
         try { stop(entry.pty, "SIGKILL"); } catch { /* still unconfirmed */ }
@@ -86,6 +126,7 @@ function createAgentTerminalManager({ spawn, stop, now = Date.now,
         generation: plan.generation, pty, cwd: launch.cwd, controller: "agent",
         status: "starting", buffer: "", end: 0, lastSequence: plan.sequence,
         receipts: new Map(), lastOperation: null, touched: now(), killTimer: null,
+        startupAbort: new AbortController(),
       };
       records.set(entry.id, entry);
       pty.onData((data) => append(entry, data));
@@ -96,13 +137,15 @@ function createAgentTerminalManager({ spawn, stop, now = Date.now,
         if (entry.killTimer) clearTimeout(entry.killTimer);
         entry.killTimer = null;
         entry.lastOperation = { action: "exit", phase: "confirmed" };
+        entry.startupAbort.abort();
       });
-      const pid = await waitForPid(pty);
-      if (disposed || !pid || now() > plan.deadline || host.isDestroyed?.()) {
+      const pid = await waitForReady(entry, plan.deadline);
+      if (disposed || !Number.isSafeInteger(pid) || pid <= 0
+        || now() >= plan.deadline || hostUnavailable(host) || entry.status !== "starting") {
         beginStop(entry, "open_unconfirmed");
         return { ...error("open_unconfirmed"), ...publicState(entry) };
       }
-      if (entry.status === "starting") entry.status = "running";
+      entry.status = "running";
       return { ok: true, ...publicState(entry), phase: "opened" };
     } catch {
       if (entry) beginStop(entry, "open_failed");
@@ -113,11 +156,12 @@ function createAgentTerminalManager({ spawn, stop, now = Date.now,
   }
   async function dispatch(plan, host) {
     if (disposed) return error("terminal_manager_closed");
+    if (hostUnavailable(host)) return error("terminal_host_unavailable");
     if (!plan || !TERMINAL_ID.test(plan.terminal_id || "")
       || typeof plan.capability !== "string" || !/^[0-9a-f]{64}$/.test(plan.capability)
       || !Number.isSafeInteger(plan.sequence) || plan.sequence < 1
       || typeof plan.generation !== "string" || !/^[0-9a-f]{32}$/.test(plan.generation)
-      || !Number.isFinite(plan.deadline) || now() > plan.deadline
+      || !Number.isFinite(plan.deadline) || now() >= plan.deadline
       || !plan.session_id || !plan.agent_id || !plan.scope_id) return error("invalid_or_expired_plan");
     if (plan.action === "open") return open(plan, host);
     const entry = records.get(plan.terminal_id);
@@ -151,9 +195,12 @@ function createAgentTerminalManager({ spawn, stop, now = Date.now,
           if (typeof data !== "string" || !data || Buffer.byteLength(data, "utf8") > MAX_INPUT) return error("invalid_input");
           // Record uncertainty BEFORE the write. Throwing does not prove that
           // no bytes reached the PTY; never retry automatically.
-          entry.lastOperation = { action: plan.action, sequence: plan.sequence, phase: "unknown" };
+          const operation = { action: plan.action, sequence: plan.sequence, phase: "unknown" };
+          entry.lastOperation = operation;
           entry.pty.write(data);
-          entry.lastOperation.phase = "delivered";
+          // write() may synchronously emit an exit event. Do not mutate that
+          // newer exit observation into a delivery acknowledgement.
+          operation.phase = "delivered";
         }
         result = { ok: true, ...publicState(entry), phase: "delivered", command_complete: null };
       } else {
@@ -167,6 +214,8 @@ function createAgentTerminalManager({ spawn, stop, now = Date.now,
     return result;
   }
   function releaseHost(host) {
+    if (!host || typeof host !== "object") return;
+    releasedHosts.add(host);
     for (const entry of records.values()) if (entry.host === host) beginStop(entry, "window_closed");
   }
   function sweep() {
