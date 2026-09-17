@@ -152,6 +152,8 @@ def register(app):
         if session_id:
             with _s._sessions_lock:
                 conv = _s._sessions.get(session_id)
+            if conv is None:
+                conv = await asyncio.to_thread(_s._get_or_create_session, session_id)
             _s._log(
                 f"[/api/model] session_id={session_id!r} conv_found={conv is not None} "
                 f"target_provider={target_provider!r} bare_model={bare_model!r}"
@@ -165,39 +167,48 @@ def register(app):
                     try:
                         new_rt = await _build_rt(prov)
                     except Exception as e:
-                        return _runtime_build_error_response(e, prov)
-                    if old_rt and hasattr(old_rt, "close"):
-                        try: old_rt.close()
-                        except Exception: pass
-                    conv["runtime"] = new_rt
+                        _s._log(f"[/api/model] runtime build skipped for {prov}: {e}")
+                        new_rt = None
+                    if new_rt is not None:
+                        if old_rt and hasattr(old_rt, "close"):
+                            try: old_rt.close()
+                            except Exception: pass
+                        conv["runtime"] = new_rt
                     conv["provider_name"] = prov
-                    conv["provider_override"] = prov
-                    conv["model_override"] = bare_model
                 else:
                     if old_rt is not None:
                         old_rt.model = bare_model
-                    conv["provider_override"] = prov
-                    conv["model_override"] = bare_model
+                conv["provider_override"] = prov
+                conv["model_override"] = bare_model
+                _s._user_pinned_provider = prov
+                _s._user_pinned_model = bare_model
+                _s._runtime_management._chat_provider = prov
+                _s._runtime_management._chat_model = bare_model
                 _s._log(
                     f"[/api/model] post-write conv id={id(conv)} "
                     f"provider_override={conv.get('provider_override')!r} "
                     f"model_override={conv.get('model_override')!r} "
                     f"sessions[sid] id={id(_s._sessions.get(session_id))}"
                 )
-                _s._user_pinned_provider = prov
-                _s._user_pinned_model = bare_model
-                # Persist the per-conv override to meta.json. Without this the
-                # override lives only in memory: once the session is evicted +
-                # rebuilt (or the process restarts) it's lost, and dispatch
-                # (esp. retry) falls back to the agent/global default — the
-                # "top bar says gpt-5.5 but retry runs the agent's luna" bug.
-                await asyncio.to_thread(_s._save_session, session_id)
+                def _persist_override():
+                    from openprogram.agent.session_model import write_session_chat_model
+                    write_session_chat_model(session_id, prov, bare_model)
+                    _s._save_session(session_id)
+                await asyncio.to_thread(_persist_override)
                 info = _s._get_provider_info(session_id)
                 emit_ws_frame({"type": "provider_changed", "data": info})
-                # New model, new window — the same token count is now a
-                # different percentage. Re-broadcast so the ring and the
-                # /context panel both land on the new denominator without
-                # waiting for the next reply.
+                from openprogram.webui._model_listing.listing import supports_fast as _supports_fast
+                emit_ws_frame({
+                    "type": "agent_settings_changed",
+                    "data": {
+                        "chat": {
+                            "provider": prov,
+                            "model": bare_model,
+                            "thinking": _s._get_thinking_config_for_model(prov, bare_model),
+                            "fast": _supports_fast(prov, bare_model),
+                        },
+                    },
+                })
                 _s.refresh_context_stats(session_id)
                 return JSONResponse(content={"switched": True, "provider": prov, "model": bare_model})
 
@@ -248,20 +259,23 @@ def register(app):
 
         chat_session_id = None
         chat_locked = False
-        chat_provider = _s._runtime_management._chat_provider
-        chat_model = _s._runtime_management._chat_model
-
+        conv = None
         if session_id:
             with _s._sessions_lock:
                 conv = _s._sessions.get(session_id)
+            if conv is None:
+                conv = await asyncio.to_thread(_s._get_or_create_session, session_id)
             if conv:
                 rt = conv.get("runtime")
                 if rt:
                     chat_session_id = getattr(rt, "_session_id", None)
-                if conv.get("provider_name"):
-                    chat_provider = conv["provider_name"]
-                if rt and getattr(rt, "model", None):
-                    chat_model = rt.model
+        if conv:
+            chat_provider, chat_model = _s._runtime_management._resolve_session_provider_model(conv)
+        elif _s._user_pinned_provider and _s._user_pinned_model:
+            chat_provider, chat_model = _s._user_pinned_provider, _s._user_pinned_model
+        else:
+            chat_provider = _s._runtime_management._chat_provider
+            chat_model = _s._runtime_management._chat_model
 
         # Suppress a STALE default: the chat/exec globals are stamped once
         # at startup from auto-detect, so after the user disables every
@@ -314,61 +328,27 @@ def register(app):
             new_model = chat.get("model", _s._runtime_management._chat_model)
             if (new_provider != _s._runtime_management._chat_provider
                     or new_model != _s._runtime_management._chat_model):
-                # Build runtimes OFF-LOOP first. Some providers (codex)
-                # call sync credential-acquisition paths in __init__ that
-                # refuse to run inside an event loop; run_in_threadpool
-                # keeps them happy and guarantees we only touch globals
-                # AFTER the runtimes construct successfully.
-                with _s._sessions_lock:
-                    session_ids = list(_s._sessions.keys())
-                new_rts = {}
                 try:
-                    for cid in session_ids:
-                        new_rts[cid] = await asyncio.to_thread(
-                            _s._create_runtime_for_visualizer, new_provider, new_model
-                        )
+                    await asyncio.to_thread(
+                        _s._create_runtime_for_visualizer, new_provider, new_model
+                    )
                 except Exception as e:
-                    # Credential expired / login dead while building the
-                    # new chat runtime — return a graceful needs_reauth
-                    # instead of a 500. Globals are untouched (we only
-                    # write them AFTER all runtimes construct), so the
-                    # previous setting stays live.
                     return _runtime_build_error_response(e, new_provider)
                 _s._runtime_management._chat_provider = new_provider
                 _s._runtime_management._chat_model = new_model
-                with _s._sessions_lock:
-                    for cid, new_rt in new_rts.items():
-                        conv = _s._sessions.get(cid)
-                        if not conv:
-                            continue
-                        old_rt = conv.get("runtime")
-                        if old_rt and hasattr(old_rt, "close"):
-                            try: old_rt.close()
-                            except Exception: pass
-                        conv["runtime"] = new_rt
-                        conv["provider_name"] = new_provider
-                # Persist as the default agent's model. The dispatcher
-                # resolves session override → agent.json; the globals
-                # above only feed the legacy visualizer runtime. Without
-                # this write, picking a model on a NOT-YET-CREATED chat
-                # (no session_id → the picker can't set a per-conv
-                # override) changed nothing the dispatcher reads, and
-                # the first message silently ran on the old default —
-                # the "I switched to the free model but it answered as
-                # GPT" bug.
-                try:
-                    from openprogram.agent.management import manager as _agents
-                    # Strip a "provider:" prefix only when it IS the
-                    # provider — model ids may contain ':' themselves
-                    # (openrouter's "...:free").
-                    bare = new_model
-                    if new_model.startswith(f"{new_provider}:"):
-                        bare = new_model[len(new_provider) + 1:]
-                    _agents.update(_agents.DEFAULT_AGENT_ID, {
-                        "model": {"provider": new_provider, "id": bare},
-                    })
-                except Exception:
-                    pass
+                _s._user_pinned_provider = new_provider
+                _s._user_pinned_model = new_model
+                if body.get("persist_default"):
+                    try:
+                        from openprogram.agent.management import manager as _agents
+                        bare = new_model
+                        if new_model.startswith(f"{new_provider}:"):
+                            bare = new_model[len(new_provider) + 1:]
+                        _agents.update(_agents.DEFAULT_AGENT_ID, {
+                            "model": {"provider": new_provider, "id": bare},
+                        })
+                    except Exception:
+                        pass
                 changed = True
 
         if body and "exec" in body:

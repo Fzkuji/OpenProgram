@@ -2,7 +2,7 @@
   "id": "xai-subscription",
   "endpoints": {
     "default": {
-      "api": "openai-completions",
+      "api": "openai-responses",
       "base_url": "https://cli-chat-proxy.grok.com/v1"
     }
   },

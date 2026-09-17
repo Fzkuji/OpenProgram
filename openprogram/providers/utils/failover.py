@@ -76,6 +76,14 @@ def failover_category(
         return FailoverCategory.TIMEOUT
     if reason == ErrorReason.TRANSPORT:
         return FailoverCategory.NETWORK
+    if reason in (
+        ErrorReason.AUTHENTICATION,
+        ErrorReason.AUTHORIZATION,
+        ErrorReason.INVALID_REQUEST,
+        ErrorReason.CONTEXT_LENGTH,
+        ErrorReason.CONTENT_POLICY,
+    ):
+        return FailoverCategory.NONE
     # Stream adapters carry the most precise verdict on their exception.
     # Some pre-content EOFs have no HTTP status or marker for the generic
     # taxonomy to recognize, but ``retry_stream`` has already classified
@@ -157,20 +165,20 @@ def resolve_fallback_models(primary_model: Any) -> list[Any]:
 
     ``OPENPROGRAM_FALLBACK_MODELS`` decides:
 
-    - unset/empty → the implicit default chain: up to
-      ``_IMPLICIT_FALLBACK_LIMIT`` other enabled models of the primary's own
-      provider (see :func:`_same_provider_fallbacks`).
-    - ``"off"`` / ``"none"`` (case-insensitive) → ``[]``, failover disabled.
+    - unset/empty/``off``/``none`` → ``[]``. The picked model is the only
+      one that runs; a spent plan surfaces as 429 instead of answering
+      on another model.
+    - ``same-provider`` → up to ``_IMPLICIT_FALLBACK_LIMIT`` other
+      enabled models of the primary's own provider.
     - anything else → an explicit comma-separated list of ``provider/model``
-      ids, which may cross providers (the user asked for it). Unresolvable
-      entries and the primary itself are skipped.
+      ids. Unresolvable entries and the primary itself are skipped.
 
     Never raises: any import/lookup failure resolves to ``[]``.
     """
     raw = os.environ.get("OPENPROGRAM_FALLBACK_MODELS", "").strip()
-    if raw.lower() in ("off", "none"):
+    if not raw or raw.lower() in ("off", "none"):
         return []
-    if not raw:
+    if raw.lower() in ("same-provider", "same_provider"):
         try:
             return _same_provider_fallbacks(primary_model)
         except Exception:

@@ -332,7 +332,27 @@ def resolve_agent_runtime(
     )
     if surface_prompt and saved_system_prompt is None:
         system_prompt = f"{system_prompt}\n\n{surface_prompt}"
-    model = _dispatcher._resolve_model(agent_profile, req.model_override)
+    override = getattr(req, "model_override", None)
+    if not override and getattr(req, "session_id", None):
+        from openprogram.agent.session_model import (
+            ensure_session_chat_model,
+            override_string,
+        )
+        provider, model_id = ensure_session_chat_model(
+            req.session_id, getattr(req, "agent_id", None),
+        )
+        override = override_string(provider, model_id)
+        if override:
+            req.model_override = override
+    model = _dispatcher._resolve_model(agent_profile, override)
+    _log.info(
+        "turn model session=%r override=%r resolved=%s/%s api=%s",
+        getattr(req, "session_id", None),
+        override,
+        getattr(model, "provider", None),
+        getattr(model, "id", None),
+        getattr(model, "api", None),
+    )
     if "image" not in (model.input or []) and any(
         isinstance(attachment, dict) and attachment.get("type") == "image"
         and attachment.get("data") for attachment in (req.attachments or [])

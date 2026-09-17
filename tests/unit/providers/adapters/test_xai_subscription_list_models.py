@@ -68,6 +68,15 @@ def test_fetch_hits_cli_proxy_with_grok_headers(monkeypatch):
     assert calls["headers"].get("Authorization") == "Bearer tok_abc"
 
 
+def test_grok_build_route_maps_catalog_ids():
+    from openprogram.providers.xai_subscription.headers import grok_build_route, grok_cli_headers
+
+    assert grok_build_route("grok-4.6") == "grok-build"
+    headers = grok_cli_headers("grok-4.6")
+    assert headers["x-grok-model-override"] == "grok-build"
+    assert headers["x-grok-client-identifier"] == "grok-shell"
+
+
 def test_fetch_without_token_errors(monkeypatch):
     monkeypatch.setattr(X, "_token", lambda pid: "")
     out = X.fetch("xai-subscription", 5.0)

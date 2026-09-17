@@ -34,6 +34,30 @@ if TYPE_CHECKING:
 # Hash utility
 # ---------------------------------------------------------------------------
 
+def _responses_item_dict(item: Any) -> dict[str, Any]:
+    if item is None:
+        return {}
+    if isinstance(item, dict):
+        return item
+    dump = getattr(item, "model_dump", None)
+    if callable(dump):
+        try:
+            payload = dump(mode="json")
+        except TypeError:
+            payload = dump()
+        if isinstance(payload, dict):
+            return payload
+    raw = getattr(item, "__dict__", None)
+    return dict(raw) if isinstance(raw, dict) else {}
+
+
+def _json_dumps(value: Any) -> str:
+    try:
+        return json.dumps(value)
+    except TypeError:
+        return json.dumps(value, default=str)
+
+
 def _short_hash(s: str) -> str:
     """Fast deterministic hash to shorten long strings (mirrors shortHash in TS)."""
     h1 = 0xDEADBEEF
@@ -431,7 +455,7 @@ async def process_responses_stream(
 
         elif event_type == "response.output_item.done":
             item = _get(event, "item", {})
-            item_dict = item if isinstance(item, dict) else (item.__dict__ if item else {})
+            item_dict = _responses_item_dict(item)
             item_type = item_dict.get("type")
             out_idx = _get(event, "output_index")
 
@@ -451,7 +475,7 @@ async def process_responses_stream(
                     # deltas when the summary is empty.
                     if thinking_text:
                         block["thinking"] = thinking_text
-                    block["thinking_signature"] = json.dumps(item_dict)
+                    block["thinking_signature"] = _json_dumps(item_dict)
                     block.pop("index", None)
                     stream.push({"type": "thinking_end", "content_index": i, "content": block.get("thinking", ""), "partial": output})
 

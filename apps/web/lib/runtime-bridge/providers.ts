@@ -79,8 +79,11 @@ let chatRetried = false;
 export async function loadAgentSettings(): Promise<void> {
   try {
     let url = "/api/agent_settings";
+    const st = useSessionStore.getState();
     const sid =
-      useSessionStore.getState().currentSessionId ?? runtimeState.currentSessionId;
+      st.currentSessionId
+      ?? runtimeState.currentSessionId
+      ?? (st.activeChatKey && st.activeChatKey !== "__new__" ? st.activeChatKey : null);
     if (sid) {
       url += "?session_id=" + encodeURIComponent(sid);
     }

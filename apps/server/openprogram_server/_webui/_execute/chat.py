@@ -247,20 +247,18 @@ def run_query(
     # dispatcher re-resolves through `_resolve_model` and
     # silently routes back to the agent default — that's
     # the "I picked Opus but it answers as Sonnet" bug.
-    _conv_now = _s._sessions.get(session_id) or {}
-    _picker_provider = _conv_now.get("provider_override")
-    _picker_model = _conv_now.get("model_override")
-    _model_override = None
-    if _picker_provider and _picker_model:
-        _model_override = f"{_picker_provider}/{_picker_model}"
-    elif _picker_model:
-        _model_override = _picker_model
+    from openprogram.agent.session_model import (
+        ensure_session_chat_model,
+        override_string,
+    )
+    _picker_provider, _picker_model = ensure_session_chat_model(
+        session_id, agent_id=agent_id,
+    )
+    _model_override = override_string(_picker_provider, _picker_model)
     _s._log(
         f"[model resolve] session={session_id!r} "
-        f"provider_override={_picker_provider!r} "
-        f"model_override={_picker_model!r} "
-        f"agent_model={_conv_now.get('agent_id')!r}/profile "
-        f"resolved={_model_override!r}"
+        f"pin={_picker_provider!r}/{_picker_model!r} "
+        f"override={_model_override!r}"
     )
 
     from openprogram.agent.authority import (

@@ -4,11 +4,9 @@
  * Agent selector — the content of the chat / exec `<AgentBadge />`
  * popover.
  *
- * Lists every model the user enabled in Settings, grouped by provider,
- * and on pick writes the agent's default via `/api/agent_settings`
- * (and, for the chat agent on an active conversation, also pins it on
- * that conv via `/api/model` — the per-conv override otherwise wins
- * and the pick would silently no-op).
+ * Lists every model the user enabled in Settings, grouped by provider.
+ * Chat picks always pin the current conversation (`/api/model`), using
+ * the draft `local_*` id when the backend has not acked yet.
  *
  * Positioning / click-outside / portal are handled by the shadcn
  * <Popover> in `index.tsx`.
@@ -39,7 +37,7 @@ export function AgentSelector({
   currentModel?: string;
   onClose: () => void;
 }) {
-  const { sessionId: currentSessionId } = useBoundChat();
+  const { sessionId: currentSessionId, chatKey } = useBoundChat();
   const { t, text } = useTranslation();
   const { data: models } = useQuery({
     queryKey: ["models-enabled"],
@@ -49,16 +47,30 @@ export function AgentSelector({
   async function pick(provider: string, model: string) {
     onClose();
     try {
-      // 每个会话记住自己的模型：在活跃会话里选模型只写该会话的
-      // per-conv override（/api/model），不动全局 agent 默认值——
-      // 以前这里还写 /api/agent_settings，导致所有没有 override 的
-      // 会话跟着一起换。没有活跃会话（新草稿）时才更新默认值，
-      // 让接下来创建的会话用它。
-      if (kind === "chat" && currentSessionId) {
-        await api.switchModel(provider, model, currentSessionId);
+      if (kind === "exec") {
+        await api.setAgentSettings({ exec: { provider, model } });
       } else {
-        await api.setAgentSettings({ [kind]: { provider, model } });
+        let sid: string | undefined =
+          currentSessionId ||
+          (chatKey && chatKey !== "__new__" ? chatKey : undefined);
+        if (!sid) {
+          const { useCenterTabs } = await import("@/lib/tabs/center-tabs-store");
+          const { newSession } = await import("@/lib/runtime-bridge/conversations");
+          const tabs = useCenterTabs.getState();
+          const existing = tabs.tabs.find(
+            (tab: { kind: string; draft?: boolean; sessionId?: string }) =>
+              tab.kind === "session" && tab.draft && tab.sessionId,
+          );
+          sid = existing?.sessionId ?? tabs.openDraftSessionTab();
+          if (!sid) return;
+          newSession(sid);
+        }
+        await api.switchModel(provider, model, sid);
       }
+      const { useSessionStore } = await import("@/lib/session-store");
+      useSessionStore.getState().setAgentSettings({
+        [kind]: { provider, model },
+      });
     } catch (e) {
       alert(t("agent.switch_failed") + String(e));
     }

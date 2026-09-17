@@ -537,6 +537,12 @@ def _resolve_session_provider_model(conv: dict | None) -> tuple[str | None, str 
     if not _enabled_model_keys():
         return None, None
 
+    session_id = conv.get("id") if conv else None
+    if session_id:
+        from openprogram.agent.session_model import read_session_chat_model
+        provider, model = read_session_chat_model(session_id)
+        if provider:
+            return provider, model
     if conv:
         if conv.get("provider_override"):
             return conv["provider_override"], conv.get("model_override") or _chat_model

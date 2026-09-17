@@ -34,6 +34,16 @@ def test_retryable_provider_eof_is_failover_worthy() -> None:
     assert failover_category(error) is FailoverCategory.NETWORK
 
 
+def test_quota_exhausted_is_not_failover_worthy() -> None:
+    error = ProviderStreamError(
+        'HTTP 429: {"error":{"type":"usage_limit_reached","plan_type":"pro"}}',
+        http_status=429,
+        error_text='{"error":{"type":"usage_limit_reached","plan_type":"pro"}}',
+        retryable=True,
+    )
+    assert failover_category(error) is FailoverCategory.NONE
+
+
 def test_nonretryable_provider_eof_is_not_failover_worthy() -> None:
     error = ProviderStreamError(
         "Codex SSE ended before a terminal response event",
