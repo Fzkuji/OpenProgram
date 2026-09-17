@@ -255,11 +255,10 @@ def run_query(
         session_id, agent_id=agent_id,
     )
     _model_override = override_string(_picker_provider, _picker_model)
-    print(
+    _s._log(
         f"[model resolve] session={session_id!r} "
         f"pin={_picker_provider!r}/{_picker_model!r} "
-        f"override={_model_override!r}",
-        flush=True,
+        f"override={_model_override!r}"
     )
 
     from openprogram.agent.authority import (

@@ -343,17 +343,15 @@ def resolve_agent_runtime(
         )
         override = override_string(provider, model_id)
         if override:
-            try:
-                req.model_override = override
-            except Exception:
-                pass
+            req.model_override = override
     model = _dispatcher._resolve_model(agent_profile, override)
-    print(
-        f"[turn model] session={getattr(req, 'session_id', None)!r} "
-        f"override={override!r} "
-        f"resolved={getattr(model, 'provider', None)}/{getattr(model, 'id', None)} "
-        f"api={getattr(model, 'api', None)}",
-        flush=True,
+    _log.info(
+        "turn model session=%r override=%r resolved=%s/%s api=%s",
+        getattr(req, "session_id", None),
+        override,
+        getattr(model, "provider", None),
+        getattr(model, "id", None),
+        getattr(model, "api", None),
     )
     if "image" not in (model.input or []) and any(
         isinstance(attachment, dict) and attachment.get("type") == "image"

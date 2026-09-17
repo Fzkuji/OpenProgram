@@ -50,17 +50,19 @@ export function AgentSelector({
       if (kind === "exec") {
         await api.setAgentSettings({ exec: { provider, model } });
       } else {
-        let sid =
+        let sid: string | undefined =
           currentSessionId ||
-          (chatKey && chatKey !== "__new__" ? chatKey : null);
+          (chatKey && chatKey !== "__new__" ? chatKey : undefined);
         if (!sid) {
-          const { useCenterTabs } = await import("@/lib/state/center-tabs-store");
+          const { useCenterTabs } = await import("@/lib/tabs/center-tabs-store");
           const { newSession } = await import("@/lib/runtime-bridge/conversations");
           const tabs = useCenterTabs.getState();
           const existing = tabs.tabs.find(
-            (t) => t.kind === "session" && t.draft && t.sessionId,
+            (tab: { kind: string; draft?: boolean; sessionId?: string }) =>
+              tab.kind === "session" && tab.draft && tab.sessionId,
           );
           sid = existing?.sessionId ?? tabs.openDraftSessionTab();
+          if (!sid) return;
           newSession(sid);
         }
         await api.switchModel(provider, model, sid);
