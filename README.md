@@ -247,6 +247,7 @@ The four mechanisms above are the thesis. Below are other designs that are not t
 - [x] 🎯 **Goals in ordinary chat.** Persistent goals with bound todo plans live in the same conversation, not a separate Goal mode.
 - [ ] 👁️ **Proactive policies.** The event bus is live; a layer that watches it and acts on its own is the next piece of that design.
 - [ ] 🖥️ **Agent terminal.** A host-owned PTY for the agent is underway — not yet a chat tool.
+- [ ] 🔄 **Self-update.** The agent patching and replacing its own runtime in conversation — with owner approval, verification, and recovery — is still a goal. [Details](docs/install/upgrade.md#recovering-a-conversational-self-update)
 
 ## Citation
 

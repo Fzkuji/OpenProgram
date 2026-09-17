@@ -153,6 +153,7 @@ OpenProgram 支持 macOS、Linux、原生 Windows x86_64 CLI/server、多 provid
 - [x] 🎯 **普通聊天里的 Goal。** 持久 Goal 和绑定的 todo 计划就在这场对话里，不是单独的 Goal 模式。
 - [ ] 👁️ **主动策略。** 事件总线已经在跑；盯着总线自己采取行动的那一层，是下一步。
 - [ ] 🖥️ **Agent terminal。** Agent 用的宿主 PTY 在做，还不是聊天里的工具。
+- [ ] 🔄 **自更新。** Agent 在对话里给自己打补丁、换 runtime——带 owner 审批、验收和恢复——仍是目标。[详情](install/upgrade.zh.md#恢复对话内自更新)
 
 ## 引用
 
