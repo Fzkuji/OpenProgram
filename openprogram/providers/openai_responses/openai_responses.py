@@ -146,6 +146,11 @@ def stream_simple_openai_responses(
 
     api_key = (getattr(options, "api_key", None) if options else None) or resolve_provider_key(model.provider)
     if not api_key:
+        from openprogram.auth import usage as _auth_usage
+        pooled = _auth_usage.acquire_pooled(model.provider)
+        conn = pooled[0] if pooled else None
+        api_key = conn.auth_value if conn else None
+    if not api_key:
         raise ValueError(f"No API key for provider: {model.provider}")
 
     base = build_base_options(model, options, api_key)
@@ -191,6 +196,13 @@ def _create_client(
     # The credential's own base_url wins (e.g. an Aliyun Bailian api-key
     # carries its own endpoint) — else the catalog default.
     base_url = conn_base_url or getattr(model, "base_url", None) or ""
+    if getattr(model, "provider", None) == "xai-subscription":
+        from openprogram.providers.xai_subscription.headers import (
+            CLI_CHAT_PROXY_BASE_URL,
+            grok_cli_headers,
+        )
+        base_url = CLI_CHAT_PROXY_BASE_URL
+        headers.update(grok_cli_headers(model.id))
     if "copilot" in base_url.lower() or "githubcopilot" in base_url.lower():
         headers.update(copilot_headers)
     if idempotency_key:
@@ -300,7 +312,8 @@ def _build_params(
                 "effort": reasoning_effort or "medium",
                 "summary": reasoning_summary or "auto",
             }
-            params["include"] = ["reasoning.encrypted_content"]
+            if getattr(model, "provider", None) != "xai-subscription":
+                params["include"] = ["reasoning.encrypted_content"]
 
     return params
 
