@@ -239,20 +239,13 @@ A **foundation, honestly labelled**: the plumbing is in place and the proactive 
 
 ## Also in the product
 
-The four mechanisms above are the thesis. These are the pieces you actually hit day to day:
+The four mechanisms above are the thesis. Below are other designs that are not the usual shape — shipped items are checked.
 
-- 🧠 **Memory that writes itself.** Markdown under `~/.openprogram/memory/`, cited by source, updated in background batches — there is no "save this" tool. Same workspace in the CLI, the Memory page, and agent tools. [Details](docs/start/features.md#memory-that-writes-itself)
-- 🗜️ **Context compaction.** `/compact` summarizes older complete turns; automatic compact runs at high occupancy; tool results inside a single turn can compact without another command. Original records stay in the session. [Details](docs/interfaces/tui.md)
-- 🌿 **Conversation as a git DAG.** Branch, attach, and merge from the sidebar. File-touching branches run in isolated git worktrees so two agents do not fight over the same tree. [Details](docs/start/features.md#conversation-as-a-git-dag)
-- 🗺️ **Mini-DAG in the right rail.** User messages, LLM calls, and function calls as nodes you can click to jump in the transcript.
-- 🌐 **Built-in browser.** Multiple panes, bookmarks, History, and Agent control of visible pages — inside the Desktop App, not a sidecar Chrome.
-- 🧩 **MCP, Skills, and Plugins.** MCP tools appear in chat; Skills are on-demand playbooks; plugins add commands, skills, and servers. [Capabilities](docs/capabilities/README.md)
-- 🎯 **Goals in ordinary chat.** Persistent goals with bound todo plans and visible progress — not a separate Goal-only mode.
-- 📄 **PDF reading.** Open PDFs continuously in Files, with saved annotations, sidebar, and outline.
-- 🔑 **Multi-account providers.** Several accounts and keys per provider, with rotation, from Web, TUI, and CLI. [Details](docs/start/features.md#multi-account--key-rotation)
-- 📡 **Channels.** The same agent over WeChat and other transports, not only the local UI.
-- ⏸️ **Pause, continue, recover.** Turns are durable: permission prompts, pause/continue, and restart recovery without losing in-flight work.
-- 🔌 **One runtime, three surfaces.** Desktop App, `openprogram web`, and the TUI share the complete runtime and browser backend.
+- [x] 🧠 **Memory that writes itself.** Markdown under `~/.openprogram/memory/`, every paragraph cited, written in background batches — there is no "save this" tool. [Details](docs/start/features.md#memory-that-writes-itself)
+- [x] 🗜️ **Context compaction.** Occupancy drives `/compact` and automatic compact; tool results inside a single turn can compact without another command; original records stay on the DAG. [Details](docs/interfaces/tui.md)
+- [x] 🌿 **Conversation as a git DAG.** History is a repo, not a list: branch, attach, and merge from the sidebar; file-touching branches run in isolated worktrees. [Details](docs/start/features.md#conversation-as-a-git-dag)
+- [x] 🗺️ **Mini-DAG in the right rail.** The same DAG drawn next to the transcript: click a node, jump to that turn.
+- [x] 🎯 **Goals in ordinary chat.** Persistent goals with bound todo plans live in the same conversation, not a separate Goal mode.
 
 ## Citation
 

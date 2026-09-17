@@ -145,20 +145,13 @@ OpenProgram 支持 macOS、Linux、原生 Windows x86_64 CLI/server、多 provid
 
 ## 另外还带着这些
 
-上面三条是纲领。日常真正会碰到的是这些：
+上面三条是纲领。下面是另外专门设计过、和常见框架不是同一套形状的东西——已经落地的打勾。
 
-- 🧠 **自己会写的 Memory。** Markdown 在 `~/.openprogram/memory/`，带出处，后台攒一批再写——没有「保存这条」工具。CLI、Memory 页、agent 工具读的是同一份工作区。[详情](start/features.zh.md#自己写自己的记忆)
-- 🗜️ **上下文压缩。** `/compact` 总结较早的完整轮次；占用高时自动压缩；同一条用户消息里的工具结果也可以压缩，不必再发一次 `/compact`。原始记录仍留在会话里。[详情](interfaces/tui.zh.md)
-- 🌿 **会话是 git DAG。** 侧栏可以 branch / attach / merge。会改文件的分支跑在隔离的 git worktree 里，两个 agent 不会抢同一棵树。[详情](start/features.zh.md#对话即-git-dag)
-- 🗺️ **右栏 Mini-DAG。** 用户消息、LLM 调用、函数调用都是节点，点一下就跳到对话里对应的那条。
-- 🌐 **内置浏览器。** 多窗格、书签、History，以及 Agent 对可见页面的操控——在 Desktop App 里，不是外挂 Chrome。
-- 🧩 **MCP、Skills、Plugins。** MCP 工具直接出现在聊天里；Skills 是按需加载的剧本；插件可以加命令、skill 和 server。[能力](capabilities/README.zh.md)
-- 🎯 **普通聊天里的 Goal。** 持久 Goal 绑着 todo 计划，进度看得见——不是单独的 Goal 模式。
-- 📄 **PDF 阅读。** 在 Files 里连续打开 PDF，批注会保存，有侧栏和大纲。
-- 🔑 **多账户 provider。** 一个 provider 多账户、多 key，可轮换；Web、TUI、CLI 同一套。[详情](start/features.zh.md#多账户--密钥轮换)
-- 📡 **渠道。** 同一个 agent 可以走微信等外部通道，不只是本机界面。
-- ⏸️ **暂停、继续、恢复。** 一轮执行是持久的：权限确认、暂停/继续、重启后恢复，进行中的工作不会丢。
-- 🔌 **一份 runtime，三个界面。** Desktop App、`openprogram web`、TUI 共用完整 runtime 和浏览器后端。
+- [x] 🧠 **自己会写的 Memory。** Markdown 在 `~/.openprogram/memory/`，每段带出处，后台攒一批再写——没有「保存这条」工具。[详情](start/features.zh.md#自己写自己的记忆)
+- [x] 🗜️ **上下文压缩。** 占用率驱动 `/compact` 和自动压缩；同一轮里的工具结果也可以压，不必再发一次命令；原始记录仍留在 DAG 上。[详情](interfaces/tui.zh.md)
+- [x] 🌿 **会话是 git DAG。** 历史是仓库不是列表：侧栏 branch / attach / merge；会改文件的分支跑在隔离 worktree 里。[详情](start/features.zh.md#对话即-git-dag)
+- [x] 🗺️ **右栏 Mini-DAG。** 同一张 DAG 画在对话旁边，点节点就跳到那一轮。
+- [x] 🎯 **普通聊天里的 Goal。** 持久 Goal 和绑定的 todo 计划就在这场对话里，不是单独的 Goal 模式。
 
 ## 引用
 
