@@ -163,6 +163,7 @@ def register(app):
                 cur_prov = conv.get("provider_name", _s._runtime_management._default_provider)
                 prov = target_provider or cur_prov
                 need_new_rt = (target_provider and target_provider != cur_prov) or (old_rt is None)
+                runtime_ready = old_rt is not None
                 if need_new_rt:
                     try:
                         new_rt = await _build_rt(prov)
@@ -174,16 +175,13 @@ def register(app):
                             try: old_rt.close()
                             except Exception: pass
                         conv["runtime"] = new_rt
+                    runtime_ready = new_rt is not None
                     conv["provider_name"] = prov
                 else:
                     if old_rt is not None:
                         old_rt.model = bare_model
                 conv["provider_override"] = prov
                 conv["model_override"] = bare_model
-                _s._user_pinned_provider = prov
-                _s._user_pinned_model = bare_model
-                _s._runtime_management._chat_provider = prov
-                _s._runtime_management._chat_model = bare_model
                 _s._log(
                     f"[/api/model] post-write conv id={id(conv)} "
                     f"provider_override={conv.get('provider_override')!r} "
@@ -210,7 +208,12 @@ def register(app):
                     },
                 })
                 _s.refresh_context_stats(session_id)
-                return JSONResponse(content={"switched": True, "provider": prov, "model": bare_model})
+                return JSONResponse(content={
+                    "switched": True,
+                    "provider": prov,
+                    "model": bare_model,
+                    "runtime_ready": runtime_ready,
+                })
 
         if target_provider and target_provider != _s._runtime_management._default_provider:
             try:

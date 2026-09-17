@@ -9,7 +9,10 @@ on Grok.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Optional
+
+_log = logging.getLogger(__name__)
 
 
 def default_chat_model(agent_id: Optional[str] = None) -> tuple[Optional[str], Optional[str]]:
@@ -21,8 +24,8 @@ def default_chat_model(agent_id: Optional[str] = None) -> tuple[Optional[str], O
         model = (spec.model.id or "").strip() or None
         if provider:
             return provider, model
-    except Exception:
-        pass
+    except Exception as exc:
+        _log.warning("agent default chat model unavailable: %s", exc)
     return None, None
 
 
@@ -62,8 +65,8 @@ def write_session_chat_model(session_id: str, provider: str, model: str) -> None
         if isinstance(conv, dict):
             conv["provider_override"] = provider
             conv["model_override"] = model
-    except Exception:
-        pass
+    except Exception as exc:
+        _log.warning("session pin memory write failed session=%s: %s", session_id, exc)
     try:
         from openprogram.agent.session_db import default_db
         default_db().update_session(
@@ -71,8 +74,9 @@ def write_session_chat_model(session_id: str, provider: str, model: str) -> None
             provider_override=provider,
             model_override=model,
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        _log.warning("session pin persist failed session=%s: %s", session_id, exc)
+        raise
 
 
 def override_string(provider: Optional[str], model: Optional[str]) -> Optional[str]:
@@ -91,8 +95,8 @@ def _read_memory_pin(session_id: str) -> tuple[Optional[str], Optional[str]]:
             return provider, model
         if model:
             return None, model
-    except Exception:
-        pass
+    except Exception as exc:
+        _log.warning("session pin memory read failed session=%s: %s", session_id, exc)
     return None, None
 
 
@@ -111,6 +115,6 @@ def _read_db_pin(session_id: str) -> tuple[Optional[str], Optional[str]]:
             return provider, model
         if model:
             return None, model
-    except Exception:
-        pass
+    except Exception as exc:
+        _log.warning("session pin db read failed session=%s: %s", session_id, exc)
     return None, None

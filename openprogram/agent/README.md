@@ -39,6 +39,7 @@ The Runtime layer composes these to build whatever agent behavior is needed.
 - **`session.py`** — AgentSession
 - **`session_config.py`** — Per-session run configuration shared by TUI, web, and channels
 - **`session_db.py`** — session_db
+- **`session_model.py`** — Single source of truth for which chat model a session runs
 - **`sub_agent_run.py`** — Run an agent turn that can be inherited (sibling branch) or clean
 - **`surface_context.py`** — Turn-scoped awareness of a visible OpenProgram desktop surface
 - **`turn_request_context.py`** — The TurnRequest in force for the current execution context

@@ -109,12 +109,11 @@ def should_failover(
 
 # ---------------------------------------------------------------------------
 # Orchestration — try a primary model, fall back to others on a
-# failover-worthy *pre-content* failure. ON by default, conservatively: with
-# nothing configured the chain is the user's other enabled models of the SAME
-# provider (max 2), so a failover never contacts a provider the user has not
-# configured and never opens a new billing relationship.
-# OPENPROGRAM_FALLBACK_MODELS="provider/model,provider2/model2,..." overrides
-# it with an explicit list (may cross providers); "off"/"none" disables.
+# failover-worthy *pre-content* failure. Off by default: a spent plan
+# surfaces as 429 instead of answering on another model. Set
+# OPENPROGRAM_FALLBACK_MODELS=same-provider for up to two other enabled
+# models of the same provider, or a comma-separated provider/model list
+# to cross providers. "off"/"none" also disables.
 # ---------------------------------------------------------------------------
 
 # Event types that mean real output has begun — once any of these has been
