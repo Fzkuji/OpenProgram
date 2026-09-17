@@ -148,7 +148,7 @@ OpenProgram 支持 macOS、Linux、原生 Windows x86_64 CLI/server、多 provid
 上面三条是纲领。下面是另外专门设计过、和常见框架不是同一套形状的东西——已经落地的打勾。
 
 - [x] 🧠 **自己会写的 Memory。** Markdown 在 `~/.openprogram/memory/`，每段带出处，后台攒一批再写——没有「保存这条」工具。[详情](start/features.zh.md#自己写自己的记忆)
-- [x] 🗜️ **上下文压缩。** 占用率驱动 `/compact` 和自动压缩；同一轮里的工具结果也可以压，不必再发一次命令；原始记录仍留在会话里。[详情](interfaces/tui.zh.md)
+- [x] ♾️ **Infinite Context。** 占用率驱动 `/compact` 和自动压缩；同一轮里的工具结果也可以压，不必再发一次命令；原始记录仍留在会话里。[详情](interfaces/tui.zh.md)
 - [x] 🌿 **会话存在 git 里。** 历史是仓库不是列表：侧栏可以 branch / attach / merge。[详情](start/features.zh.md#对话即-git-dag)
 - [x] 🎯 **普通聊天里的 Goal。** 持久 Goal 和绑定的 todo 计划就在这场对话里，不是单独的 Goal 模式。
 

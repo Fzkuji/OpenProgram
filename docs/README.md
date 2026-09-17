@@ -150,7 +150,7 @@ One **process-wide event bus** is the substrate under everything: the agent loop
 The three mechanisms above are the thesis. Below are other designs that are not the usual shape — shipped items are checked.
 
 - [x] 🧠 **Memory that writes itself.** Markdown under `~/.openprogram/memory/`, every paragraph cited, written in background batches — there is no "save this" tool. [Details](start/features.md#memory-that-writes-itself)
-- [x] 🗜️ **Context compaction.** Occupancy drives `/compact` and automatic compact; tool results inside a single turn can compact without another command; original records stay in the session. [Details](interfaces/tui.md)
+- [x] ♾️ **Infinite Context.** Occupancy drives `/compact` and automatic compact; tool results inside a single turn can compact without another command; original records stay in the session. [Details](interfaces/tui.md)
 - [x] 🌿 **Conversation stored as git.** History is a repo, not a list: branch, attach, and merge from the sidebar. [Details](start/features.md#conversation-as-a-git-dag)
 - [x] 🎯 **Goals in ordinary chat.** Persistent goals with bound todo plans live in the same conversation, not a separate Goal mode.
 
