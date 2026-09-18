@@ -35,3 +35,23 @@ def test_framework_cannot_change_its_own_approval_policy():
             assert client.post('/api/framework/commands/' + name, json={'mode': 'bypass'}).status_code == 400
         assert client.post('/api/framework/commands/set_project_config', json={'key': 'permission_mode', 'value': 'bypass'}).status_code == 400
         assert client.post('/api/framework/commands/chat', json={'permission_mode': 'bypass'}).status_code == 400
+
+
+def test_framework_reports_canonical_command_failures(tmp_path, monkeypatch):
+    import asyncio
+    monkeypatch.setenv('HOME', str(tmp_path))
+    from openprogram.webui.routes.control import framework
+    app = FastAPI()
+    framework.register(app)
+    with TestClient(app) as client:
+        from openprogram.programs.tools.runtime.framework import framework as tool
+        monkeypatch.setattr('openprogram.framework.client.require_owner', lambda: None)
+        monkeypatch.setattr('openprogram.programs.application_client.request',
+                            lambda path, method='GET', body=None: client.request(method, path, json=body).json())
+        for name, body in [('set_working_dirs', {}), ('set_setting', {'key': 'not_a_real_setting', 'value': 0})]:
+            result = client.post('/api/framework/commands/' + name, json=body).json()
+            assert result['ok'] is False
+            assert result['frames']
+            result = asyncio.run(tool.execute('error', {'action': 'command', 'operation': name, 'arguments': body}, None, None))
+            assert result.is_error
+        assert not asyncio.run(tool.execute('success', {'action': 'command', 'operation': 'get_settings'}, None, None)).is_error

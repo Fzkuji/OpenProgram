@@ -42,6 +42,12 @@ async def invoke(request, name, arguments):
         return {'ok': False, 'error': exc.code, 'frames': reply.frames}
     finally:
         reply.closed = True
-    failed = any(f.get('type') in {'action_error', 'operation_error'} for f in reply.frames)
+    def failed_frame(frame):
+        if frame.get('type') in {'error', 'action_error', 'operation_error'}:
+            return True
+        data = frame.get('data')
+        return isinstance(data, dict) and (bool(data.get('error')) or data.get('ok') is False
+                                          or data.get('status') in {'error', 'failed'})
+    failed = any(failed_frame(frame) for frame in reply.frames)
     return {'ok': not failed, 'frames': reply.frames,
             'note': 'Long-running work is observed through its execution or session API.'}
