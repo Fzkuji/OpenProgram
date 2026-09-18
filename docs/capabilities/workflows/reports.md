@@ -1,6 +1,6 @@
 # Prepare weekly reports
 
-The report suite consists of three independently versioned Workflow packages and
+The report suite consists of four independently versioned Workflow packages and
 one coordinating `weekly_report` package. They must be installed in the Programs catalog;
 this source checkout alone does not install them. The suite supports independent execution and composition through the `weekly_report` entry.
 Native WeChat collection depends on accessible search and conversation controls;
@@ -8,7 +8,8 @@ unavailable controls return a recoverable state instead of a completed report.
 
 | Entry | Purpose | External writes |
 | --- | --- | --- |
-| `personal_weekly_report(task)` | Personal report drafts and explicit Feishu inspection or record updates | Only explicit submission/update requests may write to Feishu |
+| `personal_weekly_report(task)` | Personal Feishu drafts and explicit Feishu inspection or record updates | Only explicit submission/update requests may write to Feishu |
+| `personal_chat_weekly_report(task)` | Owner's three-section WeChat-group copy (`1.本周进展` / `2.开会讨论要点` / `3.下周计划`) | Local draft only; never sends WeChat |
 | `group_weekly_report(task)` | Collect group reports, track missing members, and prepare a local summary | Never sends WeChat messages |
 | `tencent_weekly_report(task)` | Approximately 100 Chinese characters of Tencent progress for a leader, intended for Friday afternoon | Local draft only |
 | `weekly_report(task)` | An agent selects the requested report Workflows and forwards the complete request | Preserves the requested operation; child write restrictions apply |
@@ -84,11 +85,12 @@ limit. External record updates are not automatically repeated after an uncertain
 failure.
 
 Natural-language requests are interpreted by a routing agent. It selects one,
-two, or all three destinations according to meaning and negation, then code
+two, three, or all four destinations according to meaning and negation, then code
 passes the entire original request unchanged to each selected Workflow. It does
 not split on punctuation, extract materials, force drafts, or assign a common
-week. Unclear destinations require clarification. Single results are returned
-verbatim; multiple results are labeled by audience.
+week. A generic personal progress draft without Feishu language is
+`personal_chat`, not the Feishu form. Unclear destinations require clarification.
+Single results are returned verbatim; multiple results are labeled by audience.
 
 ## Continue incomplete work
 
@@ -110,7 +112,7 @@ material source must be configured separately before enabling a scheduled run.
 
 ## Source organization
 
-The four independent report Workflow packages are grouped under `openprogram/programs/workflow/weekly_report/`: `personal_weekly_report` (personal), `group_weekly_report` (group), `tencent_weekly_report` (Tencent), and `weekly_report` (routing). Shared internal helpers live in `workflow/_reports/`. The coordinator is named `weekly_report`; the personal entry is `personal_weekly_report`. Configured output paths are unchanged. A category directory organizes sources; it is not an additional Workflow.
+The five independent report Workflow packages are grouped under `openprogram/programs/workflow/weekly_report/`: `personal_weekly_report` (Feishu), `personal_chat_weekly_report` (owner's WeChat-group copy), `group_weekly_report` (group collection), `tencent_weekly_report` (Tencent), and `weekly_report` (routing). Shared internal helpers live in `workflow/_reports/`. The coordinator is named `weekly_report`. Configured output paths are unchanged. A category directory organizes sources; it is not an additional Workflow.
 
 Personal field generation uses a read-only Agent to retrieve the requested week from memory and local notes. A JSON Schema validates complete fields or sparse edits, with prompt fallback and the existing format-repair attempt before any write. An unresolved model failure retains the original request; an uncertain remote write is not retried.
 
