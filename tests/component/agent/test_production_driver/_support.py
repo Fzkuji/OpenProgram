@@ -162,6 +162,7 @@ def _provider_tool_decision(hook, snapshot, index, *, result_text=None):
         "tool_call_id": tool_call_id,
         "arguments": {"n": index},
     }) is False
+    assert hook("tool.started", {"tool_call_id": tool_call_id}) is False
     assert hook("tool.after", {
         "tool_call_id": tool_call_id,
         "is_error": False,

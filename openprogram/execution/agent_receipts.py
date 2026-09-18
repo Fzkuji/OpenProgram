@@ -28,14 +28,15 @@ def record_result(service, *, attempt, effect_id, terminal_receipt, checkpoint_i
                 or owner.lease_expires_at <= time.time()
                 or effect.execution_id != execution.execution_id or effect.attempt_id != attempt.attempt_id):
             raise AgentSafePointConflict("stale_attempt", "result receipt owner is stale")
-        if effect.status is EffectStatus.COMMITTED:
+        if effect.status in {EffectStatus.COMMITTED, EffectStatus.NOT_COMMITTED}:
             prior = load_result(store, connection, effect)
             envelope["base_checkpoint_id"] = prior.get("base_checkpoint_id")
             descriptor = effect.receipt.get("agent_result_ref") or {}
             if descriptor.get("sha256") == hashlib.sha256(canonical_json_bytes(envelope)).hexdigest():
                 return effect
             raise AgentSafePointConflict("receipt_conflict", "result receipt already records different content")
-        if effect.status is not EffectStatus.DISPATCHED:
+        not_started = effect.status is EffectStatus.PLANNED and terminal_receipt.get("execution_started") is False
+        if effect.status is not EffectStatus.DISPATCHED and not not_started:
             raise AgentSafePointConflict("effect_state_invalid", "result receipt has no matching dispatch")
         envelope["base_checkpoint_id"] = execution.checkpoint_head_id
         payload = canonical_json_bytes(envelope)
@@ -43,8 +44,8 @@ def record_result(service, *, attempt, effect_id, terminal_receipt, checkpoint_i
             execution_id=execution.execution_id, payload=payload, media_type="application/json", schema_version=1)
         receipt = {**terminal_receipt, "agent_result_ref": descriptor, "checkpoint_pending": True}
         now = time.time()
-        connection.execute("UPDATE effects SET status = 'committed', receipt_json = ?, updated_at = ?, resolved_at = ? WHERE effect_id = ?",
-                           (_json(receipt), now, now, effect_id))
+        connection.execute("UPDATE effects SET status = ?, receipt_json = ?, updated_at = ?, resolved_at = ? WHERE effect_id = ?",
+                           ("not_committed" if not_started else "committed", _json(receipt), now, now, effect_id))
         result = service.effects._require(connection, effect_id)
         service.effects._append_event(connection, execution.status_version, result, now)
         return result
@@ -103,7 +104,7 @@ def validate_checkpoint(store, connection, effect, checkpoint, terminal_receipt)
 
 
 def pending_result(service, execution_id, *, connection=None):
-    query = ("SELECT * FROM effects WHERE execution_id = ? AND status = 'committed' "
+    query = ("SELECT * FROM effects WHERE execution_id = ? AND status IN ('committed', 'not_committed') "
              "AND json_extract(receipt_json, '$.checkpoint_pending') = 1 ORDER BY resolved_at DESC, effect_id LIMIT 1")
     if connection is None:
         from contextlib import closing
@@ -154,7 +155,7 @@ def validates_expired_publication(store, connection, effect_id, *, execution, st
     from openprogram.agent.continuation import AgentCheckpointV1
     effect = EffectStore(store)._require(connection, effect_id)
     if (effect.execution_id != execution.execution_id or effect.attempt_id != execution.current_attempt_id
-            or effect.status is not EffectStatus.COMMITTED or not effect.receipt.get("agent_result_ref")):
+            or effect.status not in {EffectStatus.COMMITTED, EffectStatus.NOT_COMMITTED} or not effect.receipt.get("agent_result_ref")):
         return False
     envelope = load_result(store, connection, effect)
     expected = AgentCheckpointV1.build(**envelope["checkpoint_inputs"])

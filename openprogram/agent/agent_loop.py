@@ -840,7 +840,8 @@ async def _stream_assistant_response(
     # explicitly promoted by tool_search since the previous provider call.
     from openprogram.programs import split_tools_for_dispatch
     _provider_tools, _ = split_tools_for_dispatch(
-        list(context.tools or [])
+        [tool for tool in (context.tools or [])
+         if not callable(getattr(tool, "_permission_visible", None)) or tool._permission_visible()]
     )
     try:
         from openprogram.agent.session_db import default_db
@@ -1303,14 +1304,13 @@ async def _execute_tool_calls(
 
         result: AgentToolResult
         skipped_repeat = streak >= 2
-        if (
-            not skipped_repeat
-            and validation_error is None
-            and tool is not None
-            and safe_point_hook is not None
-            and gate_denial is None
-        ):
-            await safe_point_hook("tool.started", {"tool_call_id": str(tool_call.id)})
+        from .permissions.execution import ToolExecution, current_execution, mark_started
+
+        async def notify_started():
+            if safe_point_hook is not None:
+                await safe_point_hook("tool.started", {"tool_call_id": str(tool_call.id)})
+
+        execution = ToolExecution(notify_started)
         if skipped_repeat:
             n = streak + 1
             from .failure_policy import record_failure
@@ -1326,6 +1326,7 @@ async def _execute_tool_calls(
                 details={},
                 is_error=True,
             )
+        execution_token = current_execution.set(execution)
         try:
             if skipped_repeat:
                 raise _SkipExecute()
@@ -1346,6 +1347,8 @@ async def _execute_tool_calls(
                     partial_result=partial_result,
                 ))
 
+            if not getattr(tool, "_permission_managed", False):
+                await mark_started()
             _record_job_activity("operation_start")
             timeout = _job_operation_timeout(None)
             preapproved_wait_id = getattr(tool, "_preapproved_wait_id", None)
@@ -1415,11 +1418,13 @@ async def _execute_tool_calls(
             ))
             raise
         finally:
+            current_execution.reset(execution_token)
             with RUNNING_TOOL_CALLS_LOCK:
                 RUNNING_TOOL_CALLS.pop(tool_call.id, None)
 
+        outcome = "not_started" if not execution.started else ("failed" if result.is_error else "completed")
         if not skipped_repeat:
-            if result.is_error:
+            if result.is_error and not execution.automatic_refusal:
                 from .failure_policy import record_failure
                 record_failure(repeat_failures, fail_key, streak + 1)
             else:
@@ -1430,6 +1435,7 @@ async def _execute_tool_calls(
             tool_name=tool_call.name,
             result=result,
             is_error=result.is_error,
+            outcome=outcome,
         ))
         emit_safe("tool.after", "tool", {
             "tool": tool_call.name,
@@ -1457,6 +1463,7 @@ async def _execute_tool_calls(
                 "tool_call_id": str(tool_call.id), "tool_name": tool_call.name,
                 "result": _durable_message(tool_result_msg),
                 "is_error": bool(result.is_error),
+                "outcome": outcome, "execution_started": execution.started,
                 "next_tool_index": index + 1,
                 "repeat_failures": dict(repeat_failures),
                 "tool_call_ids": [str(call.id) for call in tool_calls],

@@ -570,16 +570,13 @@ class SafePointsOperations:
                 if not isinstance(result, shared.Mapping):
                     raise shared.AgentDriverError("checkpoint_schema_invalid", "tool receipt lacks ToolResultMessage")
                 completed_tool_results.append(dict(result))
-                details = result.get("details") if isinstance(result.get("details"), dict) else {}
-                not_started = (
-                    details.get("outcome") == "not_started"
-                    or details.get("execution_started") is False
-                )
+                not_started = effect.status is EffectStatus.PLANNED
+                outcome = "not_started" if not_started else ("failed" if payload.get("is_error") else "completed")
                 terminal_receipt = {
                     "tool_call_id": payload.get("tool_call_id"),
                     "is_error": bool(payload.get("is_error")),
                     "result_hash": json_digest(result),
-                    **({"outcome": "not_started", "execution_started": False} if not_started else {}),
+                    "outcome": outcome, "execution_started": not not_started,
                 }
                 tool_call_id = payload.get("tool_call_id")
                 result_text = "\n".join(
@@ -591,6 +588,7 @@ class SafePointsOperations:
                     if block.get("type") == "tool" and block.get("tool_call_id") == tool_call_id:
                         block["result"] = result_text
                         block["is_error"] = bool(payload.get("is_error"))
+                        block["outcome"] = outcome
                         break
                 if effect.status is EffectStatus.PLANNED and terminal_receipt.get("outcome") != "not_started":
                     service.effects.mark_dispatched(
@@ -647,7 +645,7 @@ class SafePointsOperations:
             if current is None:
                 raise shared.AgentDriverError("execution_not_found", "execution disappeared at safe point")
             inputs = checkpoint_inputs(kind, payload, effect_id, action_id, input_hash, terminal_receipt)
-            if kind != "tool.suspended" and not not_started:
+            if kind != "tool.suspended":
                 from openprogram.execution.agent_receipts import record_result
                 record_result(service, attempt=attempt, effect_id=effect_id,
                               terminal_receipt=terminal_receipt, checkpoint_inputs=inputs,

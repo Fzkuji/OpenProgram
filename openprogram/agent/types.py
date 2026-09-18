@@ -234,6 +234,7 @@ class AgentEventToolUpdate(BaseModel):
 
 
 class AgentEventToolEnd(BaseModel):
+    outcome: Literal["not_started", "failed", "completed"] | None = None
     type: Literal["tool_execution_end"] = "tool_execution_end"
     tool_call_id: str
     tool_name: str

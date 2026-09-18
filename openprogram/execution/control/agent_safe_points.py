@@ -87,7 +87,7 @@ class AgentSafePointOperations:
         self.attempts._validate_generation(attempt, generation)
         execution = self.executions._require_execution(connection, execution_id)
         effect = self.effects._require(connection, effect_id)
-        recorded = effect.status is EffectStatus.COMMITTED and effect.receipt.get("checkpoint_pending") is True
+        recorded = effect.status in {EffectStatus.COMMITTED, EffectStatus.NOT_COMMITTED} and effect.receipt.get("checkpoint_pending") is True
         if recovery_effect_id is not None and (recovery_effect_id != effect_id or not recorded):
             raise AgentSafePointConflict("receipt_invalid", "recovery requires the exact pending result")
         if recorded:

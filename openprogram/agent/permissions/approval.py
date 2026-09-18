@@ -144,6 +144,8 @@ def wrap_with_approval(
         authority_decision=None,
         *, execution_started=False,
     ) -> "AgentToolResult":
+        from .execution import mark_refused
+        mark_refused(reason_code)
         details = {
             "denied": True,
             "reason_code": reason_code,
@@ -201,6 +203,8 @@ def wrap_with_approval(
         except (OSError, ValueError) as exc:
             return _denied(str(exc), "APPROVAL_FILE_CHANGED")
         from .file_state import file_scope
+        from .execution import mark_started
+        await mark_started()
         with file_scope():
             result = await orig_execute(call_id, args, cancel, on_update)
         sandbox = _sandbox_metadata(result)
@@ -341,6 +345,7 @@ def wrap_with_approval(
             setattr(wrapped, _attr, getattr(agent_tool, _attr, None))
         except Exception:
             pass
+    object.__setattr__(wrapped, "_permission_managed", True)
     object.__setattr__(wrapped, "_permission_preflight", _permission_preflight)
     object.__setattr__(wrapped, "_interaction_manifest", _interaction_manifest)
     return wrapped

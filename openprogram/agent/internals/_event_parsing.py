@@ -97,6 +97,7 @@ def agent_event_to_envelope(ev, req: "TurnRequest") -> Optional[dict]:
                                "tool": getattr(ev, "tool_name", "?"),
                                "result": shorten(getattr(ev, "result", "")),
                                "is_error": bool(getattr(ev, "is_error", False)),
+                               "outcome": getattr(ev, "outcome", None),
                                "tool_call_id": getattr(ev, "tool_call_id", None)}},
         }
 

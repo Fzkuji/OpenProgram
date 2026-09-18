@@ -308,3 +308,40 @@ def test_changed_working_directory_invalidates_review(automatic, monkeypatch, tm
     assert result.details["reason_code"] == "PERMISSION_REVIEW_STALE"
     assert not calls
     assert _reviews(store, execution) == []
+
+
+def test_identical_auto_refusals_reach_approval_through_real_loop(automatic, monkeypatch):
+    from openprogram.agent.agent_loop import _execute_tool_calls
+    from openprogram.providers.types import AssistantMessage, ToolCall
+    from openprogram.providers.utils.event_stream import EventStream
+    store, execution, request = automatic
+    async def classify(*args, **kwargs):
+        return True, "risky"
+    tool = _tool(request, monkeypatch, classify)
+    failures = {}
+    manifests = []
+    async def safe_point(kind, payload):
+        if kind == "tool.before" and payload.get("pre_wait"):
+            manifests.append(payload["pre_wait"])
+            return True
+        return False
+    async def run():
+        for index in range(3):
+            message = AssistantMessage(content=[ToolCall(id=str(index), name="bash", arguments={"command":"same"})],
+                api="fake", provider="fake", model="fake", timestamp=index, stop_reason="toolUse")
+            await _execute_tool_calls([tool], message, None, EventStream(), None, failures, safe_point_hook=safe_point)
+    asyncio.run(run())
+    assert len(manifests) == 1
+    assert manifests[0]["request_metadata"]["approval_reason"] == "AUTO_REFUSAL_FALLBACK"
+    assert _reviews(store, execution)[-1]["consecutive"] == 3
+    assert not failures
+
+
+def test_total_threshold_approval_resets_total(automatic):
+    from openprogram.agent.permissions.auto_history import AutoHistory
+    store, execution, _ = automatic
+    for index in range(20):
+        history = AutoHistory(store, execution.execution_id, execution.session_id, "epoch", str(index))
+        history.record(blocked=True, reason="risk", code="AUTO_CLASSIFIER_DENY")
+    approved = history.record(blocked=False, reason="approved", code="AUTO_OWNER_APPROVED", approved=True)
+    assert approved["total"] == approved["consecutive"] == 0

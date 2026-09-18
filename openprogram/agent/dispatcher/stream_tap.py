@@ -121,7 +121,8 @@ def make_stream_tap(
                         if (block.get("type") == "tool"
                                 and block.get("tool_call_id") == evt.get("tool_call_id")):
                             block.update(result=evt.get("result"),
-                                         is_error=bool(evt.get("is_error")))
+                                         is_error=bool(evt.get("is_error")),
+                                         outcome=evt.get("outcome"))
                             break
                 dirty = True
                 flush()
@@ -168,6 +169,7 @@ def make_stream_tap(
                     metadata={
                         "tool_call_id": tid,
                         "is_error": bool(evt.get("is_error")),
+                        "outcome": evt.get("outcome"),
                     },
                 )
                 SessionNodeWriter(

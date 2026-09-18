@@ -199,3 +199,73 @@ def test_permission_denial_is_not_started_not_dispatched(tmp_path):
         ).fetchone()
     assert row[0] == "not_committed"
     assert json.loads(row[1]).get("outcome") == "not_started"
+
+
+@pytest.mark.parametrize("denied", [True, False])
+def test_host_result_evidence_survives_recovery(tmp_path, monkeypatch, denied):
+    store, attempts, control, driver, request, snapshot, execution, active, hook = _prepare_long_turn(
+        tmp_path, "receipt-resume",
+    )
+    calls = []
+
+    async def execute(*args):
+        calls.append(args)
+        return AgentToolResult(content=[TextContent(text="mutation completed")], details={"outcome": "not_started", "execution_started": False})
+
+    tool = AgentTool(name="mutate", label="mutate", description="test", parameters={}, execute=execute)
+    if denied:
+        from openprogram.agent.permissions.approval import wrap_with_approval
+        monkeypatch.setattr("openprogram.agent.permissions.approval.permission_decision",
+                            lambda *args: ("deny", "RULE_DENY", "test deny", None))
+        tool = wrap_with_approval(tool, request, lambda _: None, _live=False)
+    message = AssistantMessage(
+        content=[ToolCall(id="once", name="mutate", arguments={})],
+        api="fake", provider="fake", model="fake", timestamp=1, stop_reason="toolUse",
+    )
+    hook("provider.before", {"resolved_snapshot": snapshot, "context": {"messages": []}})
+    hook("provider.after", {
+        "message": message.model_dump(mode="json"), "tool_call_ids": ["once"], "next_tool_index": 0,
+    })
+    original = AgentCheckpointV1.build
+
+    def failing(**kwargs):
+        if kwargs["safe_point"]["phase"] == "after_tool":
+            raise AgentCheckpointError("checkpoint_schema_invalid", "injected checkpoint failure")
+        return original(**kwargs)
+
+    monkeypatch.setattr(AgentCheckpointV1, "build", failing)
+
+    async def safe_point(kind, payload):
+        return hook(kind, payload)
+
+    with pytest.raises(AgentDriverError, match="injected checkpoint failure"):
+        asyncio.run(_execute_tool_calls(
+            [tool], message, None, EventStream(), None, {}, safe_point_hook=safe_point,
+        ))
+    assert len(calls) == (0 if denied else 1)
+    monkeypatch.setattr(AgentCheckpointV1, "build", original)
+    recovered = control.recover_owner_loss(
+        execution.execution_id, attempt_id=active.attempt_id, generation=active.generation,
+    )
+    assert recovered.execution.status is not ExecutionStatus.RECONCILIATION_REQUIRED
+    current = store.get_execution(execution.execution_id)
+    assert current.checkpoint_head_id is not None
+    from openprogram.agent.continuation import AgentContinuation
+    checkpoint = control.checkpoints.get(current.checkpoint_head_id)
+    continuation = AgentContinuation.from_checkpoint(
+        store=store, checkpoint=checkpoint, request=request,
+    )
+    assert continuation.next_tool_index == 1
+    hook2 = driver._safe_point_hook(
+        active, request, __import__("threading").Event(), continuation=continuation,
+    )
+
+    async def safe_point2(kind, payload):
+        return hook2(kind, payload)
+
+    asyncio.run(_execute_tool_calls(
+        [tool], message, None, EventStream(), None, {},
+        safe_point_hook=safe_point2, start_index=continuation.next_tool_index,
+    ))
+    assert len(calls) == (0 if denied else 1)
+    assert recovered.execution.execution_id == execution.execution_id

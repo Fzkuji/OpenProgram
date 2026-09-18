@@ -295,3 +295,13 @@ test("failure flushes pending progress and keeps the provider error separate", (
     {type:"text",text:"Partial response"},
   ]);
 });
+
+test("host execution outcome survives live stream and history mapping", async () => {
+  reset();
+  send({ type: "tool_use", tool: "bash", tool_call_id: "denied", input: "{}" });
+  send({ type: "tool_result", tool: "bash", tool_call_id: "denied", result: "refused", is_error: true, outcome: "not_started" });
+  assert.equal(reply().blocks.find(b => b.tool_call_id === "denied").outcome, "not_started");
+  const { convToChatMsgs } = await import("../../lib/chat/conv-mapper.ts");
+  const mapped = convToChatMsgs([{role: "assistant", id: RID, content: "", blocks: reply().blocks}]);
+  assert.equal(mapped.flatMap(m => m.blocks ?? []).find(b => b.tool_call_id === "denied")?.outcome, "not_started");
+});

@@ -479,7 +479,7 @@ def _wrap_agentic_runtime_block(
     for _attr in (
         "_is_agentic", "_defer", "_run_in_worker", "_mcp_server",
         "_runtime_implementation", "_requires_approval", "_accept_edits_safe",
-        "_permission_preflight",
+        "_permission_preflight", "_permission_managed", "_permission_visible",
     ):
         # A frozen/slotted tool object rejects the copy; the wrapper just
         # loses an optional marker attribute.

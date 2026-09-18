@@ -251,20 +251,6 @@ def _configure_web_use_tools(tools, surface_context, *, enabled: bool | None = N
     return current, web_use_tool is not None
 
 
-def _hide_whole_tool_denies(tools, request):
-    """Drop tools the live policy denies as a whole. Scoped denies stay visible."""
-    from openprogram.programs.permission_rule import parse_rule
-    rules = getattr(request, "permission_rules", None)
-    hidden = set()
-    for item in (getattr(rules, "deny", None) or ()):
-        parsed = parse_rule(item) if isinstance(item, str) else item
-        if getattr(parsed, "pattern", None) in (None, "") and getattr(parsed, "tool_name", None):
-            hidden.add(parsed.tool_name)
-    if not hidden:
-        return tools
-    return [tool for tool in tools or [] if tool.name not in hidden]
-
-
 def _retain_saved_contract_tools(tools, saved_runtime_contract: Mapping | None):
     """Keep the checkpoint's tool set. Extra live tools do not block resume."""
     if saved_runtime_contract is None:
@@ -312,8 +298,6 @@ def resolve_agent_runtime(
         tools = apply_tool_policy(tools or [], source=req.source)
         web_use_enabled = False
     tools = _retain_saved_contract_tools(tools, saved_runtime_contract)
-    if saved_runtime_contract is None:
-        tools = _hide_whole_tool_denies(tools, req)
     from openprogram.programs import install_allowed_tool_names
     install_allowed_tool_names({tool.name for tool in tools or []})
     _log_resolved_tools(req, tools)
@@ -945,6 +929,7 @@ def run_loop_blocking(
                             "input": _meta.get("input"),
                             "result": _shorten(getattr(ev, "result", "")),
                             "is_error": bool(getattr(ev, "is_error", False)),
+                            "outcome": getattr(ev, "outcome", None),
                         }
                         tool_calls.append(_tc)
                     if ev.type == "turn_end":

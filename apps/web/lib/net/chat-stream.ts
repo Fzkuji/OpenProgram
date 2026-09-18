@@ -61,6 +61,7 @@ interface StreamEvent {
   tool_call_id?: string;
   result?: string;
   is_error?: boolean;
+  outcome?: AssistantBlock["outcome"];
   elapsed?: number;
   /** sub_agent only: stable id of the spawn card, identical to the
    *  ``attach`` DAG node a reload reads back — the running and terminal
@@ -822,7 +823,7 @@ function applyStreamEvent(sid: string, rid: string, evt: StreamEvent): void {
       const blocks = (cur.blocks ?? []).map((b): AssistantBlock =>
         b.type === "tool" && !!evt.tool_call_id
         && b.tool_call_id === evt.tool_call_id
-          ? { ...b, result: evt.result ?? "", is_error: !!evt.is_error }
+          ? { ...b, result: evt.result ?? "", is_error: !!evt.is_error, outcome: evt.outcome }
           : b,
       );
       // Agentic tool results were never pushed into `tools` above —

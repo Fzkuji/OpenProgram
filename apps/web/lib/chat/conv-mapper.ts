@@ -29,6 +29,7 @@ interface LegacyBlock {
   input?: string;
   result?: unknown;
   is_error?: boolean;
+  outcome?: AssistantBlock["outcome"];
   tool_call_id?: string;
   truncated?: boolean;
   total_bytes?: number;

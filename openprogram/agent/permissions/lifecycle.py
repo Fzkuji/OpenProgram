@@ -121,6 +121,14 @@ def wrap_live_permission(tool, request, on_event):
             inner = operation[1]
         return await inner.execute(call_id, args, cancel, on_update)
 
+    def visible():
+        from openprogram.programs.permission_rule import parse_rule
+        rules = getattr(current_permission_request(request), "permission_rules", None)
+        return not any(rule.tool_name == tool.name and rule.pattern in (None, "")
+                       for rule in (parse_rule(raw) for raw in (getattr(rules, "deny", None) or ())))
+
+    wrapped._permission_visible = visible
+    wrapped._permission_managed = True
     wrapped.execute = execute
     wrapped._permission_preflight = preflight
     wrapped._interaction_manifest = manifest

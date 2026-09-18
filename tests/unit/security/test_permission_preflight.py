@@ -135,3 +135,13 @@ def test_preflight_uses_validated_operation(monkeypatch):
     result = asyncio.run(_execute_tool_calls([tool], message, None, EventStream(), None, {}, safe_point_hook=checkpoint))
     assert not result["tool_results"][0].is_error
     assert seen == [("review", {"count": 1}), ("dispatch", {"count": 1}), ("execute", {"count": 1})]
+
+
+def test_host_outcome_is_projected_to_live_event():
+    from openprogram.agent.types import AgentEventToolEnd
+    from openprogram.agent.internals._event_parsing import agent_event_to_envelope
+    from types import SimpleNamespace
+    event = AgentEventToolEnd(tool_call_id="c", tool_name="bash", is_error=True,
+                             outcome="not_started", result=AgentToolResult(content=[], details={}))
+    frame = agent_event_to_envelope(event, SimpleNamespace(session_id="s", user_msg_id="u"))
+    assert frame["data"]["event"]["outcome"] == "not_started"

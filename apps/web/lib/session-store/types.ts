@@ -317,7 +317,7 @@ export interface AssistantBlock {
   message_id?: string;
   node_id?: string;
   is_error?: boolean;
-  outcome?: "not_started" | "failed" | "unknown" | "waiting" | "recovered";
+  outcome?: "not_started" | "failed" | "completed" | "unknown" | "waiting" | "recovered";
 }
 
 export interface ConvSummary {

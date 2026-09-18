@@ -54,6 +54,8 @@ class AutoHistory:
             ).fetchone()
             previous = json.loads(row[0]) if row else {}
             total = int(previous.get("total", 0)) + int(blocked)
+            if approved and int(previous.get("total", 0)) >= 20:
+                total = 0
             consecutive = int(previous.get("consecutive", 0)) + 1 if blocked else 0
             value = dict(action_id=action_id, session_id=self.session_id, epoch=self.epoch,
                          blocked=blocked, reason=reason, code=code, total=total,
