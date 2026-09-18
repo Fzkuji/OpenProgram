@@ -169,6 +169,11 @@ def convert_responses_messages(
                             # encrypted_content payload is self-contained.
                             if isinstance(reasoning_item, dict):
                                 reasoning_item.pop("id", None)
+                                # SDK output includes absent optional values as
+                                # null; compatible input schemas may reject them.
+                                for key in ("content", "encrypted_content", "status"):
+                                    if reasoning_item.get(key) is None:
+                                        reasoning_item.pop(key, None)
                             output.append(reasoning_item)
                         except (json.JSONDecodeError, TypeError):
                             pass
