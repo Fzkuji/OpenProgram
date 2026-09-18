@@ -43,13 +43,18 @@ assert.doesNotMatch(
 );
 assert.match(
   source("components/chat/composer/controls/controls-cluster.tsx"),
-  /fastRowIcon/,
-  "the effort chip must keep a Fast gauge when Fast is on and the row has room",
+  /fastIndicator/,
+  "wide effort text keeps the Fast gauge; the compact chip keeps the fist",
 );
 assert.match(
   composerCss,
-  /\.fastRowIcon\[data-active="true"\][\s\S]*display:\s*inline-flex/,
-  "Fast-on gauge next to effort must be visible, not a zero-width grid column",
+  /\.fastIndicator\[data-active="true"\][\s\S]*width:\s*22px/,
+  "Fast-on gauge next to XHigh is 22px, matching the pre-4c17f2ae chip",
+);
+assert.match(
+  composerCss,
+  /max-width:\s*560px[\s\S]*\.fastIndicator\[data-active="true"\][\s\S]*width:\s*0/,
+  "narrow composer hides the Fast gauge and keeps the effort fist",
 );
 assert.match(composer, /\.\/input\/use-composer-keydown/);
 assert.match(composer, /\.\/input\/use-history-recall/);

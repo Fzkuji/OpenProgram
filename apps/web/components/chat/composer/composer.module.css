@@ -623,14 +623,24 @@
 .controlsRow .effortText {
   display: inline-flex;
 }
-.fastRowIcon {
-  display: none;
-  flex-shrink: 0;
-  margin-right: 4px;
-  color: var(--accent-red);
-}
-.fastRowIcon[data-active="true"] {
+.fastIndicator {
   display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  width: 0;
+  opacity: 0;
+  overflow: hidden;
+  transform: translateX(-3px);
+  pointer-events: none;
+  transition: width 180ms ease-out, opacity 180ms ease-out, transform 180ms ease-out;
+}
+.fastIndicator[data-active="true"] {
+  width: 22px;
+  opacity: 1;
+  transform: translateX(0);
+}
+@media (prefers-reduced-motion: reduce) {
+  .fastIndicator { transition: none; }
 }
 .controlsRow .effortText:hover {
   background: var(--bg-hover);
@@ -763,8 +773,9 @@
     display: inline-flex;
   }
 
-  .controlsRow .fastRowIcon[data-active="true"] {
-    display: none;
+  .controlsRow .fastIndicator[data-active="true"] {
+    width: 0;
+    opacity: 0;
   }
 }
 

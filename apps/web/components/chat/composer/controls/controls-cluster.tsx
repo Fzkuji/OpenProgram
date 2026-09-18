@@ -470,12 +470,8 @@ export function ControlsCluster({
                         style={{ color: thinking === "max" ? "#8E6BD9" : effortColor }}
                         aria-hidden="true"
                       />
-                      <span
-                        className={styles.fastRowIcon}
-                        data-active={fastEnabled && fastSupported}
-                        aria-hidden="true"
-                      >
-                        <GaugeIcon size={14} active />
+                      <span className={styles.fastIndicator} data-active={fastEnabled && fastSupported} aria-hidden="true">
+                        <GaugeIcon size={14} active className="shrink-0" />
                       </span>
                       <span className={styles.effortValue}>
                         {thinking ? formatEffortLabel(thinking) : text("Model settings", "模型设置")}
