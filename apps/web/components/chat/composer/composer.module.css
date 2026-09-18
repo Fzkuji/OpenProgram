@@ -623,6 +623,15 @@
 .controlsRow .effortText {
   display: inline-flex;
 }
+.fastRowIcon {
+  display: none;
+  flex-shrink: 0;
+  margin-right: 4px;
+  color: var(--accent-red);
+}
+.fastRowIcon[data-active="true"] {
+  display: inline-flex;
+}
 .controlsRow .effortText:hover {
   background: var(--bg-hover);
   color: var(--text-bright);
@@ -752,6 +761,10 @@
 
   .controlsRow .compactEffortIcon {
     display: inline-flex;
+  }
+
+  .controlsRow .fastRowIcon[data-active="true"] {
+    display: none;
   }
 }
 

@@ -16,6 +16,7 @@ import { CornerDownRight, Paperclip, Settings } from "lucide-react";
 import {
   type AnimatedNavIconHandle,
   BicepsFlexedIcon,
+  GaugeIcon,
 } from "@/components/animated-icons";
 
 import { HoverTip } from "@/components/ui/tooltip";
@@ -469,6 +470,13 @@ export function ControlsCluster({
                         style={{ color: thinking === "max" ? "#8E6BD9" : effortColor }}
                         aria-hidden="true"
                       />
+                      <span
+                        className={styles.fastRowIcon}
+                        data-active={fastEnabled && fastSupported}
+                        aria-hidden="true"
+                      >
+                        <GaugeIcon size={14} active />
+                      </span>
                       <span className={styles.effortValue}>
                         {thinking ? formatEffortLabel(thinking) : text("Model settings", "模型设置")}
                       </span>

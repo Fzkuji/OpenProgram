@@ -41,6 +41,16 @@ assert.doesNotMatch(
   /translateX:\s*0\.5/,
   "compensating translation flies the Fast needle out of a 14px viewBox",
 );
+assert.match(
+  source("components/chat/composer/controls/controls-cluster.tsx"),
+  /fastRowIcon/,
+  "the effort chip must keep a Fast gauge when Fast is on and the row has room",
+);
+assert.match(
+  composerCss,
+  /\.fastRowIcon\[data-active="true"\][\s\S]*display:\s*inline-flex/,
+  "Fast-on gauge next to effort must be visible, not a zero-width grid column",
+);
 assert.match(composer, /\.\/input\/use-composer-keydown/);
 assert.match(composer, /\.\/input\/use-history-recall/);
 assert.match(composer, /\.\/submit\/use-chat-submit/);
