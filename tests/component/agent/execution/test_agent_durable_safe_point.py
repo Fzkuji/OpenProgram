@@ -632,7 +632,12 @@ def test_published_agent_checkpoint_children_survive_terminal_gc_and_load(tmp_pa
         outcome="completed",
     )
     assert finished.execution.status is ExecutionStatus.COMPLETED
-    assert control.state_blobs.gc(execution_id=paused.execution_id) == 0
+    # Completed receipt reconstruction envelopes may be collected; all published
+    # checkpoint children must remain readable with their original content.
+    children = {ref: store.get_state_blob(paused.execution_id, ref) for ref in child_refs}
+    assert all(children.values())
+    control.state_blobs.gc(execution_id=paused.execution_id)
+    assert {ref: store.get_state_blob(paused.execution_id, ref) for ref in child_refs} == children
     loaded = AgentCheckpointV1.load(store, checkpoint)
     assert loaded.payload == state.payload
 
@@ -1411,7 +1416,15 @@ def test_returned_provider_failure_finishes_without_attention(tmp_path, stop_rea
     if stop_reason == "repair":
         assert responses == ["invalid json", "{}"]
     assert control.effects.list_unresolved(execution.execution_id) == []
-    assert bool(finished.execution.checkpoint_head_id) is (stop_reason == "repair")
+    # A returned provider failure is still an authoritative result. Persist its
+    # exact message, while the execution remains failed and has no unresolved effect.
+    from openprogram.agent.continuation import AgentCheckpointV1
+    assert finished.execution.checkpoint_head_id
+    checkpoint = control.checkpoints.get(finished.execution.checkpoint_head_id)
+    state = AgentCheckpointV1.load(store, checkpoint)
+    message = state.read_json_ref(store, execution.execution_id, state.payload["assistant_message_delta_ref"])
+    assert message["content"][0]["text"] == responses[-1]
+    assert message["stop_reason"] == ("stop" if stop_reason in {"invalid", "repair"} else stop_reason)
 
 
 @pytest.mark.parametrize("kind,orphan", [("provider.before", True), ("tool.before", False)])
