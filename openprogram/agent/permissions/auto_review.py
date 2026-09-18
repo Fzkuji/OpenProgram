@@ -16,6 +16,7 @@ class PreparedReview:
     record: dict | None
     history: AutoHistory | None
     files: dict
+    working_dir: str
 
     def matches(self, call_id, args):
         return self.call_id == str(call_id) and self.args == args
@@ -29,6 +30,7 @@ async def prepare_review(agent_tool, req, call_id, args, *, operation_id=None):
     from openprogram.worktree.context import current_worktree_path
     from .classifier import auto_classify_tool, ReviewResult
     from .auto_history import for_operation
+    working_dir = current_worktree_path() or os.getcwd()
     reviewed_args = copy.deepcopy(args)
     decision = permission_decision(agent_tool, req, reviewed_args)[0]
     if req.permission_mode != "auto" or decision not in {"auto", "allow"}:
@@ -46,7 +48,7 @@ async def prepare_review(agent_tool, req, call_id, args, *, operation_id=None):
             verdict = ReviewResult(False, "allowed by policy", "AUTO_CLASSIFIER_ALLOW")
         else:
             verdict = await auto_classify_tool(name, copy.deepcopy(reviewed_args), context={
-                "working_directory": current_worktree_path() or os.getcwd(),
+                "working_directory": working_dir,
                 "user_request": getattr(req, "user_text", ""),
                 "permission_mode": req.permission_mode,
                 "additional_working_directories": getattr(req, "additional_working_dirs", []),
@@ -58,7 +60,7 @@ async def prepare_review(agent_tool, req, call_id, args, *, operation_id=None):
                 "AUTO_CLASSIFIER_DENY" if blocked else "AUTO_CLASSIFIER_ALLOW"))
         from .lifecycle import current_permission_request
         current = current_permission_request(req)
-        if any(getattr(current, key, None) != getattr(req, key, None)
+        if working_dir != (current_worktree_path() or os.getcwd()) or any(getattr(current, key, None) != getattr(req, key, None)
                for key in ("permission_mode", "permission_rules", "_permission_version")):
             verdict = ReviewResult(True, "permission changed during review", "PERMISSION_REVIEW_STALE")
         try:
@@ -70,5 +72,5 @@ async def prepare_review(agent_tool, req, call_id, args, *, operation_id=None):
             verdict = ReviewResult(record["blocked"], record["reason"], record["code"])
     except Exception:
         verdict = ReviewResult(True, "automatic permission history is unavailable", "AUTO_HISTORY_UNAVAILABLE")
-    return PreparedReview(str(call_id), reviewed_args, verdict, record, history, files)
+    return PreparedReview(str(call_id), reviewed_args, verdict, record, history, files, working_dir)
 

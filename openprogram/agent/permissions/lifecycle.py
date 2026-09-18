@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import copy
+import os
 
 from .state import permission_state
+from openprogram.worktree.context import current_worktree_path
 
 
 def current_permission_request(request):
@@ -84,9 +86,10 @@ def wrap_live_permission(tool, request, on_event):
         import copy
         snapshot = copy.deepcopy(current_permission_request(request))
         reviewed_args = copy.deepcopy(args)
+        working_dir = current_worktree_path() or os.getcwd()
         inner = wrap_with_approval(tool, snapshot, on_event, _live=False)
         await inner._permission_preflight(call_id, reviewed_args, operation_id=operation_id)
-        pending = (call_id, inner, reviewed_args, snapshot)
+        pending = (call_id, inner, reviewed_args, snapshot, working_dir)
 
     def manifest(call_id, args):
         nonlocal pending
@@ -98,7 +101,7 @@ def wrap_live_permission(tool, request, on_event):
             snapshot = current_permission_request(request)
             inner = wrap_with_approval(tool, snapshot, on_event, _live=False)
             import copy
-            pending = (call_id, inner, copy.deepcopy(args), snapshot)
+            pending = (call_id, inner, copy.deepcopy(args), snapshot, current_worktree_path() or os.getcwd())
         return inner._interaction_manifest(call_id, args)
 
     async def execute(call_id, args, cancel, on_update):
@@ -110,7 +113,7 @@ def wrap_live_permission(tool, request, on_event):
         if operation is not None and operation[0] == call_id:
             current = current_permission_request(request)
             fields = ("permission_mode", "permission_rules", "_permission_version")
-            if operation[2] != args or any(getattr(current, key, None) != getattr(operation[3], key, None) for key in fields):
+            if operation[2] != args or operation[4] != (current_worktree_path() or os.getcwd()) or any(getattr(current, key, None) != getattr(operation[3], key, None) for key in fields):
                 from openprogram.agent.types import AgentToolResult
                 from openprogram.providers.types import TextContent
                 return AgentToolResult(content=[TextContent(text="Permission policy or arguments changed during review; submit a new operation.")],

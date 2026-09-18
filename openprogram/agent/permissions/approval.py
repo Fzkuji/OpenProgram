@@ -308,6 +308,10 @@ def wrap_with_approval(
             if not prepared.matches(call_id, args):
                 return _denied("[denied] operation changed during review", "PERMISSION_REVIEW_STALE")
             from .file_state import validate
+            import os
+            from openprogram.worktree.context import current_worktree_path
+            if prepared.working_dir != (current_worktree_path() or os.getcwd()):
+                return _denied("[denied] working directory changed during review", "PERMISSION_REVIEW_STALE")
             try:
                 validate(prepared.files)
             except (OSError, ValueError) as exc:

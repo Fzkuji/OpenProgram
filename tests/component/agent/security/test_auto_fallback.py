@@ -283,3 +283,28 @@ def test_cancelled_review_has_no_durable_verdict(automatic, monkeypatch):
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(tool._permission_preflight("cancel", {"command": "test"}))
     assert _reviews(store, execution) == []
+
+
+def test_changed_working_directory_invalidates_review(automatic, monkeypatch, tmp_path):
+    from openprogram.worktree.context import set_worktree, reset_worktree
+    store, execution, request = automatic
+    calls = []
+    async def classify(*args, **kwargs):
+        assert kwargs["context"]["working_directory"] == str(tmp_path / "first")
+        set_worktree(str(tmp_path / "second"))
+        return False, "safe"
+    async def execute(*args):
+        calls.append(args)
+        return AgentToolResult(content=[], details={})
+    monkeypatch.setattr("openprogram.agent.permissions.classifier.auto_classify_tool", classify)
+    tool = wrap_with_approval(AgentTool(name="bash", label="bash", description="shell", parameters={}, execute=execute), request, lambda _: None)
+    async def run():
+        token = set_worktree(str(tmp_path / "first"))
+        try:
+            return await tool.execute("cwd", {"command": "touch output"}, None, None)
+        finally:
+            reset_worktree(token)
+    result = asyncio.run(run())
+    assert result.details["reason_code"] == "PERMISSION_REVIEW_STALE"
+    assert not calls
+    assert _reviews(store, execution) == []
