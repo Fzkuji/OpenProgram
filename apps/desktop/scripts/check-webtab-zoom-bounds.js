@@ -27,8 +27,27 @@ const visibleCalls = [];
 const setBoundsCalls = [];
 const menuOpenCalls = [];
 const menuResizeCalls = [];
+const terminalRegistrations = [];
 const context = {};
+const unexpectedTerminalEffect = () => assert.fail("zoom checks must not launch or control a terminal");
 const sandbox = {
+  // This harness extracts just the geometry and registration functions. The
+  // shared terminal module has its own production-IPC tests; record its
+  // registration here without starting a PTY, timers, or an HTTP connection.
+  require(name) {
+    assert.equal(name, "./terminal-resource-ipc");
+    return { registerTerminalResourceIpc: options => terminalRegistrations.push(options) };
+  },
+  app: {},
+  UI_ORIGIN: "http://127.0.0.1:18100",
+  process: { platform: "linux", env: {} },
+  fs: {},
+  killWindowsProcessTree: unexpectedTerminalEffect,
+  waitForTerminalPid: unexpectedTerminalEffect,
+  setTimeout: unexpectedTerminalEffect,
+  clearTimeout: unexpectedTerminalEffect,
+  setInterval: unexpectedTerminalEffect,
+  clearInterval: unexpectedTerminalEffect,
   ipcMain: {
     on: (channel, handler) => listeners.set(channel, handler),
     handle: () => {},
@@ -161,6 +180,10 @@ assert.deepEqual(
 );
 
 sandbox.registerWebTabIpc();
+assert.equal(terminalRegistrations.length, 1, "shared terminals remain wired into Desktop registration");
+assert.equal(terminalRegistrations[0].ipcMain, sandbox.ipcMain);
+assert.equal(terminalRegistrations[0].contextForSender, sandbox.contextForSender);
+assert.equal(terminalRegistrations[0].origin, sandbox.UI_ORIGIN);
 const event = { sender: { getZoomFactor: () => 1.095445115 } };
 listeners.get("main-menu:open")({ sender: { getZoomFactor: () => 1.25 } }, {
   anchor: { rightInset: 10, top: 44, vw: 1000, vh: 700 },
@@ -170,7 +193,7 @@ assert.deepEqual(plain(menuOpenCalls), [[context, {
     rightInset: 12.5,
     top: 55,
     vw: 1250,
-    vh: 875,
+    vh: 700 * 1.25,
   },
 }, 1.25]]);
 listeners.get("main-menu:resize")(
