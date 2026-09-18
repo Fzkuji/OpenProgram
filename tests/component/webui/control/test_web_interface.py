@@ -5,7 +5,17 @@ from openprogram.framework.client import call
 from openprogram.programs.workflow.browser.web_use_runtime import WebUseSession, WebUseSessionRegistry
 
 
-def test_framework_web_commands_require_live_owned_page_and_tool_policy(monkeypatch):
+@pytest.fixture
+def standalone_tool_policy():
+    from openprogram.programs._runtime import _allowed_tool_names
+    token = _allowed_tool_names.set(None)
+    try:
+        yield
+    finally:
+        _allowed_tool_names.reset(token)
+
+
+def test_framework_web_commands_require_live_owned_page_and_tool_policy(monkeypatch, standalone_tool_policy):
     from openprogram.programs._runtime import _allowed_tool_names
     registry = WebUseSessionRegistry()
     session = WebUseSession('web', 'desktop', 'binding', page_key='page', owner_id='mine')
