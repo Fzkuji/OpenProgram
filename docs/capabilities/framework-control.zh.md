@@ -33,6 +33,10 @@ framework(action="interface", operation="tabs.list",
 
 窗口显示操作需要连接中的界面；后端业务操作和已安装应用操作不需要前端页面。自动关闭文件标签前，必须先保存或放弃未保存的修改。
 
+网页创建和关闭使用 `resource(provider="web", action="open"/"close")`。
+网页原生视图命令还需要在 `arguments.web_session_id` 中提供本轮观察返回的控制会话，
+继续检查原有 Page 独占控制、会话访问权限和已启用工具策略。
+
 ## 权限
 
 工具保留正常审批并要求 owner 权限，不通过无约束的宿主机调用绕过当前 sandbox。认证初始化、传输回执和 Agent 审批回答不属于操作目录；Agent 不能借此批准自己的待审批操作。安装 Python 应用仍需明确授权信任，只有清单中 `agent: true` 的操作出现在资源操作 schema 中。

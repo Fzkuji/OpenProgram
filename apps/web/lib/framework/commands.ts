@@ -6,23 +6,36 @@ import { setFont } from "@/lib/prefs/font-pref";
 import { setShowBookmarksBar } from "@/lib/browser/browser-prefs";
 import * as bookmarks from "@/lib/tabs/bookmarks";
 import { setLocale } from "@/lib/i18n";
+import { setUserProfile, getUserProfile } from "@/lib/prefs/user-profile";
+import { setAgentProfile, getAgentProfile } from "@/lib/format-utils/agent-style";
+import { agentCanAccessWebTab } from "@/lib/browser/web-page-management";
 import definitions from "../../../../openprogram/framework/interface_commands.json" with { type: "json" };
 
 export { definitions };
-export async function executeInterface(operation: string, args: unknown[]): Promise<unknown> {
+export type PageAuthority = { tab_id: string; window_id: string; session_id: string; target_id: string };
+export async function executeInterface(operation: string, args: unknown[], page?: PageAuthority): Promise<unknown> {
   if (!Object.hasOwn(definitions, operation)) throw new Error("unsupported_interface_operation");
+  if (operation === "tabs.openWebTab") throw new Error("use_resource_web_open");
+  if (operation.startsWith("native.webTab.") || operation === "tabs.setWebTabPinned") {
+    const state = useCenterTabs.getState();
+    const tab = state.tabs.find(item => item.id === args[0]);
+    if (!page || !tab || page.tab_id !== tab.id || page.window_id !== desktopBridge()?.windowId || !agentCanAccessWebTab(tab.id, page.session_id, state)) throw new Error("web_resource_authority_required");
+    const target = await desktopBridge()?.webTab.resolve?.(tab.id);
+    if (!target || target !== page.target_id || !agentCanAccessWebTab(tab.id, page.session_id, useCenterTabs.getState())) throw new Error("page_context_stale");
+  }
   const [group, method, nativeMethod] = operation.split(".");
   if (group === "tabs") {
     const store = useCenterTabs.getState();
     if (method === "list") return { tabs: store.tabs, groups: store.groups, activeId: store.activeId, splitWebTabId: store.splitWebTabId };
+    if (method === "closeTab" && store.tabs.find(tab => tab.id === args[0])?.kind === "web") throw new Error("use_resource_web_close");
     if (method === "closeTab" && store.tabs.find(tab => tab.id === args[0])?.dirty) throw new Error("save_or_discard_unsaved_file_first");
     const action = store[method as keyof typeof store];
     if (typeof action !== "function") throw new Error("unsupported_tab_operation");
     return (action as (...values: unknown[]) => unknown)(...args);
   }
   if (group === "preferences") {
-    if (method === "get") return { theme: appearance.activeThemeId(), customCss: appearance.getCustomCss() };
-    const handlers = { ...appearance, setFont, setLocale, setShowBookmarksBar };
+    if (method === "get") return { theme: appearance.activeThemeId(), customCss: appearance.getCustomCss(), userProfile: getUserProfile(), agentProfile: getAgentProfile() };
+    const handlers = { ...appearance, setFont, setLocale, setShowBookmarksBar, setUserProfile, setAgentProfile };
     const action = handlers[method as keyof typeof handlers];
     if (typeof action !== "function") throw new Error("unsupported_preference_operation");
     return (action as (...values: unknown[]) => unknown)(...args);
@@ -49,7 +62,7 @@ export async function executeInterface(operation: string, args: unknown[]): Prom
     if (method === "show" && !rows.some(row => row.id === args[0])) throw new Error("resource_not_in_current_session");
     if (method === "show") { useSessionStore.getState().setRightDockOpen(true); useSessionStore.getState().setRightDockView("resources"); }
     else if (sessionId) hideResourcePreview(sessionId, sessionResourceView(sessionId).currentBranchId);
-    useResourceSelection.setState({ id: method === "show" ? String(args[0]) : null });
+    useResourceSelection.setState(state => ({ id: method === "show" ? String(args[0]) : null, revision: state.revision + 1 }));
     return { selected: useResourceSelection.getState().id };
   }
   const bridge = desktopBridge();

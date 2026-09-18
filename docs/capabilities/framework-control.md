@@ -51,13 +51,19 @@ Window presentation still needs a connected view; backend business operations
 and installed application operations do not need a rendered frontend. Unsaved
 file tabs must be saved or discarded before an automated close.
 
+Web creation and closure use `resource(provider="web", action="open"/"close")`.
+Native Page presentation commands require `arguments.web_session_id` from the
+current `web` observation, in addition to the declared positional arguments.
+They retain the existing Page lease, session access and enabled-tool policy.
+
 ## Authority
 
 The tools retain normal tool approval and require owner authority. Framework
 administration cannot run outside an active sandbox through an unrestricted
 host fallback. Authentication bootstrap, transport receipts and Agent approval
 answers are excluded from the operation catalogue. An Agent cannot use this
-tool to approve its own pending operation. Installed Python applications still
+tool to approve its own pending operation or change approval modes or rules.
+Installed Python applications still
 require explicit trust, and only manifest operations with `agent: true` appear
 in their resource action schemas.
 

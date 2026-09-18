@@ -87,6 +87,7 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
   const [, render] = useState(0);
   const rows = sessionResourceRows(tabs, [...backend.rows, ...terminalResourceRows(Object.values(terminals), sessionId)], sessionId);
   const requested = useResourceSelection(s => s.id);
+  const requestRevision = useResourceSelection(s => s.revision);
   useEffect(() => {
     if (!requested) { setSelected(null); return; }
     const row = rows.find(item => item.id === requested);
@@ -95,7 +96,7 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
     } else if (row) setSelected(row);
     // An explicit command selects the current descriptor once, never a replacement.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requested]);
+  }, [requested, requestRevision]);
   const names: Record<string, string> = {
     application: text("Application", "应用"), terminal: text("Terminal", "终端"), web: text("Webpage", "网页"), docker: text("Container", "容器"), vm: text("VM", "虚拟机"),
     remote: text("Remote environment", "远程环境"), desktop: text("Desktop", "桌面"),

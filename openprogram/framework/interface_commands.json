@@ -73,5 +73,7 @@
   "bookmarks.renameBookmark": {"description": "renameBookmark", "arguments": {"type": "array", "prefixItems": [{"type": "string"}, {"type": "string"}], "minItems": 2, "maxItems": 2}},
   "preferences.setShowBookmarksBar": {"description": "Show or hide the bookmarks bar", "arguments": {"type": "array", "prefixItems": [{"type": "boolean"}], "minItems": 1, "maxItems": 1}},
   "sidebar.show": {"description": "show right sidebar", "arguments": {"type": "array", "prefixItems": [{"enum": ["files", "running", "resources", "detail", "context"]}], "minItems": 1, "maxItems": 1}},
-  "sidebar.hide": {"description": "hide right sidebar", "arguments": {"type": "array", "prefixItems": [], "minItems": 0, "maxItems": 0}}
+  "sidebar.hide": {"description": "hide right sidebar", "arguments": {"type": "array", "prefixItems": [], "minItems": 0, "maxItems": 0}},
+  "preferences.setUserProfile": {"description": "setUserProfile", "arguments": {"type": "array", "prefixItems": [{"type": "object", "properties": {"name": {"type": "string"}, "initial": {"type": "string", "maxLength": 2}, "color": {"type": "string"}, "avatar": {"type": "object"}}, "required": ["name", "initial", "color"], "additionalProperties": false}], "minItems": 1, "maxItems": 1}},
+  "preferences.setAgentProfile": {"description": "setAgentProfile", "arguments": {"type": "array", "prefixItems": [{"type": "object", "properties": {"name": {"type": "string"}, "initial": {"type": "string", "maxLength": 2}, "color": {"type": "string"}, "avatar": {"type": "object"}}, "required": ["name", "initial", "color"], "additionalProperties": false}], "minItems": 1, "maxItems": 1}}
 }

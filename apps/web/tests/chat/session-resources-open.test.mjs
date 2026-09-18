@@ -21,6 +21,7 @@ await build({
     export { useBrowserControlStore, resetBrowserControl } from "./lib/browser/browser-control";
     export { useTerminalResources } from "./lib/desktop/terminal-resources";
     export { setLocale } from "./lib/i18n";
+    export { executeInterface } from "./lib/framework/commands";
   `, resolveDir: webPath },
   bundle: true, format: "esm", jsx: "automatic", outfile: bundle,
   packages: "external", platform: "node", tsconfig: join(webPath, "tsconfig.json"),
@@ -66,6 +67,7 @@ const {
   SessionResourcesPanel, useCenterTabs, useWebTabPip, topLevelTabs,
   resetBrowserResources, getPreviewPreference, hideResourcePreview,
   useBrowserControlStore, resetBrowserControl, setLocale, useTerminalResources,
+  executeInterface,
 } = await import(pathToFileURL(bundle));
 
 function pageTab(id, sessionId, url, extra = {}) {
@@ -786,20 +788,21 @@ test("Terminal rows share the resource list and hide without terminating the nat
     assert.equal(host.querySelectorAll('[data-resource-kind="terminal"]').length, 1);
     const row = host.querySelector('[data-resource-kind="terminal"] button');
     assert.equal(row.title, "/project");
-    await act(async () => row.click());
+    await act(async () => executeInterface("resources.show", ["terminal:exact"]));
     assert.ok(host.querySelector('section[aria-label="Terminal resource"]'));
     assert.equal(host.querySelector("dialog"), null);
     const hide = host.querySelector('button[aria-label="Hide terminal view"]');
     await act(async () => hide.click());
     assert.equal(host.querySelector('section[aria-label="Terminal resource"]'), null);
     assert.equal(calls.some(([action]) => ["open", "close", "input"].includes(action)), false);
-    await act(async () => row.click());
+    await act(async () => executeInterface("resources.show", ["terminal:exact"]));
+    assert.ok(host.querySelector('section[aria-label="Terminal resource"]'));
     await act(async () => useTerminalResources.setState(state => ({ rows: {
       ...state.rows, exact: { ...state.rows.exact, generation: "replacement" },
     } })));
     assert.equal(Boolean(host.querySelector('section[aria-label="Terminal resource"]')), false,
       "a replacement shell must require explicit selection, not automatic reattachment");
-    await act(async () => host.querySelector('[data-resource-kind="terminal"] button').click());
+    await act(async () => executeInterface("resources.show", ["terminal:exact"]));
     assert.ok(host.querySelector('section[aria-label="Terminal resource"]'));
     await act(async () => useTerminalResources.setState(state => ({ rows: {
       ...state.rows, exact: { ...state.rows.exact, session_ids: ["other-session"] },

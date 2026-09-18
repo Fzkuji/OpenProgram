@@ -22,3 +22,16 @@ def test_describe_uses_registered_operations_and_command_dispatch(tmp_path, monk
         assert result.status_code == 200, result.text
         assert any(frame['type'] == 'settings' for frame in result.json()['frames'])
         assert client.post('/api/framework/commands/webtab_result', json={}).status_code == 400
+
+
+def test_framework_cannot_change_its_own_approval_policy():
+    from openprogram.webui.routes.control import framework
+    app = FastAPI()
+    framework.register(app)
+    with TestClient(app) as client:
+        names = {item['name'] for item in client.get('/api/framework/commands').json()['commands']}
+        for name in ('set_permission', 'add_permission_rule', 'remove_permission_rule'):
+            assert name not in names
+            assert client.post('/api/framework/commands/' + name, json={'mode': 'bypass'}).status_code == 400
+        assert client.post('/api/framework/commands/set_project_config', json={'key': 'permission_mode', 'value': 'bypass'}).status_code == 400
+        assert client.post('/api/framework/commands/chat', json={'permission_mode': 'bypass'}).status_code == 400

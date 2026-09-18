@@ -27,3 +27,26 @@ test("only declared native methods can be invoked and absence is explicit", asyn
   assert.equal(definitions["native.refreshOwnerAuth"], undefined);
   assert.equal(definitions["native.terminal.write"], undefined);
 });
+test("profile operations update the same preferences used by General settings", async () => {
+  const saved = new Map();
+  globalThis.window = { localStorage: { setItem: (key, value) => saved.set(key, value), getItem: key => saved.get(key) ?? null }, dispatchEvent() {} };
+  try {
+    const profile = { name: "Operator", initial: "OP", color: "#123456" };
+    await executeInterface("preferences.setUserProfile", [profile]);
+    await executeInterface("preferences.setAgentProfile", [{ ...profile, name: "Assistant" }]);
+    assert.equal(JSON.parse(saved.get("user_profile")).name, "Operator");
+    assert.equal(JSON.parse(saved.get("agent_profile")).name, "Assistant");
+  } finally { delete globalThis.window; }
+});
+test("framework view commands cannot operate a foreign private Page as human input", async () => {
+  const calls = [];
+  globalThis.window = { openprogramDesktop: { windowId: "main", webTab: { reload: id => calls.push(id) } } };
+  useCenterTabs.setState({ tabs: [{ id: "foreign", kind: "web", agentOpened: true, agentSessionId: "other" }], groups: [] });
+  try {
+    await assert.rejects(executeInterface("native.webTab.reload", ["foreign"]), /authority_required/);
+    await assert.rejects(executeInterface("native.webTab.reload", ["foreign"], { tab_id: "foreign", window_id: "main", session_id: "mine" }), /authority_required/);
+    await assert.rejects(executeInterface("tabs.closeTab", ["foreign"]), /resource_web_close/);
+    await assert.rejects(executeInterface("tabs.openWebTab", ["https://example.org"]), /resource_web_open/);
+    assert.deepEqual(calls, []);
+  } finally { delete globalThis.window; }
+});

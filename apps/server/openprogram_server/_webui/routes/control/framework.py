@@ -28,7 +28,7 @@ def register(app):
         try:
             if not body.get('operation'):
                 return describe()
-            return await invoke(body['operation'], body.get('arguments', []), body.get('window_id', ''))
+            return await invoke(body['operation'], body.get('arguments', []), body.get('window_id', ''), body.get('page'))
         except (ValueError, TypeError) as exc:
             return JSONResponse({'ok': False, 'error': str(exc)}, status_code=400)
         except Exception as exc:

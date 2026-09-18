@@ -15,7 +15,7 @@ export async function receiveInterface(socket: WebSocket, data: Record<string, u
   let result: unknown;
   try {
     if (typeof data.operation !== "string" || !Array.isArray(data.arguments)) throw new Error("invalid_interface_command");
-    const value = await executeInterface(data.operation, data.arguments);
+    const value = await executeInterface(data.operation, data.arguments, data.page as import("./commands").PageAuthority | undefined);
     result = { ok: true, value: value ?? null };
   } catch (error) { result = { ok: false, error: error instanceof Error ? error.message : String(error) }; }
   if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({

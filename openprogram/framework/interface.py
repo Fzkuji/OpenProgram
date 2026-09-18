@@ -45,7 +45,7 @@ def describe():
     return {'commands': COMMANDS, 'windows': sorted(set(_windows.values()))}
 
 
-async def invoke(operation, arguments, window_id=''):
+async def invoke(operation, arguments, window_id='', page=None):
     descriptor = COMMANDS.get(operation)
     if descriptor is None:
         raise ValueError('unsupported_interface_operation')
@@ -62,7 +62,7 @@ async def invoke(operation, arguments, window_id=''):
     try:
         await ws.send_text(json.dumps({'type': 'framework.interface', 'data': {
             'request_id': request_id, 'window_id': _windows[ws],
-            'operation': operation, 'arguments': arguments}}))
+            'operation': operation, 'arguments': arguments, 'page': page}}))
         try:
             return await asyncio.wait_for(future, timeout=30)
         except asyncio.TimeoutError:

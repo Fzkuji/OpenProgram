@@ -21,7 +21,18 @@ def call(action='describe', operation='', arguments=None):
         from openprogram.agent.surface_context import current
         context = current() or {}
         window = context.get('origin_window_id') or context.get('window_id') or ''
-        return request('/api/framework/interface', method='POST', body={'operation': operation, 'window_id': window, **values})
+        window = values.get('window_id', window)
+        body = {'operation': operation, 'window_id': window, 'arguments': values.get('arguments', [])}
+        if operation == 'tabs.openWebTab':
+            if len(body['arguments']) != 1 or not isinstance(body['arguments'][0], str):
+                raise ValueError('invalid_web_open_arguments')
+            from openprogram.resources import registry
+            return registry.invoke('web', 'open', {'url': body['arguments'][0]})
+        if operation.startswith('native.webTab.') or operation == 'tabs.setWebTabPinned':
+            from .web_interface import authorized_page
+            with authorized_page(values, window) as page:
+                return request('/api/framework/interface', method='POST', body={**body, 'window_id': page['window_id'], 'page': page})
+        return request('/api/framework/interface', method='POST', body=body)
     if action != 'invoke':
         raise ValueError('unsupported_framework_action')
     method, _, template = operation.partition(' ')
@@ -30,6 +41,10 @@ def call(action='describe', operation='', arguments=None):
     found = request('/api/framework/operations?query=' + quote(operation, safe=''))
     if not any(row['id'] == operation for row in found['operations']):
         raise ValueError('unknown_framework_operation')
+    if operation == 'POST /api/application-instances/{key}/operations/{operation}':
+        if 'content_base64' in values or values.get('content_type', 'application/json') != 'application/json':
+            raise ValueError('application_operation_requires_json')
+        values['body'] = {**values.get('body', {}), 'agent': True}
     parameters = values.get('path', {})
     def replace(match):
         key = match.group(1).split(':')[0]
