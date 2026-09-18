@@ -67,3 +67,11 @@ worker 停止会中断未完成的 Python 函数，重启后显示中断状态�
 独立部署、非 Python 后端、MCP Apps 兼容以及原生操作系统 GUI 窗口嵌入尚未实现。
 
 项目应用在启动操作和读取项目文件前，根据绑定的项目 ID 重新确认当前位置。移动项目不改变应用实例和已保存数据；位置缺失、被其他目录替代或尚未确认时，拒绝启动新操作，已保存的应用数据仍可读取。
+
+## 将应用作为资源使用
+
+已启用应用自动出现在 `resource(action="describe")` 中，名称为 `application.<id>`。安装、禁用、更新和卸载无需重启 worker 即生效。项目级应用的 `open` 接受 `project_id`，并将实例关联调用会话。`observe` 返回实例数据与最近执行；`act` 接受清单中 Agent 可见的操作及稳定的 `request_key`。使用 open 返回的 `instance_id` 与 `digest`，更新应用后旧 digest 会被拒绝。
+
+`status`、`cancel`、`answer` 只处理属于该实例的执行。声明 `storage.app` 后，`save` 要求预期的数据版本。`release` 只移除会话关联，保留实例、数据和正在执行的操作；隐藏视图也不停止操作。Resources 和顶部标签复用同一实例及现有 sandbox 应用 frame，无需另外编写前端适配器。
+
+通过 [framework 工具](framework-control.zh.md) 调用 `POST /api/applications/scaffold`，传入 `path`、`app_id`、`title` 可生成可运行的示例包。父目录必须存在，目标目录不能已存在。包中分别放置 `backend/operations.py`、`ui/index.html` 和 `application.json`，界面与 Agent 都调用声明的 read/save 操作。审查源码后，通过 `/api/applications/install` 传入源路径及 `trust: true` 安装。增加功能时同步扩展后端和操作清单，不要仅在前端事件中实现业务修改。

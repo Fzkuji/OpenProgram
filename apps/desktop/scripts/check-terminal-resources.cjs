@@ -214,3 +214,12 @@ test("retiring a task releases its binding not its resource", async t => {
   assert.equal(next.ok, true); assert.equal(f.pties.length, 1); assert.equal(f.stops.length, 0);
   assert.equal((await f.agent("input", { ...f.binding(lease), data: "old\r" })).error, "binding_not_found");
 });
+test("Agent resize and sharing use the observed instance and lease", async t => {
+  const f = fixture(t); const opened = await f.agent("open", { terminal_id: "terminal-resource:" + "b".repeat(32) });
+  const request = f.binding(opened);
+  assert.equal((await f.agent("resize", { ...request, cols: 120, rows: 40 })).ok, true);
+  assert.deepEqual(f.pties[0].sizes.at(-1), [120, 40]);
+  assert.equal((await f.agent("share", { ...request, shared: true })).ok, true);
+  assert.equal((await f.agent("list", { session_id: "chat-B" })).items.length, 1);
+  assert.equal((await f.agent("share", { ...request, binding_id: "wrong", shared: false })).ok, false);
+});

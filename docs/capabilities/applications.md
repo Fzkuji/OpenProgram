@@ -156,3 +156,29 @@ Project-scoped operations resolve the bound project ID before starting and befor
 reading a project file. Moving the project keeps the same application instance
 and saved data. A missing, replaced, or unverified location blocks new operations;
 saved application data remains readable.
+
+## Use an application as a resource
+
+Enabled applications automatically appear as `application.<id>` in
+`resource(action="describe")`. Installation, disable, update and uninstall
+are reflected without restarting the worker. `open` accepts `project_id` for
+a project-scoped app and associates the instance with the calling session.
+`observe` returns instance state and recent runs; `act` accepts a declared
+Agent-visible operation and a stable `request_key`. Use the `instance_id` and
+`digest` returned by open. Updated packages reject an older digest.
+
+`status`, `cancel` and `answer` require a run belonging to that exact instance.
+`save` uses the expected storage version when `storage.app` is declared.
+`release` removes the session association, preserving the instance, data and
+running operations. Hiding its view also leaves operations running. The
+Resources view and top tab open the same instance in the existing sandboxed
+application frame. No separate frontend adapter is needed.
+
+Generate a runnable starter package through `POST /api/applications/scaffold`
+with `path`, `app_id` and `title`, available through the
+[framework tool](framework-control.md). The parent directory must exist and
+the target directory must not exist. The package separates `backend/operations.py`,
+`ui/index.html` and `application.json`; its UI and Agent both call the declared
+read/save operations. Review and install it through `/api/applications/install`
+with the source path and `trust: true`. Extend its backend and manifest to expose
+additional operations; do not implement business changes only inside UI events.

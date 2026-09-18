@@ -19,8 +19,8 @@ from typing import Any, Callable
 
 from fastapi import Request
 
-ACTIONS = frozenset({"list", "open", "observe", "input", "interrupt", "release", "close"})
-MUTATIONS = frozenset({"open", "input", "interrupt", "release", "close"})
+ACTIONS = frozenset({"list", "open", "observe", "input", "interrupt", "release", "close", "share", "resize"})
+MUTATIONS = frozenset({"open", "input", "interrupt", "release", "close", "share", "resize"})
 MAX_INPUT_BYTES = 16_384
 TTL_SECONDS = 8.0
 
@@ -127,7 +127,7 @@ def _retired_owners(window_id: str) -> list[str]:
     return retired
 
 
-def _arguments(action, terminal_id, generation, binding_id, data, cursor, expected_input_revision, workdir):
+def _arguments(action, terminal_id, generation, binding_id, data, cursor, expected_input_revision, workdir, shared=None, cols=None, rows=None):
     if not isinstance(action, str) or action not in ACTIONS:
         raise ValueError("unsupported_terminal_action")
     for name, value, limit in (("terminal_id", terminal_id, 256), ("generation", generation, 64), ("binding_id", binding_id, 64)):
@@ -137,9 +137,9 @@ def _arguments(action, terminal_id, generation, binding_id, data, cursor, expect
         raise ValueError("invalid_cursor")
     if action not in {"list", "open"} and (not terminal_id or not re.fullmatch(r"[0-9a-f]{32}", generation)):
         raise ValueError("list_terminals_then_observe_an_exact_generation")
-    if action in {"input", "interrupt", "close", "release"} and not re.fullmatch(r"[0-9a-f]{32}", binding_id):
+    if action in {"input", "interrupt", "close", "release", "share", "resize"} and not re.fullmatch(r"[0-9a-f]{32}", binding_id):
         raise ValueError("observe_required")
-    if action in {"input", "interrupt", "close"} and (
+    if action in {"input", "interrupt", "close", "share", "resize"} and (
         type(expected_input_revision) is not int or expected_input_revision < 0 or expected_input_revision > 2**53 - 1
     ):
         raise ValueError("observe_required")
@@ -147,7 +147,11 @@ def _arguments(action, terminal_id, generation, binding_id, data, cursor, expect
         raise ValueError("invalid_input")
     if workdir is not None and (not isinstance(workdir, str) or not workdir.strip() or "\0" in workdir):
         raise ValueError("invalid_workdir")
-    return {"action": action, "terminal_id": terminal_id, "generation": generation,
+    if action == "share" and type(shared) is not bool:
+        raise ValueError("invalid_scope")
+    if action == "resize" and (type(cols) is not int or type(rows) is not int or not 20 <= cols <= 500 or not 5 <= rows <= 200):
+        raise ValueError("invalid_size")
+    return {"shared": shared, "cols": cols, "rows": rows, "action": action, "terminal_id": terminal_id, "generation": generation,
             "binding_id": binding_id, "data": data if action == "input" else "",
             "cursor": cursor, "expected_input_revision": expected_input_revision,
             "workdir": workdir}
@@ -204,7 +208,8 @@ def _dispatch(plan: dict[str, Any], *, ws, window_id: str, revision: int, valid:
 
 def execute(action: str, terminal_id: str = "", generation: str = "", binding_id: str = "",
             data: str = "", cursor: int = 0, expected_input_revision: int | None = None,
-            workdir: str | None = None) -> dict[str, Any]:
+            workdir: str | None = None, shared: bool | None = None,
+            cols: int | None = None, rows: int | None = None) -> dict[str, Any]:
     """Dispatch only from a live permitted local execution, never from a model identity."""
     from openprogram import sandbox
     from openprogram.agent import surface_context
@@ -214,7 +219,7 @@ def execute(action: str, terminal_id: str = "", generation: str = "", binding_id
     from openprogram.programs._runtime import current_tool_call_id
     from openprogram.webui.ws_actions import webtab
 
-    args = _arguments(action, terminal_id, generation, binding_id, data, cursor, expected_input_revision, workdir)
+    args = _arguments(action, terminal_id, generation, binding_id, data, cursor, expected_input_revision, workdir, shared, cols, rows)
     if get_active_backend().backend_id != "local":
         return {"ok": False, "error": "desktop_terminal_requires_local_backend"}
     # Existing user shells cannot be retroactively sandboxed. Refuse rather than

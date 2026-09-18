@@ -261,7 +261,7 @@ function createTerminalResourceManager({ spawn, stop, resolveLaunch,
     }
     const key = `${owner}:${plan.operation_id}`;
     const digest = crypto.createHash("sha256").update(JSON.stringify([
-      action, plan.generation, plan.binding_id, plan.data, plan.expected_input_revision,
+      action, plan.generation, plan.binding_id, plan.data, plan.expected_input_revision, plan.shared, plan.cols, plan.rows,
     ])).digest("hex");
     if (typeof plan.operation_id !== "string" || !plan.operation_id || plan.operation_id.length > 256) return fail("invalid_operation");
     const prior = entry.receipts.get(key);
@@ -272,10 +272,12 @@ function createTerminalResourceManager({ spawn, stop, resolveLaunch,
     let result;
     if (action === "release") {
       entry.lease = null; notify(entry); result = { ok: true, ...state(entry), phase: "released" };
-    } else if (["input", "interrupt", "close"].includes(action)) {
+    } else if (["input", "interrupt", "close", "share", "resize"].includes(action)) {
       if (entry.humanPending) return fail("human_input_pending");
       if (plan.expected_input_revision !== entry.inputRevision) return fail("observe_required");
-      if (action === "close") {
+      if (action === "share" || action === "resize") {
+        result = human(action, { ...plan, session_id: sessionId }, host);
+      } else if (action === "close") {
         beginStop(entry, "agent_closed");
         result = { ok: true, ...state(entry), phase: ended(entry) ? "closed" : "close_requested" };
       } else result = input(entry, action === "interrupt" ? "\x03" : plan.data, false);

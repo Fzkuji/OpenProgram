@@ -59,7 +59,7 @@ globalThis.localStorage = {
   setItem(key, value) { this.store[key] = String(value); },
   removeItem(key) { delete this.store[key]; },
 };
-Object.defineProperty(window, "location", { value: { pathname: "/chat" } });
+Object.defineProperty(window, "location", { value: { pathname: "/chat", hash: "", search: "", origin: "http://localhost" } });
 const { act, createElement } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const {
@@ -812,5 +812,38 @@ test("Terminal rows share the resource list and hide without terminating the nat
     await act(async () => root.unmount()); host.remove();
     useTerminalResources.setState({ rows: {}, available: false, error: "" });
     delete window.openprogramTerminals;
+  }
+});
+
+
+test("Application resources open the same instance inline without starting an operation", async () => {
+  resetBrowserResources();
+  setLocale("en");
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (url, options) => {
+    requests.push([String(url), options?.method || "GET"]);
+    return new Response(JSON.stringify({ application: { id: "notes", title: "Notes", digest: "v1" },
+      instance: { id: "exact-instance" }, ui_url: "/application-assets/exact-instance/v1/read-only/index.html", runs: [] }),
+      { headers: { "content-type": "application/json" } });
+  };
+  globalThis.resourceBackend = { rows: [{ id: "application:exact-instance", sourceId: "application:exact-instance", source: "application", kind: "application",
+    sessionId: "a", conversationSessionId: "a", title: "Notes", target: "notes", status: "attached",
+    applicationId: "notes", applicationInstanceId: "exact-instance", applicationDigest: "v1" }], loaded: true, currentBranchId: null };
+  useCenterTabs.setState({ tabs: [{ id: "s:a", kind: "session", sessionId: "a", title: "A" }], activeId: "s:a", groups: [] });
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(createElement(SessionResourcesPanel)));
+    await act(async () => host.querySelector('[data-resource-kind="application"] button').click());
+    assert.ok(host.querySelector('section[aria-label="Application resource"]'));
+    assert.match(host.querySelector("iframe").getAttribute("src"), /exact-instance/);
+    assert.equal(host.querySelector("iframe").getAttribute("sandbox"), "allow-scripts");
+    assert.ok(requests.every(([url, method]) => url.endsWith("/api/application-instances/exact-instance") && method === "GET"));
+    await act(async () => [...host.querySelectorAll("button")].find(button => button.textContent === "Hide view").click());
+    assert.equal(host.querySelector("iframe"), null);
+  } finally {
+    await act(async () => root.unmount()); host.remove();
+    globalThis.fetch = originalFetch;
   }
 });

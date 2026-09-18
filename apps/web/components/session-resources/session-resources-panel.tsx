@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Box, ExternalLink, Globe, Monitor, PictureInPicture2, Server, TerminalSquare, X } from "lucide-react";
 import { SectionHeader } from "@/components/sidebar/section-header";
 import { useWebTabPip } from "@/lib/browser/web-tab-pip-store";
@@ -31,6 +31,8 @@ import { useSessionResources } from "@/lib/chat/use-session-resources";
 import { useTranslation } from "@/lib/i18n";
 import { useTerminalResources } from "@/lib/desktop/terminal-resources";
 import { TerminalResourceView } from "./terminal-resources";
+import { ApplicationResourceView } from "./application-resource";
+import { useResourceSelection } from "@/lib/framework/resource-selection";
 import styles from "./session-resources.module.css";
 
 function retryRecoverablePage(row: SessionResource, tabs: { id: string }[]): void {
@@ -84,8 +86,18 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
   const [selected, setSelected] = useState<SessionResource | null>(null);
   const [, render] = useState(0);
   const rows = sessionResourceRows(tabs, [...backend.rows, ...terminalResourceRows(Object.values(terminals), sessionId)], sessionId);
+  const requested = useResourceSelection(s => s.id);
+  useEffect(() => {
+    if (!requested) { setSelected(null); return; }
+    const row = rows.find(item => item.id === requested);
+    if (row?.source === "browser" || row?.source === "web") {
+      if (sessionId) previewInConversation(sessionId, row);
+    } else if (row) setSelected(row);
+    // An explicit command selects the current descriptor once, never a replacement.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requested]);
   const names: Record<string, string> = {
-    terminal: text("Terminal", "终端"), web: text("Webpage", "网页"), docker: text("Container", "容器"), vm: text("VM", "虚拟机"),
+    application: text("Application", "应用"), terminal: text("Terminal", "终端"), web: text("Webpage", "网页"), docker: text("Container", "容器"), vm: text("VM", "虚拟机"),
     remote: text("Remote environment", "远程环境"), desktop: text("Desktop", "桌面"),
   };
   const viewedBranch = backend.currentBranchId;
@@ -214,7 +226,10 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
       && terminals[selected.sourceId]?.session_ids.includes(sessionId) &&
       <TerminalResourceView key={`${selected.sourceId}:${terminals[selected.sourceId].generation}`}
         resource={terminals[selected.sourceId]} sessionId={sessionId} onHide={() => setSelected(null)} />}
-    {selected && selected.source !== "terminal" && <div className={styles.detail}>
+    {selected?.source === "application" && selected.applicationInstanceId
+      && rows.some(row => row.id === selected.id && row.applicationDigest === selected.applicationDigest)
+      && <ApplicationResourceView resource={selected} onHide={() => setSelected(null)} />}
+    {selected && selected.source !== "terminal" && selected.source !== "application" && <div className={styles.detail}>
       <button type="button" className={styles.action} aria-label={text("Close resource details", "关闭资源详情")} onClick={() => setSelected(null)}><X size={14} /></button>
       <strong>{selected.title}</strong><p>{names[selected.kind] || selected.kind} · {statusName(rows.find(row => row.id === selected.id) || selected)}</p>
       <p>{selected.target}</p>

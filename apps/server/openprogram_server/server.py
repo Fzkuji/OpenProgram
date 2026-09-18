@@ -803,6 +803,9 @@ def create_app(*, owner_auth=None, port: int = 18100):
     _routes_plugins.register(app)
     from openprogram.webui.routes.catalog import applications as _routes_applications
     _routes_applications.register(app)
+    from openprogram.webui.routes.control import resources, framework
+    resources.register(app)
+    framework.register(app)
     from openprogram.webui.routes.files import office_assets as _routes_office_assets
     _routes_office_assets.register(app)
 

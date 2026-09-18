@@ -30,9 +30,12 @@ export type SessionResource = {
   title: string;
   target: string;
   status: string;
-  source: "web" | "usage" | "browser" | "terminal";
+  source: "web" | "usage" | "browser" | "terminal" | "application";
   sourceId: string;
   terminalGeneration?: string;
+  applicationId?: string;
+  applicationInstanceId?: string;
+  applicationDigest?: string;
   scopeSessionId?: string;
   resourceId?: string;
   conversationSessionId?: string;
@@ -50,6 +53,9 @@ export type SessionResource = {
 };
 
 export type BackendResource = {
+  application_id?: string;
+  application_instance_id?: string;
+  application_digest?: string;
   id: string;
   resource_id?: string;
   session_id: string;
@@ -253,6 +259,13 @@ export function normalizeBackendResource(item: BackendResource, scopeSessionId: 
       pendingWait: asPendingWait(item.pending_wait),
     };
   }
+  if (item.source === "application") return {
+    id: item.id, sourceId: item.id, source: "application", kind: "application",
+    sessionId: item.session_id, scopeSessionId, conversationSessionId: scopeSessionId,
+    title: item.title, target: item.target, status: item.status,
+    applicationId: item.application_id, applicationInstanceId: item.application_instance_id,
+    applicationDigest: item.application_digest,
+  };
   if (item.source !== "usage") return null;
   return {
     id: `${item.source}:${item.id}`,

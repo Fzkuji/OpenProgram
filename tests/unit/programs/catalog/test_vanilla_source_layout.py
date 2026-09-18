@@ -20,7 +20,7 @@ EXPECTED_SOURCES = {
     "jobs": {"cron"},
     "code": {"execute_code", "lsp", "semble"},
     "interaction": {"canvas", "clarify", "send_file"},
-    "runtime": {"mcp_meta", "program", "resource", "skill"},
+    "runtime": {"framework", "mcp_meta", "program", "resource", "skill"},
     "system": {"self_update"},
 }
 

@@ -69,6 +69,8 @@ def register(app):
             from openprogram.browser_resources import project_conversation_resources
             browser_items, current_branch_id, current_branch_name = project_conversation_resources(session_id)
             items.extend(browser_items)
+            from openprogram.resources.application_bindings import list_bindings
+            items.extend(list_bindings(session_id))
             return JSONResponse(
                 {
                     "items": items, "now": time.time(),

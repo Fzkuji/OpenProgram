@@ -65,8 +65,7 @@ def test_web_release_requires_exact_binding_and_is_not_page_close(monkeypatch):
     assert calls == [("close", {"web_session_id": "observed"})]
     with pytest.raises(ValueError, match="invalid_resource_arguments"):
         registry.invoke("web", "release", {})
-    with pytest.raises(ValueError, match="unsupported_resource_action"):
-        registry.invoke("web", "close", {"web_session_id": "observed"})
+    assert "close" in registry.describe("web")["actions"]
     with pytest.raises(ValueError, match="invalid_resource_arguments"):
         registry.invoke("web", "act", {"arguments": {"executable": "anything"}})
     assert len(calls) == 1
@@ -86,3 +85,26 @@ def test_alias_does_not_reenable_provider_excluded_by_turn_policy(monkeypatch):
     finally:
         _allowed_tool_names.reset(token)
     assert calls == []
+
+
+def test_web_close_uses_exact_owned_live_binding(monkeypatch):
+    from types import SimpleNamespace
+    from threading import RLock
+    from openprogram.resources import registry
+    from openprogram.programs.workflow.browser import web_use_runtime
+    from openprogram.webui.ws_actions import webtab
+    from openprogram.agent import surface_context
+    calls = []
+    session = SimpleNamespace(operation_lock=RLock(), closed=False, closing=False,
+        owner_id='owner', binding_id='binding', page_key='page')
+    native = SimpleNamespace(_lock=RLock(), _sessions={'observed': session},
+        execute=lambda *a, **kw: calls.append(('release', a, kw)))
+    monkeypatch.setattr(web_use_runtime, 'get_registry', lambda: native)
+    monkeypatch.setattr(surface_context, 'web_use_owner_id', lambda: 'owner')
+    monkeypatch.setattr(webtab, 'binding_page_descriptor', lambda _: {'page_key': 'page'})
+    monkeypatch.setattr(webtab, 'request_close_tab', lambda binding: calls.append(('close', binding)) or {'ok': True})
+    assert registry.invoke('web', 'close', {'web_session_id': 'observed'})['ok']
+    assert calls[0] == ('close', 'binding')
+    session.owner_id = 'other'
+    assert not registry.invoke('web', 'close', {'web_session_id': 'observed'})['ok']
+    assert len(calls) == 2

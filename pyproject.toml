@@ -245,6 +245,7 @@ namespaces = false
 # installs but blows up on first use: `openprogram providers` finds zero
 # providers or the web UI 404s its own assets.
 "openprogram" = [
+    "framework/interface_commands.json",
     "sandbox/shims/*.cjs",
     "sandbox/shims/*.py",
     "programs/workflow/browser/*.cjs",

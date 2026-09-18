@@ -10,6 +10,7 @@
  * and non-React modules can reach it.
  */
 import { useEffect } from "react";
+import { interfaceWindowId, receiveInterface } from "@/lib/framework/connection";
 import { createHistoryFragmentDecoder } from "./history-fragments";
 import { executionMessageIds, pendingExecutionReplayRequests } from "./execution-message-recovery";
 import { useFunctions } from "@/lib/abilities/functions-store";
@@ -127,6 +128,10 @@ export function useWS(): void {
         releaseChatOperationError(msg.data);
       }
       if (consumeCommandErrorFrame(msg, translateText)) return true;
+      if (msg.type === "framework.interface" && socket && msg.data) {
+        void receiveInterface(socket, msg.data);
+        return true;
+      }
       const d = msg.data;
       switch (msg.type) {
         case "pong":
@@ -934,6 +939,7 @@ export function useWS(): void {
       pushStatusBadge();
 
       socket.onopen = () => {
+        socket?.send(JSON.stringify({ action: "framework_interface_register", window_id: interfaceWindowId() }));
         updateStatus("connected");
         window.dispatchEvent(new CustomEvent("op:browser-connection", { detail: { connected: true } }));
         if (reconnectTimer) {

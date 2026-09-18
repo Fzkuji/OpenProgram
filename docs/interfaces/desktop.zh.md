@@ -130,6 +130,6 @@ Desktop App 或 worker 进程重启后，你尚未关闭的网页会在后台自
 
 `resource` 工具通过 `describe` 返回 provider 及其支持的操作和参数结构。先调用 `resource(action="describe")`，再按返回的结构调用。内置 `web` 和 `terminal` 保留原有资源标识和检查；现有 `web_use`、`terminal_use` 继续兼容。例如 `resource(provider="terminal", action="list")` 列出可用 shell，`observe` 返回后续操作需要的 generation、binding、input revision 和输出 cursor。
 
-只允许调用 provider 声明的操作。网页 `release` 释放控制会话而保留网页，实际关闭仍使用浏览器界面的关闭操作；终端 `release` 保留进程，`close` 请求终止进程。Terminal 需要来自对应 Desktop 窗口的有效执行，不能绕过任务 sandbox。
+只允许调用 provider 声明的操作。网页 `release` 释放控制会话而保留网页，`close` 使用已观察实例的控制绑定关闭准确的网页；终端 `release` 保留进程，`close` 请求终止进程。Terminal 需要来自对应 Desktop 窗口的有效执行，不能绕过任务 sandbox。
 
-可信 Python 集成可以通过 `openprogram.resource_interface.registry.register(...)` 注册 `ResourceProvider`，为每种操作声明 JSON Schema 和调用适配器。适配器负责自身的授权和生命周期。重复名称会被拒绝，参数在调用前验证。这是可信集成 API，不接受 Agent 或网页提供任意代码。集成可以通过已有 `openprogram.session_resources.resource_use(...)` 在 Resources 上报会话使用情况；安装自定义应用并不自动提供控制适配器。
+可信 Python 集成可以通过 `openprogram.resource_interface.registry.register(...)` 注册 `ResourceProvider`，为每种操作声明 JSON Schema 和调用适配器。适配器负责自身的授权和生命周期。重复名称会被拒绝，参数在调用前验证。这是可信集成 API，不接受 Agent 或网页提供任意代码。集成可以通过已有 `openprogram.session_resources.resource_use(...)` 在 Resources 上报会话使用情况；已启用的安装应用根据操作清单自动注册 `application.<id>`。关联当前会话的实例显示在 Resources，并复用现有隔离应用视图。

@@ -145,6 +145,8 @@ async def _websocket_handler(ws):
         # structured + carries the traceback; never dumps a raw trace to stdout
         logging.getLogger("openprogram.webui").exception("[ws] connection error")
     finally:
+        from openprogram.framework.interface import release
+        release(ws)
         from openprogram.webui.ws_actions.webtab import release_connection
 
         release_connection(ws)
@@ -196,6 +198,7 @@ def _build_ws_action_registry() -> dict:
         settings as _ws_settings,
         user_error as _ws_user_error,
         webtab as _ws_webtab,
+        interface as _ws_interface,
     )
     table: dict = {}
     table.update(_ws_branch.ACTIONS)
@@ -216,6 +219,7 @@ def _build_ws_action_registry() -> dict:
     table.update(_ws_settings.ACTIONS)
     table.update(_ws_user_error.ACTIONS)
     table.update(_ws_webtab.ACTIONS)
+    table.update(_ws_interface.ACTIONS)
     return table
 
 
