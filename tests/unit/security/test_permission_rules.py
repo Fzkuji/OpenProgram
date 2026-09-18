@@ -252,8 +252,10 @@ def test_allow_rule_runs_without_approval_in_ask(authority_path, monkeypatch):
     assert ran["called"]
 
 
-def test_auto_denies_risky_without_llm():
-    # auto 档：bash 在 RISKY_AUTO_DENYLIST → 硬规则直接拒，不调 LLM。
+def test_auto_denies_command_with_unsafe_verdict(monkeypatch):
+    async def classify(*args, **kwargs):
+        return True, "unsafe command"
+    monkeypatch.setattr("openprogram.agent.permissions.classifier.auto_classify_tool", classify)
     tool, ran = _make_tool("bash")
     req = TurnRequest(session_id="s", user_text="", agent_id="main", source="web",
                       permission_mode="auto")

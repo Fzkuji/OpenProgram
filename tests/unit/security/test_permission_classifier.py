@@ -101,3 +101,31 @@ def test_classifier_falls_back_after_grok_failure(monkeypatch):
     blocked, reason = asyncio.run(auto_classify_tool("write", {"path": "example.txt"}))
     assert blocked is False
     assert reason == "ok"
+
+
+def test_classifier_checks_complete_arguments(monkeypatch):
+    from openprogram.agent.permissions.classifier import auto_classify_tool
+    monkeypatch.setattr("openprogram.providers.models.get_model", lambda *_: object())
+    command = "echo " + "x" * 1200 + "; rm -rf /important"
+
+    async def classify(_model, context, _options):
+        assert command in context.messages[0].content
+        return SimpleNamespace(content=[SimpleNamespace(text='{"safe": false, "reason": "destructive suffix"}')])
+
+    monkeypatch.setattr(importlib.import_module("openprogram.providers.stream"), "complete_simple", classify)
+    assert asyncio.run(auto_classify_tool("bash", {"command": command})) == (True, "destructive suffix")
+
+
+def test_classifier_never_approves_partial_oversized_input(monkeypatch):
+    from openprogram.agent.permissions.classifier import auto_classify_tool
+    calls = []
+    monkeypatch.setattr("openprogram.providers.models.get_model", lambda *_: object())
+
+    async def classify(*args):
+        calls.append(args)
+        return SimpleNamespace(content=[SimpleNamespace(text='{"safe": true}')])
+
+    monkeypatch.setattr(importlib.import_module("openprogram.providers.stream"), "complete_simple", classify)
+    blocked, _ = asyncio.run(auto_classify_tool("bash", {"command": "x" * 100000}))
+    assert blocked
+    assert not calls

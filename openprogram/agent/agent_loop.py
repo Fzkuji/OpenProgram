@@ -1238,6 +1238,9 @@ async def _execute_tool_calls(
             tool_name=tool_call.name,
             args=tool_call.arguments,
         ))
+        preflight = getattr(tool, "_permission_preflight", None)
+        if callable(preflight) and streak < 2:
+            await preflight(tool_call.id, tool_call.arguments)
         if safe_point_hook is not None:
             interaction_manifest = getattr(tool, "_interaction_manifest", None)
             pre_wait = (

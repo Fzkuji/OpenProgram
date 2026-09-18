@@ -81,6 +81,26 @@ def wrap_with_approval(
 
     orig_execute = agent_tool.execute
     name = agent_tool.name
+    prepared = None
+
+    async def _permission_preflight(call_id, args):
+        nonlocal prepared
+        import copy
+        import os
+        from openprogram.worktree.context import current_worktree_path
+        decision = permission_decision(agent_tool, req, args)[0]
+        prepared = None
+        if decision == "auto":
+            from .classifier import auto_classify_tool
+            verdict = await auto_classify_tool(name, args, context={
+                "working_directory": current_worktree_path() or os.getcwd(),
+                "user_request": getattr(req, "user_text", ""),
+                "permission_mode": req.permission_mode,
+                "additional_working_directories": getattr(req, "additional_working_dirs", []),
+                "authority_tier": getattr(req, "authority_tier", None),
+            })
+            prepared = (str(call_id), copy.deepcopy(args), verdict)
+
 
     def _interaction_manifest(call_id: str, args: dict) -> dict | None:
         """Describe an approval before the Agent loop dispatches its effect."""
@@ -284,10 +304,9 @@ def wrap_with_approval(
         if decision == "ask":
             return await _approve_then_run(call_id, args, cancel, on_update)
         if decision == "auto":
-            from openprogram.agent.permissions.classifier import auto_classify_tool, RISKY_AUTO_DENYLIST
-            if name in RISKY_AUTO_DENYLIST:
-                return _denied(f"[denied] auto mode: risky tool blocked: {name}", "AUTO_RISK_DENY")
-            blocked, reason = await auto_classify_tool(name, args)
+            if prepared is None or prepared[:2] != (str(call_id), args):
+                await _permission_preflight(call_id, args)
+            blocked, reason = prepared[2]
             if blocked:
                 return _denied(f"[denied] auto classifier: {reason}", "AUTO_CLASSIFIER_DENY")
         return await _run_original(call_id, args, cancel, on_update)
@@ -310,6 +329,7 @@ def wrap_with_approval(
             setattr(wrapped, _attr, getattr(agent_tool, _attr, None))
         except Exception:
             pass
+    object.__setattr__(wrapped, "_permission_preflight", _permission_preflight)
     object.__setattr__(wrapped, "_interaction_manifest", _interaction_manifest)
     return wrapped
 

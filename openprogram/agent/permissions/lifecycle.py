@@ -19,6 +19,7 @@ def current_permission_request(request):
     # revocations made in History while this owner turn is running.
     from openprogram.programs.permission_rule import load_merged_rules
     req.permission_rules = load_merged_rules(req.session_id)
+    req.permission_rules = copy.deepcopy(req.permission_rules)
     return req
 
 
@@ -78,22 +79,44 @@ def wrap_live_permission(tool, request, on_event):
     pending = None
     wrapped = copy.copy(tool)
 
-    def for_call():
-        return wrap_with_approval(tool, current_permission_request(request), on_event, _live=False)
+    async def preflight(call_id, args):
+        nonlocal pending
+        import copy
+        snapshot = current_permission_request(request)
+        inner = wrap_with_approval(tool, snapshot, on_event, _live=False)
+        await inner._permission_preflight(call_id, args)
+        pending = (call_id, inner, copy.deepcopy(args), snapshot)
 
     def manifest(call_id, args):
         nonlocal pending
-        inner = for_call()
-        pending = (call_id, inner)
+        if pending is not None and pending[0] == call_id and pending[2] == args:
+            inner = pending[1]
+        else:
+            snapshot = current_permission_request(request)
+            inner = wrap_with_approval(tool, snapshot, on_event, _live=False)
+            import copy
+            pending = (call_id, inner, copy.deepcopy(args), snapshot)
         return inner._interaction_manifest(call_id, args)
 
     async def execute(call_id, args, cancel, on_update):
         nonlocal pending
-        inner = pending[1] if pending is not None and pending[0] == call_id else for_call()
+        if pending is None or pending[0] != call_id:
+            await preflight(call_id, args)
+        operation = pending
         pending = None
+        if operation is not None and operation[0] == call_id:
+            current = current_permission_request(request)
+            fields = ("permission_mode", "permission_rules", "_permission_version")
+            if operation[2] != args or any(getattr(current, key, None) != getattr(operation[3], key, None) for key in fields):
+                from openprogram.agent.types import AgentToolResult
+                from openprogram.providers.types import TextContent
+                return AgentToolResult(content=[TextContent(text="Permission policy or arguments changed during review; submit a new operation.")],
+                                       details={"denied": True, "reason_code": "PERMISSION_REVIEW_STALE", "outcome": "not_started"}, is_error=True)
+            inner = operation[1]
         return await inner.execute(call_id, args, cancel, on_update)
 
     wrapped.execute = execute
+    wrapped._permission_preflight = preflight
     wrapped._interaction_manifest = manifest
     return wrapped
 
