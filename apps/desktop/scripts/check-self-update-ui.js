@@ -212,12 +212,14 @@ async function main() {
   delete contract.interaction;
   // Exercise the production preload entry and main registration, not a copied
   // renderer shim. Electron itself is not launched by this component test.
-  let bridge;
+  const exposedByName = new Map();
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../preload.js"), "utf8"), {
     process: { argv: [] },
-    require: () => ({ contextBridge: { exposeInMainWorld: (_name, value) => { bridge = value; } },
+    require: () => ({ contextBridge: { exposeInMainWorld: (name, value) => { exposedByName.set(name, value); } },
       ipcRenderer: { on() {}, invoke: (name, value) => handlers.get(name)(event, value) }, webUtils: {} }),
   });
+  const bridge = exposedByName.get("openprogramDesktop");
+  assert.ok(bridge, "Desktop interface remains available alongside Terminal");
   assert.deepEqual(await bridge.selfUpdateCapture(nonce), { ok: true });
   const source = fs.readFileSync(path.join(__dirname, "../main.js"), "utf8");
   const wiring = source.slice(source.indexOf("registerUiVerificationIpc({ ipcMain"), source.indexOf("async function createWindow(options"));

@@ -179,13 +179,15 @@ async function checkAckRetryAndIpc() {
   assert.equal(posts, 2, "lost ACK response is retried with the same identity");
   assert.equal(handlers.get("self-update:reopen-state")(valid).sessionId, "p1");
 
-  let exposed;
+  const exposedByName = new Map();
   const invoked = [];
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../preload.js"), "utf8"), {
     process: { argv: ["--openprogram-window-id=main"] },
-    require: () => ({ contextBridge: { exposeInMainWorld: (_name, value) => { exposed = value; } },
+    require: () => ({ contextBridge: { exposeInMainWorld: (name, value) => { exposedByName.set(name, value); } },
       ipcRenderer: { invoke: (...args) => { invoked.push(args); }, on() {} }, webUtils: {} }),
   });
+  const exposed = exposedByName.get("openprogramDesktop");
+  assert.ok(exposed, "Desktop interface remains available alongside Terminal");
   exposed.selfUpdateReopen.sessionLoaded("p1");
   exposed.selfUpdateReopen.getState();
   assert.deepEqual(invoked, [["self-update:session-loaded", "p1"], ["self-update:reopen-state"]]);

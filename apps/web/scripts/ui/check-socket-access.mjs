@@ -54,6 +54,7 @@ const PLATFORM_GLOBALS = new Set([
   // (apps/desktop/preload.js), so the write is outside web/ by design. Reads are
   // all null-guarded — in a browser tab the bridge is legitimately absent.
   "openprogramDesktop",
+  "openprogramTerminals",
   // Standard DOM / BOM surface.
   "addEventListener", "removeEventListener", "dispatchEvent",
   "location", "history", "navigator", "document", "screen", "frames",
