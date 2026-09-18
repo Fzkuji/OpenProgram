@@ -460,12 +460,12 @@ def test_packages_replace_legacy_application_category(tmp_path, monkeypatch):
     assert 'applications' not in paths
 
 
-def test_owned_weekly_folder_exposes_four_callable_children(tmp_path, monkeypatch):
+def test_owned_weekly_folder_exposes_five_callable_children(tmp_path, monkeypatch):
     import types
     from openprogram.webui.routes.catalog import programs
     client = _client(tmp_path, monkeypatch)
     external = tmp_path / "owned" / "programs"
-    names = ("weekly_report", "personal_weekly_report", "group_weekly_report", "tencent_weekly_report")
+    names = ("weekly_report", "personal_weekly_report", "personal_chat_weekly_report", "group_weekly_report", "tencent_weekly_report")
     monkeypatch.setattr(programs, "_catalog_roots", lambda: [programs.PROGRAMS_ROOT.resolve(), external])
     monkeypatch.setattr("openprogram.agentic_programming.function._registry", registered := {})
     for name in names:
@@ -474,9 +474,10 @@ def test_owned_weekly_folder_exposes_four_callable_children(tmp_path, monkeypatc
         code = f"def {name}(task):\n    return task\n"
         if name == "weekly_report":
             code = ("from workflows.personal_weekly_report import personal_weekly_report\n"
+                    "from workflows.personal_chat_weekly_report import personal_chat_weekly_report\n"
                     "from workflows.group_weekly_report import group_weekly_report\n"
                     "from workflows.tencent_weekly_report import tencent_weekly_report\n"
-                    "def invoke(task):\n    personal_weekly_report(task)\n    group_weekly_report(task)\n    tencent_weekly_report(task)\n"
+                    "def invoke(task):\n    personal_weekly_report(task)\n    personal_chat_weekly_report(task)\n    group_weekly_report(task)\n    tencent_weekly_report(task)\n"
                     "def weekly_report(task):\n    invoke(task)\n")
         _write(source, code)
         (directory / ".git").mkdir()
@@ -496,3 +497,16 @@ def test_owned_weekly_folder_exposes_four_callable_children(tmp_path, monkeypatc
     assert {edge["target"] for edge in logic["edges"] if edge["source"] == logic["root"]} == {
         "workflow/weekly_report/" + name for name in names if name != "weekly_report"
     }
+
+
+def test_unregistered_workflow_folder_is_not_a_callable_leaf(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    root = tmp_path / "openprogram" / "programs"
+    _write(root / "workflow" / "weekly_report" / "README.md", "docs only\n")
+
+    workflows = client.get("/api/programs/explorer", params={"path": "workflow"}).json()
+    names = {entry["name"] for entry in workflows["entries"]}
+    assert "weekly_report" not in names
+    assert client.get(
+        "/api/programs/explorer", params={"path": "workflow/weekly_report"},
+    ).status_code == 404

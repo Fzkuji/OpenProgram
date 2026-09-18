@@ -19,7 +19,7 @@ export const GaugeIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconProps 
       onMouseLeave={(e) => { setHovered(false); onMouseLeave?.(e); }}>
       <svg fill="none" height={size} width={size} stroke="currentColor" strokeLinecap="round"
         strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true"
-        style={{ color: active ? "#ef4444" : undefined }}>
+        style={{ color: active ? "var(--accent-red)" : undefined }}>
         <motion.path d="m12 14 4-4" initial={false}
           style={{ originX: 0, originY: 1 }}
           animate={active || hovered ? { rotate: 72 } : { rotate: 0 }}

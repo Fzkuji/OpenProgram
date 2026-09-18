@@ -41,7 +41,7 @@ def _saved_body(result):
 def body(result):
     children = result.get('results')
     if isinstance(children, dict):
-        labels = {'personal':'个人周报', 'group':'小组汇报', 'tencent':'腾讯汇报'}
+        labels = {'personal':'个人周报', 'personal_chat':'群聊个人周报', 'group':'小组汇报', 'tencent':'腾讯汇报'}
         rendered = (body(next(iter(children.values()))) if len(children) == 1 else
                     '\n\n'.join(labels.get(key, key) + '\n' + body(value) for key, value in children.items()))
         resume = result.get('resume_task', {})

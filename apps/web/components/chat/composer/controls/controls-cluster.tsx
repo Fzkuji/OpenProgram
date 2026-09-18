@@ -16,11 +16,11 @@ import { CornerDownRight, Paperclip, Settings } from "lucide-react";
 import {
   type AnimatedNavIconHandle,
   BicepsFlexedIcon,
-  GaugeIcon,
 } from "@/components/animated-icons";
+
 import { HoverTip } from "@/components/ui/tooltip";
 import { useTranslation } from "@/lib/i18n";
-import { effortLevelColor } from "@/lib/effort-color";
+import { effortLevelColor, formatEffortLabel } from "@/lib/effort-color";
 import { GROUP_LABEL } from "../../top-bar/menu-styles";
 import { AgentBadge, PermissionBadge } from "../../top-bar";
 import { ContextBadge } from "../../context-badge";
@@ -469,13 +469,8 @@ export function ControlsCluster({
                         style={{ color: thinking === "max" ? "#8E6BD9" : effortColor }}
                         aria-hidden="true"
                       />
-                      <span className={styles.fastIndicator} data-active={fastEnabled && fastSupported} aria-hidden="true">
-                        <span className="min-w-0 overflow-hidden flex">
-                          <GaugeIcon size={14} active className="shrink-0 mr-[4px]" />
-                        </span>
-                      </span>
                       <span className={styles.effortValue}>
-                        {thinking ? thinking[0].toUpperCase() + thinking.slice(1) : text("Model settings", "模型设置")}
+                        {thinking ? formatEffortLabel(thinking) : text("Model settings", "模型设置")}
                       </span>
                     </button>
                   )}

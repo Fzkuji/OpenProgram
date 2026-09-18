@@ -48,6 +48,42 @@
   z-index: 30;
 }
 
+.effort-fast-toggle {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.effort-fast-toggle:hover {
+  /* Inline transparent background exists so the CSS-empty e2e shell
+     still reports no fill; hover has to beat that. */
+  background: var(--bg-hover) !important;
+  color: var(--text-primary);
+}
+
+.effort-fast-toggle:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.effort-fast-toggle[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.effort-fast-toggle[aria-disabled="true"]:hover {
+  background: transparent !important;
+  color: var(--text-muted);
+}
+
 .effort-pill-shell:not([data-expanded="true"]):hover {
   width: 48px;
 }

@@ -30,15 +30,13 @@ import { Slider } from "@/components/ui/slider";
 import { UltraRain } from "./ultra-rain";
 import { HoverTip } from "@/components/ui/tooltip";
 import { useTranslation } from "@/lib/i18n";
-import { effortLevelColor } from "@/lib/effort-color";
+import { effortLevelColor, formatEffortLabel } from "@/lib/effort-color";
 import {
   type AnimatedNavIconHandle,
   BicepsFlexedIcon,
   ChevronRightIcon,
   GaugeIcon,
 } from "@/components/animated-icons";
-
-const capEffort = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
 // Extends div attributes so a tooltip trigger (HoverTip / Radix
 // `asChild`) can inject its hover/focus handlers — they must reach the
@@ -215,21 +213,22 @@ const ThinkingEffortSliderPill = React.forwardRef<
                 className="font-medium text-text-bright"
                 style={value === "max" ? { color: "#8E6BD9" } : undefined}
               >
-                {capEffort(value)}
+                {formatEffortLabel(value)}
               </span>
               <HoverTip label={fastHint}>
-                <button type="button" className="ml-auto inline-flex items-center justify-center rounded-sm p-1 focus-visible:outline focus-visible:outline-2"
-                  style={{ background: "transparent", border: "none", color: fastEnabled ? "var(--text-primary)" : "var(--text-muted)" }}
+                <button type="button"
+                  className="effort-fast-toggle ml-auto"
+                  style={{ background: "transparent", border: "none", color: fastEnabled ? "var(--accent-red)" : undefined }}
                   aria-label={text("Fast mode", "高速模式")}
                   title={fastHint} aria-description={fastHint}
                   aria-pressed={fastEnabled} aria-disabled={!fastSupported}
                   onClick={(e) => { e.stopPropagation(); if (fastSupported) toggleFast(); }}>
-                  <GaugeIcon size={18} active={fastEnabled} />
+                  <GaugeIcon size={16} active={fastEnabled} />
                 </button>
               </HoverTip>
             </div>
             {options.length > 1 && <>
-            <div className="mt-[16px] flex items-center justify-between text-[12px] leading-[15px] text-text-muted">
+            <div className="mt-[10px] flex items-center justify-between text-[12px] leading-[15px] text-text-muted">
               <span>{text("Faster", "更快")}</span>
               <span>{text("Smarter", "更强")}</span>
             </div>
@@ -250,11 +249,11 @@ const ThinkingEffortSliderPill = React.forwardRef<
                 }}
                 onClick={(e) => e.stopPropagation()}
                 thumb={
-                  // Claude 实测：16×20 白色圆角矩形钮（radius 6），
-                  // 与轨同高；档位不给钮上色。
+                  // Theme-aware chip, same height as the track. Ink on light,
+                  // raised paper on dark — not a raw #fff block.
                   <span
                     aria-hidden="true"
-                    className="absolute left-1/2 top-1/2 h-[20px] w-[16px] -translate-x-1/2 -translate-y-1/2 rounded-[6px] bg-white pointer-events-none shadow-[0_1px_3px_rgba(10,10,10,0.2)]"
+                    className="absolute left-1/2 top-1/2 h-[20px] w-[16px] -translate-x-1/2 -translate-y-1/2 rounded-[6px] bg-[var(--effort-thumb)] pointer-events-none shadow-[var(--shadow-sm)]"
                   />
                 }
               />
