@@ -27,6 +27,7 @@ import {
 } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import { showToast } from "@/lib/format-utils/toast";
+import { startFunctionRetry } from "@/lib/runtime-bridge/function-retry";
 import { optimisticAction } from "@/lib/runtime-bridge/optimistic-action";
 
 import { SystemAccessRecovery } from "./system-access-recovery";
@@ -208,39 +209,34 @@ export function RuntimeBlock({
     const rid = msg.id;
     const snapshot = store.messagesById[rid];
     const total = (msg.siblingTotal ?? 0) + 1;
-    optimisticAction(
-      {
-        apply: () => {
-          store.updateMessage(sessionId, rid, {
-            status: "running",
-            contextTree: undefined,
-            siblingIndex: total,
-            siblingTotal: total,
-          });
-        },
-        settled: () => !useSessionStore.getState().messagesById[rid],
-        revert: () => {
-          if (snapshot) {
-            useSessionStore.getState().updateMessage(sessionId, rid, snapshot);
-          }
-        },
-        onTimeoutMessage: text(
-          "Retry timed out — reverted.",
-          "重试超时——已还原。",
-        ),
-      },
-      showToast,
-    );
-    runtimeState.__reloadOnTaskClear.add(sessionId);
+    const requestId = crypto.randomUUID();
+    const alreadyReloading = runtimeState.__reloadOnTaskClear.has(sessionId);
     const retryPayload: Record<string, unknown> = {
-      action: "retry_function",
-      session_id: sessionId,
-      function: fnName,
-      node_id: msg.id,
+      action: "retry_function", session_id: sessionId, function: fnName,
+      node_id: msg.id, retry_request_id: requestId,
     };
     const surface = surfaceOriginForChat(sessionId, true);
     if (surface) retryPayload.surface_ref = surface;
-    wsSend(retryPayload);
+    startFunctionRetry({
+      sessionId, requestId,
+      apply: () => {
+        runtimeState.__reloadOnTaskClear.add(sessionId);
+        store.updateMessage(sessionId, rid, {
+          status: "running", contextTree: undefined,
+          siblingIndex: total, siblingTotal: total,
+        });
+      },
+      settled: () => !useSessionStore.getState().messagesById[rid],
+      restore: () => {
+        if (!alreadyReloading) runtimeState.__reloadOnTaskClear.delete(sessionId);
+        if (snapshot) useSessionStore.getState().updateMessage(sessionId, rid, snapshot);
+      },
+      send: () => wsSend(retryPayload), toast: showToast,
+      timeoutMessage: text(
+        "Retry could not be confirmed. Reload before trying again.",
+        "尚未确认重试是否已开始，请刷新后再操作。",
+      ),
+    });
   }
 
   // 复制 = 根调用的返回值（用户关心的是结果，不是内部树结构）；

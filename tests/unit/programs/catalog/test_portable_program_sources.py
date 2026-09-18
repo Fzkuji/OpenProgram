@@ -158,3 +158,35 @@ def test_package_duplicate_legacy_records_identify_one_installed_location(tmp_pa
     _programs.record_program_source(other, source='fixture', base=str(other.parent))
     with pytest.raises(ValueError, match='multiple installed locations'):
         program.clone_dir()
+
+
+def test_refresh_preserves_explicit_owner_catalog(tmp_path, monkeypatch):
+    state = tmp_path / 'state'
+    owner = tmp_path / 'owner' / 'programs'
+    build = tmp_path / 'build' / 'programs'
+    for root in (owner, build):
+        root.mkdir(parents=True)
+        (root / '__init__.py').write_text('')
+    workflow = owner / 'workflow' / 'weekly_report'
+    workflow.mkdir(parents=True)
+    monkeypatch.setattr(paths, 'get_state_dir', lambda: state)
+    monkeypatch.setattr(openprogram, '__file__', str(tmp_path / 'installed' / '__init__.py'))
+    _programs.bind_program_catalog(owner)
+    _programs.record_program_source(workflow, source='workflow:weekly_report', kind='workflow-publish', base=str(workflow.parent))
+    _programs.bind_program_catalog(build, preserve_existing=True)
+    assert _programs.owner_controlled_program_sources()[0]['path'] == str(workflow)
+    assert json.loads((state / 'program-sources.json').read_text())['catalog_root'] == str(owner)
+
+
+def test_refresh_does_not_replace_missing_owner_catalog(tmp_path, monkeypatch):
+    state = tmp_path / 'state'
+    state.mkdir()
+    build = tmp_path / 'build' / 'programs'
+    build.mkdir(parents=True)
+    (build / '__init__.py').write_text('')
+    original = {'version': 2, 'programs': [], 'catalog_root': str(tmp_path / 'missing')}
+    (state / 'program-sources.json').write_text(json.dumps(original))
+    monkeypatch.setattr(paths, 'get_state_dir', lambda: state)
+    with pytest.raises(ValueError, match='catalog'):
+        _programs.bind_program_catalog(build, preserve_existing=True)
+    assert json.loads((state / 'program-sources.json').read_text()) == original

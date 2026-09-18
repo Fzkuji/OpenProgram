@@ -117,11 +117,11 @@ def _read_program_sources() -> list[dict]:
     return _read_program_sources_document()["programs"]
 
 
-def bind_program_catalog(root) -> None:
+def bind_program_catalog(root, *, preserve_existing: bool = False) -> None:
     """Bind an installed runtime to an explicitly selected source catalog.
 
     This is one installation location, not a per-Workflow identity. Local
-    App refresh calls it from the checkout being installed.
+    App refresh preserves an existing binding across build checkouts.
     """
     candidate = Path(root).resolve()
     if candidate.name != "programs" or not (candidate / "__init__.py").is_file():
@@ -129,6 +129,12 @@ def bind_program_catalog(root) -> None:
 
     def _mutate(rows: list[dict]) -> None:
         payload = _read_program_sources_document()
+        existing = payload.get("catalog_root")
+        if preserve_existing and existing:
+            if (not isinstance(existing, str) or not os.path.isabs(existing)
+                    or not (Path(existing) / "__init__.py").is_file()):
+                raise ValueError("configured Programs catalog is unavailable; restore it before refreshing")
+            return
         payload["catalog_root"] = str(candidate)
         payload["programs"] = rows
         _write_program_sources_document(payload)

@@ -494,7 +494,7 @@ codesign --verify --deep --strict "$app_path"
 import sys
 from openprogram.programs._programs import bind_program_catalog, migrate_program_source_paths
 
-bind_program_catalog(sys.argv[1])
+bind_program_catalog(sys.argv[1], preserve_existing=True)
 migrate_program_source_paths()
 PYTHON
 

@@ -1312,6 +1312,7 @@ async def handle_retry_function(ws, cmd: dict):
             "content": f"Retry failed: {message}",
             "function": func_name,
             "display": "runtime",
+            "retry_request_id": cmd.get("retry_request_id"),
         })
 
     node = _retry_call_node(session_id, cmd.get("node_id"), func_name)
@@ -1419,6 +1420,7 @@ async def handle_retry_function(ws, cmd: dict):
                      or result.get("msg_id")
                      or ""
                  ),
+                 "retry_request_id": cmd.get("retry_request_id"),
                  "function_run": True},
     }))
 

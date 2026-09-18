@@ -1,3 +1,4 @@
+import { settleFunctionRetry } from "./function-retry";
 /**
  * Chat-page WebSocket handlers.
  *
@@ -95,9 +96,11 @@ interface ChatAckData {
    *  was pre-created on disk at dispatch time — lets us hydrate the
    *  transcript immediately instead of waiting for the first tree_update. */
   function_run?: boolean;
+  retry_request_id?: string;
 }
 
 export function wsHandleChatAck(data: ChatAckData): void {
+  if (data.session_id && data.function_run) settleFunctionRetry(data.session_id, data.retry_request_id);
   if (data.session_id) {
     const sid = data.session_id;
     const tabs = useCenterTabs.getState();
@@ -259,6 +262,10 @@ interface ChatResponseData {
 }
 
 export function wsHandleChatResponse(data: ChatResponseData): void {
+  if (data.type === "error" && typeof data.retry_request_id === "string") {
+    settleFunctionRetry(data.session_id || "", data.retry_request_id, String(data.content || "Retry failed"));
+    return;
+  }
   // `run_active` is a REJECTION of a turn that never started, not the end
   // of one. The chat-stream reducer re-queues the text; this side must
   // stay out of it entirely — falling through would clear the running

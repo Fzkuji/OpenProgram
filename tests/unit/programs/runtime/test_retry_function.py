@@ -139,7 +139,7 @@ def test_retry_targets_clicked_node_and_acks_canonical_execution(monkeypatch):
     asyncio.run(chat.handle_retry_function(ws, {
         "session_id": "s1",
         "function": "gui_agent",
-        "node_id": older.id,
+        "node_id": older.id, "retry_request_id": "retry-1",
     }))
 
     assert calls == [
@@ -148,6 +148,7 @@ def test_retry_targets_clicked_node_and_acks_canonical_execution(monkeypatch):
     ack = json.loads(ws.sent[0])
     assert ack["data"]["execution_id"] == "canonical-code-node"
     assert ack["data"]["msg_id"] == "transport-message"
+    assert ack["data"]["retry_request_id"] == "retry-1"
 
 
 def test_retry_requires_exact_node_id_instead_of_latest_name(monkeypatch):
@@ -166,11 +167,12 @@ def test_retry_requires_exact_node_id_instead_of_latest_name(monkeypatch):
 
     asyncio.run(chat.handle_retry_function(_FakeWS(), {
         "session_id": "s1",
-        "function": "word_count",
+        "function": "word_count", "retry_request_id": "retry-failed",
     }))
 
     assert dispatched == []
     assert errors and "call node" in errors[0]["content"].lower()
+    assert errors[0]["retry_request_id"] == "retry-failed"
 
 
 def test_retry_anchors_at_original_calls_predecessor(monkeypatch):

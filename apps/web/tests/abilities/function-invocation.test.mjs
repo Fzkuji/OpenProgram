@@ -140,6 +140,8 @@ const pendingUserText = await import("../../lib/chat/pending-user-text.ts");
 const { useSessionStore } = await import("../../lib/session-store/index.ts");
 const {
   handleRunningTaskClear,
+  wsHandleChatAck,
+  wsHandleChatResponse,
   settleFunctionReloadAfterSessionLoad,
 } = await import(
   "../../lib/runtime-bridge/chat-handlers.ts"
@@ -777,4 +779,23 @@ test("hidden advanced parameters are user-visible but internal parameters are no
     userFunctionParams(guiAgent).map((param) => param.name),
     ["task", "surface", "max_steps", "max_seconds", "backend"],
   );
+});
+
+
+test("real retry handlers settle accepted and rejected dispatches", async (t) => {
+  const { startFunctionRetry } = await import("../../lib/runtime-bridge/function-retry.ts");
+  t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+  const observed = [];
+  function begin(id) {
+    startFunctionRetry({ sessionId: "retry-session", requestId: id,
+      apply() { observed.push("pending"); }, restore() { observed.push("restore"); },
+      settled: () => false, send: () => true, toast: text => observed.push(text), timeoutMessage: "unexpected timeout" });
+  }
+  begin("real-rejected");
+  wsHandleChatResponse({session_id:"retry-session", type:"error", retry_request_id:"real-rejected", content:"Retry failed: missing function"});
+  assert.deepEqual(observed, ["pending", "restore", "Retry failed: missing function"]);
+  begin("real-accepted");
+  wsHandleChatAck({session_id:"retry-session", function_run:true, retry_request_id:"real-accepted", msg_id:"new-node", execution_id:"new-node"});
+  t.mock.timers.tick(20000);
+  assert.deepEqual(observed, ["pending", "restore", "Retry failed: missing function", "pending"]);
 });
