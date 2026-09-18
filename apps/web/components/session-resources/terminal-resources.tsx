@@ -17,9 +17,12 @@ function terminalTheme(): ITheme {
     brightRed: "bright-red", brightGreen: "bright-green", brightYellow: "bright-yellow",
     brightBlue: "bright-blue", brightMagenta: "bright-magenta", brightCyan: "bright-cyan", brightWhite: "bright-white" };
   const theme: ITheme = {};
-  for (const [key, token] of Object.entries(keys)) {
+  // ITheme also contains array-valued fields (extendedAnsi). Only the exact
+  // scalar color keys above may receive a computed CSS color string.
+  for (const key of Object.keys(keys) as Array<keyof typeof keys>) {
+    const token = keys[key];
     probe.style.color = `var(--terminal-${token})`;
-    theme[key as keyof ITheme] = getComputedStyle(probe).color;
+    theme[key] = getComputedStyle(probe).color;
   }
   probe.remove(); return theme;
 }
