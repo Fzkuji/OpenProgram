@@ -8,7 +8,7 @@ import openprogram
 EXPECTED_SOURCES = {
     "files": {
         "apply_patch", "bash", "edit", "glob", "grep", "list", "process",
-        "read", "worktree", "write",
+        "read", "terminal_use", "worktree", "write",
     },
     "web": {
         "agent_browser", "browser", "image_analyze", "image_generate", "pdf",
