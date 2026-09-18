@@ -78,7 +78,8 @@ def test_rule_revoked_during_review_never_executes(monkeypatch, use_safe_point):
     assert not called
 
 
-def test_argument_mutation_during_review_never_executes(monkeypatch):
+@pytest.mark.parametrize("with_manifest", [False, True])
+def test_argument_mutation_during_review_never_executes(monkeypatch, with_manifest):
     args = {"command": "git status"}
     called = []
     monkeypatch.setattr("openprogram.programs.permission_rule.load_merged_rules", lambda _: None)
@@ -96,7 +97,12 @@ def test_argument_mutation_during_review_never_executes(monkeypatch):
     req = TurnRequest(session_id="mutation", user_text="inspect", agent_id="main", source="web",
         permission_mode="auto", **owner_authority("owner/install/0123456789abcdef"))
     tool = wrap_with_approval(AgentTool(name="bash", label="bash", description="shell", parameters={}, execute=execute), req, lambda _: None)
-    result = asyncio.run(tool.execute("c", args, None, None))
+    async def run():
+        if with_manifest:
+            await tool._permission_preflight("c", args)
+            tool._interaction_manifest("c", args)
+        return await tool.execute("c", args, None, None)
+    result = asyncio.run(run())
     assert result.is_error
     assert result.details["reason_code"] == "PERMISSION_REVIEW_STALE"
     assert not called

@@ -307,6 +307,8 @@ def wrap_with_approval(
         if decision == "auto":
             if prepared is None or prepared[:2] != (str(call_id), args):
                 await _permission_preflight(call_id, args)
+            if prepared[:2] != (str(call_id), args):
+                return _denied("[denied] operation changed during review", "PERMISSION_REVIEW_STALE")
             blocked, reason = prepared[2]
             if blocked:
                 return _denied(f"[denied] auto classifier: {reason}", "AUTO_CLASSIFIER_DENY")

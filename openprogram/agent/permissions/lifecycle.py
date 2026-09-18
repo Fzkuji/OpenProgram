@@ -90,7 +90,9 @@ def wrap_live_permission(tool, request, on_event):
 
     def manifest(call_id, args):
         nonlocal pending
-        if pending is not None and pending[0] == call_id and pending[2] == args:
+        if pending is not None and pending[0] == call_id:
+            if pending[2] != args:
+                return None
             inner = pending[1]
         else:
             snapshot = current_permission_request(request)
