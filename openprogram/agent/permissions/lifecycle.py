@@ -82,10 +82,11 @@ def wrap_live_permission(tool, request, on_event):
     async def preflight(call_id, args):
         nonlocal pending
         import copy
-        snapshot = current_permission_request(request)
+        snapshot = copy.deepcopy(current_permission_request(request))
+        reviewed_args = copy.deepcopy(args)
         inner = wrap_with_approval(tool, snapshot, on_event, _live=False)
-        await inner._permission_preflight(call_id, args)
-        pending = (call_id, inner, copy.deepcopy(args), snapshot)
+        await inner._permission_preflight(call_id, reviewed_args)
+        pending = (call_id, inner, reviewed_args, snapshot)
 
     def manifest(call_id, args):
         nonlocal pending

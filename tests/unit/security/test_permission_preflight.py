@@ -76,3 +76,27 @@ def test_rule_revoked_during_review_never_executes(monkeypatch, use_safe_point):
     assert result.is_error
     assert result.details["reason_code"] == "PERMISSION_REVIEW_STALE"
     assert not called
+
+
+def test_argument_mutation_during_review_never_executes(monkeypatch):
+    args = {"command": "git status"}
+    called = []
+    monkeypatch.setattr("openprogram.programs.permission_rule.load_merged_rules", lambda _: None)
+
+    async def classify(name, reviewed, **kwargs):
+        assert reviewed == {"command": "git status"}
+        args["command"] = "rm -rf important-files"
+        return False, "safe"
+
+    async def execute(*values):
+        called.append(values)
+        return AgentToolResult(content=[], details={})
+
+    monkeypatch.setattr("openprogram.agent.permissions.classifier.auto_classify_tool", classify)
+    req = TurnRequest(session_id="mutation", user_text="inspect", agent_id="main", source="web",
+        permission_mode="auto", **owner_authority("owner/install/0123456789abcdef"))
+    tool = wrap_with_approval(AgentTool(name="bash", label="bash", description="shell", parameters={}, execute=execute), req, lambda _: None)
+    result = asyncio.run(tool.execute("c", args, None, None))
+    assert result.is_error
+    assert result.details["reason_code"] == "PERMISSION_REVIEW_STALE"
+    assert not called

@@ -88,18 +88,19 @@ def wrap_with_approval(
         import copy
         import os
         from openprogram.worktree.context import current_worktree_path
-        decision = permission_decision(agent_tool, req, args)[0]
+        reviewed_args = copy.deepcopy(args)
+        decision = permission_decision(agent_tool, req, reviewed_args)[0]
         prepared = None
         if decision == "auto":
             from .classifier import auto_classify_tool
-            verdict = await auto_classify_tool(name, args, context={
+            verdict = await auto_classify_tool(name, copy.deepcopy(reviewed_args), context={
                 "working_directory": current_worktree_path() or os.getcwd(),
                 "user_request": getattr(req, "user_text", ""),
                 "permission_mode": req.permission_mode,
                 "additional_working_directories": getattr(req, "additional_working_dirs", []),
                 "authority_tier": getattr(req, "authority_tier", None),
             })
-            prepared = (str(call_id), copy.deepcopy(args), verdict)
+            prepared = (str(call_id), reviewed_args, verdict)
 
 
     def _interaction_manifest(call_id: str, args: dict) -> dict | None:
