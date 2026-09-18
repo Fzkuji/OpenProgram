@@ -670,6 +670,8 @@ def test_mcp_source_denies_approval_without_registering_question(
     assert result.details == {
         "denied": True,
         "reason_code": "APPROVAL_UNAVAILABLE_NON_INTERACTIVE",
+        "outcome": "not_started",
+        "execution_started": False,
     }
     assert ran["called"] is False
     assert registry.list_pending("mcp-session") == []

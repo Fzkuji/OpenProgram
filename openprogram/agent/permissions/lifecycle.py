@@ -79,13 +79,13 @@ def wrap_live_permission(tool, request, on_event):
     pending = None
     wrapped = copy.copy(tool)
 
-    async def preflight(call_id, args):
+    async def preflight(call_id, args, *, operation_id=None):
         nonlocal pending
         import copy
         snapshot = copy.deepcopy(current_permission_request(request))
         reviewed_args = copy.deepcopy(args)
         inner = wrap_with_approval(tool, snapshot, on_event, _live=False)
-        await inner._permission_preflight(call_id, reviewed_args)
+        await inner._permission_preflight(call_id, reviewed_args, operation_id=operation_id)
         pending = (call_id, inner, reviewed_args, snapshot)
 
     def manifest(call_id, args):

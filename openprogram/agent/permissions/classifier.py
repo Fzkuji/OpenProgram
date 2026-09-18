@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -18,18 +19,30 @@ SAFE_AUTO_ALLOWLIST = frozenset({
     "self_update_status",
 })
 
+@dataclass(frozen=True)
+class ReviewResult:
+    blocked: bool
+    reason: str
+    code: str
+
+    def __iter__(self):
+        # Preserve the existing two-value caller contract.
+        yield self.blocked
+        yield self.reason
+
+
 MAX_REVIEW_BYTES = 64 * 1024
 
 
-async def auto_classify_tool(tool_name: str, args: dict, *, context: dict | None = None) -> tuple[bool, str]:
+async def auto_classify_tool(tool_name: str, args: dict, *, context: dict | None = None) -> ReviewResult:
     """Return (blocked, reason). Never approve a truncated operation."""
     try:
         serialized = json.dumps({"tool": tool_name, "arguments": args,
                                  "context": context or {}}, ensure_ascii=False)
     except (TypeError, ValueError):
-        return True, "分类器输入无法序列化"
+        return ReviewResult(True, "分类器输入无法序列化", "AUTO_CLASSIFIER_INVALID_INPUT")
     if len(serialized.encode("utf-8")) > MAX_REVIEW_BYTES:
-        return True, "分类器输入超过完整审查上限"
+        return ReviewResult(True, "分类器输入超过完整审查上限", "AUTO_CLASSIFIER_INPUT_TOO_LARGE")
     try:
         import time
         from openprogram.providers.models import get_model
@@ -68,7 +81,7 @@ async def auto_classify_tool(tool_name: str, args: dict, *, context: dict | None
         add(get_model("anthropic", "claude-haiku-4-5-20251001"))
         add(get_model("anthropic", "claude-sonnet-4-6"))
         if not models:
-            return True, "分类器模型不可用"
+            return ReviewResult(True, "分类器模型不可用", "AUTO_CLASSIFIER_UNAVAILABLE")
 
         system_prompt = (
             "你是工具执行安全分类器。根据工具名和参数，判定这次执行安全还是危险。\n"
@@ -102,7 +115,8 @@ async def auto_classify_tool(tool_name: str, args: dict, *, context: dict | None
                     obj = json.loads(text[start:end + 1])
                     safe = obj.get("safe") is True
                     reason = str(obj.get("reason", "")) or "分类器判定"
-                    return (not safe), reason
+                    code = ("AUTO_CLASSIFIER_ALLOW" if safe else "AUTO_CLASSIFIER_DENY") if type(obj.get("safe")) is bool else "AUTO_CLASSIFIER_INVALID_RESPONSE"
+                    return ReviewResult(not safe, reason, code)
                 last_error = f"回复无法解析：{text[:60]}"
             except Exception as exc:  # noqa: BLE001
                 last_error = type(exc).__name__
@@ -110,7 +124,7 @@ async def auto_classify_tool(tool_name: str, args: dict, *, context: dict | None
                     "auto classifier candidate %s/%s failed: %s",
                     getattr(model, "provider", ""), getattr(model, "id", ""), exc,
                 )
-        return True, f"分类器不可用：{last_error or '没有可用候选'}"
+        return ReviewResult(True, f"分类器不可用：{last_error or '没有可用候选'}", "AUTO_CLASSIFIER_UNAVAILABLE")
     except Exception as e:  # noqa: BLE001
         logger.warning("auto classifier error: %s", e)
-        return True, f"分类器不可用：{type(e).__name__}"
+        return ReviewResult(True, f"分类器不可用：{type(e).__name__}", "AUTO_CLASSIFIER_UNAVAILABLE")

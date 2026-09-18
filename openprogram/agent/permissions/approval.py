@@ -83,25 +83,15 @@ def wrap_with_approval(
     name = agent_tool.name
     prepared = None
 
-    async def _permission_preflight(call_id, args):
+    async def _permission_preflight(call_id, args, *, operation_id=None):
         nonlocal prepared
-        import copy
-        import os
-        from openprogram.worktree.context import current_worktree_path
-        reviewed_args = copy.deepcopy(args)
-        decision = permission_decision(agent_tool, req, reviewed_args)[0]
-        prepared = None
-        if decision == "auto":
-            from .classifier import auto_classify_tool
-            verdict = await auto_classify_tool(name, copy.deepcopy(reviewed_args), context={
-                "working_directory": current_worktree_path() or os.getcwd(),
-                "user_request": getattr(req, "user_text", ""),
-                "permission_mode": req.permission_mode,
-                "additional_working_directories": getattr(req, "additional_working_dirs", []),
-                "authority_tier": getattr(req, "authority_tier", None),
-            })
-            prepared = (str(call_id), reviewed_args, verdict)
+        from .auto_review import prepare_review
+        prepared = await prepare_review(agent_tool, req, call_id, args, operation_id=operation_id)
 
+    def _fallback(call_id, args):
+        return bool(prepared is not None and prepared.matches(call_id, args)
+                    and prepared.verdict.code == "AUTO_CLASSIFIER_DENY"
+                    and prepared.record and prepared.record["fallback"] and _approval_authorized())
 
     def _interaction_manifest(call_id: str, args: dict) -> dict | None:
         """Describe an approval before the Agent loop dispatches its effect."""
@@ -114,13 +104,15 @@ def wrap_with_approval(
         if decision == "allow" and name == "ask_user_question":
             from openprogram.programs.tools.interaction.clarify import interaction_manifest
             return interaction_manifest(args)
+        if decision == "auto" and _fallback(call_id, args):
+            decision, reason = "ask", "AUTO_REFUSAL_FALLBACK"
         if decision != "ask":
             return None
         from openprogram.worktree.context import current_worktree_path
         import os
         from openprogram.programs.permission_rule import exact_rule_for_call
         scopes = ["once"]
-        if name not in _ONE_SHOT_FORCE_APPROVAL_TOOLS and exact_rule_for_call(name, args) is not None:
+        if reason != "AUTO_REFUSAL_FALLBACK" and name not in _ONE_SHOT_FORCE_APPROVAL_TOOLS and exact_rule_for_call(name, args) is not None:
             scopes.append("always")
         return {
             "kind": "approval",
@@ -150,10 +142,13 @@ def wrap_with_approval(
         text: str,
         reason_code: str,
         authority_decision=None,
+        *, execution_started=False,
     ) -> "AgentToolResult":
         details = {
             "denied": True,
             "reason_code": reason_code,
+            "outcome": "failed" if execution_started else "not_started",
+            "execution_started": execution_started,
         }
         if authority_decision is not None:
             details["authority_decision"] = authority_decision.to_dict()
@@ -235,13 +230,13 @@ def wrap_with_approval(
         if not _approval_authorized():
             return _denied(
                 "[denied] sandbox escalation requires an interactive local owner",
-                "SANDBOX_ESCALATION_OWNER_REQUIRED",
+                "SANDBOX_ESCALATION_OWNER_REQUIRED", execution_started=True,
             )
         hard_violation = _hard_constraint_violation(name, args, req)
         if hard_violation:
             return _denied(
                 f"[denied] hard constraint: {hard_violation}",
-                "HARD_CONSTRAINT_DENIED",
+                "HARD_CONSTRAINT_DENIED", execution_started=True,
             )
         escalation = {
             "from": sandbox.get("backend", "sandbox"),
@@ -262,12 +257,12 @@ def wrap_with_approval(
         if not approved:
             msg = (f"[denied] {reason.strip()}" if isinstance(reason, str)
                    and reason.strip() else "[denied] sandbox escalation not approved")
-            return _denied(msg, "SANDBOX_ESCALATION_NOT_APPROVED")
+            return _denied(msg, "SANDBOX_ESCALATION_NOT_APPROVED", execution_started=True)
         if scope == "always_path":
             from openprogram.sandbox import persist_allow_read
             err = persist_allow_read(sandbox.get("path"))
             if err:
-                return _denied(f"[denied] {err}", "SANDBOX_ALLOW_READ_REFUSED")
+                return _denied(f"[denied] {err}", "SANDBOX_ALLOW_READ_REFUSED", execution_started=True)
         from openprogram.sandbox import escalated_policy
         with escalated_policy():
             return await orig_execute(call_id, args, cancel, on_update)
@@ -296,6 +291,9 @@ def wrap_with_approval(
         if scope == "always" and name not in _ONE_SHOT_FORCE_APPROVAL_TOOLS:
             if not _persist_always_allow_rule(req.session_id, name, args):
                 return _denied("[denied] could not save the project approval rule; operation was not executed", "APPROVAL_RULE_SAVE_FAILED")
+        if _fallback(call_id, args) and prepared.history is not None:
+            prepared.history.record(blocked=False, reason="owner approved operation",
+                               code="AUTO_OWNER_APPROVED", approved=True)
         return await _run_original(call_id, args, cancel, on_update)
 
     async def _gated_execute(call_id, args, cancel, on_update):
@@ -305,13 +303,20 @@ def wrap_with_approval(
         if decision == "ask":
             return await _approve_then_run(call_id, args, cancel, on_update)
         if decision == "auto":
-            if prepared is None or prepared[:2] != (str(call_id), args):
+            if prepared is None or not prepared.matches(call_id, args):
                 await _permission_preflight(call_id, args)
-            if prepared[:2] != (str(call_id), args):
+            if not prepared.matches(call_id, args):
                 return _denied("[denied] operation changed during review", "PERMISSION_REVIEW_STALE")
-            blocked, reason = prepared[2]
+            from .file_state import validate
+            try:
+                validate(prepared.files)
+            except (OSError, ValueError) as exc:
+                return _denied(str(exc), "PERMISSION_REVIEW_STALE")
+            if _fallback(call_id, args):
+                return await _approve_then_run(call_id, args, cancel, on_update)
+            blocked, reason = prepared.verdict
             if blocked:
-                return _denied(f"[denied] auto classifier: {reason}", "AUTO_CLASSIFIER_DENY")
+                return _denied(f"[denied] auto classifier: {reason}", prepared.verdict.code)
         return await _run_original(call_id, args, cancel, on_update)
 
     wrapped = AgentTool(
@@ -400,6 +405,12 @@ async def await_user_approval(
                 or (current_execution and current_execution != wait.execution_id)
                 or (tool_call_id and wait.request.get("tool_call_id") != tool_call_id)):
             return False, "approval does not authorize this operation", "once"
+        if wait.request.get("approval_reason") == "AUTO_REFUSAL_FALLBACK":
+            import os
+            from openprogram.worktree.context import current_worktree_path
+            if (wait.request.get("permission_version", 0) != getattr(req, "_permission_version", 0)
+                    or wait.request.get("working_dir") != (current_worktree_path() or os.getcwd())):
+                return False, "permission or working directory changed after this approval", "once"
         if wait.status is WaitStatus.RESOLVED:
             from .file_state import validate
             if tool_name in {"edit", "write", "apply_patch"} and "file_preconditions" not in wait.request:

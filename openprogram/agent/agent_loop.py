@@ -1250,7 +1250,11 @@ async def _execute_tool_calls(
         ))
         preflight = getattr(tool, "_permission_preflight", None)
         if callable(preflight) and streak < 2 and validation_error is None:
-            await preflight(tool_call.id, validated_args)
+            import hashlib
+            operation_id = hashlib.sha256(json.dumps(
+                _durable_message(assistant_message), sort_keys=True, ensure_ascii=False,
+            ).encode("utf-8")).hexdigest()
+            await preflight(tool_call.id, validated_args, operation_id=operation_id)
         if safe_point_hook is not None:
             interaction_manifest = getattr(tool, "_interaction_manifest", None)
             pre_wait = (

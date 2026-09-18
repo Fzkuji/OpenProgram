@@ -113,7 +113,7 @@ def test_classifier_checks_complete_arguments(monkeypatch):
         return SimpleNamespace(content=[SimpleNamespace(text='{"safe": false, "reason": "destructive suffix"}')])
 
     monkeypatch.setattr(importlib.import_module("openprogram.providers.stream"), "complete_simple", classify)
-    assert asyncio.run(auto_classify_tool("bash", {"command": command})) == (True, "destructive suffix")
+    assert tuple(asyncio.run(auto_classify_tool("bash", {"command": command}))) == (True, "destructive suffix")
 
 
 def test_classifier_never_approves_partial_oversized_input(monkeypatch):
