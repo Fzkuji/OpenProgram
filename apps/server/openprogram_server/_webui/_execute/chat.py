@@ -179,10 +179,12 @@ def run_query(
                         tool_blocks_by_id[_tid] = blk
                 blk["result"] = evt.get("result")
                 blk["is_error"] = bool(evt.get("is_error"))
+                blk["outcome"] = evt.get("outcome")
                 tool_calls_collected.append({
                     "tool": evt.get("tool"),
                     "result": evt.get("result"),
                     "is_error": evt.get("is_error"),
+                    "outcome": evt.get("outcome"),
                 })
             # Fan out to WS clients with the same envelope
             # shape the legacy on_stream hook used.

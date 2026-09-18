@@ -594,3 +594,30 @@ def test_explicit_bypass_is_kept(env, monkeypatch) -> None:
         "c1", "u-byp", "query", query="hi", permission_mode="bypass",
     )
     assert seen["mode"] == "bypass"
+
+
+def test_fallback_result_blocks_preserve_host_outcome(env, monkeypatch):
+    from types import SimpleNamespace
+    from openprogram.agent.dispatcher.types import TurnResult
+    srv, _, captured = env
+    conv = srv._get_or_create_session("outcome-fallback", agent_id="main")
+    srv._append_msg(conv, {"id": "u-outcome", "role": "user", "content": "inspect", "timestamp": time.time(), "source": "web"})
+
+    class Adapter:
+        def __init__(self, event_sink):
+            self.sink = event_sink
+        def admit(self, req, **kwargs):
+            self.req = req
+            return SimpleNamespace(execution_id="test-outcome", status_version=1)
+        async def activate(self, admission, **kwargs):
+            for event in [
+                {"type": "tool_use", "tool": "bash", "tool_call_id": "c", "input": "{}"},
+                {"type": "tool_result", "tool": "bash", "tool_call_id": "c", "result": "refused", "is_error": True, "outcome": "not_started"},
+            ]:
+                self.sink({"type": "chat_response", "data": {"type": "stream_event", "session_id": self.req.session_id,
+                           "msg_id": self.req.user_msg_id, "event": event}})
+            return None, TurnResult(final_text="refused", user_msg_id="u-outcome", assistant_msg_id="u-outcome_reply")
+    monkeypatch.setattr("openprogram.agent.production_driver.CanonicalAgentAdapter", Adapter)
+    srv._execute_in_context("outcome-fallback", "u-outcome", "query", query="inspect")
+    result = next(item["payload"] for item in captured if item["payload"]["type"] == "result")
+    assert result["blocks"][0]["outcome"] == "not_started"
