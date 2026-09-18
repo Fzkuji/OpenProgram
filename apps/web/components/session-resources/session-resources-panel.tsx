@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Box, ExternalLink, Globe, Monitor, PictureInPicture2, Server, X } from "lucide-react";
+import { Box, ExternalLink, Globe, Monitor, PictureInPicture2, Server, TerminalSquare, X } from "lucide-react";
 import { SectionHeader } from "@/components/sidebar/section-header";
 import { useWebTabPip } from "@/lib/browser/web-tab-pip-store";
 import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
@@ -16,6 +16,7 @@ import {
   resourceSessionId,
   selectResourcePreview,
   sessionResourceRows,
+  terminalResourceRows,
   useBrowserResourceStore,
   type SessionResource,
 } from "@/lib/chat/session-resources";
@@ -29,7 +30,7 @@ import { desktopBridge, retryRestoreWebTab } from "@/lib/desktop/desktop-bridge"
 import { useSessionResources } from "@/lib/chat/use-session-resources";
 import { useTranslation } from "@/lib/i18n";
 import { useTerminalResources } from "@/lib/desktop/terminal-resources";
-import { TerminalResourceList } from "./terminal-resources";
+import { TerminalResourceView } from "./terminal-resources";
 import styles from "./session-resources.module.css";
 
 function retryRecoverablePage(row: SessionResource, tabs: { id: string }[]): void {
@@ -76,28 +77,28 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
   const tabs = useCenterTabs(s => s.tabs);
   const backend = useSessionResources(sessionId);
   useBrowserResourceStore(s => s.ingestClock);
-  const hasTerminals = useTerminalResources(s => !!sessionId
-    && Object.values(s.rows).some(row => row.session_ids.includes(sessionId)));
+  const terminals = useTerminalResources(s => s.rows);
+  const terminalError = useTerminalResources(s => s.error);
   const pendingClose = pendingCloseRequest();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [selected, setSelected] = useState<SessionResource | null>(null);
   const [, render] = useState(0);
-  const rows = sessionResourceRows(tabs, backend.rows, sessionId);
+  const rows = sessionResourceRows(tabs, [...backend.rows, ...terminalResourceRows(Object.values(terminals), sessionId)], sessionId);
   const names: Record<string, string> = {
-    web: text("Webpage", "网页"), docker: text("Container", "容器"), vm: text("VM", "虚拟机"),
+    terminal: text("Terminal", "终端"), web: text("Webpage", "网页"), docker: text("Container", "容器"), vm: text("VM", "虚拟机"),
     remote: text("Remote environment", "远程环境"), desktop: text("Desktop", "桌面"),
   };
   const viewedBranch = backend.currentBranchId;
   const pref = sessionId ? getPreviewPreference(sessionId, viewedBranch) : null;
   const groups = groupSessionResources(rows, viewedBranch).map(group => {
     const title = group.key === "unavailable"
-      ? text("Closed pages", "已关闭的网页")
+      ? text("Closed resources", "已关闭的资源")
       : group.key === "unassigned"
         ? text("Unassigned", "未归属")
         : group.title;
     return { ...group, title };
   }).filter(group => group.rows.length > 0);
-  const icons = { web: Globe, docker: Box, vm: Monitor, remote: Server, desktop: Monitor };
+  const icons = { terminal: TerminalSquare, web: Globe, docker: Box, vm: Monitor, remote: Server, desktop: Monitor };
   const statusName = (row: SessionResource) => {
     const pageRow = row.kind === "web" || row.source === "browser" || row.source === "web";
     if (pageRow && row.status === "restoring") return text("Restoring page…", "正在恢复网页…");
@@ -106,7 +107,7 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
       open: text("Open", "已打开"), idle: text("Idle", "空闲"), in_use: text("In use", "使用中"),
       attached: text("Attached", "已关联"), running: text("Running", "运行中"),
       starting: text("Starting", "启动中"), stopping: text("Stopping", "停止中"),
-      closed: text("Closed", "已关闭"), released: text("Released", "已释放"),
+      exited: text("Exited", "已退出"), closed: text("Closed", "已关闭"), released: text("Released", "已释放"),
       unknown: text("Reconnect", "需要重新连接"),
     } as Record<string, string>)[row.status] || row.status;
   };
@@ -121,7 +122,7 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
         : text("Waiting for Agent to pause before closing the page…", "正在暂停 Agent，完成后关闭页面…")}
     </p>}
     <div className={styles.list}>
-      {groups.length === 0 && !hasTerminals && <p className={styles.empty}>{!backend.loaded ? text("Loading resources…", "正在加载资源…")
+      {groups.length === 0 && <p className={styles.empty}>{!backend.loaded ? text("Loading resources…", "正在加载资源…")
           : sessionId ? text("This session has no resources in use.", "当前会话没有正在使用的资源。") : text("Select a session to view its resources.", "选择会话以查看其资源。")}</p>}
       {groups.map(group => {
         const open = group.key === "unavailable" ? collapsed[group.key] === false : !collapsed[group.key];
@@ -206,9 +207,13 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
         })}
       </div>;
       })}
-      <TerminalResourceList sessionId={sessionId} />
+
     </div>
-    {selected && <div className={styles.detail}>
+    {terminalError && <p role="status" className={styles.notice}>{text("Terminal status is unavailable.", "暂时无法获取终端状态。")}</p>}
+    {selected?.source === "terminal" && sessionId && terminals[selected.sourceId] &&
+      <TerminalResourceView key={`${selected.sourceId}:${terminals[selected.sourceId].generation}`}
+        resource={terminals[selected.sourceId]} sessionId={sessionId} onHide={() => setSelected(null)} />}
+    {selected && selected.source !== "terminal" && <div className={styles.detail}>
       <button type="button" className={styles.action} aria-label={text("Close resource details", "关闭资源详情")} onClick={() => setSelected(null)}><X size={14} /></button>
       <strong>{selected.title}</strong><p>{names[selected.kind] || selected.kind} · {statusName(rows.find(row => row.id === selected.id) || selected)}</p>
       <p>{selected.target}</p>

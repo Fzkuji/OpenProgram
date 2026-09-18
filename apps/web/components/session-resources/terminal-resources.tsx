@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import type { ITheme, Terminal } from "@xterm/xterm";
 import { TerminalSquare, X } from "lucide-react";
 import { useTranslation } from "@/lib/i18n";
-import { installTerminalResourceBridge, terminalResourceApi, useTerminalResources,
-  type TerminalResource } from "@/lib/desktop/terminal-resources";
+import { terminalResourceApi,
+  type TerminalResource, type TerminalReply } from "@/lib/desktop/terminal-resources";
 import styles from "./terminal-resources.module.css";
 
 function terminalTheme(): ITheme {
@@ -28,35 +28,54 @@ function terminalTheme(): ITheme {
 }
 
 /** Attaches a view to the SAME native PTY. Never creates a shell or replays input. */
-function TerminalResourceView({ resource, sessionId, onHide }: {
+export function TerminalResourceView({ resource, sessionId, onHide }: {
   resource: TerminalResource; sessionId: string; onHide: () => void;
 }) {
   const { text } = useTranslation();
   const host = useRef<HTMLDivElement>(null);
-  const dialog = useRef<HTMLDialogElement>(null);
+  const [confirmClose, setConfirmClose] = useState(false);
+  const [retry, setRetry] = useState(0);
+  const [viewReady, setViewReady] = useState(false);
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
+  const inputUnconfirmed = useRef(false);
   const [error, setError] = useState("");
   const api = terminalResourceApi();
   const identity = { terminal_id: resource.terminal_id, generation: resource.generation };
+  const send = (action: string, extra: Record<string, unknown> = {}, admitted: () => boolean = () => true): Promise<TerminalReply> => {
+    const result = queue.current.then(async () => {
+      if (!admitted() || (action === "input" && inputUnconfirmed.current)) throw Error("terminal_input_blocked");
+      try {
+        const reply = api ? await api.resource(action, { ...identity, ...extra })
+          : { ok: false, error: "terminal_unavailable" };
+        if (action === "input" && !reply.ok) inputUnconfirmed.current = true;
+        return reply;
+      } catch (reason) {
+        if (action === "input") inputUnconfirmed.current = true;
+        throw reason;
+      }
+    });
+    queue.current = result.catch(() => undefined);
+    return result;
+  };
   const control = async (action: string, extra: Record<string, unknown> = {}) => {
     try {
-      const result = await api?.resource(action, { ...identity, ...extra });
+      const result = await send(action, extra);
       if (!result?.ok) setError(result?.error || "terminal_unavailable");
+      else { setError(""); setConfirmClose(false); }
     } catch { setError("terminal_result_unconfirmed"); }
   };
-  useEffect(() => {
-    dialog.current?.showModal();
-    return () => dialog.current?.close();
-  }, []);
+
   useEffect(() => {
     if (!api || !host.current) return;
+    setError("");
+    setViewReady(false);
     let disposed = false, terminal: Terminal | undefined, inputBlocked = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let resize: ResizeObserver | undefined, theme: MutationObserver | undefined;
-    let cursor = 0, writeQueue = Promise.resolve();
+    let cursor = 0, initialRead = true;
     const input = (data: string) => {
-      writeQueue = writeQueue.then(async () => {
-        if (disposed || inputBlocked) return;
-        const reply = await api.resource("input", { ...identity, data });
+      if (disposed || inputBlocked) return;
+      void send("input", { data }, () => !disposed && !inputBlocked).then(reply => {
         if (!reply.ok) throw Error(reply.error || "terminal_input_unconfirmed");
       }).catch(() => {
         inputBlocked = true;
@@ -70,6 +89,7 @@ function TerminalResourceView({ resource, sessionId, onHide }: {
         fontSize: 13, scrollback: 5000, theme: terminalTheme() });
       const fit = new FitAddon(); terminal.loadAddon(fit); terminal.open(host.current); fit.fit();
       terminal.onData(input);
+      terminal.focus();
       const fitView = () => {
         if (disposed || !terminal) return;
         fit.fit();
@@ -90,6 +110,7 @@ function TerminalResourceView({ resource, sessionId, onHide }: {
           if (reply.data) await new Promise<void>(resolve => terminal!.write(reply.data!, resolve));
           if (disposed) return;
           cursor = reply.next_cursor ?? cursor;
+          if (initialRead) { inputUnconfirmed.current = false; initialRead = false; setViewReady(true); }
           terminal.options.disableStdin = inputBlocked || reply.status !== "running";
           timer = setTimeout(() => { void poll(); }, reply.has_more ? 0 : 350);
         } catch {
@@ -104,45 +125,29 @@ function TerminalResourceView({ resource, sessionId, onHide }: {
     };
     // Metadata updates must not detach/replay the existing terminal view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api, resource.terminal_id, resource.generation]);
-  return <dialog className={styles.viewer} ref={dialog} onCancel={event => { event.preventDefault(); onHide(); }}
+  }, [api, resource.terminal_id, resource.generation, retry]);
+  return <section className={styles.viewer}
     aria-label={text("Terminal resource", "终端资源")}>
-    <header><TerminalSquare size={16} /><strong>{text("Terminal", "终端")}</strong>
+    <header><TerminalSquare size={16} /><strong>{resource.preset === "claude" ? "Claude Code" : text("Terminal", "终端")}</strong>
       <span>{resource.status} · PID {resource.pid ?? "—"}</span>
       <button type="button" onClick={onHide} aria-label={text("Hide terminal view", "隐藏终端视图")}><X size={16} /></button>
     </header>
     <p className={styles.location}>{text("Starting directory", "起始目录")}: {resource.start_cwd}</p>
     <div className={styles.screen} ref={host} />
-    {error && <p role="alert">{error} · {text("Input was not retried. Reopen the view to inspect before typing again.", "没有自动重发输入。请重新打开视图检查，再决定是否继续输入。")}</p>}
+    {error && <div role="alert"><p>{error} · {text("Input was not retried.", "没有自动重发输入。")}</p>
+      <button type="button" onClick={() => setRetry(value => value + 1)}>{text("Reconnect view", "重新连接视图")}</button></div>}
     <footer>
       <span>{text("Pause the Agent with the conversation task control.", "需要暂停 Agent 时，请使用会话的任务暂停按钮。")}</span>
-      <button type="button" disabled={resource.status !== "running"} onClick={() => void control("input", { data: "\x03" })}>Ctrl+C</button>
+      <button type="button" disabled={resource.status !== "running" || !viewReady || !!error} onClick={() => void control("input", { data: "\x03" })}>Ctrl+C</button>
       <button type="button" onClick={() => void control("share", { shared: !resource.shared, session_id: sessionId })}>
         {resource.shared ? text("Make private", "设为私有") : text("Share terminal", "共享终端")}</button>
-      <button type="button" disabled={["closed", "exited"].includes(resource.status)} onClick={() => void control("close")}>
+      <button type="button" disabled={["closed", "exited"].includes(resource.status)} onClick={() => setConfirmClose(true)}>
         {text("Close terminal", "关闭终端")}</button>
     </footer>
-  </dialog>;
-}
-
-export function TerminalResourceList({ sessionId }: { sessionId: string | null }) {
-  const { text } = useTranslation();
-  const { rows, available, error } = useTerminalResources();
-  const [selected, setSelected] = useState<string | null>(null);
-  useEffect(() => { installTerminalResourceBridge(); }, []);
-  useEffect(() => { setSelected(null); }, [sessionId]);
-  if (!available || !sessionId) return null;
-  const owned = Object.values(rows).filter(row => row.session_ids.includes(sessionId));
-  const resource = owned.find(row => row.terminal_id === selected);
-  if (!owned.length && !error) return null;
-  return <section className={styles.resources} aria-label={text("Terminal resources", "终端资源")}>
-    <h3>{text("Terminals", "终端")}</h3>
-    {error && <p role="status">{text("Terminal status is unavailable.", "暂时无法获取终端状态。")}</p>}
-    {owned.map(row => <button key={row.terminal_id} type="button" className={styles.row}
-      data-resource-kind="terminal" onClick={() => setSelected(row.terminal_id)}>
-      <TerminalSquare size={16} /><span><strong>{row.preset === "claude" ? "Claude Code" : text("Terminal", "终端")}</strong>
-        <small>{row.status} · {row.shared ? text("Shared", "共享") : text("Private", "私有")} · {row.start_cwd}</small></span>
-    </button>)}
-    {resource && <TerminalResourceView key={resource.generation} resource={resource} sessionId={sessionId} onHide={() => setSelected(null)} />}
+    {confirmClose && <div role="alert">
+      <p>{text("Terminate this terminal and its running processes?", "终止此终端及其中运行的进程？")}</p>
+      <button type="button" onClick={() => void control("close")}>{text("Terminate terminal", "终止终端")}</button>
+      <button type="button" onClick={() => setConfirmClose(false)}>{text("Cancel", "取消")}</button>
+    </div>}
   </section>;
 }

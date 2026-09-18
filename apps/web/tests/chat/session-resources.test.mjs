@@ -577,3 +577,17 @@ test("the Resources hook and projection use per-conversation snapshot completion
   assert.match(projection, /recoverSessionResources\(sessionId/);
   assert.match(store, /completeResourceSnapshot\(sessionId, \{ ok: false \}\)/);
 });
+
+test("persistent terminals use the same scoped resource list and closed grouping", async () => {
+  const { terminalResourceRows } = await import("../../lib/chat/session-resources.ts");
+  const records = [{ terminal_id: "t", generation: "g", preset: "shell", status: "running",
+    start_cwd: "/project", session_ids: ["a"], shared: true, in_use: true }];
+  const terminalRows = terminalResourceRows(records, "a");
+  const rows = sessionResourceRows(tabs, terminalRows, "a");
+  assert.deepEqual(rows.map(row => row.kind), ["web", "terminal"]);
+  assert.equal(terminalRows[0].sourceId, "t");
+  assert.deepEqual(terminalResourceRows(records, "b"), []);
+  assert.deepEqual(terminalResourceRows(records, null), []);
+  const exited = terminalResourceRows([{ ...records[0], status: "exited" }], "a");
+  assert.equal(groupSessionResources(exited, null)[0].key, "unavailable");
+});

@@ -1,3 +1,4 @@
+import type { TerminalResource } from "../desktop/terminal-resources";
 import { create } from "zustand";
 import type { CenterTab } from "../tabs/center-tabs-store";
 
@@ -29,7 +30,7 @@ export type SessionResource = {
   title: string;
   target: string;
   status: string;
-  source: "web" | "usage" | "browser";
+  source: "web" | "usage" | "browser" | "terminal";
   sourceId: string;
   scopeSessionId?: string;
   resourceId?: string;
@@ -299,8 +300,20 @@ export function sessionResourceRows(
   });
 }
 
+/** Project exact native instances into the shared session list, never tab guesses. */
+export function terminalResourceRows(resources: readonly TerminalResource[], sessionId: string | null): SessionResource[] {
+  if (!sessionId) return [];
+  return resources.filter(row => row.session_ids.includes(sessionId)).map(row => ({
+    id: `terminal:${row.terminal_id}`, sourceId: row.terminal_id, source: "terminal",
+    sessionId, conversationSessionId: sessionId, kind: "terminal",
+    title: row.preset === "claude" ? "Claude Code" : "Terminal",
+    target: row.start_cwd, status: row.status,
+    controlState: row.in_use ? "active" : "idle",
+  }));
+}
+
 export function resourceIsUnavailable(row: SessionResource): boolean {
-  return row.status === "closed";
+  return row.status === "closed" || row.status === "exited";
 }
 
 /** Unnamed branch groups show the origin after the last colon, truncated
@@ -718,7 +731,7 @@ export function previewTabId(row: SessionResource | undefined): string | null {
 
 export function resourceIsOperating(row: SessionResource): boolean {
   if (row.lastOperation?.phase === "dispatched") return true;
-  return row.controlState === "active" && row.source === "browser";
+  return row.controlState === "active" && (row.source === "browser" || row.source === "terminal");
 }
 
 export function existingResourceTabId(

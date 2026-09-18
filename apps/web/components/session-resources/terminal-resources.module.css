@@ -1,12 +1,4 @@
-.resources { padding: 8px 12px; border-top: 1px solid var(--border); }
-.resources h3 { font-size: 12px; margin: 4px 0 8px; }
-.row { display: flex; width: 100%; align-items: center; gap: 8px; padding: 8px 4px; text-align: left; background: transparent; color: inherit; border: 0; cursor: pointer; }
-.row span { min-width: 0; }
-.row strong, .row small { display: block; overflow: hidden; text-overflow: ellipsis; }
-.row small { opacity: .7; font-size: 11px; }
-.viewer { width: min(90vw, 1100px); height: min(80vh, 750px); color: var(--terminal-fg); background: var(--terminal-bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
-.viewer[open] { display: flex; flex-direction: column; }
-.viewer::backdrop { background: color-mix(in srgb, var(--terminal-bg) 75%, transparent); }
+.viewer { display: flex; flex-direction: column; flex: 1; min-height: 240px; min-width: 0; color: var(--terminal-fg); background: var(--terminal-bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px; overflow: auto; }
 .viewer header, .viewer footer { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .viewer header span { margin-left: auto; font-size: 12px; }
 .viewer button { background: transparent; color: inherit; border: 1px solid var(--border); border-radius: 4px; padding: 5px 8px; cursor: pointer; }

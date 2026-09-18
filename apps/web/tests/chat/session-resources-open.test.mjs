@@ -19,6 +19,7 @@ await build({
     export { topLevelTabs } from "./lib/browser/web-page-management";
     export { resetBrowserResources, getPreviewPreference, hideResourcePreview } from "./lib/chat/session-resources";
     export { useBrowserControlStore, resetBrowserControl } from "./lib/browser/browser-control";
+    export { useTerminalResources } from "./lib/desktop/terminal-resources";
     export { setLocale } from "./lib/i18n";
   `, resolveDir: webPath },
   bundle: true, format: "esm", jsx: "automatic", outfile: bundle,
@@ -64,7 +65,7 @@ const { createRoot } = await import("react-dom/client");
 const {
   SessionResourcesPanel, useCenterTabs, useWebTabPip, topLevelTabs,
   resetBrowserResources, getPreviewPreference, hideResourcePreview,
-  useBrowserControlStore, resetBrowserControl, setLocale,
+  useBrowserControlStore, resetBrowserControl, setLocale, useTerminalResources,
 } = await import(pathToFileURL(bundle));
 
 function pageTab(id, sessionId, url, extra = {}) {
@@ -556,7 +557,7 @@ test("restore statuses stay on the original branch with localized labels", async
     assert.match(branch.textContent, /Reconnect/);
     assert.match(branch.textContent, /arXiv/);
     assert.doesNotMatch(branch.textContent, /Old tab/);
-    assert.match(closed.textContent, /Closed pages/);
+    assert.match(closed.textContent, /Closed resources/);
     assert.match(closed.querySelector("small")?.textContent || "", /1/);
     const closedToggle = closed.querySelector("[aria-expanded]");
     assert.ok(closedToggle);
@@ -570,7 +571,7 @@ test("restore statuses stay on the original branch with localized labels", async
     assert.match(host.querySelector('[data-resource-group="br-a"]').textContent, /正在恢复网页…/);
     assert.match(host.querySelector('[data-resource-group="br-a"]').textContent, /网页恢复失败/);
     assert.match(host.querySelector('[data-resource-group="br-a"]').textContent, /需要重新连接/);
-    assert.match(host.querySelector('[data-resource-group="unavailable"]').textContent, /已关闭的网页/);
+    assert.match(host.querySelector('[data-resource-group="unavailable"]').textContent, /已关闭的资源/);
     assert.match(host.textContent, /arXiv/);
   } finally {
     setLocale("en");
@@ -761,5 +762,42 @@ test("preview and Open in tab retry only recoverable pages with the exact tab id
     useWebTabPip.getState().end();
     useCenterTabs.setState({ tabs: [], activeId: null, groups: [], splitWebTabId: null });
     resetBrowserResources();
+  }
+});
+
+
+test("Terminal rows share the resource list and hide without terminating the native environment", async () => {
+  resetBrowserResources();
+  setLocale("en");
+  globalThis.resourceBackend = { rows: [], loaded: true, currentBranchId: null };
+  useTerminalResources.setState({ available: true, error: "", rows: {
+    exact: { terminal_id: "exact", generation: "generation", preset: "shell", status: "running",
+      start_cwd: "/project", session_ids: ["a"], shared: false, in_use: false },
+    other: { terminal_id: "other", generation: "other", preset: "shell", status: "running",
+      start_cwd: "/other", session_ids: ["b"], shared: false, in_use: false },
+  } });
+  useCenterTabs.setState({ tabs: [{ id: "s:a", kind: "session", sessionId: "a", title: "A" }], activeId: "s:a", groups: [] });
+  const calls = [];
+  window.openprogramTerminals = { resource: async (...args) => { calls.push(args); return { ok: true }; } };
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(createElement(SessionResourcesPanel)));
+    assert.equal(host.querySelectorAll('[data-resource-kind="terminal"]').length, 1);
+    const row = host.querySelector('[data-resource-kind="terminal"] button');
+    assert.equal(row.title, "/project");
+    await act(async () => row.click());
+    assert.ok(host.querySelector('section[aria-label="Terminal resource"]'));
+    assert.equal(host.querySelector("dialog"), null);
+    const hide = host.querySelector('button[aria-label="Hide terminal view"]');
+    await act(async () => hide.click());
+    assert.equal(host.querySelector('section[aria-label="Terminal resource"]'), null);
+    assert.equal(calls.some(([action]) => ["open", "close", "input"].includes(action)), false);
+    await act(async () => useCenterTabs.setState({ tabs: [{ id: "s:b", kind: "session", sessionId: "b", title: "B" }], activeId: "s:b" }));
+    assert.equal(host.querySelector('[data-resource-kind="terminal"] button').title, "/other");
+  } finally {
+    await act(async () => root.unmount()); host.remove();
+    useTerminalResources.setState({ rows: {}, available: false, error: "" });
+    delete window.openprogramTerminals;
   }
 });
