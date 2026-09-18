@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 import sys
 
-from openprogram.paths import get_state_dir
+from openprogram import paths
 from . import catalog_store
 
 ID = re.compile(r"[a-z][a-z0-9._-]{0,95}\Z")
@@ -20,7 +20,7 @@ CAPABILITIES = {"model.invoke", "storage.app", "files.project.read"}
 
 
 def home() -> Path:
-    return get_state_dir() / "applications"
+    return paths.get_state_dir() / "applications"
 
 
 def contained(root: Path, relative: str) -> Path:

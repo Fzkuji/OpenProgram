@@ -7,14 +7,14 @@ from pathlib import Path
 import threading
 import uuid
 
-from openprogram.paths import get_state_dir
+from openprogram import paths
 from openprogram.programs import _programs
 
 _lock = threading.Lock()
 
 
 def path() -> Path:
-    return get_state_dir() / 'applications' / 'catalog.json'
+    return paths.get_state_dir() / 'applications' / 'catalog.json'
 
 
 def _read() -> list[dict]:
@@ -56,7 +56,7 @@ def update(mutate):
     partial publication accepts identical rows only, never overwrites state.
     """
     from openprogram.auth.credentials import _private_file_lock
-    with _lock, _private_file_lock(path(), root=get_state_dir()):
+    with _lock, _private_file_lock(path(), root=paths.get_state_dir()):
         rows = _read()
         def migrate(legacy):
             applications = [row for row in legacy if row.get('kind') == 'application']
