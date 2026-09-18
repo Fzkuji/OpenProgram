@@ -793,6 +793,19 @@ test("Terminal rows share the resource list and hide without terminating the nat
     await act(async () => hide.click());
     assert.equal(host.querySelector('section[aria-label="Terminal resource"]'), null);
     assert.equal(calls.some(([action]) => ["open", "close", "input"].includes(action)), false);
+    await act(async () => row.click());
+    await act(async () => useTerminalResources.setState(state => ({ rows: {
+      ...state.rows, exact: { ...state.rows.exact, generation: "replacement" },
+    } })));
+    assert.equal(Boolean(host.querySelector('section[aria-label="Terminal resource"]')), false,
+      "a replacement shell must require explicit selection, not automatic reattachment");
+    await act(async () => host.querySelector('[data-resource-kind="terminal"] button').click());
+    assert.ok(host.querySelector('section[aria-label="Terminal resource"]'));
+    await act(async () => useTerminalResources.setState(state => ({ rows: {
+      ...state.rows, exact: { ...state.rows.exact, session_ids: ["other-session"] },
+    } })));
+    assert.equal(Boolean(host.querySelector('section[aria-label="Terminal resource"]')), false,
+      "a selected terminal leaving the session must detach its view");
     await act(async () => useCenterTabs.setState({ tabs: [{ id: "s:b", kind: "session", sessionId: "b", title: "B" }], activeId: "s:b" }));
     assert.equal(host.querySelector('[data-resource-kind="terminal"] button').title, "/other");
   } finally {

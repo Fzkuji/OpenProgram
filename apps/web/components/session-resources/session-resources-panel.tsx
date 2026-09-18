@@ -210,7 +210,8 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
 
     </div>
     {terminalError && <p role="status" className={styles.notice}>{text("Terminal status is unavailable.", "暂时无法获取终端状态。")}</p>}
-    {selected?.source === "terminal" && sessionId && terminals[selected.sourceId] &&
+    {selected?.source === "terminal" && sessionId && terminals[selected.sourceId]?.generation === selected.terminalGeneration
+      && terminals[selected.sourceId]?.session_ids.includes(sessionId) &&
       <TerminalResourceView key={`${selected.sourceId}:${terminals[selected.sourceId].generation}`}
         resource={terminals[selected.sourceId]} sessionId={sessionId} onHide={() => setSelected(null)} />}
     {selected && selected.source !== "terminal" && <div className={styles.detail}>

@@ -32,6 +32,7 @@ export type SessionResource = {
   status: string;
   source: "web" | "usage" | "browser" | "terminal";
   sourceId: string;
+  terminalGeneration?: string;
   scopeSessionId?: string;
   resourceId?: string;
   conversationSessionId?: string;
@@ -305,6 +306,7 @@ export function terminalResourceRows(resources: readonly TerminalResource[], ses
   if (!sessionId) return [];
   return resources.filter(row => row.session_ids.includes(sessionId)).map(row => ({
     id: `terminal:${row.terminal_id}`, sourceId: row.terminal_id, source: "terminal",
+    terminalGeneration: row.generation,
     sessionId, conversationSessionId: sessionId, kind: "terminal",
     title: row.preset === "claude" ? "Claude Code" : "Terminal",
     target: row.start_cwd, status: row.status,
