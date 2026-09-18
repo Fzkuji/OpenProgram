@@ -47,6 +47,11 @@ class FinalizationOperations:
             # safe terminal path.
             self._recover_owner_loss(attempt)
             return
+        if not cancelled:
+            from openprogram.execution.agent_receipts import pending_result
+            if pending_result(service, execution.execution_id) is not None:
+                self._recover_owner_loss(attempt)
+                return
         failed = bool(getattr(result, "failed", False))
         if isinstance(result, shared.Mapping):
             failed = failed or bool(

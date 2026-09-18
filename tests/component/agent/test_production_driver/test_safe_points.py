@@ -620,6 +620,7 @@ def test_pause_during_dispatched_nonrepeatable_tool_stays_reconciliation(tmp_pat
         "tool_call_id": "call-inflight",
         "arguments": {"n": "inflight"},
     }) is False
+    assert hook("tool.started", {"tool_call_id": "call-inflight"}) is False
     unresolved = control.effects.list_unresolved(execution.execution_id)
     assert len(unresolved) == 1
     assert unresolved[0].metadata.get("kind") == "tool.before"
@@ -910,6 +911,7 @@ def test_function_suspension_retains_pending_agent_tool_slot(tmp_path, monkeypat
         "tool_call_ids": ["function-call"], "next_tool_index": 0,
     })
     hook("tool.before", {"tool_call_id": "function-call", "tool_name": "web_use", "arguments": {}})
+    hook("tool.started", {"tool_call_id": "function-call"})
     from openprogram.agentic_programming.function import agentic_function
     from openprogram.agentic_programming.continuation import function_execution
 

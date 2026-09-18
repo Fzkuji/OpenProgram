@@ -318,6 +318,7 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
             message_id: b.message_id,
             node_id: b.node_id,
             is_error: !!b.is_error,
+            outcome: b.outcome,
           });
           if (b.tool && AGENTIC_TOOL_NAMES.has(b.tool)) return;
           tools.push({
@@ -333,7 +334,7 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
             messageId: b.message_id,
             nodeId: b.node_id,
             isError: !!b.is_error,
-            status: b.is_error ? "error" : "done",
+            status: b.outcome === "not_started" || b.outcome === "unknown" || b.is_error ? "error" : "done",
           });
         }
       });

@@ -71,6 +71,35 @@ def test_chat_runtime_keeps_saved_tools_when_live_catalog_grows(monkeypatch):
     validate_runtime_contract(saved, resumed)
 
 
+def test_chat_runtime_hides_whole_tool_denies(monkeypatch):
+    from types import SimpleNamespace
+    from openprogram.agent import dispatcher
+    from openprogram.agent.dispatcher import loop_runner
+    from openprogram.agent.dispatcher.types import TurnRequest
+    from openprogram.agent.session_config import PermissionRules
+    from openprogram.agent.types import AgentTool
+    from openprogram.providers.types import Model
+
+    model = Model(id="fake", name="fake", api="openai-completions", provider="openai",
+                  base_url="https://example.invalid/v1")
+    tools = [AgentTool(name=name, label=name, description=name,
+                       parameters={"type": "object"}, execute=lambda *args: None)
+             for name in ("bash", "read_file")]
+    monkeypatch.setattr(dispatcher, "_load_agent_profile", lambda *a: {})
+    monkeypatch.setattr(dispatcher, "_resolve_model", lambda *a: model)
+    monkeypatch.setattr(loop_runner, "_resolve_tools", lambda *a, **k: tools)
+    monkeypatch.setattr(loop_runner, "_wrap_with_approval", lambda tool, *a: tool)
+    monkeypatch.setattr("openprogram.context.components.build_system_prompt", lambda *a, **k: "system")
+    monkeypatch.setattr("openprogram.programs.workflow.goal.chat.instructions", lambda *a: "")
+    request = TurnRequest("deny-bash", "hello", "main", "web")
+    request.permission_rules = PermissionRules(deny=["bash", "read_file(/etc/**)"])
+    request._execution_revision_id = "test-revision"
+    snapshot = loop_runner.resolve_agent_runtime(request)[-1]
+    names = {tool["name"] for tool in snapshot["tools"]}
+    assert "bash" not in names
+    assert "read_file" in names
+
+
 @pytest.fixture
 def session(tmp_path, monkeypatch):
     from openprogram.agent.session_db import SessionDB

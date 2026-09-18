@@ -89,6 +89,14 @@ class RecoveryOperations:
             ):
                 return RecoveryCompletion(execution=execution)
 
+            from ..agent_receipts import recover_checkpoint
+            from ..safe_points import AgentSafePointConflict
+            from openprogram.agent.continuation import AgentCheckpointError
+            receipt_error = None
+            try:
+                execution = recover_checkpoint(self, connection, execution)
+            except (AgentSafePointConflict, AgentCheckpointError) as exc:
+                receipt_error = exc.code
             from openprogram.agentic_programming.continuation import suspension_evidence
             aggregate_rows = connection.execute(
                 "SELECT * FROM effects WHERE execution_id = ? AND status IN ('dispatched', 'uncertain') "
@@ -228,6 +236,10 @@ class RecoveryOperations:
                 if restart_checkpoint is not None:
                     target = ExecutionStatus.PAUSED
                     reason_code = outcome = "restart_recoverable"
+                if receipt_error and not unresolved:
+                    target = ExecutionStatus.INTERRUPTED
+                    reason_code = outcome = "recorded_result_invalid"
+                    restart_checkpoint = None
             elif execution.status is ExecutionStatus.PAUSING:
                 command_kind = CommandKind.PAUSE
                 if unresolved:

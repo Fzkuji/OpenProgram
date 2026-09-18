@@ -1303,6 +1303,14 @@ async def _execute_tool_calls(
 
         result: AgentToolResult
         skipped_repeat = streak >= 2
+        if (
+            not skipped_repeat
+            and validation_error is None
+            and tool is not None
+            and safe_point_hook is not None
+            and gate_denial is None
+        ):
+            await safe_point_hook("tool.started", {"tool_call_id": str(tool_call.id)})
         if skipped_repeat:
             n = streak + 1
             from .failure_policy import record_failure

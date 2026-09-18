@@ -19,6 +19,7 @@ from .shared import (
 )
 
 from .waits import WaitsOperations
+from .agent_safe_points import AgentSafePointOperations
 from .cancellation import CancellationOperations
 from .branches import BranchesOperations
 from .activation import ActivationOperations
@@ -26,7 +27,7 @@ from .safe_points import SafePointsOperations
 from .recovery import RecoveryOperations
 
 
-class RuntimeControlService(WaitsOperations, CancellationOperations, BranchesOperations, ActivationOperations, SafePointsOperations, RecoveryOperations):
+class RuntimeControlService(AgentSafePointOperations, WaitsOperations, CancellationOperations, BranchesOperations, ActivationOperations, SafePointsOperations, RecoveryOperations):
     """The sole coordinator for canonical commands and live driver signals."""
 
     def __init__(

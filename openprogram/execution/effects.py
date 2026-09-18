@@ -223,6 +223,24 @@ class EffectStore:
             receipt=receipt,
         )
 
+    def resolve_not_started(
+        self,
+        effect_id: str,
+        *,
+        receipt: Mapping[str, Any],
+        attempt_id: str | None = None,
+        generation: int | None = None,
+    ) -> EffectRecord:
+        """Record a host-known refusal that never dispatched an external operation."""
+        return self._transition(
+            effect_id,
+            expected_status=EffectStatus.PLANNED,
+            target=EffectStatus.NOT_COMMITTED,
+            receipt=receipt,
+            owner_attempt_id=attempt_id,
+            owner_generation=generation,
+        )
+
     def resolve(
         self,
         effect_id: str,

@@ -215,6 +215,7 @@ class ExecutionCheckpointStore:
         completed_frontier: Sequence[Mapping[str, Any]] | None = None,
         checkpoint_id: str | None = None,
         content_hash: str | None = None,
+        recovery_effect_id: str | None = None,
     ) -> tuple[CheckpointManifest, ExecutionRecord]:
         """Publish while an existing store transaction is held."""
         content = {
@@ -257,12 +258,19 @@ class ExecutionCheckpointStore:
             "SELECT execution_id, status, lease_expires_at FROM attempts WHERE attempt_id = ?",
             (created_by_attempt_id,),
         ).fetchone()
+        receipt_recovery = False
+        if recovery_effect_id is not None:
+            from .agent_receipts import validates_expired_publication
+            receipt_recovery = validates_expired_publication(self.executions, connection, recovery_effect_id,
+                execution=execution, state_refs=state_refs, frontier=frontier)
+            if not receipt_recovery:
+                raise CheckpointConflict("receipt_invalid", "recovery checkpoint is not authorized by its result")
         if (
             attempt is None
             or attempt["execution_id"] != execution_id
             or execution.current_attempt_id != created_by_attempt_id
             or attempt["status"] != "active"
-            or float(attempt["lease_expires_at"]) <= now
+            or (float(attempt["lease_expires_at"]) <= now and not receipt_recovery)
         ):
             raise CheckpointConflict("stale_attempt", "only the current active attempt can publish a checkpoint")
         unresolved = connection.execute(

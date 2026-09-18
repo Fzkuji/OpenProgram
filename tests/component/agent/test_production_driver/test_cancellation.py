@@ -213,6 +213,7 @@ def test_cancel_during_dispatched_nonrepeatable_tool_stays_reconciliation(tmp_pa
         "tool_call_id": "call-cancel",
         "arguments": {"n": "cancel"},
     }) is False
+    assert hook("tool.started", {"tool_call_id": "call-cancel"}) is False
     unresolved = control.effects.list_unresolved(execution.execution_id)
     assert unresolved and unresolved[0].status is EffectStatus.DISPATCHED
     cancelling = asyncio.run(control.request_cancel(

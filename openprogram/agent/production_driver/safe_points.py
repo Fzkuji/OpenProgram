@@ -112,15 +112,15 @@ class SafePointsOperations:
                         return command
             return None
 
-        def checkpoint_payload(
+        def checkpoint_inputs(
             kind: str,
             payload: shared.Mapping[str, shared.Any],
             effect_id: str | None = None,
             action_id: str | None = None,
             input_hash: str | None = None,
             terminal_receipt: shared.Mapping[str, shared.Any] | None = None,
-        ) -> shared.AgentCheckpointV1:
-            phase = "after_provider" if kind in {"provider.after", "wait.before_tool", "tool.suspended"} else "after_tool"
+        ) -> dict:
+            phase = "after_provider" if kind in {"provider.after", "provider.finished", "wait.before_tool", "tool.suspended"} else "after_tool"
             point_kind = (
                 "agent.wait.before_tool" if kind == "wait.before_tool" else
                 "agent.provider.decision.after" if phase == "after_provider"
@@ -224,49 +224,64 @@ class SafePointsOperations:
                 if command.status not in {shared.CommandStatus.APPLIED, shared.CommandStatus.REJECTED}
                 and command.command_id not in (steer_consumed_ids or ())
             ]
+            return dict(
+                safe_point={
+                    "kind": point_kind,
+                    "step_id": (
+                        f"wait:{payload.get('tool_call_id')}"
+                        if kind == "wait.before_tool" else f"{phase}:{action_id}"
+                    ),
+                    "phase": phase,
+                    "sentinel": "resume-from-checkpoint",
+                },
+                frontier=[{
+                    "step_id": (
+                        f"wait:{payload.get('tool_call_id')}"
+                        if kind == "wait.before_tool" else f"{phase}:{action_id}"
+                    ),
+                    "phase": phase,
+                    "branch_id": str(raw_turn.get("branch_id") or "main"),
+                }],
+                turn={
+                    "user_message_id": user_message_id,
+                    "assistant_message_id": assistant_message_id,
+                    "base_history_head_id": base_history_head_id,
+                },
+                assistant_message=latest_assistant,
+                tool_results=completed_tool_results,
+                resolved_snapshot=dict(snapshot),
+                provider_action_id=provider_action_id,
+                tool_call_ids=tool_call_ids,
+                next_tool_index=next_tool_index,
+                repeat_failures=dict(payload.get("repeat_failures") or {}),
+                completed_actions=action_values,
+                terminal_effect_receipts=receipt_values,
+                pending_command_ids=pending_commands,
+                loaded_deferred_tools=payload.get("loaded_deferred_tools", []),
+                turn_display=list(display_blocks),
+            )
+
+        def checkpoint_payload(*args, **kwargs):
             try:
-                return shared.AgentCheckpointV1.build(
-                    safe_point={
-                        "kind": point_kind,
-                        "step_id": (
-                            f"wait:{payload.get('tool_call_id')}"
-                            if kind == "wait.before_tool" else f"{phase}:{action_id}"
-                        ),
-                        "phase": phase,
-                        "sentinel": "resume-from-checkpoint",
-                    },
-                    frontier=[{
-                        "step_id": (
-                            f"wait:{payload.get('tool_call_id')}"
-                            if kind == "wait.before_tool" else f"{phase}:{action_id}"
-                        ),
-                        "phase": phase,
-                        "branch_id": str(raw_turn.get("branch_id") or "main"),
-                    }],
-                    turn={
-                        "user_message_id": user_message_id,
-                        "assistant_message_id": assistant_message_id,
-                        "base_history_head_id": base_history_head_id,
-                    },
-                    assistant_message=latest_assistant,
-                    tool_results=completed_tool_results,
-                    resolved_snapshot=dict(snapshot),
-                    provider_action_id=provider_action_id,
-                    tool_call_ids=tool_call_ids,
-                    next_tool_index=next_tool_index,
-                    repeat_failures=dict(payload.get("repeat_failures") or {}),
-                    completed_actions=action_values,
-                    terminal_effect_receipts=receipt_values,
-                    pending_command_ids=pending_commands,
-                    loaded_deferred_tools=payload.get("loaded_deferred_tools", []),
-                    turn_display=list(display_blocks),
-                )
+                return shared.AgentCheckpointV1.build(**checkpoint_inputs(*args, **kwargs))
             except shared.AgentCheckpointError as exc:
                 raise shared.AgentDriverError(exc.code, str(exc)) from exc
 
         def hook(kind: str, payload: shared.Mapping[str, shared.Any]) -> bool:
             nonlocal provider_action_id, provider_effect_id, provider_input_hash, provider_terminal_receipt, latest_assistant, latest_snapshot, completed_tool_results
             service = self._control_service()
+            if kind == "tool.started":
+                pending_tool = pending.get("tool")
+                if pending_tool is None:
+                    raise shared.AgentDriverError("effect_state_invalid", "tool start has no durable dispatch intent")
+                started = service.effects.get(pending_tool[0])
+                if started is None:
+                    raise shared.AgentDriverError("effect_state_invalid", "tool start has no matching effect")
+                if started.status is EffectStatus.PLANNED:
+                    service.effects.mark_dispatched(
+                        started.effect_id, expected_status=EffectStatus.PLANNED,
+                    )
+                return False
             if kind == "tool.before" and isinstance(payload.get("pre_wait"), shared.Mapping):
                 from openprogram.execution.checkpoints import CheckpointFragment
                 from openprogram.execution.waits import DurableWaitStore, WaitStatus
@@ -461,7 +476,7 @@ class SafePointsOperations:
                     idempotency_key=idempotency_key,
                     metadata={"kind": kind, "payload": dict(payload)},
                 )
-                if effect.status is EffectStatus.PLANNED:
+                if effect.status is EffectStatus.PLANNED and kind != "tool.before":
                     service.effects.mark_dispatched(
                         effect.effect_id, expected_status=EffectStatus.PLANNED,
                     )
@@ -480,7 +495,9 @@ class SafePointsOperations:
             except KeyError as exc:
                 raise shared.AgentDriverError("effect_state_invalid", "Agent effect has no durable dispatch intent") from exc
             effect = service.effects.get(effect_id)
-            if effect is None or effect.status is not EffectStatus.DISPATCHED:
+            if effect is None or effect.status not in {EffectStatus.DISPATCHED, EffectStatus.PLANNED}:
+                raise shared.AgentDriverError("effect_state_invalid", "Agent effect is not dispatchable")
+            if effect.status is EffectStatus.PLANNED and kind not in {"tool.after", "tool.suspended"}:
                 raise shared.AgentDriverError("effect_state_invalid", "Agent effect is not dispatchable")
             if kind in {"provider.after", "provider.finished"}:
                 message = payload.get("message")
@@ -543,15 +560,26 @@ class SafePointsOperations:
                         })
             elif kind == "tool.suspended":
                 terminal_receipt = {"function_suspended": True, "tool_call_id": payload.get("tool_call_id")}
+                if effect.status is EffectStatus.PLANNED:
+                    service.effects.mark_dispatched(
+                        effect.effect_id, expected_status=EffectStatus.PLANNED,
+                    )
+                    effect = service.effects.get(effect_id)
             elif kind == "tool.after":
                 result = payload.get("result")
                 if not isinstance(result, shared.Mapping):
                     raise shared.AgentDriverError("checkpoint_schema_invalid", "tool receipt lacks ToolResultMessage")
                 completed_tool_results.append(dict(result))
+                details = result.get("details") if isinstance(result.get("details"), dict) else {}
+                not_started = (
+                    details.get("outcome") == "not_started"
+                    or details.get("execution_started") is False
+                )
                 terminal_receipt = {
                     "tool_call_id": payload.get("tool_call_id"),
                     "is_error": bool(payload.get("is_error")),
                     "result_hash": json_digest(result),
+                    **({"outcome": "not_started", "execution_started": False} if not_started else {}),
                 }
                 tool_call_id = payload.get("tool_call_id")
                 result_text = "\n".join(
@@ -564,6 +592,11 @@ class SafePointsOperations:
                         block["result"] = result_text
                         block["is_error"] = bool(payload.get("is_error"))
                         break
+                if effect.status is EffectStatus.PLANNED and terminal_receipt.get("outcome") != "not_started":
+                    service.effects.mark_dispatched(
+                        effect.effect_id, expected_status=EffectStatus.PLANNED,
+                    )
+                    effect = service.effects.get(effect_id)
             else:
                 raise shared.AgentDriverError("invalid_safe_point", "unsupported Agent safe point")
             def remember_completed_action() -> None:
@@ -595,20 +628,36 @@ class SafePointsOperations:
             from openprogram.execution.restart import window_seconds
             # Direct non-durable hook callers do not carry a revision contract.
             restart_window = window_seconds() if getattr(request, "_execution_revision_id", None) or continuation is not None else 0
-            if command is None and (kind == "provider.finished" or restart_window == 0):
-                service.effects.resolve(
-                    effect_id, expected_status=EffectStatus.DISPATCHED,
-                    outcome=EffectStatus.COMMITTED, receipt=terminal_receipt,
-                    attempt_id=attempt.attempt_id, generation=attempt.generation,
-                )
+            not_started = terminal_receipt.get("outcome") == "not_started"
+            if command is None and restart_window == 0:
+                if not_started:
+                    service.effects.resolve_not_started(
+                        effect_id, receipt=terminal_receipt,
+                        attempt_id=attempt.attempt_id, generation=attempt.generation,
+                    )
+                else:
+                    service.effects.resolve(
+                        effect_id, expected_status=EffectStatus.DISPATCHED,
+                        outcome=EffectStatus.COMMITTED, receipt=terminal_receipt,
+                        attempt_id=attempt.attempt_id, generation=attempt.generation,
+                    )
                 remember_completed_action()
                 return False
             current = service.executions.get_execution(attempt.execution_id)
             if current is None:
                 raise shared.AgentDriverError("execution_not_found", "execution disappeared at safe point")
-            checkpoint = checkpoint_payload(
-                kind, payload, effect_id, action_id, input_hash, terminal_receipt,
-            )
+            inputs = checkpoint_inputs(kind, payload, effect_id, action_id, input_hash, terminal_receipt)
+            if kind != "tool.suspended" and not not_started:
+                from openprogram.execution.agent_receipts import record_result
+                record_result(service, attempt=attempt, effect_id=effect_id,
+                              terminal_receipt=terminal_receipt, checkpoint_inputs=inputs,
+                              restart_window=restart_window,
+                              command_id=command.command_id if command is not None else None,
+                              consumed_steer_command_ids=tuple(sorted(steer_consumed_ids or ())))
+            try:
+                checkpoint = shared.AgentCheckpointV1.build(**inputs)
+            except shared.AgentCheckpointError as exc:
+                raise shared.AgentDriverError(exc.code, str(exc)) from exc
             completion = service.commit_agent_safe_point(
                 execution_id=attempt.execution_id, attempt_id=attempt.attempt_id,
                 generation=attempt.generation, expected_version=current.status_version,

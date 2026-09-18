@@ -385,13 +385,25 @@ export function FunctionStep({
   const [loadingFull, setLoadingFull] = useState(false);
   const { text } = useTranslation();
   const isError = !!block.is_error;
+  const outcome = block.outcome;
   const name = block.tool || "?";
   const kids = tree?.children || [];
   const result = fullResult ?? block.result;
+  const detailStatus = running || loadingFull
+    ? "running"
+    : outcome === "waiting"
+      ? "running"
+      : outcome === "not_started" || outcome === "unknown" || isError
+        ? "error"
+        : "completed";
   const detail: DetailNode = {
     path: `chat-tool:${block.tool_call_id || name}`,
-    name,
-    status: running || loadingFull ? "running" : isError ? "error" : "completed",
+    name: outcome === "not_started"
+      ? `${name} (${text("denied before execution", "未开始执行")})`
+      : outcome === "unknown"
+        ? `${name} (${text("result unknown", "结果未知")})`
+        : name,
+    status: detailStatus,
     params: parseParams(block.input),
     output: result === undefined || result === null
       ? undefined : decodeEscapes(String(result)),

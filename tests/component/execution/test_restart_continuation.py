@@ -298,6 +298,7 @@ def test_owner_loss_preserves_unknown_tool_result_despite_checkpoint(tmp_path, m
     assert hook("tool.before", {
         "tool_call_id": "tool-1", "tool_name": "echo", "arguments": {},
     }) is False
+    assert hook("tool.started", {"tool_call_id": "tool-1"}) is False
     monkeypatch.setattr(
         "openprogram.execution.process_owner.process_owner_may_be_alive",
         lambda *args, **kwargs: False,
@@ -342,6 +343,7 @@ def test_startup_does_not_replay_unknown_tool_result(tmp_path, monkeypatch):
     assert hook("tool.before", {
         "tool_call_id": "tool-1", "tool_name": "echo", "arguments": {},
     }) is False
+    assert hook("tool.started", {"tool_call_id": "tool-1"}) is False
     monkeypatch.setattr(
         "openprogram.execution.process_owner.process_owner_may_be_alive",
         lambda *args, **kwargs: False,
