@@ -3,7 +3,7 @@ module.exports = function createChecks(testContext) {
 function checkPreloadWindowIdentity() {
   const sent = [];
   const invoked = [];
-  let exposed = null;
+  const exposedByName = new Map();
   const argv = [
     "electron",
     "--openprogram-window-id=window-from-main",
@@ -17,7 +17,10 @@ function checkPreloadWindowIdentity() {
       if (id !== "electron") return testContext.require(id);
       return {
         contextBridge: {
-          exposeInMainWorld(_name, value) { exposed = value; },
+          exposeInMainWorld(name, value) {
+            testContext.assert.equal(exposedByName.has(name), false, "preload bridge names must be unique");
+            exposedByName.set(name, value);
+          },
         },
         ipcRenderer: {
           send(...args) { sent.push(args); },
@@ -30,7 +33,11 @@ function checkPreloadWindowIdentity() {
   };
   testContext.vm.createContext(preloadSandbox);
   testContext.vm.runInContext(testContext.preloadSource, preloadSandbox, { filename: "apps/desktop/preload.js" });
-
+  const exposed = exposedByName.get("openprogramDesktop");
+  const terminals = exposedByName.get("openprogramTerminals");
+  testContext.assert.ok(exposed, "the existing Desktop bridge remains available");
+  testContext.assert.ok(terminals, "the shared Terminal bridge is independently named");
+  testContext.assert.equal(terminals.windowId, "window-from-main");
   testContext.assert.equal(exposed.windowId, "window-from-main");
   argv[1] = "--openprogram-window-id=changed-after-preload";
   testContext.assert.equal(
@@ -80,11 +87,18 @@ function checkPreloadWindowIdentity() {
     ["webtab:show-action", "pane-a", marker],
     ["webtab:show-action", "pane-a", null],
   ]);
+  const request = { terminal_id: "terminal:window-from-main:shell", generation: "instance-a", cursor: 0 };
+  terminals.resource("read", request);
+  terminals.agentTicket("a".repeat(64));
+  testContext.assert.deepEqual(invoked.slice(-2), [
+    ["terminal:resource", "read", request],
+    ["terminal:agent-ticket", "a".repeat(64)],
+  ]);
 }
 
 function checkPreloadPopupSubscription() {
   const listeners = new Map();
-  let exposed = null;
+  const exposedByName = new Map();
   const preloadSandbox = {
     CustomEvent: class CustomEvent {},
     process: { argv: ["electron"] },
@@ -93,7 +107,7 @@ function checkPreloadPopupSubscription() {
       if (id !== "electron") return testContext.require(id);
       return {
         contextBridge: {
-          exposeInMainWorld(_name, value) { exposed = value; },
+          exposeInMainWorld(name, value) { exposedByName.set(name, value); },
         },
         ipcRenderer: {
           send() {},
@@ -108,6 +122,7 @@ function checkPreloadPopupSubscription() {
   };
   testContext.vm.createContext(preloadSandbox);
   testContext.vm.runInContext(testContext.preloadSource, preloadSandbox, { filename: "apps/desktop/preload.js" });
+  const exposed = exposedByName.get("openprogramDesktop");
 
   const received = [];
   const unsubscribe = exposed.webTab.onPopup((popup) => received.push(popup));
@@ -121,11 +136,18 @@ function checkPreloadPopupSubscription() {
   }]);
   unsubscribe();
   testContext.assert.equal(listeners.has("webtab:popup"), false);
+  const terminalReceived = [];
+  const unsubscribeTerminal = exposedByName.get("openprogramTerminals").onResource(value => terminalReceived.push(value));
+  const resource = { terminal_id: "terminal:main:shell", generation: "instance-a", status: "running" };
+  listeners.get("terminal:resource")?.({}, resource);
+  testContext.assert.deepEqual(terminalReceived, [resource]);
+  unsubscribeTerminal();
+  testContext.assert.equal(listeners.has("terminal:resource"), false);
 }
 
 function checkPreloadHumanInputSubscription() {
   const listeners = new Map();
-  let exposed = null;
+  const exposedByName = new Map();
   const preloadSandbox = {
     CustomEvent: class CustomEvent {},
     process: { argv: ["electron"] },
@@ -134,7 +156,7 @@ function checkPreloadHumanInputSubscription() {
       if (id !== "electron") return testContext.require(id);
       return {
         contextBridge: {
-          exposeInMainWorld(_name, value) { exposed = value; },
+          exposeInMainWorld(name, value) { exposedByName.set(name, value); },
         },
         ipcRenderer: {
           send() {},
@@ -149,6 +171,7 @@ function checkPreloadHumanInputSubscription() {
   };
   testContext.vm.createContext(preloadSandbox);
   testContext.vm.runInContext(testContext.preloadSource, preloadSandbox, { filename: "apps/desktop/preload.js" });
+  const exposed = exposedByName.get("openprogramDesktop");
 
   const received = [];
   const unsubscribe = exposed.webTab.onHumanInput((payload) => received.push(payload));
@@ -170,7 +193,7 @@ function checkPreloadHumanInputSubscription() {
 }
 
 function checkPreloadLocalFilePath() {
-  let exposed = null;
+  const exposedByName = new Map();
   const nativeFile = { name: "Project Folder" };
   const expectedPath = "/Users/test/Project Folder";
   const preloadSandbox = {
@@ -181,7 +204,7 @@ function checkPreloadLocalFilePath() {
       if (id !== "electron") return testContext.require(id);
       return {
         contextBridge: {
-          exposeInMainWorld(_name, value) { exposed = value; },
+          exposeInMainWorld(name, value) { exposedByName.set(name, value); },
         },
         ipcRenderer: {
           send() {},
@@ -200,6 +223,7 @@ function checkPreloadLocalFilePath() {
   };
   testContext.vm.createContext(preloadSandbox);
   testContext.vm.runInContext(testContext.preloadSource, preloadSandbox, { filename: "apps/desktop/preload.js" });
+  const exposed = exposedByName.get("openprogramDesktop");
   testContext.assert.equal(
     exposed.getPathForFile(nativeFile),
     expectedPath,
@@ -211,7 +235,7 @@ function checkPreloadTabTransfer() {
   const sentSync = [];
   const invoked = [];
   const listeners = new Map();
-  let exposed = null;
+  const exposedByName = new Map();
   const preloadSandbox = {
     CustomEvent: class CustomEvent {},
     process: { argv: ["electron", "--openprogram-window-id=transfer-window"] },
@@ -220,7 +244,7 @@ function checkPreloadTabTransfer() {
       if (id !== "electron") return testContext.require(id);
       return {
         contextBridge: {
-          exposeInMainWorld(_name, value) { exposed = value; },
+          exposeInMainWorld(name, value) { exposedByName.set(name, value); },
         },
         ipcRenderer: {
           send() {},
@@ -241,6 +265,7 @@ function checkPreloadTabTransfer() {
   };
   testContext.vm.createContext(preloadSandbox);
   testContext.vm.runInContext(testContext.preloadSource, preloadSandbox, { filename: "apps/desktop/preload.js" });
+  const exposed = exposedByName.get("openprogramDesktop");
 
   const transfer = exposed.tabTransfer;
   testContext.assert.ok(transfer, "preload must expose tabTransfer");
