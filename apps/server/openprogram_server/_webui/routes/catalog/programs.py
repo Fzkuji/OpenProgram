@@ -210,6 +210,9 @@ def _entity_paths() -> dict[str, Path]:
             name = child.stem if child.is_file() else child.name
             if name.startswith("_") or name in _WORKFLOW_INTERNAL_NAMES:
                 continue
+            if (parent.name == "workflow" and child.is_dir()
+                    and not any(child.glob("*.py"))):
+                continue
             if child.is_dir() or child.suffix == ".py":
                 relative = (Path("packages") / name if parent.name in {"packages", "applications"} else parent / name).as_posix()
                 if _program_kind(relative) or relative.startswith("packages/"):
