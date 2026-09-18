@@ -1230,7 +1230,17 @@ async def _execute_tool_calls(
 
     for index, tool_call in enumerate(tool_calls[start_index:], start=start_index):
         tool = next((t for t in (tools or []) if t.name == tool_call.name), None)
-        fail_key = _tool_repeat_key(tool_call.name, tool_call.arguments)
+        from openprogram.providers.types import Tool as AiTool, ToolCall as AiToolCall
+        validated_args = tool_call.arguments
+        validation_error = None
+        if tool is not None:
+            try:
+                validated_args = validate_tool_arguments(AiTool(
+                    name=tool.name, description=tool.description, parameters=tool.parameters,
+                ), tool_call)
+            except Exception as exc:
+                validation_error = exc
+        fail_key = _tool_repeat_key(tool_call.name, validated_args)
         streak = repeat_failures.get(fail_key, 0)
 
         ev_stream.push(AgentEventToolStart(
@@ -1239,17 +1249,17 @@ async def _execute_tool_calls(
             args=tool_call.arguments,
         ))
         preflight = getattr(tool, "_permission_preflight", None)
-        if callable(preflight) and streak < 2:
-            await preflight(tool_call.id, tool_call.arguments)
+        if callable(preflight) and streak < 2 and validation_error is None:
+            await preflight(tool_call.id, validated_args)
         if safe_point_hook is not None:
             interaction_manifest = getattr(tool, "_interaction_manifest", None)
             pre_wait = (
-                interaction_manifest(tool_call.id, tool_call.arguments)
-                if callable(interaction_manifest) else None
+                interaction_manifest(tool_call.id, validated_args)
+                if callable(interaction_manifest) and validation_error is None else None
             )
             safe_payload = {
                 "tool_call_id": str(tool_call.id), "tool_name": tool_call.name,
-                "arguments": tool_call.arguments, "next_tool_index": index,
+                "arguments": validated_args, "next_tool_index": index,
                 "pre_wait": pre_wait,
             }
             stop_at_safe_point = bool(await safe_point_hook("tool.before", safe_payload))
@@ -1312,14 +1322,8 @@ async def _execute_tool_calls(
             if not tool:
                 raise ValueError(f"Tool {tool_call.name} not found")
 
-            # Build a Tool-compatible object for validation
-            from openprogram.providers.types import Tool as AiTool, ToolCall as AiToolCall
-            ai_tool = AiTool(
-                name=tool.name,
-                description=tool.description,
-                parameters=tool.parameters,
-            )
-            validated_args = validate_tool_arguments(ai_tool, tool_call)
+            if validation_error is not None:
+                raise validation_error
 
             def on_update(partial_result: AgentToolResult) -> None:
                 _record_job_activity("tool_progress")

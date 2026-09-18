@@ -106,3 +106,32 @@ def test_argument_mutation_during_review_never_executes(monkeypatch, with_manife
     assert result.is_error
     assert result.details["reason_code"] == "PERMISSION_REVIEW_STALE"
     assert not called
+
+
+def test_preflight_uses_validated_operation(monkeypatch):
+    seen = []
+    monkeypatch.setattr("openprogram.programs.permission_rule.load_merged_rules", lambda _: None)
+
+    async def classify(name, args, **kwargs):
+        seen.append(("review", args))
+        return False, "safe"
+
+    async def execute(call_id, args, *_):
+        seen.append(("execute", args))
+        return AgentToolResult(content=[], details={})
+
+    async def checkpoint(kind, payload):
+        if kind == "tool.before":
+            seen.append(("dispatch", payload["arguments"]))
+        return False
+
+    monkeypatch.setattr("openprogram.agent.permissions.classifier.auto_classify_tool", classify)
+    request = TurnRequest(session_id="canonical", user_text="test", agent_id="main", source="web",
+        permission_mode="auto", **owner_authority("owner/install/0123456789abcdef"))
+    tool = wrap_with_approval(AgentTool(name="probe", label="probe", description="test",
+        parameters={"type": "object", "properties": {"count": {"type": "integer"}}}, execute=execute), request, lambda _: None)
+    message = AssistantMessage(content=[ToolCall(id="c", name="probe", arguments={"count": "1"})],
+        api="openai-completions", provider="test", model="test", stop_reason="toolUse", timestamp=0)
+    result = asyncio.run(_execute_tool_calls([tool], message, None, EventStream(), None, {}, safe_point_hook=checkpoint))
+    assert not result["tool_results"][0].is_error
+    assert seen == [("review", {"count": 1}), ("dispatch", {"count": 1}), ("execute", {"count": 1})]

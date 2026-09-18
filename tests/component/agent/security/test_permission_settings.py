@@ -48,8 +48,9 @@ def test_call_snapshot_and_next_call_refresh(permissions):
     update_permission("one", "bypass", 0, actor)
     assert tool._interaction_manifest("allowed", {"command":"echo test"}) is None
     update_permission("one", "ask", 1, actor)
-    asyncio.run(tool.execute("allowed", {"command":"echo test"}, None, None))
-    assert calls == ["allowed"]
+    result = asyncio.run(tool.execute("allowed", {"command":"echo test"}, None, None))
+    assert result.details["reason_code"] == "PERMISSION_REVIEW_STALE"
+    assert calls == []
     assert tool._interaction_manifest("next", {"command":"echo test"}) is not None
     assert request.permission_mode == "ask"
 
