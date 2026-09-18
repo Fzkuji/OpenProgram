@@ -14,7 +14,7 @@ const randomId = () => crypto.randomBytes(16).toString("hex");
  * ticket. Human input does not pause a task; execution controls own that state.
  */
 function createTerminalResourceManager({ spawn, stop, resolveLaunch,
-  waitForPid = async (pty) => pty.pid, now = Date.now,
+  waitForPid = async (pty) => pty.pid, finalizeStop = () => {}, now = Date.now,
   emit = () => {}, startupTimeoutMs = 5_000, leaseMs = 90_000,
   maxSessions = 32, maxHistory = 64, timers = { setTimeout, clearTimeout } } = {}) {
   const schedule = timers.setTimeout, cancelTimer = timers.clearTimeout;
@@ -141,7 +141,12 @@ function createTerminalResourceManager({ spawn, stop, resolveLaunch,
       records.set(entry.id, entry);
       pty.onData((data) => append(entry, data));
       pty.onExit(({ exitCode }) => {
-        entry.status = entry.status === "stopping" ? "closed" : "exited";
+        const stopping = entry.status === "stopping";
+        // Root exit must not cancel cleanup of descendants that ignored TERM.
+        // The native adapter only targets the captured descendants here, never
+        // the exited root PID or its potentially reusable process-group ID.
+        if (stopping) finalizeStop(entry.pty);
+        entry.status = stopping ? "closed" : "exited";
         entry.exitCode = exitCode; entry.confirmClosed(); entry.lease = null; entry.startupAbort.abort();
         if (entry.killTimer !== null) cancelTimer(entry.killTimer);
         entry.killTimer = null; entry.lastOperation = { action: "exit", phase: "confirmed" };

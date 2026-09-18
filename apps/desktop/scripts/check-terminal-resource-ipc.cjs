@@ -138,3 +138,56 @@ test("lost acknowledgement never replays a delivered input", async t => {
   const result = await f.agent("input", { ...seen, action: "input", data: "one\r", expected_input_revision: seen.input_revision });
   assert.equal(result.result_unconfirmed, true); assert.deepEqual(f.pties[0].writes, ["one\r"]);
 });
+
+test("closing a root process also terminates descendants that ignore SIGTERM", {
+  skip: process.platform === "win32", timeout: 8000,
+}, async t => {
+  const { spawn, execFileSync } = require("node:child_process");
+  const { tmpdir } = require("node:os");
+  const { setTimeout: delay } = require("node:timers/promises");
+  let parent, childPid;
+  const handlers = new Map(), app = new EventEmitter(), sender = new EventEmitter();
+  app.getPath = () => tmpdir(); sender.isDestroyed = () => false; sender.send = () => {};
+  sender.mainFrame = { url: "http://127.0.0.1:18100/chat" };
+  const event = { sender, senderFrame: sender.mainFrame };
+  const ctx = { id: "main", win: { webContents: sender } };
+  let childReady;
+  const ready = new Promise(resolve => { childReady = resolve; });
+  const childCode = "process.on('SIGTERM',()=>{}); console.log(process.pid); setInterval(()=>{},1000)";
+  const parentCode = `const {spawn}=require('node:child_process'); const c=spawn(process.execPath,['-e',${JSON.stringify(childCode)}],{stdio:['ignore','pipe','ignore']}); c.stdout.pipe(process.stdout); setInterval(()=>{},1000);`;
+  t.after(async () => {
+    if (childPid) { try { process.kill(childPid, "SIGKILL"); } catch {} }
+    if (parent) {
+      try { process.kill(-parent.pid, "SIGKILL"); } catch {}
+      if (parent.exitCode === null && parent.signalCode === null) {
+        await new Promise(resolve => parent.once("exit", resolve));
+      }
+    }
+    app.emit("before-quit");
+  });
+  registerTerminalResourceIpc({
+    ipcMain: { handle: (name, fn) => handlers.set(name, fn), on() {} }, app,
+    contextForSender: () => ctx, origin: "http://127.0.0.1:18100", getOwnerToken: () => "",
+    spawn() {
+      parent = spawn(process.execPath, ["-e", parentCode], { detached: true, stdio: ["ignore", "pipe", "ignore"] });
+      parent.stdout.once("data", data => { childPid = Number(String(data).trim()); childReady(); });
+      return { pid: parent.pid, onData() {}, onExit: fn => parent.once("exit", exitCode => fn({ exitCode })),
+        resize() {}, kill: signal => parent.kill(signal) };
+    },
+  });
+  const opened = await handlers.get("terminal:start")(event, { id: "terminal:main:shell", preset: "shell", cwd: tmpdir() });
+  assert.equal(opened.ok, true);
+  await ready;
+  assert.ok(Number.isSafeInteger(childPid) && childPid > 0);
+  const exited = new Promise(resolve => parent.once("exit", resolve));
+  handlers.get("terminal:resource")(event, "close", { terminal_id: opened.terminal_id, generation: opened.generation });
+  await exited;
+  const running = () => {
+    try { return !/^\s*Z/.test(execFileSync("/bin/ps", ["-p", String(childPid), "-o", "stat="], { encoding: "utf8" })); }
+    catch { return false; }
+  };
+  const deadline = Date.now() + 2000;
+  while (running() && Date.now() < deadline) await delay(20);
+  assert.equal(running(), false, "root exit must not abandon the captured descendant");
+  assert.equal(handlers.get("terminal:resource")(event, "list").items[0].status, "closed");
+});

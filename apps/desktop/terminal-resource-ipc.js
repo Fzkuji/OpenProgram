@@ -99,6 +99,12 @@ function registerTerminalResourceIpc({ ipcMain, app, contextForSender, origin, g
     if (!group) pty.kill(signal);
   }
   const manager = createTerminalResourceManager({ spawn, stop, timers,
+    finalizeStop(pty) {
+      for (const child of descendants.get(pty) || []) {
+        try { kill(child, "SIGKILL"); } catch { /* child may already have exited */ }
+      }
+      descendants.delete(pty);
+    },
     waitForPid: (pty, options) => platform === "win32" ? waitForPid(pty, options) : pty.pid,
     resolveLaunch(request) {
       const cwd = fileSystem.realpathSync(request.cwd || app.getPath("home"));
