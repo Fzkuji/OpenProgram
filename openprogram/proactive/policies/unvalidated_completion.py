@@ -24,6 +24,8 @@ class UnvalidatedCompletionNudge(Policy):
     name = "UnvalidatedCompletionNudge"
 
     def evaluate(self, event: Event, state) -> Action | None:
+        if event.payload.get("is_error"):
+            return None
         # 本轮有文件改动、但没有任何验证动作 → 推一把
         if state.turn_has_file_change and not state.turn_has_verification:
             return Inject(

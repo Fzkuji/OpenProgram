@@ -107,3 +107,10 @@ def test_gap_silent_when_no_change_this_turn():
     st = SessionState(turn_has_file_change=False,
                       changed_files={"openprogram/agent/loop.py"})
     assert p.evaluate(_completed(), st) is None
+
+def test_unsuccessful_response_does_not_trigger_completion_advice():
+    state = SessionState(turn_has_file_change=True, changed_files={"openprogram/agent/loop.py"})
+    for status in ("failed", "cancelled", "incomplete"):
+        event = make_event("model.response_completed", "agent", {"is_error": True, "status": status}, {"session": "s"})
+        for policy in (TestGapWatcher(), UnvalidatedCompletionNudge()):
+            assert policy.evaluate(event, state) is None

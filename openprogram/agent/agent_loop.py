@@ -1088,90 +1088,93 @@ async def _stream_assistant_response(
         else:
             stream_opts.idempotency_key = None
     _record_job_activity("operation_start")
-    response_stream = fn(config.model, llm_context, stream_opts)
+    from .provider_lifecycle import provider_response
 
-    iterator = response_stream.__aiter__()
-    while True:
-        if structured_plan is not None and cancel_event and cancel_event.is_set():
-            from openprogram.providers.utils.errors import ExecInterrupt
+    with provider_response(emit_safe) as response:
+        response_stream = fn(config.model, llm_context, stream_opts)
 
-            raise ExecInterrupt("cancelled")
-        timeout = _job_operation_timeout(None)
-        try:
-            event = (
-                await iterator.__anext__()
-                if timeout is None
-                else await asyncio.wait_for(iterator.__anext__(), timeout=timeout)
-            )
-        except StopAsyncIteration:
-            break
-        _record_job_activity("provider_data")
-        if structured_plan is not None and cancel_event and cancel_event.is_set():
-            from openprogram.providers.utils.errors import ExecInterrupt
+        iterator = response_stream.__aiter__()
+        while True:
+            if structured_plan is not None and cancel_event and cancel_event.is_set():
+                from openprogram.providers.utils.errors import ExecInterrupt
 
-            raise ExecInterrupt("cancelled")
-        if event.type == "start":
-            partial_message = event.partial
-            if structured_plan is None:
-                context.messages.append(partial_message)
-                added_partial = True
-            ev_stream.push(AgentEventMessageStart(message=partial_message))
-            emit_safe("model.response_started", "agent")
+                raise ExecInterrupt("cancelled")
+            timeout = _job_operation_timeout(None)
+            try:
+                event = (
+                    await iterator.__anext__()
+                    if timeout is None
+                    else await asyncio.wait_for(iterator.__anext__(), timeout=timeout)
+                )
+            except StopAsyncIteration:
+                break
+            _record_job_activity("provider_data")
+            if structured_plan is not None and cancel_event and cancel_event.is_set():
+                from openprogram.providers.utils.errors import ExecInterrupt
 
-        elif event.type in (
-            "text_start", "text_delta", "text_end",
-            "thinking_start", "thinking_delta", "thinking_end",
-            "toolcall_start", "toolcall_delta", "toolcall_end",
-        ):
-            if partial_message is not None:
-                if output_attempt is not None and event.type in (
-                    "text_start", "text_delta", "text_end",
-                ):
-                    event = event.model_copy(update={"output_attempt": output_attempt})
+                raise ExecInterrupt("cancelled")
+            if event.type == "start":
                 partial_message = event.partial
+                if structured_plan is None:
+                    context.messages.append(partial_message)
+                    added_partial = True
+                ev_stream.push(AgentEventMessageStart(message=partial_message))
+
+            elif event.type in (
+                "text_start", "text_delta", "text_end",
+                "thinking_start", "thinking_delta", "thinking_end",
+                "toolcall_start", "toolcall_delta", "toolcall_end",
+            ):
+                if partial_message is not None:
+                    if output_attempt is not None and event.type in (
+                        "text_start", "text_delta", "text_end",
+                    ):
+                        event = event.model_copy(update={"output_attempt": output_attempt})
+                    partial_message = event.partial
+                    if added_partial:
+                        context.messages[-1] = partial_message
+                    ev_stream.push(AgentEventMessageUpdate(
+                        message=partial_message,
+                        assistant_message_event=event,
+                    ))
+
+            elif event.type in ("done", "error"):
+                response.status = "completed" if event.type == "done" else (
+                    "cancelled" if event.error.stop_reason == "aborted" else "failed"
+                )
+                final_message = event.message if event.type == "done" else event.error
+                if structured_plan is not None:
+                    if partial_message is None:
+                        ev_stream.push(AgentEventMessageStart(message=final_message))
+                    return final_message
                 if added_partial:
-                    context.messages[-1] = partial_message
-                ev_stream.push(AgentEventMessageUpdate(
-                    message=partial_message,
-                    assistant_message_event=event,
-                ))
-
-        elif event.type in ("done", "error"):
-            final_message = event.message if event.type == "done" else event.error
-            if structured_plan is not None:
-                if partial_message is None:
+                    context.messages[-1] = final_message
+                else:
+                    context.messages.append(final_message)
+                if not added_partial:
                     ev_stream.push(AgentEventMessageStart(message=final_message))
-                emit_safe("model.response_completed", "agent",
-                          {"is_error": event.type == "error"})
+                ev_stream.push(AgentEventMessageEnd(message=final_message))
                 return final_message
-            if added_partial:
-                context.messages[-1] = final_message
-            else:
-                context.messages.append(final_message)
-            if not added_partial:
-                ev_stream.push(AgentEventMessageStart(message=final_message))
-            ev_stream.push(AgentEventMessageEnd(message=final_message))
-            emit_safe("model.response_completed", "agent",
-                      {"is_error": event.type == "error"})
-            return final_message
 
-    if structured_plan is not None:
-        from openprogram.providers.structured_output import (
-            StructuredOutputGenerationError,
-        )
+        response.exhausted = True
+        if structured_plan is not None:
+            from openprogram.providers.structured_output import (
+                StructuredOutputGenerationError,
+            )
 
-        raise StructuredOutputGenerationError(
-            "Structured output stream ended without a terminal event",
-            code="incomplete",
-        )
+            raise StructuredOutputGenerationError(
+                "Structured output stream ended without a terminal event",
+                code="incomplete",
+            )
 
-    # Ordinary text mode preserves the legacy partial-message fallback.
-    if partial_message:
-        if cancel_event and cancel_event.is_set():
-            raise RuntimeError("Request was aborted")
-        return partial_message
+        # Ordinary text mode preserves the legacy partial-message fallback.
+        if partial_message:
+            if cancel_event and cancel_event.is_set():
+                response.status = "cancelled"
+                raise RuntimeError("Request was aborted")
+            return partial_message
 
-    raise RuntimeError("Stream ended without a final message")
+        raise RuntimeError("Stream ended without a final message")
 
 
 # In-flight tool executions, keyed by tool_call_id. Read by the worker's

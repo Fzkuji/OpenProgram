@@ -71,3 +71,15 @@ test('only the final active execution segment animates and text ends that animat
 test('assistant replies do not display the usage footer', () => {
   assert.doesNotMatch(renderBlocks([{type:'text',text:'Answer'}],'done',{input_tokens:89000,output_tokens:327,service_tiers:['priority']}), /runtime-usage-footer|Fast served|89.0k/);
 });
+
+for (const [status,label] of [['cancelled','Cancelled'],['interrupted','Interrupted']]) {
+  test(`${status} empty and partial replies show terminal status`, () => {
+    for (const blocks of [[],[{type:'text',text:'Saved partial reply'}]]) {
+      const html=renderBlocks(blocks,status);
+      assert.match(html, new RegExp(label));
+      assert.doesNotMatch(html, /data-active="true"|typing-indicator/);
+      if (blocks.length) assert.match(html,/Saved partial reply/);
+    }
+    assert.doesNotMatch(renderBlocks([],'done'),new RegExp(label));
+  });
+}

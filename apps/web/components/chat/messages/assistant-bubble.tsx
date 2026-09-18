@@ -499,6 +499,12 @@ export function AssistantBubble({ msg, verdict, sessionIdOverride }: {
               {streaming && !hasContent && !waitingApproval ? <TypingIndicator /> : null}
             </>
           )}
+          {msg.status === "cancelled" || msg.status === "interrupted" ? (
+            <div className="pending-body" role="status">
+              <span className="pending-label">{msg.status === "cancelled"
+                ? text("Cancelled", "已取消") : text("Interrupted", "已中断")}</span>
+            </div>
+          ) : null}
           {waitingApproval ? (
             <div className="pending-body" role="status">
               <span className="pending-label">{text("Waiting for approval", "等待审批")}</span>

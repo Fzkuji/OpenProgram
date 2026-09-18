@@ -5,10 +5,40 @@ import { useSessionStore } from "@/lib/session-store";
 import { queueFor, useSendQueue } from "@/lib/chat/send-queue";
 import type { CommandResult, ExecutionCommand } from "@/lib/execution/execution-debugger";
 
+type Confirmation = { timer?: ReturnType<typeof setTimeout>; delay: number };
+const confirmations = new Map<string, Confirmation>();
+const confirmationKey = (sessionId: string, messageId: string) => `${sessionId}\0${messageId}`;
+
+function clearConfirmation(key: string): void {
+  const pending = confirmations.get(key);
+  if (pending?.timer !== undefined) clearTimeout(pending.timer);
+  confirmations.delete(key);
+}
+
+function confirmLater(sessionId: string, messageId: string, transportFailed: boolean): void {
+  const key = confirmationKey(sessionId, messageId);
+  const prior = confirmations.get(key);
+  if (prior?.timer !== undefined) clearTimeout(prior.timer);
+  const delay = transportFailed ? Math.min((prior?.delay ?? 750) * 2, 30000) : 1500;
+  const pending: Confirmation = { delay };
+  pending.timer = setTimeout(() => {
+    pending.timer = undefined;
+    void steerQueuedMessage(sessionId, messageId);
+  }, delay);
+  confirmations.set(key, pending);
+}
+
 /** The queue is the fallback; this path never cancels an execution. */
 export async function steerQueuedMessage(sessionId: string, messageId: string): Promise<boolean> {
   const entry = queueFor(sessionId).find(item => item.id === messageId);
-  if (!entry || entry.injecting) return false;
+  const key = confirmationKey(sessionId, messageId);
+  if (!entry) { clearConfirmation(key); return false; }
+  if (entry.injecting) return false;
+  const pending = confirmations.get(key);
+  if (pending?.timer !== undefined) {
+    clearTimeout(pending.timer);
+    pending.timer = undefined;
+  }
   const queue = useSendQueue.getState();
   queue.setSteering(sessionId, messageId, { injecting: true, steerError: undefined });
   let command: ExecutionCommand | undefined = entry.steerCommand;
@@ -54,16 +84,18 @@ export async function steerQueuedMessage(sessionId: string, messageId: string): 
       }
       if (result.command_id !== command.command_id) throw new Error("Unconfirmed command acknowledgement");
       if (result.status === "applied") {
+        clearConfirmation(key);
         queue.remove(sessionId, messageId);
         return true;
       }
       if (["accepted", "applying"].includes(result.status)) {
         // The server owns this command, but delivery is not complete until the
         // instruction has been persisted in the conversation. Replay is idempotent.
-        setTimeout(() => { void steerQueuedMessage(sessionId, messageId); }, 1500);
+        confirmLater(sessionId, messageId, false);
         return false;
       }
       if (result.status !== "rejected") throw new Error("Unconfirmed command outcome");
+      clearConfirmation(key);
       queue.setSteering(sessionId, messageId, { steerCommand: undefined });
       command = undefined;
       if (result.rejection_code === "stale_version" && attempt === 0) continue;
@@ -73,6 +105,7 @@ export async function steerQueuedMessage(sessionId: string, messageId: string): 
     return false;
   } catch {
     queue.setSteering(sessionId, messageId, { steerError: command ? "unconfirmed" : "retry" });
+    if (command) confirmLater(sessionId, messageId, true);
     return false;
   } finally {
     queue.setInjecting(sessionId, messageId, false);

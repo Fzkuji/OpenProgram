@@ -300,3 +300,57 @@ def test_non_validation_terminal_never_starts_repair(stop_reason, error_type, co
 
     asyncio.run(collect())
     assert len(seen_contexts) == 1
+
+@pytest.mark.parametrize("ending", ["transport", "cancel", "eof", "done"])
+def test_each_provider_request_has_one_identified_terminal_event(monkeypatch, ending):
+    import importlib
+    loop = importlib.import_module("openprogram.agent.agent_loop")
+    seen = []
+    monkeypatch.setattr(loop, "emit_safe", lambda kind, origin, payload=None: seen.append((kind, payload)))
+
+    def provider(model, context, options):
+        async def events():
+            yield EventStart(partial=_message("partial"))
+            if ending == "transport":
+                raise RuntimeError("transport disconnected")
+            if ending == "cancel":
+                raise ExecInterrupt("cancelled")
+            if ending == "done":
+                yield EventDone(reason="stop", message=_message('{"answer":7}'))
+        return events()
+
+    async def run():
+        stream = agent_loop([UserMessage(content="answer", timestamp=1)], AgentContext(tools=[]),
+                            _config(retries=0), stream_fn=provider)
+        async for _ in stream:
+            pass
+        await stream.result()
+
+    if ending == "transport":
+        with pytest.raises(RuntimeError, match="transport disconnected"):
+            asyncio.run(run())
+    elif ending == "cancel":
+        with pytest.raises(ExecInterrupt):
+            asyncio.run(run())
+    elif ending == "eof":
+        with pytest.raises(StructuredOutputGenerationError):
+            asyncio.run(run())
+    else:
+        asyncio.run(run())
+    assert [kind for kind, _ in seen] == ["model.response_started", "model.response_completed"]
+    assert seen[0][1]["request_id"] == seen[1][1]["request_id"]
+    assert seen[0][1]["request_id"]
+    expected = {"transport":"failed", "cancel":"cancelled", "eof":"incomplete", "done":"completed"}[ending]
+    assert seen[1][1]["status"] == expected
+    assert seen[1][1]["is_error"] is (ending != "done")
+
+def test_structured_repair_requests_have_distinct_balanced_identities(monkeypatch):
+    import importlib
+    loop = importlib.import_module("openprogram.agent.agent_loop")
+    seen = []
+    monkeypatch.setattr(loop, "emit_safe", lambda kind, origin, payload=None: seen.append((kind, payload)))
+    asyncio.run(_run([_message('{"answer":"bad"}'), _message('{"answer":7}')]))
+    assert [kind for kind, _ in seen] == ["model.response_started", "model.response_completed"] * 2
+    assert seen[0][1]["request_id"] == seen[1][1]["request_id"]
+    assert seen[2][1]["request_id"] == seen[3][1]["request_id"]
+    assert seen[0][1]["request_id"] != seen[2][1]["request_id"]

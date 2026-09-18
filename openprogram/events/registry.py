@@ -95,12 +95,12 @@ EVENTS: dict[str, EventSpec] = {
     ),
     "model.response_started": EventSpec(
         kind="notify",
-        payload_doc="{} — the provider stream opened for one model response "
+        payload_doc="{request_id} — one provider request was dispatched "
                     "within the agent loop",
     ),
     "model.response_completed": EventSpec(
         kind="notify",
-        payload_doc="{is_error: bool} — one model response finished; fires "
+        payload_doc="{request_id, status, is_error: bool} — one model response ended on every exit; fires "
                     "per loop iteration, not per dispatcher turn",
     ),
     "file.changed": EventSpec(

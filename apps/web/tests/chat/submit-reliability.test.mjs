@@ -57,7 +57,7 @@ const mocks = {
       session_id:sid, execution_id:eid, status_version:7, status:'running', capabilities:{steer:true}
     });
     export const postExecutionCommand = async command => {
-      host.commands.push(command); return {command_id:command.command_id,status:'applied'};
+      host.commands.push(command); if (host.postCommand) return host.postCommand(command); return {command_id:command.command_id,status:'applied'};
     };`,
 };
 registerHooks({
@@ -137,7 +137,7 @@ beforeEach(() => {
   useSendQueue.setState({ queues: {} });
   Object.assign(host.runtime, { currentSessionId: "A", isRunning: false, _optimisticCancels: {}, _optimisticStops: {} });
   Object.assign(host, {
-    frames: [], commands: [], notes: [], toasts: [], draftWrites: [], runWrites: [],
+    postCommand: undefined, frames: [], commands: [], notes: [], toasts: [], draftWrites: [], runWrites: [],
     globalRunWrites: [], welcomeWrites: [], collectPastesOnClear: false,
     expandMentions: async text => ({ text }),
   });
@@ -346,4 +346,53 @@ test("current chat key overrides a stale legacy currentSessionId", () => {
   sendChatMessage(sendArgs());
   assert.equal(host.globalRunWrites.length, 0);
   assert.equal(host.welcomeWrites.length, 0);
+});
+
+test("lost steering acknowledgement confirms the same command automatically", async t => {
+  running();
+  const timers = [];
+  t.mock.method(globalThis, 'setTimeout', (callback, delay) => { timers.push({callback,delay}); return timers.length; });
+  t.mock.method(globalThis, 'clearTimeout', () => {});
+  host.postCommand = command => {
+    if (host.commands.length === 1) throw new Error('response lost after server accepted');
+    return {command_id:command.command_id,status:'applied'};
+  };
+  await composer('keep this instruction', {runningMessageMode:'steer'}).submit();
+  await nextTurn();
+  assert.equal(queueFor('A')[0].steerError, 'unconfirmed');
+  assert.equal(timers.length, 1);
+  assert.equal(timers[0].delay, 1500);
+  timers.shift().callback();
+  await nextTurn();
+  assert.equal(host.commands.length, 2);
+  assert.deepEqual(host.commands[1], host.commands[0]);
+  assert.equal(queueFor('A').length, 0);
+  assert.equal(host.frames.length, 0);
+});
+
+test("unconfirmed steering backs off with one timer and preserves its command", async t => {
+  running();
+  let nextId = 0;
+  const timers = new Map();
+  t.mock.method(globalThis, 'setTimeout', (callback, delay) => { const id=++nextId; timers.set(id,{callback,delay}); return id; });
+  t.mock.method(globalThis, 'clearTimeout', id => timers.delete(id));
+  host.postCommand = () => { throw new Error('offline'); };
+  await composer('pending instruction',{runningMessageMode:'steer'}).submit();
+  await nextTurn();
+  const firstCommand=host.commands[0];
+  for (const expected of [1500,3000,6000,12000,24000,30000,30000]) {
+    assert.equal(timers.size,1);
+    const [id,timer]=[...timers][0];
+    assert.equal(timer.delay,expected);
+    timers.delete(id); timer.callback(); await nextTurn();
+    assert.equal(queueFor('A')[0].text,'pending instruction');
+    assert.deepEqual(host.commands.at(-1),firstCommand);
+    assert.equal(host.frames.length,0);
+  }
+  // A manual confirmation replaces the pending timer, never creates a second loop.
+  host.postCommand = command => ({command_id:command.command_id,status:'applied'});
+  const {steerQueuedMessage}=await import('../../lib/chat/steer-message.ts');
+  await steerQueuedMessage('A',queueFor('A')[0].id);
+  assert.equal(timers.size,0);
+  assert.equal(queueFor('A').length,0);
 });

@@ -37,6 +37,8 @@ class TestGapWatcher(Policy):
     name = "TestGapWatcher"
 
     def evaluate(self, event: Event, state) -> Action | None:
+        if event.payload.get("is_error"):
+            return None
         if not state.turn_has_file_change:
             return None
         changed = state.changed_files
