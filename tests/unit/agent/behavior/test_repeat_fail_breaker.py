@@ -86,3 +86,49 @@ def test_changed_args_are_not_tripped():
     third = asyncio.run(_run_once([tool], {"x": "b"}, failures, call_id="3"))
     assert hits["n"] == 3
     assert third.content[0].text == "nope"
+
+
+def test_many_distinct_failures_keep_safe_point_payload_valid():
+    from openprogram.agent.continuation import MAX_AGENT_REPEAT_FAILURES
+
+    async def execute(call_id, args, cancel, on_update):
+        return AgentToolResult(content=[TextContent(text="failed")], details={}, is_error=True)
+
+    tool = AgentTool(name="boom", description="fails", parameters={}, label="boom", execute=execute)
+    failures = {}
+    observed = []
+
+    async def safe_point(kind, payload):
+        if kind == "tool.after":
+            observed.append(dict(payload["repeat_failures"]))
+            assert len(payload["repeat_failures"]) <= MAX_AGENT_REPEAT_FAILURES
+        return False
+
+    async def run():
+        for i in range(40):
+            await _execute_tool_calls(
+                [tool], _asst(str(i), "boom", {"x": i}), None, EventStream(),
+                None, failures, safe_point_hook=safe_point,
+            )
+    asyncio.run(run())
+    assert len(observed) == 40
+
+
+def test_bash_description_changes_do_not_reset_repeat_detection():
+    calls = []
+
+    async def execute(call_id, args, cancel, on_update):
+        calls.append(args)
+        return AgentToolResult(content=[TextContent(text="denied")], details={}, is_error=True)
+
+    tool = AgentTool(name="bash", description="shell", parameters={}, label="bash", execute=execute)
+    failures = {}
+
+    async def run():
+        for i in range(3):
+            await _execute_tool_calls(
+                [tool], _asst(str(i), "bash", {"command": "git status", "description": str(i)}),
+                None, EventStream(), None, failures,
+            )
+    asyncio.run(run())
+    assert len(calls) == 2

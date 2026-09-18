@@ -1197,11 +1197,8 @@ class _SkipExecute(Exception):
 
 
 def _tool_repeat_key(name: str, args: Any) -> str:
-    try:
-        blob = json.dumps(args, ensure_ascii=False, sort_keys=True, default=str)
-    except TypeError:
-        blob = repr(args)
-    return f"{name}\0{blob}"
+    from .failure_policy import repeat_key
+    return repeat_key(name, args)
 
 
 async def _execute_tool_calls(
@@ -1291,7 +1288,8 @@ async def _execute_tool_calls(
         skipped_repeat = streak >= 2
         if skipped_repeat:
             n = streak + 1
-            repeat_failures[fail_key] = n
+            from .failure_policy import record_failure
+            record_failure(repeat_failures, fail_key, n)
             result = AgentToolResult(
                 content=[TextContent(
                     type="text",
@@ -1403,7 +1401,8 @@ async def _execute_tool_calls(
 
         if not skipped_repeat:
             if result.is_error:
-                repeat_failures[fail_key] = streak + 1
+                from .failure_policy import record_failure
+                record_failure(repeat_failures, fail_key, streak + 1)
             else:
                 repeat_failures.pop(fail_key, None)
 
