@@ -25,10 +25,13 @@ def start_owner_turn_when_free(session_id: str, agent_id: str, text: str, *,
     The wake takes the run slot itself, so it never runs beside another
     turn. Blocks the calling thread; returns the execution id, or ``None``
     when the conversation stayed busy for ``wait_s``, or as soon as
-    ``give_up_when`` says so, before anything is admitted.
+    ``give_up_when`` says so, before anything is admitted. A conversation
+    whose lock could not be had (``SessionLockTimeout``: a long load or a
+    move held it) counts as busy: the wake tries again until the wait ends.
     """
     from openprogram.runtime.conversation.run_control import is_turn_running
     from openprogram.runtime.conversation.run_control.run_slot import RunSlotBusy
+    from openprogram.state.store.session.session_lock import SessionLockTimeout
 
     deadline = time.monotonic() + wait_s
     while True:
@@ -37,7 +40,7 @@ def start_owner_turn_when_free(session_id: str, agent_id: str, text: str, *,
         if not is_turn_running(session_id):
             try:
                 return start_owner_turn(session_id, agent_id, text, **options)
-            except RunSlotBusy:
+            except (RunSlotBusy, SessionLockTimeout):
                 pass
         if time.monotonic() >= deadline:
             return None
@@ -53,6 +56,10 @@ def start_owner_turn(
     msg_id: str | None = None,
     quiet_finish: bool = False,
     automation: str | None = None,
+    source: str = "web",
+    authority: dict[str, Any] | None = None,
+    unattended: bool = False,
+    on_event: Callable[[dict], None] | None = None,
 ) -> str:
     """Admit the turn now and run it in the background; return its execution id.
 
@@ -63,9 +70,16 @@ def start_owner_turn(
     (``TurnRequest.quiet_finish``); a failure still does. ``automation`` says
     why a turn nobody typed started (``TurnRequest.automation``).
 
+    ``source`` names the surface the text came from, ``authority`` the
+    authority it is admitted under (the local owner's by default) and
+    ``unattended`` adds the run note for a turn no one watches
+    (``turn_input.build_turn_request``). ``on_event`` receives every frame
+    the turn sends, after the frame has gone to the App.
+
     The turn takes the conversation's run slot like a typed message does and
     holds it until it ends. Raises :class:`RunSlotBusy` when another turn
-    holds it; nothing is admitted then.
+    holds it, and ``SessionLockTimeout`` when the conversation's lock could
+    not be had to take it; nothing is admitted then.
     """
     import asyncio
     import threading
@@ -78,14 +92,20 @@ def start_owner_turn(
     if not run_slot.reserve(session_id, msg_id):
         raise run_slot.RunSlotBusy(session_id)
     try:
-        authority = local_owner_authority()
+        authority = dict(authority) if authority is not None else local_owner_authority()
         request = build_turn_request(
-            session_id, text, agent_id=agent_id, source="web", msg_id=msg_id,
-            authority=authority,
+            session_id, text, agent_id=agent_id, source=source, msg_id=msg_id,
+            authority=authority, unattended=unattended,
             run_config=("thinking_effort", "additional_working_dirs"),
             tools_override=tools, quiet_finish=quiet_finish, automation=automation,
         )
-        adapter = CanonicalAgentAdapter(event_sink=emit_ws_frame)
+
+        def sink(frame: dict) -> None:
+            emit_ws_frame(frame)
+            if on_event is not None:
+                on_event(frame)
+
+        adapter = CanonicalAgentAdapter(event_sink=sink)
         admission = adapter.admit(request, trusted_actor=authority, user_message_id=msg_id,
                                   assistant_message_id=f"{msg_id}_reply",
                                   config_snapshot_ref=f"session:{session_id}")

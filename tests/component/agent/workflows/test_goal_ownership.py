@@ -30,7 +30,9 @@ def test_ownership_is_shared_across_processes_and_released(tmp_path):
 
     with goal_owner(db, "s"):
         assert probe() == "False"
-    assert probe() == "True"
+    # A store that opens clears idle lock files off-thread and holds each one
+    # for an instant while it does, so the released lock is asked for again.
+    assert "True" in {probe() for _ in range(5)}
 
 
 def test_live_goal_owner_survives_sibling_startup(tmp_path, monkeypatch):

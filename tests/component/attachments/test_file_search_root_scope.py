@@ -329,3 +329,40 @@ def test_a_chat_not_created_yet_searches_its_picked_project(client, tmp_path, mo
 def test_no_chat_keeps_the_default_root(client, project):
     found = client.get("/api/file-search", params={"q": "hello"}).json()
     assert found["root"] == str(project.resolve())
+
+
+# --- /api/file-paths: which paths in a reply name an openable file ---------
+
+def test_file_paths_answers_each_path_in_one_request(client, project, tmp_path, monkeypatch):
+    """A reply's paths are checked in one request: absolute and
+    chat-relative paths come back as absolute files; a folder, a missing
+    file and a file outside every root all come back null."""
+    deck = project / "sub" / "plan.pptx"
+    deck.write_bytes(b"PK")
+    outside = tmp_path / "secret.txt"
+    outside.write_text("nope")
+    from openprogram.runtime.conversation import workdir
+    monkeypatch.setattr(
+        workdir, "runtime_location_for",
+        lambda sid, use_context=True: {"workdir": str(project) if sid == "s1" else None},
+    )
+    monkeypatch.setattr(workdir, "session_workdir_for", lambda _sid: None)
+    asked = [str(deck), "sub/hello.txt", "sub", "sub/missing.pdf", str(outside), "../secret.txt"]
+    r = client.get("/api/file-paths", params={"path": asked, "session_id": "s1"})
+    assert r.status_code == 200
+    assert r.json()["files"] == {
+        str(deck): str(deck.resolve()),
+        "sub/hello.txt": str((project / "sub" / "hello.txt").resolve()),
+        "sub": None,
+        "sub/missing.pdf": None,
+        str(outside): None,
+        "../secret.txt": None,
+    }
+
+
+def test_file_paths_without_a_chat_checks_absolute_paths_only(client, project):
+    r = client.get("/api/file-paths", params={"path": [str(project / "sub" / "hello.txt"), "sub/hello.txt"]})
+    assert r.json()["files"] == {
+        str(project / "sub" / "hello.txt"): str((project / "sub" / "hello.txt").resolve()),
+        "sub/hello.txt": None,
+    }

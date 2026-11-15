@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/menu/menu-styles";
 import { getSocket } from "@/lib/runtime-bridge/state";
 import { loadSessionHistoryWindow } from "@/lib/runtime-bridge/session/session-history-loader";
+import { occupancyOf, occupancySnapshot } from "@/lib/chat/context-occupancy";
 import {
   readContextBreakdownCache,
   readDraftContextBreakdown,
@@ -104,6 +105,7 @@ function messageKindLabel(kind: string, text: Text): string {
     case "user": return text("Your messages", "你的消息");
     case "assistant": return text("Replies, thinking and tool calls", "回复、思考与工具调用");
     case "summary": return text("Compaction summary", "压缩摘要");
+    case "turn": return text("This turn so far", "本轮进行中");
     default: return text("Other", "其他");
   }
 }
@@ -174,7 +176,7 @@ function buildCategories(d: Breakdown, text: Text, onReveal: (id: string) => voi
   const messageGroups: Group[] = [
     { key: "kinds", items: (messages?.groups || []).map((g) => ({
       key: g.kind, label: messageKindLabel(g.kind, text), tokens: g.tokens,
-      hint: text(`${g.count} messages`, `${g.count} 条`),
+      hint: g.count > 0 ? text(`${g.count} messages`, `${g.count} 条`) : undefined,
     })) },
     { key: "top", title: text("Largest messages", "最大的消息"), noTotal: true,
       items: (messages?.top || []).map((m) => ({
@@ -340,11 +342,8 @@ function ItemRow({
 
 export function ContextBreakdownPanel({ sessionId, headId, onClose }: Props) {
   const { text } = useTranslation();
-  const ringUsed = useSessionStore((s) =>
-    sessionId ? s.tokens[sessionId]?.total_used : undefined,
-  );
-  const ringBasis = useSessionStore((s) =>
-    sessionId ? s.tokens[sessionId]?.basis : undefined,
+  const ringStats = useSessionStore((s) =>
+    sessionId ? s.tokens[sessionId] : undefined,
   );
   const lastMeasured = useSessionStore((s) =>
     sessionId ? s.tokens[sessionId]?.context : undefined,
@@ -371,32 +370,20 @@ export function ContextBreakdownPanel({ sessionId, headId, onClose }: Props) {
 
   useEffect(() => {
     const sync = () => {
-      const cached = readCached();
-      if (cached) {
-        setData(cached);
-        return;
-      }
-      if (ringUsed != null || ringWindow) {
-        setData({
-          total_used: ringUsed,
-          window: ringWindow,
-          context_window: ringWindow,
-          basis: ringBasis ?? undefined,
-        });
-      }
+      // The ring reads this same snapshot (lib/chat/context-occupancy).
+      const next = sessionId ? occupancySnapshot(readCached(), ringStats, ringWindow) : readCached();
+      if (next) setData(next);
     };
     sync();
     return subscribeContextBreakdownCache(sync);
     // readCached reads only these.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, headId, ringUsed, ringWindow, ringBasis, draftProvider, draftModel, draftProjectId]);
+  }, [sessionId, headId, ringStats, ringWindow, draftProvider, draftModel, draftProjectId]);
 
-  // 窗口和总占用都用服务端 stats 里的那一份（圆环读的同一个字段）。
-  // 分项仍是本次现场算出的 breakdown —— 明细可以是估算，但顶部的总数
-  // 必须和圆环同源。
-  const win = data?.window || data?.context_window || 0;
-
-  const totalUsed = data?.total_used ?? win - (data?.free_space ?? 0);
+  // 顶部的总数和窗口与圆环同源（occupancyOf 读同一份快照），分项仍是
+  // 这份 breakdown —— 明细可以是估算。窗口未知（模型解析不到）时为 0：
+  // 只显示用量，不显示上限和百分比。
+  const { used: totalUsed, window: win } = occupancyOf(data);
   const usedPct = win > 0 ? Math.min(1, totalUsed / win) : 0;
 
   const categories = useMemo(
@@ -526,8 +513,12 @@ export function ContextBreakdownPanel({ sessionId, headId, onClose }: Props) {
             )}
           </div>
           <div className="flex items-baseline gap-1.5 px-1.5 pt-0.5 text-fs-xs">
-            <span className="text-text-bright">{fmt(totalUsed)} / {fmt(win)}</span>
-            <span className="text-fs-2xs text-text-muted">{(usedPct * 100).toFixed(1)}%</span>
+            <span className="text-text-bright">
+              {win > 0 ? `${fmt(totalUsed)} / ${fmt(win)}` : fmt(totalUsed)}
+            </span>
+            {win > 0 && (
+              <span className="text-fs-2xs text-text-muted">{(usedPct * 100).toFixed(1)}%</span>
+            )}
           </div>
           <div className="px-1.5 pt-1.5 pb-1">
             <StackedBar

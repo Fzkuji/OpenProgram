@@ -29,6 +29,7 @@ import os
 import stat
 import sys
 from pathlib import Path
+from typing import Optional
 
 _log = logging.getLogger(__name__)
 
@@ -284,6 +285,18 @@ def get_default_workdir() -> str:
     so we expose a config switch the user (or per-session UI) can
     point at the real project root.
     """
+    return configured_workdir() or os.getcwd()
+
+
+def configured_workdir() -> Optional[str]:
+    """The working folder the person configured (``OPENPROGRAM_WORKDIR``,
+    then ``default_workdir`` in the config), or ``None``.
+
+    Unlike :func:`get_default_workdir` this never answers with the
+    process's own working directory, so code that acts on a repository —
+    creating worktrees and branches in it — uses it: a worker started from
+    a checkout (or a test run from one) must not treat that checkout as
+    the person's project, and an installed app has no checkout at all."""
     import json
 
     env_v = os.environ.get("OPENPROGRAM_WORKDIR")
@@ -295,6 +308,6 @@ def get_default_workdir() -> str:
         if isinstance(wd, str) and wd.strip() and os.path.isdir(wd):
             return wd
     except Exception:
-        # Missing or malformed config falls back to the default workdir.
+        # Missing or malformed config: nothing configured.
         _log.debug("default_workdir from config unreadable", exc_info=True)
-    return os.getcwd()
+    return None

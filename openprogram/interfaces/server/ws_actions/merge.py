@@ -95,6 +95,13 @@ def _normalize_peers(raw) -> list[dict]:
     return out
 
 
+def _mirror_merge_head(_s, target_session_id: str, payload: dict) -> None:
+    """Move the in-memory head to the merge reply while its branch is selected."""
+    from openprogram.runtime.conversation.merge import still_selected
+    if still_selected(target_session_id, payload.get("branch_id")):
+        _s._set_active_head(target_session_id, payload["target_assistant_id"])
+
+
 async def handle_merge_branches(ws, cmd: dict) -> None:
     target_session_id = (cmd.get("session_id") or "").strip()
     peers = _normalize_peers(cmd.get("peers"))
@@ -122,7 +129,9 @@ async def handle_merge_branches(ws, cmd: dict) -> None:
     _touched = {target_session_id} | {
         p["session_id"] for p in peers if p.get("session_id")
     } | set(sub_sessions)
-    _busy = next((s for s in _touched if s and _s._is_run_active(s)), None)
+    # The run records are read under each conversation's lock: off the loop.
+    _busy = await asyncio.to_thread(
+        lambda: next((s for s in _touched if s and _s._is_run_active(s)), None))
 
     if not target_session_id or not (peers or sub_sessions):
         payload = {
@@ -171,10 +180,7 @@ async def handle_merge_branches(ws, cmd: dict) -> None:
         # stale pre-merge head back over it and orphans the merge reply.
         # Only while the merge's branch is still selected.
         try:
-            from openprogram.runtime.conversation.merge import still_selected
-            if still_selected(target_session_id, payload.get("branch_id")):
-                _s._set_active_head(
-                    target_session_id, payload["target_assistant_id"])
+            await asyncio.to_thread(_mirror_merge_head, _s, target_session_id, payload)
         except Exception:
             # The publisher notice below still runs; the next save may revert the merge head.
             _log.warning(

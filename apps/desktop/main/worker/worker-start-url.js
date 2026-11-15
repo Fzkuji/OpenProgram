@@ -14,10 +14,20 @@ function ownerAuthTokenFromStartUrl(startUrl) {
   }
 }
 
+// `web auth-url` exits with this when this account has no worker but
+// something else listens on the port (openprogram/interfaces/cli/commands/web.py).
+const EXIT_PORT_HELD = 3;
+
+/**
+ * The start URL with this account's sign-in token, or null. `onPortHeld`
+ * receives the holder `web auth-url` names when the port belongs to another
+ * program or another account; such a listener is never given a token.
+ */
 function resolveAuthenticatedStartUrl(
   startUrl,
   env = process.env,
   commands = DEFAULT_COMMANDS,
+  onPortHeld = () => {},
 ) {
   const baseUrl = new URL(startUrl).origin;
   for (const candidate of commands) {
@@ -28,7 +38,7 @@ function resolveAuthenticatedStartUrl(
         {
           encoding: "utf8",
           env,
-          stdio: ["ignore", "pipe", "ignore"],
+          stdio: ["ignore", "pipe", "pipe"],
           timeout: 5000,
           windowsHide: process.platform === "win32",
         },
@@ -39,11 +49,16 @@ function resolveAuthenticatedStartUrl(
       bootstrap.pathname = requested.pathname;
       bootstrap.search = requested.search;
       return bootstrap.toString();
-    } catch (_error) {
+    } catch (error) {
+      if (error?.status === EXIT_PORT_HELD) {
+        const line = String(error.stderr || "").trim().split(/\r?\n/).pop() || "";
+        onPortHeld(line.replace(/^port \d+ is in use by /, ""));
+        return null;
+      }
       // Try the next explicitly allowed command.
     }
   }
   return null;
 }
 
-module.exports = { resolveAuthenticatedStartUrl, ownerAuthTokenFromStartUrl };
+module.exports = { EXIT_PORT_HELD, resolveAuthenticatedStartUrl, ownerAuthTokenFromStartUrl };

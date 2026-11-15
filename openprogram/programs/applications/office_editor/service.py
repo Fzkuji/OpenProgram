@@ -16,7 +16,9 @@ Members:
 - ``install_rejection(request)``: why an installation request is refused,
   or ``None``.
 - ``install()``: download, verify and select the pinned pack (blocking);
-  ``INSTALL_ERRORS`` are the failures a caller reports as retryable.
+  ``INSTALL_ERRORS`` are the failures a caller reports as retryable;
+  ``UNPUBLISHED_ERRORS`` means no release this version reads carries the
+  archive, which a retry cannot fix.
 - ``module_version`` / ``module_response(port)``: the parent module the
   document window imports from the main origin.
 """
@@ -30,6 +32,7 @@ import httpx
 
 from . import host
 from .assets import OFFICE_PATCH_SHA256, OfficeAssetPack
+from .install import OfficeArchiveUnpublished
 
 
 class OfficeEditorService:
@@ -37,6 +40,8 @@ class OfficeEditorService:
 
     #: Failures of ``install()`` that leave the previous state and can be retried.
     INSTALL_ERRORS = (OSError, ValueError, RuntimeError, httpx.HTTPError, zipfile.BadZipFile)
+    #: The archive is not published for this version; checked before ``INSTALL_ERRORS``.
+    UNPUBLISHED_ERRORS = (OfficeArchiveUnpublished,)
     module_version = OFFICE_PATCH_SHA256
 
     def __init__(self, pack: Optional[OfficeAssetPack] = None) -> None:

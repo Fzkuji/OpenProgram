@@ -426,7 +426,6 @@ def test_startup_logs_warn_about_plaintext_http_for_remote_origins(
 
     port = _free_port()
     monkeypatch.setattr(webui_server, "_server_thread", None)
-    monkeypatch.setattr(webui_server, "_restore_sessions", lambda: None)
     monkeypatch.setattr(
         webui_server,
         "_web_config",

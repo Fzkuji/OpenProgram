@@ -7,14 +7,14 @@
 <thead><tr><th scope="col">安装方式</th><th scope="col">更新</th><th scope="col">回退</th></tr></thead>
 <tbody>
 <tr><th scope="row">macOS App</th><td data-label="更新"><strong>设置 → 通用 → 应用信息 → 立即检查</strong>（也会自动检查），再点<strong>下载并打开安装程序</strong>。保存 DMG，用 Command-Q 退出 OpenProgram，把它拖到 Applications 里的旧版上并选<strong>替换</strong>。</td><td data-label="回退">从 <a href="https://github.com/FuzzyKuji/OpenProgram/releases">GitHub Releases</a> 下载那个版本的 DMG，用同样方式替换 App。</td></tr>
-<tr><th scope="row">Windows 或 Linux App<span class="arg">v1.2.0 起</span></th><td data-label="更新">同样两个按钮，新版本就地安装。某次发行需要更新的 App 时：<br>Windows：运行按钮打开的安装程序。<br>deb：<code translate="no">sudo apt install ./OpenProgram-X.Y.Z-linux-amd64.deb</code><br>AppImage：文件自行替换并重启。</td><td data-label="回退"><strong>设置 → 版本 → 回到此版本</strong>。<a href="#app-recovery">App 启动不了时</a>。</td></tr>
+<tr><th scope="row">Windows 或 Linux App</th><td data-label="更新">同样两个按钮，新版本就地安装。某次发行需要更新的 App 时：<br>Windows：运行按钮打开的安装程序。<br>deb：<code translate="no">sudo apt install ./OpenProgram-X.Y.Z-linux-amd64.deb</code><br>AppImage：文件自行替换并重启。</td><td data-label="回退"><strong>设置 → 版本 → 回到此版本</strong>。<a href="#app-recovery">App 启动不了时</a>。</td></tr>
 <tr><th scope="row">终端或服务器，所有系统</th><td data-label="更新"><code translate="no">openprogram upgrade</code>，然后 <code translate="no">openprogram worker restart</code></td><td data-label="回退">用确切版本号<a href="install.zh.html#exact-version">安装旧版本</a>，然后 <code translate="no">openprogram worker restart</code></td></tr>
 <tr><th scope="row">源码 checkout</th><td data-label="更新"><a href="development-checkout.zh.html"><code translate="no">openprogram dev deploy</code>，再 <code translate="no">promote</code></a>，或 <a href="../server/upgrading.zh.html"><code translate="no">openprogram upgrade</code></a>。自动重启。</td><td data-label="回退"><a href="conversational-self-update.zh.html#undoing-a-change">撤销修改</a></td></tr>
 </tbody>
 </table>
 <p class="note">stable 安装只在已发布版本之间移动，不跟随 <code translate="no">origin/main</code>。<code translate="no">~/.openprogram</code> 下的状态保持不变。终端命令本身坏了时，重装最新版本：</p>
-<pre translate="no"><code>curl -fsSL https://openprogram.io/install | sh
-irm https://openprogram.io/install.ps1 | iex</code></pre>
+<pre translate="no"><code>curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh
+irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex</code></pre>
 
 <details>
 <summary>App 更新器做了什么</summary>
@@ -107,7 +107,7 @@ irm https://openprogram.io/install.ps1 | iex</code></pre>
 </details>
 
 <h2 id="official-updates">版本库安装的正式更新</h2>
-<p>把 release 当作一组签名文件接收，并带上你自己的提交。v1.2.0 起，Windows 和 Linux App 这样更新。macOS App 和普通终端安装走上面的路径。</p>
+<p>把 release 当作一组签名文件接收，并带上你自己的提交。Windows 和 Linux App 这样更新。macOS App 和普通终端安装走上面的路径。</p>
 <pre translate="no"><code>openprogram upgrade --check
 openprogram upgrade
 openprogram upgrade --from &lt;directory&gt;     # files already on this computer</code></pre>

@@ -21,7 +21,6 @@ _log = logging.getLogger(__name__)
 
 
 FINISH_RETRIES = 8
-GOAL_NOTICE_RETRIES = 20
 
 
 def _readable_failure(result: shared.Any) -> str | None:
@@ -121,19 +120,9 @@ class FinalizationOperations:
                 self.run_ended(self.executions, execution, result)
             except Exception:
                 shared._log.exception("end of run %s not reported", key[0])
-        from openprogram.programs.tools.planning.goal.chat import after_terminal
-        from openprogram.models.usage.goal_port import GoalConflictError
-        for _ in range(GOAL_NOTICE_RETRIES):
-            try:
-                after_terminal(self.executions, execution)
-            except GoalConflictError:
-                # Another admission holds the Goal for a moment.
-                time.sleep(0.1)
-                continue
-            except Exception:
-                shared._log.exception("Goal completion notice for %s failed", key[0])
-            return
-        shared._log.warning("Goal completion notice for %s gave up on the Goal lock", key[0])
+        # A busy or unavailable Goal is retried until the notice lands.
+        from openprogram.programs.tools.planning.goal import chat
+        chat.settle_terminal(self.executions, execution)
 
 
     @staticmethod

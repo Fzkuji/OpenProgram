@@ -24,7 +24,40 @@ env:
   RELEASE_REF: ${{ inputs.rehearse && github.sha || inputs.tag || github.ref_name }}
 
 jobs:
+  # The App downloads the pinned Office archive from its own version's release,
+  # so every release carries it, once. It cannot be rebuilt here (its fonts and
+  # editor build are the owner's inputs): the newest published release's copy is
+  # carried forward, or for the first release the copy the owner put on the
+  # tag's draft (scripts/release/office-archive.py seed). Without one, nothing
+  # else runs.
+  office:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_REF }}
+      - name: Fetch the Office archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          name="$(python scripts/release/office-archive.py name)"
+          mkdir -p office-assets
+          status=0
+          python scripts/release/office-archive.py fetch "office-assets/$name" || status=$?
+          if [ "$status" = 3 ]; then
+            gh release download "$RELEASE_TAG" --pattern "$name" --dir office-assets || true
+          elif [ "$status" != 0 ]; then
+            exit "$status"
+          fi
+          python scripts/release/office-archive.py verify "office-assets/$name" --tag "$RELEASE_TAG"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: office-assets
+          path: office-assets/*.zip
+          compression-level: 0
+
   platforms:
+    needs: office
     runs-on: ubuntu-24.04
     outputs:
       runtime: ${{ steps.select.outputs.runtime }}
@@ -157,6 +190,17 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends --yes xvfb xauth libgl1 libglib2.0-0
+      # Every package the runtime installs has a wheel for this target's oldest
+      # supported system, or is one of the few this leg builds from source.
+      - name: Check the lock has every runtime wheel
+        shell: bash
+        run: >-
+          uv run --no-project --python 3.12 --with packaging
+          python scripts/release/runtime-wheels.py check
+          --target "${{ matrix.platform }}-${{ matrix.arch }}"
+      - name: Prepare static OpenSSL for the Intel Mac runtime
+        if: matrix.platform == 'macos' && matrix.arch == 'x86_64'
+        run: scripts/release/prepare-macos-native-deps.sh
       - name: Build complete product runtime
         if: matrix.platform != 'windows'
         env:
@@ -266,6 +310,9 @@ jobs:
             esac
           fi
           zstd --version
+      - name: Prepare static OpenSSL for the Intel Mac base
+        if: matrix.platform == 'macos' && matrix.arch == 'x86_64'
+        run: scripts/release/prepare-macos-native-deps.sh
       - name: Check the first install with a small seed
         if: matrix.platform != 'windows'
         run: bash scripts/release/smoke-thin-shell.sh
@@ -562,36 +609,6 @@ jobs:
       - name: Verify the Linux App in clean Ubuntu containers
         if: matrix.platform == 'linux'
         run: bash scripts/release/smoke-linux-desktop.sh apps/desktop/dist "${{ matrix.arch }}"
-      - name: Create SHA-256 checksums
-        if: matrix.platform == 'mac' || matrix.platform == 'linux'
-        shell: bash
-        run: |
-          cd apps/desktop/dist
-          find . -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.AppImage' -o -name '*.deb' \) -print0 | sort -z | xargs -0 shasum -a 256 > SHA256SUMS-${{ matrix.platform }}-${{ matrix.arch }}
-      - name: Create Windows SHA-256 checksums
-        if: matrix.platform == 'win'
-        shell: pwsh
-        run: |
-          $Lines = Get-ChildItem -LiteralPath apps/desktop/dist -Filter "OpenProgram-*.exe" -File |
-            Sort-Object Name |
-            ForEach-Object {
-              $Algorithm = [Security.Cryptography.SHA256]::Create()
-              $Stream = [IO.File]::OpenRead($_.FullName)
-              try {
-                $Hash = ([BitConverter]::ToString($Algorithm.ComputeHash($Stream))).Replace("-", "").ToLowerInvariant()
-              } finally {
-                $Stream.Dispose()
-                $Algorithm.Dispose()
-              }
-              "$Hash  $($_.Name)"
-            }
-          # LF line ends, as shasum writes the other platforms' files, so
-          # sha256sum -c reads it on any system.
-          [IO.File]::WriteAllText(
-            "apps/desktop/dist/SHA256SUMS-${{ matrix.platform }}-${{ matrix.arch }}",
-            ((@($Lines) -join "`n") + "`n"),
-            [Text.UTF8Encoding]::new($false)
-          )
       - uses: actions/upload-artifact@v7
         with:
           name: desktop-${{ matrix.layout }}-${{ matrix.platform }}-${{ matrix.arch }}
@@ -601,7 +618,6 @@ jobs:
             apps/desktop/dist/OpenProgram-*.exe
             apps/desktop/dist/*.AppImage
             apps/desktop/dist/*.deb
-            apps/desktop/dist/SHA256SUMS-*
       # The contracts' report and the App smoke's logs, kept whenever the leg
       # failed or its contracts did, so one run is enough to diagnose it.
       - uses: actions/upload-artifact@v7
@@ -642,6 +658,14 @@ jobs:
           OPENPROGRAM_BIN_DIR="$RUNNER_TEMP/openprogram-bin" \
             scripts/install-release.sh
           "$RUNNER_TEMP/openprogram-bin/openprogram" --version
+      # A server or container has none of Chromium's system libraries; the
+      # install must still finish there and leave a working command.
+      - name: Install on a bare Linux system
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          archive="$(find "$GITHUB_WORKSPACE/runtime-artifact" -name '*.tar.gz' -print -quit)"
+          bash scripts/release/smoke-linux-bare-install.sh "$archive" "${RELEASE_TAG#v}"
       # Windows PowerShell 5.1, because that is what the public installer hands off to.
       - name: Install the same complete Windows runtime archive
         if: matrix.platform == 'windows'
@@ -682,8 +706,9 @@ jobs:
           if-no-files-found: ignore
 
   publish:
-    needs: [platforms, python, product-runtime, seed, desktop, cli-installer]
+    needs: [office, platforms, python, product-runtime, seed, desktop, cli-installer]
     # A failed platform leaves its files out; only this job's own checks refuse.
+    # The platforms job runs only after the Office archive was found.
     if: ${{ !cancelled() && needs.platforms.result == 'success' }}
     runs-on: ubuntu-24.04
     steps:
@@ -764,7 +789,6 @@ jobs:
             --plan "$RELEASE_PLAN" \
             --notes ".github/release-notes/$RELEASE_TAG.md" \
             --notes-output "$RUNNER_TEMP/release-notes.md" \
-            --links-output "$RUNNER_TEMP/release-links" \
             --incomplete-output "$RUNNER_TEMP/release-incomplete.txt"
       - name: Create release manifest
         run: |
@@ -776,8 +800,8 @@ jobs:
         run: |
           final_notes="$RUNNER_TEMP/release-notes.md"
           release_version="${RELEASE_TAG#v}"
-          # The version-free copies stay out of release-manifest.json on purpose.
-          mapfile -d '' files < <(find release-artifacts "$RUNNER_TEMP/release-links" -type f -print0)
+          # Each file once, under its versioned name; release-manifest.json lists them all.
+          mapfile -d '' files < <(find release-artifacts -type f -print0)
           if draft="$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null)"; then
             test "$draft" = true || {
               echo "refusing to overwrite a public release: $RELEASE_TAG" >&2
@@ -798,6 +822,7 @@ jobs:
         if: ${{ !inputs.rehearse }}
         run: |
           api="https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/latest"
+          office="$(python scripts/release/office-archive.py name)"
           for attempt in $(seq 1 12); do
             if curl --disable --proto '=https' --tlsv1.2 -fsS \
               --connect-timeout 5 --max-time 15 --max-filesize 2097152 \
@@ -810,9 +835,11 @@ jobs:
               draft="$(jq -r '.draft' latest.json)"
               prerelease="$(jq -r '.prerelease' latest.json)"
               manifest_count="$(jq '[.assets[] | select(.name == "release-manifest.json")] | length' latest.json)"
+              # The installed App downloads Office from this exact file of its release.
+              office_count="$(jq --arg name "$office" '[.assets[] | select(.name == $name)] | length' latest.json)"
               if [ "$tag" = "$RELEASE_TAG" ] && \
                  [ "$draft" = false ] && [ "$prerelease" = false ] && \
-                 [ "$manifest_count" = 1 ]; then
+                 [ "$manifest_count" = 1 ] && [ "$office_count" = 1 ]; then
                 exit 0
               fi
             fi
@@ -829,7 +856,7 @@ jobs:
             echo "### Rehearsal of $RELEASE_TAG at $(git rev-parse --short HEAD): nothing was published"
             echo
             echo '```'
-            find release-artifacts "$RUNNER_TEMP/release-links" -type f -printf '%12s  %f\n' | sort -k2
+            find release-artifacts -type f -printf '%12s  %f\n' | sort -k2
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       # The release above is public with what was built. This step makes the

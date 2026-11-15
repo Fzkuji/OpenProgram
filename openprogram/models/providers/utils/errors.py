@@ -187,6 +187,45 @@ _PERMANENT_MARKERS_POLICY = (
     "content_policy",
     "safety system",
 )
+# An account out of money. Providers send it as 402, as 429 (OpenAI's
+# ``insufficient_quota``) and also as 401 or 403 (OpenCode Zen answers a
+# zero balance with 401 ``CreditsError`` "Insufficient balance"), so the body
+# decides before the status code: topping up is the fix, not signing in.
+# Phrasings from the adapters' own bodies and the peers' billing tables
+# (hermes-agent ``_BILLING_PATTERNS``, openclaw ``failover-matches`` billing).
+BILLING_MARKERS = (
+    "creditserror",
+    "insufficient credit",
+    "insufficient_credit",
+    "insufficient balance",
+    "insufficient_balance",
+    "insufficient account balance",
+    "insufficient funds",
+    "insufficient_quota",
+    "insufficient quota",
+    "insufficient_user_quota",
+    "credit balance is too low",
+    "credits have been exhausted",
+    "used all available credits",
+    "out of credits",
+    "top up your credits",
+    "payment required",
+    "payment_required",
+    "billing hard limit",
+    "billing_hard_limit_reached",
+    "exceeded your current quota",
+    "arrearage",
+    "余额不足",
+    "欠费",
+)
+
+
+def is_billing_exhausted(text: str) -> bool:
+    """Whether an error body says the account has no credit or balance left."""
+    low = (text or "").lower()
+    return any(m in low for m in BILLING_MARKERS)
+
+
 # A spent quota arrives as 429 like ordinary throttling, but resets hours
 # or days out rather than seconds. Retrying it can only fail, so it is
 # classified as a plan/authorization problem instead of a rate limit.
@@ -195,11 +234,7 @@ _PERMANENT_MARKERS_QUOTA = (
     "usage limit reached",
     "quota_exceeded",
     "quota exceeded",
-    "insufficient_quota",
-    "billing_hard_limit_reached",
-    "credit balance is too low",
-    "exceeded your current quota",
-)
+) + BILLING_MARKERS
 # Provider-internal generation failures that arrive WITHOUT an HTTP
 # status (e.g. xAI's mid-stream ``APIError: Internal error during token
 # generation``). Same recovery as a 5xx: retryable provider_internal.
@@ -312,6 +347,9 @@ def classify_error(
             if any(m in msg for m in _PERMANENT_MARKERS_QUOTA):
                 return ErrorReason.AUTHORIZATION, False
             return ErrorReason.RATE_LIMIT, True
+        if http_status in (401, 402, 403) and is_billing_exhausted(msg):
+            # No credit left, whatever status the provider chose for it.
+            return ErrorReason.AUTHORIZATION, False
         if http_status in (500, 502, 503, 504):
             return ErrorReason.PROVIDER_INTERNAL, True
         if http_status == 401:
@@ -340,6 +378,9 @@ def classify_error(
     exc_type = type(exc).__name__
     if exc_type in _TRANSPORT_EXC_NAMES:
         return ErrorReason.TRANSPORT, True
+    # A sign-in whose refresh token is spent: only signing in again helps.
+    if any(cls.__name__ == "AuthNeedsReauthError" for cls in type(exc).__mro__):
+        return ErrorReason.AUTHENTICATION, False
     # SDKs re-raise network failures under their own types ("Connection
     # error.") with the httpx error as the cause.
     cause = exc.__cause__ or exc.__context__
@@ -350,6 +391,8 @@ def classify_error(
             return ErrorReason.TRANSPORT, True
         cause = cause.__cause__ or cause.__context__
 
+    if is_billing_exhausted(msg):
+        return ErrorReason.AUTHORIZATION, False
     if any(m in msg for m in _PERMANENT_MARKERS_AUTH):
         return ErrorReason.AUTHENTICATION, False
     if any(m in msg for m in _PERMANENT_MARKERS_INVALID):
@@ -517,11 +560,15 @@ def _body_reset(text: str, now: float) -> tuple[Optional[float], Optional[str]]:
 def failure_cause(exc: BaseException, *, now: Optional[float] = None) -> Optional[dict]:
     """Which limit or refusal stopped a call, or ``None`` when it was none of them.
 
-    Returns ``{"cause", "http_status", "provider", "limit", "resets_at"}``:
-    ``cause`` is one of :data:`CAUSE_QUOTA`, :data:`CAUSE_INVALID_KEY`,
-    :data:`CAUSE_NOT_AVAILABLE`, :data:`CAUSE_UNREACHABLE`. For a spent
-    quota ``limit`` names the window when the provider said which (from the
-    last quota it reported) and ``resets_at`` is Unix seconds when known.
+    Returns ``{"cause", "http_status", "provider", "limit", "resets_at",
+    "account", "other_limits"}``: ``cause`` is one of :data:`CAUSE_QUOTA`,
+    :data:`CAUSE_INVALID_KEY`, :data:`CAUSE_NOT_AVAILABLE`,
+    :data:`CAUSE_UNREACHABLE`. For a spent quota ``limit`` names the window
+    when the provider said which (from the last quota it reported),
+    ``resets_at`` is Unix seconds when known, ``account`` is the credential
+    whose limit is spent (null for an environment key or when unknown) and
+    ``other_limits`` lists that key's other limits as
+    ``{"label", "left_fraction", "resets_at"}`` ("Weekly 71% left").
     """
     import time as _time
     if isinstance(exc, LLMError) and isinstance(exc.failure, dict):
@@ -536,7 +583,8 @@ def failure_cause(exc: BaseException, *, now: Optional[float] = None) -> Optiona
 
     def result(cause: str, **extra: Any) -> dict:
         return {"cause": cause, "http_status": status, "provider": provider,
-                "limit": extra.get("limit"), "resets_at": extra.get("resets_at")}
+                "limit": extra.get("limit"), "resets_at": extra.get("resets_at"),
+                "account": extra.get("account"), "other_limits": extra.get("other_limits") or []}
 
     if status == 402 or any(m in lowered for m in _PERMANENT_MARKERS_QUOTA) \
             or (status == 429 and "insufficient" in lowered):
@@ -545,17 +593,23 @@ def failure_cause(exc: BaseException, *, now: Optional[float] = None) -> Optiona
                             if isinstance(getattr(e, "retry_after_s", None), (int, float))), None)
         if resets_at is None and retry_after:
             resets_at = now + float(retry_after)
-        limit = None
+        limit = account = None
+        others: list[dict] = []
         if provider:
             try:
-                from openprogram.models.usage.quota import exhausted_limit
-                spent = exhausted_limit(provider)
+                from openprogram.models.usage.quota import exhausted_report
+                spent = exhausted_report(provider)
             except Exception:
                 spent = None
             if spent is not None:
-                limit = spent.label
-                resets_at = resets_at or spent.resets_at
-        return result(CAUSE_QUOTA, limit=limit, resets_at=resets_at)
+                account, limit_record, other_records = spent
+                account = account or None
+                limit = limit_record.label
+                resets_at = resets_at or limit_record.resets_at
+                others = [{"label": o.label, "left_fraction": None if o.used_fraction is None
+                           else round(1 - o.used_fraction, 4), "resets_at": o.resets_at}
+                          for o in other_records if o.used_fraction is not None]
+        return result(CAUSE_QUOTA, limit=limit, resets_at=resets_at, account=account, other_limits=others)
     if status == 401 or any(m in lowered for m in _INVALID_KEY_MARKERS):
         return result(CAUSE_INVALID_KEY)
     if status == 403:
@@ -689,6 +743,7 @@ class RetryInfo:
 
 
 __all__ = [
+    "BILLING_MARKERS",
     "CAUSE_INVALID_KEY",
     "CAUSE_NOT_AVAILABLE",
     "CAUSE_QUOTA",
@@ -701,6 +756,7 @@ __all__ = [
     "classify_error",
     "error_kind",
     "failure_cause",
+    "is_billing_exhausted",
     "parse_retry_after",
     "had_image",
 ]

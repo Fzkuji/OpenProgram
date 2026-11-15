@@ -674,6 +674,29 @@ def test_endpoint_reads_task_runs_only_for_this_conversation(client):
     assert client.get(f"/api/session/{SESSION}/activity/runs?task_id=unknown").status_code == 404
 
 
+def test_roster_endpoint_gives_each_job_its_facts(client, monkeypatch):
+    from openprogram.runtime.execution import hooks
+
+    job = Job(id="j1", parent_session_id=SESSION, prompt="look", agent_id="main", status=JobStatus.RUNNING)
+    monkeypatch.setattr("openprogram.runtime.jobs.store.list_jobs", lambda _session: [job])
+    seen = []
+
+    class Facts:
+        def roster(self, session_id, jobs):
+            seen.append((session_id, [item.id for item in jobs]))
+            return {"agents": {"j1": {"agent_status": "stalled", "queued": False,
+                                      "usage": {"tokens": 5, "cost_usd": "0.010000", "tool_calls": 2}}},
+                    "outgoing": [{"kind": "outgoing", "job_id": "d1", "to": "Butler", "status": "waiting"}]}
+
+    monkeypatch.setattr(hooks, "registered", lambda name: Facts() if name == "agent_roster_facts" else None)
+    body = client.get(f"/api/session/{SESSION}/activity/roster").json()
+    assert seen == [(SESSION, ["j1"])]
+    assert body["agents"]["j1"]["agent_status"] == "stalled" and body["outgoing"][0]["to"] == "Butler"
+    assert client.get("/api/session/other/activity/roster").status_code == 404
+    monkeypatch.setattr(hooks, "registered", lambda _name: None)
+    assert client.get(f"/api/session/{SESSION}/activity/roster").json() == {"agents": {}, "outgoing": []}
+
+
 def test_endpoint_is_not_found_for_a_missing_session(client, monkeypatch):
     from openprogram.interfaces.server.routes.execution import lifecycle
 

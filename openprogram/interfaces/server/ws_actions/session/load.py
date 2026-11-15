@@ -1,12 +1,16 @@
 """Session hydration: the ``load_session`` action."""
 from __future__ import annotations
 
-import asyncio
+import contextvars
 import json
 import logging
 
+from openprogram.state.store.session.conversation_work import run_for_conversation
+
 
 _log = logging.getLogger(__name__)
+# The conversation a load reads: its store reads run in that conversation's lane.
+_loading: contextvars.ContextVar[str | None] = contextvars.ContextVar("loading_session", default=None)
 
 _HISTORY_PAGE_KEYS = ("history_before", "history_after", "history_around", "history_latest", "history_turn")
 
@@ -52,8 +56,11 @@ def _session_todo_plans(session_id: str) -> list:
 
 
 async def _session_io(func, *args, **kwargs):
-    """Run one bounded session-store read without blocking the WS loop."""
-    return await asyncio.to_thread(func, *args, **kwargs)
+    """Run one bounded session-store read without blocking the WS loop.
+
+    It runs in the loaded conversation's lane: loads waiting on a held
+    conversation take at most that lane's threads, never the others'."""
+    return await run_for_conversation(_loading.get(), func, *args, **kwargs)
 
 
 def _check_page_request(cmd: dict) -> None:
@@ -110,6 +117,19 @@ def _context_stats_for_load(conv: dict):
         _stats = {}
     refresh_context_after_load = not conv.get("_last_context_breakdown")
     _bd = conv.get("_last_context_breakdown")
+    # The window belongs to the model, not to the saved record: resolve it
+    # now, so a record saved with a wrong window (the old 128k default)
+    # shows the model's real one, or none when the model is unknown.
+    from openprogram.interfaces.server.server_runtime.context_stats import with_window
+    from openprogram.interfaces.server import server as _s
+    window = _s._conv_context_window(conv)
+    if _stats:
+        _stats = with_window(_stats, window)
+        if isinstance(_stats.get("breakdown"), dict):
+            _stats["breakdown"] = with_window(_stats["breakdown"], window)
+        conv["_last_context_stats"] = _stats
+    if _bd:
+        _bd = conv["_last_context_breakdown"] = with_window(_bd, window)
     if _bd and "breakdown" not in _stats:
         _stats = {**_stats, "type": "context_stats", "breakdown": _bd}
         conv["_last_context_stats"] = _stats
@@ -151,7 +171,21 @@ def _resolved_settings(session_id: str, branch_id) -> dict:
 
 
 async def _send_session_loaded(ws, _s, cmd: dict, conv: dict, session_id, transcript: dict, head, spawned_branch, selection=None):
-    """Send the ``session_loaded`` frame: ``transcript``'s fields, settings and run state; returns ``(run_task, refresh_context_after_load)``."""
+    """Send the ``session_loaded`` frame: ``transcript``'s fields, settings and run state; returns ``(run_task, refresh_context_after_load)``.
+
+    Every read behind the frame takes the conversation's lock, so the
+    frame is built in a worker thread: a conversation held by a turn or a
+    cold load delays this read only, never the event loop."""
+    data, run_task, refresh_context_after_load = await _session_io(
+        _session_loaded_data, _s, cmd, conv, session_id, transcript, head, spawned_branch, selection,
+    )
+    await ws.send_text(json.dumps({"type": "session_loaded", "data": data},
+                                  ensure_ascii=False, default=str))
+    return run_task, refresh_context_after_load
+
+
+def _session_loaded_data(_s, cmd: dict, conv: dict, session_id, transcript: dict, head, spawned_branch, selection):
+    """The ``session_loaded`` frame's data, ``run_task`` and ``refresh_context_after_load``."""
     from openprogram.runtime.context.session_db import default_db as _ddb
     from openprogram.runtime.conversation.session_config import (
         _config_from_row,
@@ -160,7 +194,7 @@ async def _send_session_loaded(ws, _s, cmd: dict, conv: dict, session_id, transc
     )
     from openprogram.host.sandbox import ui_state as _sandbox_ui
     db = _ddb()
-    _db_sess = await _session_io(_capture_load_settings, db, session_id, selection, head)
+    _db_sess = _capture_load_settings(db, session_id, selection, head)
     run_cfg = _config_from_row(_db_sess)
     from openprogram.runtime.permissions.state import permission_state_from_row
     from openprogram.interfaces.server.runtime_management import _provider_info_from_snapshot
@@ -176,77 +210,78 @@ async def _send_session_loaded(ws, _s, cmd: dict, conv: dict, session_id, transc
     _stats, refresh_context_after_load = _context_stats_for_load(conv)
     from openprogram.programs.tools.planning.goal.presentation import history_projection
     tree_data = {}  # tree Context retired — execution trace lives in SessionDB DAG nodes
-    await ws.send_text(json.dumps({
-        "type": "session_loaded",
-        "data": {
-            "request_id": cmd.get("request_id"),
-            "action": "load_session",
-            "id": conv["id"],
-            "title": _db_sess.get("title", ""),
-            "agent_id": _db_sess.get("agent_id"),
-            "active_branch_id": _db_sess.get("active_branch_id"),
-            # The branch a person's message last went to.
-            "last_branch_id": _db_sess.get("last_branch_id"),
-            **transcript,
-            # The DAG panel reads the graph from branches_list.
-            "graph": [],
-            "head_id": head,
-            "spawned_branch": spawned_branch,
-            # Lineage of a conversation made with "Copy conversation":
-            # the transcript's "Copied from" banner.
-            "branched_from": _branched_from(_db_sess),
-            "context_tree": tree_data,
-            "provider_info": _provider_info_from_snapshot(_db_sess),
-            "context_stats": _stats or None,
-            "channel": _db_sess.get("channel"),
-            "account_id": _db_sess.get("account_id"),
-            "environment_id": _db_sess.get("environment_id"),
-            "peer": _db_sess.get("peer"),
-            "peer_display": _db_sess.get("peer_display"),
-            "source": _db_sess.get("source"),
-            # Session goal (/goal) — the composer's GoalChip hydrates
-            # from this on load; live changes ride goal_update frames.
-            "goal": history_projection((_db_sess.get("extra_meta") or {}).get("goal"), session_id),
-            # The task lists drawn under the turns that changed the plan
-            # hydrate from these; live changes ride todos_update frames.
-            "todos": _session_todos(session_id),
-            "todo_plans": _session_todo_plans(session_id),
-            "settings": {
-                "tools_override": run_cfg.tools_override,
-                "web_search": run_cfg.web_search,
-                "service_tier": _db_sess.get("service_tier"),
-                "thinking_effort": run_cfg.thinking_effort,
-                "permission_mode": _effective_permission,
-                "permission_version": _permission_state["version"],
-                "additional_working_dirs": run_cfg.additional_working_dirs,
-                **_sandbox_ui(run_cfg.sandbox_enabled),
-                # Each setting as it resolves, where from, and what the
-                # branch has when it sets nothing (the menus' "Agent default").
-                "resolved": await _session_io(_resolved_settings, session_id,
-                                              _db_sess.get("active_branch_id")),
-            },
-            "run_active": _run_active,
-            "run_task": _run_task,
-            "running_branches": _running_branches,
-            "run_seq": _run_seq,
-            "status": (_ddb().get_session(session_id) or {}).get("status", "idle"),
+    data = {
+        "request_id": cmd.get("request_id"),
+        "action": "load_session",
+        "id": conv["id"],
+        "title": _db_sess.get("title", ""),
+        "agent_id": _db_sess.get("agent_id"),
+        "active_branch_id": _db_sess.get("active_branch_id"),
+        # The branch a person's message last went to.
+        "last_branch_id": _db_sess.get("last_branch_id"),
+        **transcript,
+        # The DAG panel reads the graph from branches_list.
+        "graph": [],
+        "head_id": head,
+        "spawned_branch": spawned_branch,
+        # Lineage of a conversation made with "Copy conversation":
+        # the transcript's "Copied from" banner.
+        "branched_from": _branched_from(_db_sess),
+        "context_tree": tree_data,
+        "provider_info": _provider_info_from_snapshot(_db_sess),
+        "context_stats": _stats or None,
+        "channel": _db_sess.get("channel"),
+        "account_id": _db_sess.get("account_id"),
+        "environment_id": _db_sess.get("environment_id"),
+        "peer": _db_sess.get("peer"),
+        "peer_display": _db_sess.get("peer_display"),
+        "source": _db_sess.get("source"),
+        # Session goal (/goal) — the composer's GoalChip hydrates
+        # from this on load; live changes ride goal_update frames.
+        "goal": history_projection((_db_sess.get("extra_meta") or {}).get("goal"), session_id),
+        # The task lists drawn under the turns that changed the plan
+        # hydrate from these; live changes ride todos_update frames.
+        "todos": _session_todos(session_id),
+        "todo_plans": _session_todo_plans(session_id),
+        "settings": {
+            "tools_override": run_cfg.tools_override,
+            "web_search": run_cfg.web_search,
+            "service_tier": _db_sess.get("service_tier"),
+            "thinking_effort": run_cfg.thinking_effort,
+            "permission_mode": _effective_permission,
+            "permission_version": _permission_state["version"],
+            "additional_working_dirs": run_cfg.additional_working_dirs,
+            **_sandbox_ui(run_cfg.sandbox_enabled),
+            # Each setting as it resolves, where from, and what the
+            # branch has when it sets nothing (the menus' "Agent default").
+            "resolved": _resolved_settings(session_id, _db_sess.get("active_branch_id")),
         },
-    }, ensure_ascii=False, default=str))
-    return _run_task, refresh_context_after_load
+        "run_active": _run_active,
+        "run_task": _run_task,
+        "running_branches": _running_branches,
+        "run_seq": _run_seq,
+        "status": (_ddb().get_session(session_id) or {}).get("status", "idle"),
+    }
+    return data, _run_task, refresh_context_after_load
+
+
+def _running_task_snapshot(_s, session_id):
+    """``(run_seq, slot, task)``: the selected branch's slot and its running
+    task, the durable record first (it reads the conversation's lock)."""
+    _followup_seq = _s._next_run_seq()
+    with _s._running_tasks_lock:
+        task = _s._running_tasks.get(session_id)
+        # A reservation's release always sends the clear that names it, so
+        # this client can hold it as its running task.
+        slot_info = dict(task) if task else None
+    return _followup_seq, slot_info, _s._canonical_foreground_task(session_id) or slot_info
 
 
 async def _send_running_task_state(ws, _s, session_id, _run_task) -> None:
     """Follow up with the live running task, or clear the slot of a turn that ended during the load."""
     # The run guard owns stale runtime and reservation cleanup. A quiet
     # live task must retain its execution identity for reconnect controls.
-    _followup_seq = _s._next_run_seq()
-    with _s._running_tasks_lock:
-        task = _s._running_tasks.get(session_id)
-        # A reservation's release always sends the clear that names it, so
-        # this client can hold it as its running task.
-        task_info = dict(task) if task else None
-    slot_info = task_info
-    task_info = _s._canonical_foreground_task(session_id) or task_info
+    _followup_seq, slot_info, task_info = await _session_io(_running_task_snapshot, _s, session_id)
     if slot_info and task_info is not slot_info and slot_info.get("msg_id") == task_info.get("msg_id"):
         # The turn of a retry, an edit or a function run keeps its operation's kind and id.
         task_info = {**task_info, **{key: slot_info[key] for key in ("op_id", "op_kind", "op_version")
@@ -338,14 +373,15 @@ async def _replay_open_waits(ws, _s, session_id) -> None:
 
 
 async def _after_session_loaded(ws, _s, session_id, run_task, refresh_context_after_load: bool) -> None:
-    """What follows the transcript of a first read: context stats, the running task, open waits."""
-    # Cold context accounting is cache warming, not session hydration.
-    # refresh_context_stats broadcasts its own context_stats frame after
-    # the computation finishes, so the transcript can render first.
-    if refresh_context_after_load:
-        await asyncio.to_thread(_s.refresh_context_stats, session_id)
+    """What follows the transcript of a first read: the running task, open waits, then context stats."""
     await _send_running_task_state(ws, _s, session_id, run_task)
     await _replay_open_waits(ws, _s, session_id)
+    # Cold context accounting is cache warming, not session hydration, and
+    # comes last: the controls a running turn or an open question needs
+    # never wait for it. refresh_context_stats broadcasts its own
+    # context_stats frame when the count is done.
+    if refresh_context_after_load:
+        await run_for_conversation(session_id, _s.refresh_context_stats, session_id)
 
 
 async def _read_transcript_page(db, view, cmd: dict):
@@ -476,9 +512,12 @@ async def _send_session_not_found(ws, cmd: dict, session_id) -> None:
 async def handle_load_session(ws, cmd: dict):
     """Hydrate a session: linear chain under HEAD + full DAG dump + running-task probe."""
     end_parking = _park_read(ws, cmd.get("session_id"))
+    session_id = cmd.get("session_id")
+    token = _loading.set(session_id if isinstance(session_id, str) else None)
     try:
         await _handle_load_session(ws, cmd, end_parking)
     finally:
+        _loading.reset(token)
         end_parking()
 
 

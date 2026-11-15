@@ -116,13 +116,23 @@ class TurnOperations:
         try:
             return await asyncio.shield(worker)
         except asyncio.CancelledError:
-            cancel.set()
+            # Fired, not only set: the turn's loop and the tool it runs are
+            # cut at once (``run_control.wakeups``), not at the next poll.
+            from openprogram.runtime.execution.run_control.wakeups import set_and_fire
+            set_and_fire(cancel)
             # Do not leave the owner thread writing after this call unwinds.
-            try:
-                await asyncio.shield(worker)
-            except Exception:
+            # A caller under an anyio cancel scope is cancelled again at
+            # every await, so one shielded await would return at once.
+            while not worker.done():
+                try:
+                    await asyncio.shield(worker)
+                except asyncio.CancelledError:
+                    continue
+                except Exception:
+                    break
+            if not worker.cancelled() and worker.exception() is not None:
                 # The cancellation is what propagates; the worker's own error is moot.
-                _log.debug("worker failed after cancellation", exc_info=True)
+                _log.debug("worker failed after cancellation", exc_info=worker.exception())
             raise
 
     async def arun_turn(self, request, **options):

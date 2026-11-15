@@ -7,12 +7,13 @@
 <tbody>
 <tr><th scope="row"><code translate="no">/ws</code></th><td>原生 WebSocket</td><td></td></tr>
 <tr><th scope="row"><code translate="no">/api/*</code></th><td>原生路由</td><td></td></tr>
+<tr><th scope="row"><code translate="no">/v1/*</code></th><td>OpenAI 兼容路由：<a href="../integrations/openai-compatible-endpoint.zh.html">OpenAI 兼容端点</a></td><td></td></tr>
 <tr><th scope="row"><code translate="no">/files/raw</code>、<code translate="no">/docs/*</code></th><td>静态挂载</td><td></td></tr>
 <tr><th scope="row"><code translate="no">/_next/static</code></th><td><code translate="no">apps/web/out/</code></td><td>Immutable</td></tr>
 <tr><th scope="row"><code translate="no">/*</code></th><td><code translate="no">out/</code> 里的文件；其余 GET 返回外壳 <code translate="no">out/chat.html</code></td><td>HTML no-cache</td></tr>
 </tbody>
 </table>
-<p class="note">Electron 外壳加载同一来源。端口和冲突：<a href="ports.zh.html">Web UI 端口</a>。稳定版 <code translate="no">18100</code>，开发版 <code translate="no">18200</code>。</p>
+<p class="note">Electron 外壳加载同一来源。端口和冲突：<a href="ports.zh.html">Web UI 端口</a>。稳定版：<code translate="no">18100</code>，或账户第一次启动时选的下一个空闲端口；开发版 <code translate="no">18200</code>。</p>
 
 <h2 id="invariants">不变量</h2>
 <ul>

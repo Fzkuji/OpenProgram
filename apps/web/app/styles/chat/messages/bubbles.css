@@ -778,6 +778,21 @@
 .message.user .user-md code { background: color-mix(in srgb, var(--bg-primary) 70%, transparent); }
 .message.user .user-md .md-code code { background: none; }
 
+/* The message that set a Goal opens with the Goal label in the accent ink;
+   the objective follows on the same line and wraps as text does. Every
+   block of .md-rendered is a grid item and so its own box, so the opening
+   paragraph is lifted out into one paragraph with the label
+   (user-bubble.tsx splitLeadParagraph); the blocks after it sit where they
+   would in any message: a paragraph's 8px, then the grid's gap. */
+.message.user .user-goal-lead { margin: 0; }
+.message.user .user-goal-lead + .user-md { margin-top: calc(8px + var(--reply-gap)); }
+.message.user .user-goal-label {
+  margin-right: 6px;
+  color: var(--accent-blue);
+  font-weight: 500;
+}
+.message.user .user-goal-label > span { margin-right: 4px; vertical-align: text-bottom; }
+
 /* Collapsed pasted span in a sent user message (Codex text_elements). */
 .message.user .user-paste-chip {
   display: inline-flex;

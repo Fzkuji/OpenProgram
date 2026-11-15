@@ -121,5 +121,5 @@ export function formatCtx(n?: number): string {
  *  just disabled. Dynamic import: runtime-bridge/providers touches `window`
  *  at module scope, so a static import breaks Next prerendering. */
 export function refreshAgentChip(): void {
-  void import("@/lib/runtime-bridge/providers").then((m) => m.loadAgentSettings());
+  void import("@/lib/runtime-bridge/providers").then((m) => m.loadAgentSettings({ written: true }));
 }

@@ -31,6 +31,9 @@ CLOCK_READING = 1_000_000_000
 GENERATED_ID = re.compile(r"(?<![0-9a-zA-Z])[0-9a-f]{12,32}(?![0-9a-zA-Z])")
 # How long a stopped call ran (``stop_reasons``): a clock reading too.
 STOPPED_AFTER = re.compile(r"(?<=\bafter )\d+\.\d+s\b")
+# How long a sub-agent ran, on its result block's usage line: a clock reading
+# too, "0 s" on an idle machine and "1 s" on a loaded one.
+AGENT_RAN_FOR = re.compile(r"(?<=\busage: )\d+(?:\.\d+)? (?:s|min|h)\b")
 READ_REPLIES = {"session_loaded", "session_history_page"}
 # The parts of a read the client draws from; the graph's order is a race.
 READ_FIELDS = ("turns", "window", "head_id", "run_active")
@@ -71,7 +74,7 @@ def _comparable(value, ids: dict[str, str]):
     if isinstance(value, list):
         return [_comparable(item, ids) for item in value]
     if isinstance(value, str):
-        value = STOPPED_AFTER.sub("<seconds>", value)
+        value = AGENT_RAN_FOR.sub("<seconds>", STOPPED_AFTER.sub("<seconds>", value))
         return GENERATED_ID.sub(lambda match: ids.setdefault(match.group(0), f"<id {len(ids)}>"), value)
     if isinstance(value, (int, float)) and not isinstance(value, bool) and value > CLOCK_READING:
         return "<clock>"
@@ -121,6 +124,14 @@ def test_stored_reads_ignore_clocks_and_generated_ids() -> None:
     first, second = "7e49da9c30224aedaf49f0f7ba3ff02c", "35cc3b7fcdda1234"
     assert stored_reads(recording(first, 1_794_225_809.1)) == stored_reads(recording(second, 1_794_228_486.9))
 
+
+def test_stored_reads_ignore_how_long_a_sub_agent_ran() -> None:
+    def recording(ran_for: str) -> dict:
+        result = f'<agent name="sub task" status="completed">\nreply\nusage: {ran_for} · 0 tool calls\n</agent>'
+        frame = {"type": "session_loaded", "data": {"turns": [{"id": "a", "rows": [{"id": "a", "result": result}]}]}}
+        return {"timeline": [{"read": {"name": "open", "frames": [frame]}}], "cold": []}
+
+    assert stored_reads(recording("0 s")) == stored_reads(recording("1 s")) == stored_reads(recording("2 min"))
 
 def test_a_sub_agent_card_arrives_as_a_numbered_update_not_a_stream_event(tmp_path: Path) -> None:
     fresh = record("sync_sub_agent", tmp_path)

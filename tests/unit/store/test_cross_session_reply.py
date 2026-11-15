@@ -89,27 +89,44 @@ def test_followup_delivers_to_caller_session_when_cross(sessions, monkeypatch):
     assert "Reply from branch B:head_b" in text
 
 
-def test_followup_same_session_spawn_uses_attach(sessions, monkeypatch):
-    """Same-session SPAWN (attach pointer written): delivered to
-    parent_session_id, and the notice points at the attach expansion
-    rather than repeating the reply."""
-    job = _make_job(caller_session_id=None, caller_msg_id="cm1", attach_pointer_id="ap1", wait=False)
+def _card(db, session_id: str, *, current: bool) -> None:
+    """The spawn's attach card ``ap1`` in ``session_id``: as agent() writes
+    it now (its result travels in the notice), or as one written before."""
+    if current:
+        from openprogram.runtime.conversation.sub_agent_run import write_attach_placeholder_for_spawn
+        assert write_attach_placeholder_for_spawn(
+            session_id=session_id, caller_msg_id=None, label="t_x", prompt="do thing",
+            chosen_agent="main", node_id="ap1", job_id="t_x", target_session_id="B") == "ap1"
+        return
+    import json
+    db.append_message(session_id, {
+        "id": "ap1", "role": "assistant", "display": "runtime", "function": "attach",
+        "content": "B's answer", "predecessor": None, "timestamp": 0.0,
+        "extra": json.dumps({"attach": {"session_id": "B", "job_id": "t_x", "status": "completed"}}),
+    }, advance_head=False)
+    db.commit_turn(session_id, "old card")
+
+
+@pytest.mark.parametrize("caller", [None, "A"])
+def test_followup_spawn_carries_its_result_in_the_notice(sessions, monkeypatch, caller):
+    """A spawn's card (in the caller's session, same or other) stays as it
+    was written, so the notice carries the result; nothing else does."""
+    _card(sessions, caller or "B", current=True)
+    job = _make_job(caller_session_id=caller, caller_msg_id="cm1", attach_pointer_id="ap1", wait=False)
     seen = _admitted_followup(monkeypatch, job)
-    assert seen["execution_session"] == "B"    # same session as it ran in
+    assert seen["execution_session"] == (caller or "B")
     text = seen["request"]["user_text"]
-    assert "attached above" in text            # same-session attach wording
-    assert "B's answer" not in text            # context carries it, not the notice
+    assert "B's answer" in text
+    assert "attached above" not in text
 
 
-def test_followup_cross_session_spawn_uses_source_attach(sessions, monkeypatch):
-    """A cross-session spawn writes its pointer in the caller session.
-
-    The target commit is resolved through the pointer, so carrying the same
-    result inline would duplicate the child transcript in the next request.
-    """
-    job = _make_job(caller_session_id="A", caller_msg_id="cm1", attach_pointer_id="ap1", wait=False)
+@pytest.mark.parametrize("caller", [None, "A"])
+def test_followup_spawn_with_a_card_from_before_points_at_it(sessions, monkeypatch, caller):
+    """A card written before results moved into the notice renders its own
+    report, so the notice points at it rather than repeating the reply."""
+    _card(sessions, caller or "B", current=False)
+    job = _make_job(caller_session_id=caller, caller_msg_id="cm1", attach_pointer_id="ap1", wait=False)
     seen = _admitted_followup(monkeypatch, job)
-    assert seen["execution_session"] == "A"
     text = seen["request"]["user_text"]
     assert "attached above" in text
     assert "B's answer" not in text

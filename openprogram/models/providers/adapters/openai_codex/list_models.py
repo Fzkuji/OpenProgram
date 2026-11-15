@@ -120,7 +120,11 @@ def fetch(provider_id: str, timeout: float) -> Any:
     from .openai_codex import _resolve_codex_bearer_token
     from .catalog import codex_client_version
 
-    token = _resolve_codex_bearer_token(None)
+    from openprogram.models.auth.types import AuthNeedsReauthError
+    try:
+        token = _resolve_codex_bearer_token(None)
+    except AuthNeedsReauthError:
+        token = ""  # the login needs signing in again: the same answer as none
     if not token:
         cached = _cached_codex_models()
         if cached:

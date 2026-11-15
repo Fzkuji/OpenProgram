@@ -112,6 +112,25 @@ def _free_account(provider: str) -> str:
     return f"account-{i}"
 
 
+def _has_credentials(provider: str) -> bool:
+    from openprogram.models.auth.login.login_seed_models import _has_credentials as has
+    return has(provider)
+
+
+def _enable_after_first_sign_in(provider: str) -> None:
+    """Turn on a provider whose first sign-in just landed; tell open tabs."""
+    try:
+        from openprogram.models.listing import toggle_provider
+        from openprogram.models.providers.settings.storage import _read_providers_cfg
+        if (_read_providers_cfg().get(provider) or {}).get("enabled"):
+            return
+        toggle_provider(provider, True)
+        from openprogram.runtime.events import emit_ws_frame
+        emit_ws_frame({"type": "agent_settings_changed", "data": {}})
+    except Exception:
+        _log.warning("%s not turned on after its first sign-in", provider, exc_info=True)
+
+
 def _reap() -> None:
     """Drop finished sessions after a grace window and abandoned ones after the
     TTL (cancelling their still-running task). Idempotent; called on every
@@ -207,6 +226,7 @@ def register(app):
         async def _drive() -> None:
             from openprogram.models.auth.login.login_driver import run_login
             from openprogram.models.auth.login.login_driver import persist
+            had_credentials = _has_credentials(name)
             try:
                 cred = await run_login(
                     name,
@@ -217,6 +237,10 @@ def register(app):
                     label=requested_label,
                 )
                 persist(cred)
+                # A provider's first sign-in turns it on, as its first usable
+                # key does (models/listing/key_check.py).
+                if not had_credentials:
+                    _enable_after_first_sign_in(name)
                 # Providers without an account catalogue may still keep a
                 # small first-login default set.
                 try:

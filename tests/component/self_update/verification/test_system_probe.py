@@ -112,9 +112,18 @@ def test_failed_observation_never_produces_a_pass(live, failed):
 
 
 def _other_instance(tmp_path, monkeypatch, state, **extra):
-    """The same live listener, reached as another instance's port and state directory."""
+    """The same live listener, reached as another instance's port and state directory.
+
+    The other instance's directory is its own, as it is for a real one: this
+    process's state directory stays the listener's, so nothing running here
+    (a turn, a job dispatcher left by an earlier test) can write the owner
+    or worker lock the probe compares against.
+    """
+    import shutil
     from openprogram.operations.self_update.verification import system_probe
-    profile = tmp_path / "profile"
+    profile = tmp_path / "other-instance"
+    profile.mkdir(mode=0o700)
+    shutil.copytree(tmp_path / "profile" / "web", profile / "web")
     (profile / "owner.json").write_text(json.dumps({"version": 1, "principal_id": "owner/install/0123456789abcdef"}))
     (profile / "worker.lock").write_text(str(os.getpid()))
     port = system_probe._PORT

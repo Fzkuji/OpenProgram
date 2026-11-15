@@ -20,6 +20,12 @@
 </tbody>
 </table>
 <p class="note">可选参数（只有 <code translate="no">[…]</code>）立即执行。没有会话时，会话命令保留输入并提示“先开始一段对话再执行此命令”。</p>
+<p>由服务端执行的命令（<code translate="no">/api/commands</code> 里 <code translate="no">type: "local"</code> 的：<code translate="no">/goal</code>、<code translate="no">/rename</code> …）作为输入框自己的消息发出，走 <code translate="no">sendChatMessage</code>：</p>
+<ul>
+<li>从“新对话”草稿发出时带上草稿的 <code translate="no">local_*</code> id、权限模式、Agent、项目和目录：在草稿里执行，标签页就成为这段对话。</li>
+<li>它自己不画气泡。接着开始一轮的命令（<code translate="no">/goal &lt;目标&gt;</code>）在 <code translate="no">chat_ack</code> 时得到它的消息，回复开始之前就出现；只回答的命令（<code translate="no">/goal status</code>、<code translate="no">/goal pause</code>）只留下回复行。</li>
+<li>运行中或有请求等待时立即发出，跟当前这轮并行，不出气泡。</li>
+</ul>
 <details>
 <summary>已知小问题</summary>
 <ul>

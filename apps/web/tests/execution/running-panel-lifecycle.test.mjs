@@ -102,9 +102,10 @@ test("activity never overlaps polls for the same resource and aborts on unmount"
       window.dispatchEvent(new Event("op:execution-update"));
       assert.equal(host.querySelector('button[aria-label="Refresh activity"]'), null);
     });
-    // Executions, programs, and the conversation's own work (always-on,
-    // open work, scheduled tasks): one read each.
-    assert.equal(requests.length, 3);
+    // Executions, programs, the conversation's own work (always-on, open
+    // work, scheduled tasks) and the agents' roster: one read each.
+    assert.equal(requests.length, 4);
+    assert.ok(requests.some(request => request.url.endsWith("/api/session/session-one/activity/roster")));
     assert.ok(requests.some(request => request.url.endsWith("/api/sessions/session-one/work")));
     assert.equal(new Set(requests.map(request => request.url)).size, requests.length);
   });

@@ -41,6 +41,10 @@ def account_api(tmp_path, monkeypatch):
 
     store = AuthStore(root=tmp_path / "store")
     set_store_for_testing(store)
+    # A checked key reads its balance and lists its models; never over the network here.
+    from openprogram.models.listing import key_check
+    monkeypatch.setattr(key_check, "read_new_balance", lambda provider, account: None)
+    monkeypatch.setattr(key_check, "suggested_models", lambda provider, rows=None: (0, []))
 
     app = FastAPI()
     providers.register(app)
@@ -192,3 +196,68 @@ def test_openrouter_key_remaining_persists_valid(account_api, monkeypatch):
     assert r.json()["status"] == "valid"
     cred = account_api.store.find_pool("openai", "work").credentials[0]
     assert cred.status == "valid"
+
+
+def _read_cfg(provider):
+    from openprogram.models.providers.settings.storage import _read_providers_cfg
+    return _read_providers_cfg().get(provider) or {}
+
+
+def test_add_key_answers_one_line_and_turns_a_new_provider_on(account_api, monkeypatch):
+    monkeypatch.setattr(
+        cr, "validate_credential",
+        lambda *a, **k: _result(cr.VALID, kind="openrouter_key", via="GET /key"),
+    )
+    r = account_api.client.post(
+        "/api/providers/openrouter/accounts/keys",
+        json={"api_key": _SECRET, "validate": True},
+    )
+    check = r.json()["check"]
+    assert r.status_code == 200 and check["result"] == "works"
+    assert check["auto_enabled"] is True and _read_cfg("openrouter").get("enabled") is True
+    assert _SECRET not in r.text
+
+
+def test_a_rejected_key_answers_its_check_and_is_not_kept(account_api, monkeypatch):
+    monkeypatch.setattr(
+        cr, "validate_credential",
+        lambda *a, **k: _result(cr.INVALID_CREDENTIAL, via="GET /models"),
+    )
+    r = account_api.client.post(
+        "/api/providers/openai/accounts/keys",
+        json={"api_key": _SECRET, "validate": True},
+    )
+    assert r.status_code == 400
+    assert r.json()["check"]["result"] == "rejected"
+    assert r.json()["check"]["fix_url"] == "https://platform.openai.com/api-keys"
+    assert not _read_cfg("openai").get("enabled")
+
+
+def test_use_an_environment_key_without_sending_it(account_api, monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", _SECRET)
+    seen = {}
+
+    def fake(provider, **k):
+        seen["key"] = k.get("api_key")
+        return _result(cr.VALID_NO_BALANCE, detail="no credits")
+
+    monkeypatch.setattr(cr, "validate_credential", fake)
+    r = account_api.client.post("/api/providers/deepseek/accounts/env", json={"env_var": "DEEPSEEK_API_KEY"})
+    assert r.status_code == 200 and r.json()["check"]["result"] == "no_credit"
+    assert seen["key"] == _SECRET and _SECRET not in r.text
+    cred = account_api.store.find_pool("deepseek", "default").credentials[0]
+    assert cred.payload.auth_value == _SECRET and cred.source == "env:DEEPSEEK_API_KEY"
+    assert account_api.client.post("/api/providers/deepseek/accounts/env",
+                                   json={"env_var": "OPENAI_API_KEY"}).status_code == 400
+    monkeypatch.delenv("XAI_API_KEY", raising=False)
+    assert account_api.client.post("/api/providers/xai/accounts/env",
+                                   json={"env_var": "XAI_API_KEY"}).status_code == 404
+
+
+def test_validate_answers_the_same_check(account_api, monkeypatch):
+    _put(account_api.store, status="unknown")
+    monkeypatch.setattr(cr, "validate_credential",
+                        lambda *a, **k: _result(cr.VALID_NO_BALANCE, detail="no credits"))
+    body = account_api.client.post("/api/providers/openai/accounts/work/validate").json()
+    assert body["check"]["result"] == "no_credit"
+    assert body["check"]["fix_url"] == "https://platform.openai.com/settings/organization/billing/overview"

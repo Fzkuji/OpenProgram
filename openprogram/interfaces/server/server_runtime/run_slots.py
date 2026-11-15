@@ -175,6 +175,27 @@ def busy_refusal(kind: str | None, *, branch_id: str | None = None,
     return refusal
 
 
+def locked_refusal(waited: float | None = None, holder: str | None = None) -> dict[str, Any]:
+    """The answer when the conversation's lock was not had in time.
+
+    Nothing holds the slot: the conversation's files were being written
+    (a long first load, a move, another process) past the store's wait.
+    The request was not started and can be sent again; the client is
+    not told a turn is running, because none may be."""
+    refusal: dict[str, Any] = {
+        "code": "conversation_locked",
+        "kind": None,
+        "retryable": True,
+        "error": "This conversation's history is still being written; nothing was started. "
+                 "Try again in a moment.",
+    }
+    if waited is not None:
+        refusal["waited_seconds"] = round(waited, 1)
+    if holder:
+        refusal["holder"] = holder
+    return refusal
+
+
 def branch_running_refusal(blockers: list[dict]) -> dict[str, Any]:
     """A rewind that changes files, refused while another branch runs or waits.
 

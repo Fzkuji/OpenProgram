@@ -9,7 +9,7 @@
  * nothing rendered yet, a typing indicator stands in.
  */
 import { RewindErrorActions, useRewindOffered } from "../../rewind/rewind-error-actions";
-import { memo, useLayoutEffect, useMemo, useRef } from "react";
+import { lazy, memo, Suspense, useLayoutEffect, useMemo, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { ChevronDown, CircleAlert, Square } from "lucide-react";
 
@@ -47,6 +47,7 @@ import { TurnFilesChips } from "../turn-files/turn-files-chips";
 import { summarizeToolGroup } from "../execution/tool-group-summary";
 import { shouldRenderTurnFiles } from "../turn-files/turn-files-presentation";
 import { AssistantFileCards, sentFilePath } from "../attachments/assistant-file-cards";
+import { ProseFileLinks } from "./prose-file-links";
 import { parseAttachments } from "../attachments/user-attachments";
 import { ThinkingStatus } from "../execution/thinking-status";
 import { UserBubble } from "./user-bubble";
@@ -57,6 +58,8 @@ import { blockIds, ownedChildren, spawnFacts } from "@/lib/chat/transcript/owned
 import { isLive, isStopped } from "@/lib/chat/transcript/row-status";
 import { continuedRows, fallbackBlocks as flatBlocks, joinedReply } from "@/lib/chat/transcript/restart-continuation";
 import { useRowSessionId } from "../list/transcript-view-scope";
+
+const QuotaErrorCard = lazy(() => import("./quota-reply-card").then((m) => ({ default: m.QuotaErrorCard })));
 
 function SteeringInput({block, sessionId, viewKey}: {block: AssistantBlock; sessionId?: string; viewKey?: string}) {
   const user = useSessionStore(selectRow(viewKey, block.message_id));
@@ -266,6 +269,7 @@ export function AssistantBubble({ msg: ownMsg, verdict, sessionIdOverride, embed
     [cutOff, ownMsg],
   );
   const rewindOffered = useRewindOffered(bubbleSessionId, msg.errorReason);
+  const quotaCause = msg.status === "error" && msg.errorCause?.cause === "quota_exhausted" ? msg.errorCause : null;
   const { text } = useTranslation();
   const stoppedAs = !msg.goalVerification && isStopped(msg.status) ? msg.status : undefined;
   // Set while drawing the blocks: whether the last row took the stopped tag.
@@ -336,6 +340,7 @@ export function AssistantBubble({ msg: ownMsg, verdict, sessionIdOverride, embed
       aria-label={sender}
     >
       {(
+        <ProseFileLinks sessionId={bubbleSessionId} settled={!streaming}>
         <div className="chat-stream-body">
           <StepExpansionScope view={viewKey ?? bubbleSessionId} row={msg.id}>
           {effBlocks ? (
@@ -546,20 +551,35 @@ export function AssistantBubble({ msg: ownMsg, verdict, sessionIdOverride, embed
                 && !msg.attachCards?.length && !msg.callRoots?.length ? <TypingIndicator /> : null}
             </>
           )}
-          {msg.status === "error" && !msg.goalVerification ? (
-            <div className="turn-error" role="status">
-              <span className="turn-error-icon"><CircleAlert size={20} aria-hidden="true" /></span>
-              <div className="turn-error-body">
-                <div className="turn-error-title">{errorHeadline(msg, text, rewindOffered && !embedded)
-                  || text("This reply could not be completed.", "本次回复未能完成。")}</div>
-                <details className="turn-error-details">
-                  <summary>{text("Error details", "错误详情")}<ChevronDown size={12} aria-hidden="true" /></summary>
-                  <pre>{msg.errorDetail || msg.content || text("Request failed.", "请求失败。")}</pre>
-                </details>
-                {embedded ? null : <RewindErrorActions msg={msg} sessionId={bubbleSessionId} />}
+          {msg.status === "error" && !msg.goalVerification ? (() => {
+            const details = (
+              <details className="turn-error-details">
+                <summary>{text("Error details", "错误详情")}<ChevronDown size={12} aria-hidden="true" /></summary>
+                <pre>{msg.errorDetail || msg.content || text("Request failed.", "请求失败。")}</pre>
+              </details>
+            );
+            const rewind = embedded ? null : <RewindErrorActions msg={msg} sessionId={bubbleSessionId} />;
+            const plain = (
+              <div className="turn-error" role="status">
+                <span className="turn-error-icon"><CircleAlert size={20} aria-hidden="true" /></span>
+                <div className="turn-error-body">
+                  <div className="turn-error-title">{errorHeadline(msg, text, rewindOffered && !embedded)
+                    || text("This reply could not be completed.", "本次回复未能完成。")}</div>
+                  {details}
+                  {rewind}
+                </div>
               </div>
-            </div>
-          ) : null}
+            );
+            // A spent quota names the provider, the limit and its reset, and
+            // offers another model (loaded only when one is drawn).
+            return quotaCause ? (
+              <Suspense fallback={plain}>
+                <QuotaErrorCard msg={msg} cause={quotaCause} sessionId={bubbleSessionId} embedded={embedded} after={rewind}>
+                  {details}
+                </QuotaErrorCard>
+              </Suspense>
+            ) : plain;
+          })() : null}
           {stoppedAs && !stopTagged ? (
             <div className="turn-stopped-note" role="status">
               <Square size={14} aria-hidden="true" />
@@ -608,6 +628,7 @@ export function AssistantBubble({ msg: ownMsg, verdict, sessionIdOverride, embed
           ) : null}
           </StepExpansionScope>
         </div>
+        </ProseFileLinks>
       )}
       {/* Action row at the BOTTOM-RIGHT of the message — you finish
           reading, then reach for copy/retry/branch right where your

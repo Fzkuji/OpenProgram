@@ -28,7 +28,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import platform as host
 import posixpath
 import re
 import shutil
@@ -41,6 +40,7 @@ from openprogram.operations.self_update.versions import layout as paths
 from openprogram.operations.self_update.versions import store
 from openprogram.operations.self_update.versions.layout import Layout
 from openprogram.host._platform import filesystem
+from openprogram.host._platform.architecture import interpreter_architecture
 
 MANIFEST_FILE = "update-manifest.json"
 SIGNATURE_FILE = f"{MANIFEST_FILE}.sig"
@@ -72,9 +72,9 @@ class ReleaseError(RuntimeError):
 def current_platform() -> str:
     """This machine, in the release matrix's ``<platform>-<arch>`` words."""
     system = {"darwin": "macos", "win32": "windows"}.get(sys.platform, sys.platform)
-    machine = host.machine().lower()
-    architecture = {"aarch64": "arm64", "amd64": "x86_64"}.get(machine, machine)
-    return f"{system}-{architecture}"
+    # The running interpreter's architecture: an x64 install on Windows on Arm
+    # updates to the x64 release, not to an Arm one it never installed.
+    return f"{system}-{interpreter_architecture()}"
 
 
 def git(

@@ -83,7 +83,7 @@ openprogram config set ui.web_port 8101</code></pre>
 <tbody>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_WEB_PORT</code></th><td>唯一 worker 端口（默认 18100）；低于命令行参数，高于已存偏好</td><td><code translate="no">openprogram/operations/worker/lifecycle.py</code></td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_NO_WEB</code></th><td><code translate="no">1</code>：worker 跳过前端构建检查，不提供 web UI</td><td><code translate="no">openprogram/operations/worker/runner.py</code></td></tr>
-<tr><th scope="row"><code translate="no">OPENPROGRAM_DOCS_BASE</code></th><td>文档挂载路径（默认 <code translate="no">/docs/</code>；须以 <code translate="no">/</code> 开头和结尾）</td><td><code translate="no">scripts/docs_site/build.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_DOCS_BASE</code></th><td>文档挂载路径（默认 <code translate="no">/docs/</code>；须以 <code translate="no">/</code> 开头和结尾）。发布工作流把它设成网站地址里的路径</td><td><code translate="no">scripts/docs_site/build.py</code></td></tr>
 </tbody>
 </table>
 <h3>行为开关</h3>

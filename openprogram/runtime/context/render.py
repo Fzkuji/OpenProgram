@@ -482,14 +482,30 @@ def _attach_report(node: Call) -> str:
 
     A synchronous spawn already returned the reply as the agent tool's
     result, which carries the branch address, so its node adds nothing.
+
+    A card written while its helper runs (``result_in="notice"``, set with
+    its ``job_id``) renders only what it was written with: its status, reply
+    and usage change as the helper works, and the caller's prompt only grows
+    by appending, so they stay on the node for the interface and the result
+    reaches the caller as the notice turn (``jobs/notices.py``). A card
+    without the mark (written after its helper ended, or before the notice
+    carried results) carries the reply, so older conversations keep theirs.
     """
     md = node.metadata or {}
     attach = md.get("attach") if isinstance(md.get("attach"), dict) else {}
     if attach.get("delivery") == "tool_result":
         return ""
     label = str(attach.get("label") or "").strip()
-    lines = [f'[Report from sub-agent "{label}"]' if label else "[Report from a sub-agent]"]
     task = str(attach.get("prompt") or "").strip()
+    job_id = str(attach.get("job_id") or "").strip()
+    if job_id and attach.get("result_in") == "notice":
+        lines = [f'[Sub-agent "{label}" started]' if label else "[A sub-agent started]"]
+        if task:
+            lines.append(f"Task: {task[:500]}")
+        lines.append("Its result comes back to you as a notice when it ends. Its steps: "
+                     f'read_conversation(session_id="{job_id}")')
+        return "\n".join(lines)
+    lines = [f'[Report from sub-agent "{label}"]' if label else "[Report from a sub-agent]"]
     if task:
         lines.append(f"Task: {task[:500]}")
     status = str(attach.get("status") or "").strip()

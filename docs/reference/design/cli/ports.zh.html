@@ -1,10 +1,10 @@
 <title>Web UI 端口</title>
-<meta name="description" content="OpenProgram 如何选择、配置和守住 Web UI 运行的唯一端口。">
+<meta name="description" content="OpenProgram 如何选择、配置和守住 Web UI 运行的唯一端口，每个账户一个。">
 <h1>Web UI 端口</h1>
 
 <dl class="pairs">
-<dt>默认</dt><dd><code translate="no">18100</code></dd>
-<dt>提供</dt><dd>FastAPI <code translate="no">/api/*</code>、<code translate="no">/ws</code>、<code translate="no">/healthz</code> 和静态 Web UI 导出，浏览器、TUI、CLI 都连它。<a href="single-port.zh.html">单端口架构</a></dd>
+<dt>默认</dt><dd><code translate="no">18100</code>，或从它往上第一个空闲端口，每个账户选一次并保留</dd>
+<dt>提供</dt><dd>FastAPI <code translate="no">/api/*</code>、OpenAI 兼容的 <code translate="no">/v1/*</code>、<code translate="no">/ws</code>、<code translate="no">/healthz</code> 和静态 Web UI 导出，浏览器、TUI、CLI 都连它。<a href="single-port.zh.html">单端口架构</a></dd>
 </dl>
 
 <h2 id="configuration-surface">设置</h2>
@@ -14,8 +14,8 @@
 <tbody>
 <tr><th scope="row"><code translate="no">openprogram web --web-port &lt;p&gt;</code></th><td>本次运行，不持久化；仅 <code translate="no">openprogram web</code></td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_WEB_PORT</code></th><td>本进程，不持久化</td></tr>
-<tr><th scope="row"><code translate="no">~/.openprogram/config.json</code> 的 <code translate="no">ui.web_port</code></th><td>持久化，下次 <code translate="no">openprogram web</code> 或 <code translate="no">openprogram worker</code> 启动时读取。运行中的不会重新绑定</td></tr>
-<tr><th scope="row">内置</th><td><code translate="no">18100</code></td></tr>
+<tr><th scope="row"><code translate="no">~/.openprogram/config.json</code> 的 <code translate="no">ui.web_port</code></th><td>持久化，下次 <code translate="no">openprogram web</code>、<code translate="no">openprogram worker</code> 或 App 启动时读取。运行中的不会重新绑定</td></tr>
+<tr><th scope="row"><code translate="no">~/.openprogram/web-port</code></th><td>账户第一次启动时自己选的端口：从 <code translate="no">18100</code> 往上第一个空闲端口。只留在本机，不进备份</td></tr>
 </tbody>
 </table>
 <table class="stack fixed">
@@ -26,47 +26,60 @@
 <tr><th scope="row"><code translate="no">openprogram setup ui</code></th><td>向导：端口（<code translate="no">1–65535</code>）和自动打开浏览器</td></tr>
 </tbody>
 </table>
-<p class="note"><code translate="no">operations/worker/lifecycle.py</code> 的 <code translate="no">resolve_worker_port()</code> 是唯一解析路径；<code translate="no">state/preferences.py</code> 的 <code translate="no">read_ui_prefs()</code>、<code translate="no">set_ui_ports()</code> 是唯一读写路径。</p>
+<p class="note">只有 worker 选端口：<code translate="no">operations/worker/lifecycle.py</code> 的 <code translate="no">claim_worker_port()</code> 在 worker 拿到锁之后马上定下端口，<code translate="no">resolve_worker_port()</code> 读取它。App 读同样的文件（<code translate="no">apps/desktop/main/worker/web-port.js</code>），所以两边总是一致。</p>
+
+<h2 id="one-port-per-account">每个账户一个端口</h2>
+<p>回环端口属于整台电脑。端口固定时，同一台电脑上同时登录的第二个账户，或者 18100 已被别的程序占用的用户，都没有 worker，App 一直等。所以每个账户有自己的端口：</p>
+<ol>
+<li>账户的 worker 第一次启动时，从 18100 往上取第一个能绑定的端口，写进 <code translate="no">web-port</code>。先写的为准，所以 App 和 CLI 同时首次启动也会选同一个。</li>
+<li>之后的启动用记下的端口，地址不变。</li>
+<li>启动时记下的端口被别的东西占着，worker 换到下一个空闲端口并改写记录。App 看到记录变了，就在新端口上重新打开。</li>
+<li>用户自己设的端口（<code translate="no">ui.web_port</code>、<code translate="no">OPENPROGRAM_WEB_PORT</code>）不会换。说出占用者，worker 退出。</li>
+</ol>
+<p class="note">Jupyter 也是这样：取下一个空闲端口，把它提供服务的地址写进客户端读取的运行时文件。</p>
 
 <h2 id="conflict-handling">端口被占用时</h2>
 <table class="stack">
-<thead><tr><th scope="col">端口状态</th><th scope="col"><code translate="no">openprogram web</code></th><th scope="col"><code translate="no">openprogram worker</code></th></tr></thead>
+<thead><tr><th scope="col">端口状态</th><th scope="col">worker</th><th scope="col">App</th><th scope="col"><code translate="no">openprogram web</code></th></tr></thead>
 <tbody>
-<tr><th scope="row">空闲</th><td>绑定并启动</td><td>绑定并启动</td></tr>
-<tr><th scope="row">被自己的实例占用</th><td>复用，把浏览器指向 UI</td><td>worker 锁已阻止第二个 worker</td></tr>
-<tr><th scope="row">被外部程序占用</th><td>拒绝。打印占用者（PID、命令行）和如何释放或改端口。不打开浏览器。</td><td>说出占用者，回退到空闲端口并报告，UI 地址跟随。它还承载 channel，必须起来。</td></tr>
-<tr><th scope="row">刚退出（TIME_WAIT）</th><td>uvicorn 的 <code translate="no">SO_REUSEADDR</code> 重新绑定</td><td><code translate="no">_port_available</code> 用 <code translate="no">SO_REUSEADDR</code>，快速重启不漂移</td></tr>
+<tr><th scope="row">空闲</th><td>绑定并启动</td><td>直接打开已登录的聊天页</td><td>启动 worker，浏览器打开已登录的页面</td></tr>
+<tr><th scope="row">被本账户的 worker 占用</th><td>worker 锁已阻止第二个 worker</td><td>直接打开已登录的聊天页</td><td>把浏览器指向 UI</td></tr>
+<tr><th scope="row">被别的程序或账户占用，端口是自己选的</th><td>说出占用者，换到下一个空闲端口，改写 <code translate="no">web-port</code></td><td>启动本账户的 worker，然后在新端口上重新打开</td><td>启动 worker，打开它报出的端口</td></tr>
+<tr><th scope="row">被别的程序或账户占用，端口是用户设的</th><td>说出占用者并退出；不算这个版本启动失败</td><td>显示<em>端口 N 已被占用</em>，写明占用者和怎样换端口，端口空出来后自动打开聊天页</td><td>拒绝，说出占用者</td></tr>
+<tr><th scope="row">刚退出（TIME_WAIT）</th><td colspan="3">算空闲：POSIX 用 <code translate="no">SO_REUSEADDR</code> 探测；Windows 本来就能重新绑定这样的端口</td></tr>
 </tbody>
 </table>
-<p class="note">绝不杀占用者。</p>
+<p class="note">绝不杀占用者；监听者不证明自己是本账户的 worker，就拿不到本账户的 token。</p>
 
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">operations/worker/ports.py 的检查</th><th scope="col">方式</th></tr></thead>
 <tbody>
 <tr><th scope="row">存活：<code translate="no">port_in_use(port)</code></th><td>裸 TCP 连接</td></tr>
-<tr><th scope="row">身份：<code translate="no">backend_is_ours(port)</code></th><td>检查受管 worker 的 PID、端口文件和 profile 下仅属主可读的 <code translate="no">web/access.json</code>，向 <code translate="no">/api/auth/challenge</code> 发随机 nonce，本地验证 token-HMAC 证明。绝不发送属主 token 或 Bearer 头，外部监听者拿不到凭据。可选的 <code translate="no">expected_revision</code> 把证明绑定到升级目标的版本。</td></tr>
-<tr><th scope="row">归属：<code translate="no">describe_port_owner(port)</code>、<code translate="no">port_owner_hint(port)</code></th><td><code translate="no">lsof</code> 或 <code translate="no">netstat</code> + <code translate="no">/proc</code>、<code translate="no">ps</code>、Windows CIM：PID 和命令行，自己的还是外部的</td></tr>
+<tr><th scope="row">能否监听：<code translate="no">port_bindable(port)</code></th><td>试绑定一次。Windows 上用 <code translate="no">SO_EXCLUSIVEADDRUSE</code>：那里的 <code translate="no">SO_REUSEADDR</code> 会绑到正在监听的端口上，把被占的端口说成空闲</td></tr>
+<tr><th scope="row">身份：<code translate="no">backend_is_ours(port)</code></th><td>需要本 profile 存活的 worker（持有锁）和它的 <code translate="no">worker.port</code>，再读 profile 下仅属主可读的 <code translate="no">web/access.json</code>；向 <code translate="no">/api/auth/challenge</code> 发随机 nonce，本地验证 token-HMAC 证明。绝不发送属主 token 或 Bearer 头，外部监听者拿不到凭据。可选的 <code translate="no">expected_revision</code> 把证明绑定到升级目标的版本。</td></tr>
+<tr><th scope="row">归属：<code translate="no">describe_port_owner(port)</code>、<code translate="no">port_owner_hint(port)</code></th><td><code translate="no">lsof</code> 或 <code translate="no">netstat</code> + <code translate="no">/proc</code>、<code translate="no">ps</code>、Windows CIM：PID 和命令行</td></tr>
 </tbody>
 </table>
+<p>本账户没有 worker、而所问的端口上有别的东西在监听时，<code translate="no">openprogram web auth-url</code> 以退出码 3 结束并说出占用者；App 据此显示占用者，而不是一直等。</p>
 
 <details>
 <summary>为什么是 18100</summary>
 <ul>
 <li>低于 49152，不在系统分配给出站 socket 的临时端口范围。</li>
-<li><code translate="no">18xxx</code> 段少有开发工具使用，不像 3000、5173、8000、8080。</li>
-<li>固定：地址可收藏，浏览器状态（localStorage、service worker 作用域）跨重启保留。</li>
+<li><code translate="no">18xxx</code> 段少有开发工具使用，不像 3000、5173、8000、8080。开发版实例的 18200 不在账户选择的 18100–18199 范围内。</li>
+<li>选定后保留：地址可收藏，浏览器状态（localStorage、service worker 作用域）跨重启保留。</li>
 </ul>
 </details>
 
 <details>
 <summary>与 OpenClaw 对比</summary>
-<p>OpenClaw 把网关固定在 <code translate="no">18789</code>。</p>
+<p>OpenClaw 把网关固定在 <code translate="no">18789</code>，被占就拒绝；OpenProgram 对用户设的端口同样如此，自己选的端口则换一个。</p>
 <table class="stack">
 <thead><tr><th scope="col">OpenClaw 层</th><th scope="col">源码</th><th scope="col">OpenProgram</th></tr></thead>
 <tbody>
 <tr><th scope="row">单实例锁（pid、启动时间、argv）</th><td><code translate="no">src/infra/gateway-lock.ts</code></td><td><code translate="no">worker.lock</code>（fcntl）、带启动时间的 <code translate="no">worker.pid</code>、<code translate="no">_process_alive</code></td></tr>
-<tr><th scope="row">为 TIME_WAIT 做 EADDRINUSE 重试</th><td><code translate="no">src/gateway/server/http-listen.ts</code></td><td><code translate="no">SO_REUSEADDR</code>，无需重试循环</td></tr>
-<tr><th scope="row">用 <code translate="no">lsof</code> 说出占用者</th><td><code translate="no">src/infra/ports.ts</code>，仅 SSH 隧道路径</td><td><code translate="no">describe_port_owner</code>、<code translate="no">port_owner_hint</code>，启动路径上每条“端口被占用”消息都有</td></tr>
+<tr><th scope="row">为 TIME_WAIT 做 EADDRINUSE 重试</th><td><code translate="no">src/gateway/server/http-listen.ts</code></td><td>POSIX 上 <code translate="no">SO_REUSEADDR</code>，无需重试循环</td></tr>
+<tr><th scope="row">用 <code translate="no">lsof</code> 说出占用者</th><td><code translate="no">src/infra/ports.ts</code>，仅 SSH 隧道路径</td><td><code translate="no">describe_port_owner</code>、<code translate="no">port_owner_hint</code>，启动路径上每条“端口被占用”消息和 App 的页面上都有</td></tr>
 </tbody>
 </table>
 </details>

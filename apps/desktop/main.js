@@ -22,6 +22,7 @@ const https = require("https");
 const path = require("path");
 const { Buffer } = require("buffer");
 const { resolveAuthenticatedStartUrl, ownerAuthTokenFromStartUrl } = require("./main/worker/worker-start-url");
+const webPort = require("./main/worker/web-port");
 const { createSelfUpdateReopen, registerReopenIpc } = require("./main/self-update/self-update-reopen");
 const { registerUiVerificationIpc } = require("./main/self-update/self-update-ui");
 const { createUiVerificationGuard } = require("./main/self-update/self-update-ui-guard");
@@ -107,8 +108,15 @@ if (INSTANCE.development) {
   app.setName(INSTANCE.name);
   app.setPath("userData", path.join(app.getPath("appData"), INSTANCE.name));
 }
-// 单实例：worker 单端口（稳定版 18100，详见 docs/reference/design/cli/single-port.html）
-const WEB_PORT = process.env.OPENPROGRAM_WEB_PORT || String(INSTANCE.port);
+// 单实例：worker 单端口。端口由 worker 在本账户第一次启动时选定并记在
+// <state>/web-port（通常 18100），App 只读这些文件，见
+// main/worker/web-port.js 和 docs/reference/design/cli/single-port.html。
+const WEB_PORT_FILES = {
+  instance: INSTANCE,
+  stateDir: webPort.stateDirectory(),
+};
+const WEB_PORT_CHOICE = webPort.resolveWebPort(WEB_PORT_FILES);
+const WEB_PORT = String(WEB_PORT_CHOICE.port);
 const START_URL =
   process.env.OPENPROGRAM_DESKTOP_URL || `http://127.0.0.1:${WEB_PORT}/chat`;
 const UI_ORIGIN = new URL(START_URL).origin;
@@ -193,7 +201,7 @@ function canWriteBeside(file) {
 /** A sealed version updates through its own Python, which holds the fetcher. */
 function runVersionStoreUpdate() {
   const launch = shellContext.resolveWorker();
-  const env = { ...process.env, OPENPROGRAM_WEB_PORT: WEB_PORT, ...launch.env };
+  const env = { ...process.env, ...webPort.workerPortEnv(WEB_PORT_CHOICE), ...launch.env };
   // The worker lists this App among the version store's users, so the last
   // uninstaller knows whether the store is still needed.
   if (app.isPackaged) env.OPENPROGRAM_APP_PATH = path.dirname(process.execPath);
@@ -368,7 +376,12 @@ app.commandLine.appendSwitch("remote-debugging-port", String(INSTANCE.debugPort)
 let currentChrome = themeChrome.chromeForTheme("beige-dark");
 
 function errorPageUrl(phase = "waiting") {
-  return themeChrome.buildErrorPageUrl(currentChrome, WORKER_COMMAND, phase);
+  return themeChrome.buildErrorPageUrl(currentChrome, WORKER_COMMAND, phase, {
+    port: WEB_PORT,
+    holder: portHeldBy,
+    setting: WEB_PORT_CHOICE.source,
+    chinese: /^zh/i.test(app.getLocale?.() || ""),
+  });
 }
 
 function isErrorPageUrl(url) {
@@ -485,7 +498,7 @@ async function spawnManagedWorker(action) {
     void shellContext.openRecovery("failed");
     return;
   }
-  const env = { ...process.env, OPENPROGRAM_WEB_PORT: WEB_PORT, ...launch.env };
+  const env = { ...process.env, ...webPort.workerPortEnv(WEB_PORT_CHOICE), ...launch.env };
   // The worker lists this App among the version store's users, so the last
   // uninstaller knows whether the store is still needed.
   if (app.isPackaged) env.OPENPROGRAM_APP_PATH = path.dirname(process.execPath);
@@ -518,7 +531,7 @@ function spawnWorker(action = "start") {
     void spawnManagedWorker(action);
     return;
   }
-  const env = { ...process.env, OPENPROGRAM_WEB_PORT: WEB_PORT };
+  const env = { ...process.env, ...webPort.workerPortEnv(WEB_PORT_CHOICE) };
   delete env.PYTHONHOME;
   delete env.PYTHONPATH;
   let launch;
@@ -553,7 +566,40 @@ function spawnWorker(action = "start") {
   child.unref();
 }
 
+// Who holds this App's port when it is not this account's worker, as
+// `web auth-url` named it; null while the port is free or ours. Such a
+// listener is never given this account's token.
+let portHeldBy = null;
+function notePortHeld(holder) {
+  portHeldBy = holder || "another program or account";
+}
+
 function resolveWorkerStartUrl() {
+  portHeldBy = null;
+  return authenticatedStartUrl();
+}
+
+// The worker moved this account's port because another program or account
+// held it: the App's addresses are fixed for its run, so it starts again on
+// the new port. Once per run.
+let relaunchingForPort = false;
+function followMovedWebPort() {
+  if (relaunchingForPort) return true;
+  const moved = webPort.movedWebPort(WEB_PORT_CHOICE, WEB_PORT_FILES);
+  if (moved === null) return false;
+  relaunchingForPort = true;
+  console.log(`[desktop] the worker moved from port ${WEB_PORT} to ${moved}: reopening on it`);
+  // An AppImage relaunches from its file, not its mount, which goes away.
+  app.relaunch(shellContext?.relaunchOptions?.());
+  app.quit();
+  return true;
+}
+
+// While a port the user set is held by someone else, nothing changes until
+// they quit it; ask a little less often than the one-second startup probe.
+const PORT_HELD_INTERVAL_MS = 5_000;
+
+function authenticatedStartUrl() {
   if (shellContext) {
     let launch;
     try {
@@ -563,9 +609,9 @@ function resolveWorkerStartUrl() {
     }
     return resolveAuthenticatedStartUrl(START_URL, { ...process.env, ...launch.env }, [
       { command: launch.authCommand, args: launch.authArgs },
-    ]);
+    ], notePortHeld);
   }
-  if (!app.isPackaged) return resolveAuthenticatedStartUrl(START_URL);
+  if (!app.isPackaged) return resolveAuthenticatedStartUrl(START_URL, process.env, undefined, notePortHeld);
   const launch = INSTANCE.development
     ? resolveInstanceWorker(INSTANCE)
     : resolvePackagedWorker(process.resourcesPath, app.getVersion());
@@ -574,7 +620,7 @@ function resolveWorkerStartUrl() {
       command: launch.authCommand || launch.command,
       args: ["-I", "-B", "-m", "openprogram"],
     },
-  ]);
+  ], notePortHeld);
 }
 
 function readLocalJson(url, headers = {}, timeoutMs = 1500) {
@@ -641,16 +687,27 @@ async function workerVersionSettled() {
 }
 
 async function resolveStartUrl() {
+  if (followMovedWebPort()) return errorPageUrl();
   let workerWasReachable = false;
   for (let i = 0; i < 3; i++) {
-    if (await probe(HEALTH_URL, 1000)) {
+    const healthy = await probe(HEALTH_URL, 1000);
+    if (!healthy && !await webPort.portListening(WEB_PORT)) continue;
+    const authenticated = resolveWorkerStartUrl();
+    if (authenticated) {
       workerWasReachable = true;
       recoveryCoordinator.workerSpawned = false;
-      const authenticated = resolveWorkerStartUrl();
-      if (authenticated) {
-        if (await restartWorkerFromOtherVersion(authenticated)) return errorPageUrl();
-        return authenticated;
-      }
+      if (await restartWorkerFromOtherVersion(authenticated)) return errorPageUrl();
+      return authenticated;
+    }
+    if (portHeldBy !== null) {
+      // Not this account's worker. A port the user set stays theirs to free;
+      // a chosen one moves when this account's own worker starts.
+      if (webPort.portIsFixed(WEB_PORT_CHOICE)) return errorPageUrl("port");
+      break;
+    }
+    if (healthy) {
+      workerWasReachable = true;
+      recoveryCoordinator.workerSpawned = false;
     }
   }
   if (!workerWasReachable && appInstallInProgress()) return errorPageUrl("updating");
@@ -690,8 +747,25 @@ function stopWindowRecovery(ctx) {
 async function runWindowRecoveryProbe(ctx) {
   const state = ctx.recovery;
   if (ctx.win.isDestroyed() || !beginRecoveryProbe(state, Date.now())) return;
-  const reachable = await probe(HEALTH_URL, 1000) && await workerVersionSettled();
-  const authenticated = reachable ? resolveWorkerStartUrl() : null;
+  if (followMovedWebPort()) return;
+  const healthy = await probe(HEALTH_URL, 1000) && await workerVersionSettled();
+  const listening = healthy || await webPort.portListening(WEB_PORT);
+  // A port nobody listens on any more is no longer held by anyone.
+  if (!listening) portHeldBy = null;
+  const authenticated = listening ? resolveWorkerStartUrl() : null;
+  const heldByOther = !authenticated && portHeldBy !== null;
+  if (heldByOther && webPort.portIsFixed(WEB_PORT_CHOICE)) {
+    // Starting a worker cannot help: it would refuse the held port too. Say
+    // who holds it, and keep checking so the UI loads once it is freed.
+    state.probeInFlight = false;
+    state.nextProbeAt = Date.now() + PORT_HELD_INTERVAL_MS;
+    watchManagedRecovery(true, false);
+    showWaitPage(ctx, "port");
+    return;
+  }
+  // Another account's worker or another program answering on a port this
+  // account chose is not reachable for it: its own worker starts and moves.
+  const reachable = healthy && !heldByOther;
   const installing = !reachable && appInstallInProgress();
   watchManagedRecovery(reachable, installing);
   const action = finishRecoveryProbe(
@@ -2248,6 +2322,9 @@ const registerMainWindow = () => registerSingleMainWindow({
     registerWebTabIpc();
     registerTabTransferIpc();
     registerOwnerAuthIpc();
+    require("./main/files/open-default").registerOpenFileIpc({
+      ipcMain, shell, fs, path, platform: process.platform, contextForSender,
+    });
     registerUpdateIpc();
     require("./main/windows/pointer-follow").createPointerFollow({
       ipcMain, screen: require("electron").screen, spawn: require("node:child_process").spawn,

@@ -785,7 +785,11 @@ class UsageLedger:
             "SUM(output_tokens) AS output_tokens, "
             "SUM(cache_read_tokens) AS cache_read_tokens, "
             "SUM(cache_write_tokens) AS cache_write_tokens, "
-            "SUM(total_tokens) AS total_tokens, "
+            # A row written before the recorder counted cached tokens in its
+            # total (DeepSeek: cache reads above the "total") reads as the
+            # sum of its parts, the larger of the two, as the recorder now writes.
+            "SUM(MAX(COALESCE(total_tokens, 0), COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0) "
+            "+ COALESCE(cache_read_tokens, 0) + COALESCE(cache_write_tokens, 0))) AS total_tokens, "
             "SUM(cost_total) AS cost_total, "
             "SUM(CASE WHEN COALESCE(cost_source, 'unknown') = 'unknown' "
             "THEN 1 ELSE 0 END) AS unknown_cost_events, "

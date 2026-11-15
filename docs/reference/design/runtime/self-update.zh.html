@@ -447,7 +447,7 @@ writer=controller</pre>
 <li>对 <code translate="no">18200</code> 运行 <code translate="no">system_probe</code> 和浏览器探测。</li>
 <li>最多等 30 分钟，直到稳定版没有任务。</li>
 <li><code translate="no">stable</code> 已含该提交则到第 8 步。否则 <code translate="no">openprogram dev promote &lt;sha&gt;</code>。遇到 “only the commit the development instance serves” 时重新部署，重复第 4 步一次，再晋升；第二次拒绝：<code translate="no">aborted</code>。</li>
-<li>晋升对失败的刷新重试一次。仍失败或不健康：在 <code translate="no">dev</code> 上 <code translate="no">git revert</code>，部署，晋升。<code translate="no">rolled_back</code> 给出 revert 提交。</li>
+<li>刷新失败时 <code translate="no">stable</code> 和 App 都留在之前的版本。失败或不健康：在 <code translate="no">dev</code> 上 <code translate="no">git revert</code>，部署，晋升。<code translate="no">rolled_back</code> 给出 revert 提交。</li>
 </ol>
 <h3>交付</h3>
 <ol start="8">
@@ -462,7 +462,7 @@ writer=controller</pre>
 <tr><th scope="row">签名</th><td>Electron、<code translate="no">app.asar</code>（loader、恢复页、node-pty）、launcher、macOS 助手。没有 Developer ID 时 <code translate="no">local_signing.py</code> 给助手稳定身份。<code translate="no">versions/</code> 和 <code translate="no">bases/</code> 的文件不签名、不隔离。</td></tr>
 <tr><th scope="row">种子</th><td><code translate="no">Resources/seed/</code>：<code translate="no">base.tar.zst</code>、<code translate="no">version.tar.zst</code>、<code translate="no">repo.bundle</code>、launcher、助手。<code translate="no">.seeding</code> 最先写、最后删；中断的播种重新开始。非空 <code translate="no">repo/</code> 绝不覆盖。</td></tr>
 <tr><th scope="row">Git</th><td>macOS、Windows 用钉住的 dugite-native；<code translate="no">&lt;base&gt;/git/bin</code> 排在 <code translate="no">PATH</code> 最前，Windows 上是 <code translate="no">&lt;base&gt;\git\cmd</code></td></tr>
-<tr><th scope="row">Windows</th><td>每用户 NSIS 只装 shell。升级时 <code translate="no">prepare-upgrade.ps1</code> 只停 shell 根目录下的进程。卸载时 <code translate="no">remove-background.ps1</code> 还会停止 Worker 并移除它的登录任务；<code translate="no">&lt;root&gt;</code> 和用户数据保留。</td></tr>
+<tr><th scope="row">Windows</th><td>每用户 NSIS 只装 shell。全新安装在安装前不运行 PowerShell。升级时，<code translate="no">OpenProgram.exe</code> 和 <code translate="no">resources\app.asar</code> 都在，<code translate="no">prepare-upgrade.ps1</code> 才运行，只停 shell 根目录下的进程。每个钩子都把脚本文本交给 <code translate="no">powershell.exe -Command</code>，不用 <code translate="no">-File</code>，所以只允许签名脚本的组策略拦不住它。卸载时 <code translate="no">remove-background.ps1</code> 还会停止 Worker 并移除它的登录任务；<code translate="no">&lt;root&gt;</code> 和用户数据保留。</td></tr>
 <tr><th scope="row">CLI</th><td><code translate="no">install-release.sh</code>/<code translate="no">.ps1</code> 采用 <code translate="no">&lt;root&gt;</code> 和 <code translate="no">current</code>，迁移 <code translate="no">runtime/cli/releases</code></td></tr>
 <tr><th scope="row">模式判断</th><td><code translate="no">layout.managed()</code> 取代 <code translate="no">OPENPROGRAM_IMMUTABLE_RUNTIME</code>；内嵌模式保留该变量</td></tr>
 </tbody>

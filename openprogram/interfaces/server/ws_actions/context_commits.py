@@ -55,37 +55,44 @@ async def handle_list_commits(ws, cmd: dict):
     commits: list[dict] = []
     err: str | None = None
     try:
-        from openprogram.runtime.context.session_db import default_db
-        from openprogram.state.store.session.context_commit.store import list_commits
-        from openprogram.runtime.context.commit import commit_state_counts
-        store = default_db()
+        def collect() -> None:
+            # The commits and the index are read under the conversation's
+            # lock: in its lane, off the event loop.
+            from openprogram.runtime.context.session_db import default_db
+            from openprogram.state.store.session.context_commit.store import list_commits
+            from openprogram.runtime.context.commit import commit_state_counts
+            store = default_db()
+            if session_id:
+                entries = list_commits(store, session_id, limit=50)
+                # Open the session's in-memory index so we can compute
+                # turn_group_id per commit. Best-effort — falls back to
+                # head_id-self group if the index isn't available.
+                pair = store._open(session_id)
+                idx = pair[1] if pair else None
+                retracted = set(idx.meta.get("rewind_hidden_nodes") or ()) if idx else set()
+                for s in entries:
+                    if s.head_node_id in retracted:
+                        continue  # a commit of a turn a rewind retracted
+                    group_id = (
+                        _find_fork_group(idx, s.head_node_id)
+                        if idx else s.head_node_id
+                    )
+                    commits.append({
+                        "id": s.id,
+                        "predecessor": s.commit_parent,
+                        "created_at": s.created_at,
+                        "head_node_id": s.head_node_id,
+                        "turn_group_id": group_id,
+                        "total_tokens": s.total_tokens,
+                        "rules_version": s.rules_version,
+                        "summary": s.summary,
+                        "item_count": len(s.items),
+                        "state_counts": commit_state_counts(s),
+                    })
+
         if session_id:
-            entries = list_commits(store, session_id, limit=50)
-            # Open the session's in-memory index so we can compute
-            # turn_group_id per commit. Best-effort — falls back to
-            # head_id-self group if the index isn't available.
-            pair = store._open(session_id)
-            idx = pair[1] if pair else None
-            retracted = set(idx.meta.get("rewind_hidden_nodes") or ()) if idx else set()
-            for s in entries:
-                if s.head_node_id in retracted:
-                    continue  # a commit of a turn a rewind retracted
-                group_id = (
-                    _find_fork_group(idx, s.head_node_id)
-                    if idx else s.head_node_id
-                )
-                commits.append({
-                    "id": s.id,
-                    "predecessor": s.commit_parent,
-                    "created_at": s.created_at,
-                    "head_node_id": s.head_node_id,
-                    "turn_group_id": group_id,
-                    "total_tokens": s.total_tokens,
-                    "rules_version": s.rules_version,
-                    "summary": s.summary,
-                    "item_count": len(s.items),
-                    "state_counts": commit_state_counts(s),
-                })
+            from openprogram.state.store.session.conversation_work import run_for_conversation
+            await run_for_conversation(session_id, collect)
     except Exception as e:
         err = f"{type(e).__name__}: {e}"
     await ws.send_text(json.dumps({

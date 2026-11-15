@@ -1,5 +1,5 @@
 <title>Settings navigation</title>
-<meta name="description" content="The Settings page header, collapsible category rail, Provider list and credential cards.">
+<meta name="description" content="The Settings page header and collapsible category rail.">
 <meta name="covers" content="apps/web/components/settings/">
 <h1>Settings navigation</h1>
 
@@ -9,8 +9,7 @@
 <thead><tr><th scope="col">Column</th><th scope="col">Expanded</th><th scope="col">Collapsed</th><th scope="col">Saved in</th><th scope="col">Header</th></tr></thead>
 <tbody>
 <tr><th scope="row">Categories</th><td><code translate="no">--sidebar-width</code> − 1px</td><td>49px</td><td><code translate="no">settingsNavOpen</code></td><td><code translate="no">ManagePageHeader</code>: rail toggle, then Settings</td></tr>
-<tr><th scope="row">Provider list</th><td>At most <code translate="no">--sidebar-width</code> − 1px and 42% of the content; above the details at 760px or narrower, within 38vh</td><td>Never</td><td>Nothing</td><td>Full-width search, Enabled and Not enabled groups, Add Custom Provider</td></tr>
-<tr><th scope="row">Content</th><td>Remaining width; controls wrap</td><td>Same</td><td>Nothing</td><td>Providers has the full page title above list and details; Memory adds no duplicate</td></tr>
+<tr><th scope="row">Content</th><td>Remaining width; controls wrap</td><td>Same</td><td>Nothing</td><td>One page title; Memory adds no duplicate</td></tr>
 </tbody>
 </table>
 
@@ -23,30 +22,7 @@
 <dt>Titles</dt><dd>Settings and the content title use <code translate="no">--fs-title</code> (18px), line height 1.2 so descenders are not clipped</dd>
 </dl>
 
-<h2>Provider details</h2>
-<table class="stack fixed">
-<thead class="sr"><tr><th scope="col">Detail width</th><th scope="col">Layout</th></tr></thead>
-<tbody>
-<tr><th scope="row">Wide</th><td>20px side padding, original fixed columns</td></tr>
-<tr><th scope="row">680px or less</th><td>12px padding; headers, account actions, key editing, forms and model information rearrange</td></tr>
-<tr><th scope="row">420px or less</th><td>Model card: name and ID top left, switch top right, capability tags on the next row from the name column, wrapping</td></tr>
-<tr><th scope="row">300px or less</th><td>8px padding, compact header</td></tr>
-</tbody>
-</table>
-<p class="note">Narrow details only rearrange: no automatic category collapse, font reduction, data or interaction changes, and no horizontal overflow.</p>
-
-<h3>Credential cards</h3>
-<table class="stack fixed">
-<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Content</th></tr></thead>
-<tbody>
-<tr><th scope="row">Header</th><td>Account name; validation result that is itself the revalidate control</td></tr>
-<tr><th scope="row">Body</th><td>Masked key on API key cards</td></tr>
-<tr><th scope="row">Footer</th><td>Use this account for requests (switch)</td></tr>
-<tr><th scope="row">Actions</th><td>Rename, Replace, Remove, Cancel: icon buttons with accessible names and matching size. Status-text buttons grow only to fit.</td></tr>
-<tr><th scope="row">Adding</th><td>With existing credentials the form stays behind Add API key; closing it clears the draft. Key name and native-login name have separate state.</td></tr>
-<tr><th scope="row">Provider switch</th><td>In the title row, not a row of its own</td></tr>
-</tbody>
-</table>
+<p>LLM Providers is one column with no list column of its own: its list, Add provider and each provider's page are described in <a href="../../providers/provider-management.html">Provider management</a>.</p>
 
 <details>
 <summary>References and exclusions</summary>
@@ -66,10 +42,7 @@
 <li>No separate global Settings topbar.</li>
 <li>Category rows line up with the main sidebar's first rows; the first icon keeps its y when collapsed.</li>
 <li>Category order, URLs, icons, active state and keyboard order agree.</li>
-<li>Provider list has no named header or collapse button; search spans the column; group labels and Add Custom Provider stay visible.</li>
-<li>Route loading keeps the full Providers title structure; Memory has no duplicate title.</li>
-<li>Narrow details have no overlap or overflow; account name, key, status and actions stay usable.</li>
-<li>No separate Validate button. Add API key expands and cancels.</li>
+<li>Memory has no duplicate title.</li>
 <li>Icon actions carry <code translate="no">aria-label</code>.</li>
 </ul>
 </details>

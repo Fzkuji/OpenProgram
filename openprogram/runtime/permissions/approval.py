@@ -212,7 +212,7 @@ def wrap_with_approval(
         detail = _approval_detail(name, shown)
         return {
             "kind": "approval",
-            "prompt": _asked_by(req) + f"允许执行 {name}？",
+            "prompt": f"允许执行 {name}？",
             "options": ["允许", "拒绝"],
             "allow_custom": False,
             "detail": detail,
@@ -248,7 +248,7 @@ def wrap_with_approval(
         scopes = ["once", "session"]
         return {
             "kind": "approval",
-            "prompt": _asked_by(req) + f"允许 {name} 在沙箱外执行？",
+            "prompt": f"允许 {name} 在沙箱外执行？",
             "options": ["允许", "拒绝"],
             "allow_custom": False,
             "detail": detail,
@@ -471,24 +471,21 @@ def wrap_with_approval(
     return wrapped
 
 
-def _asked_by(req) -> str:
-    """The name a foreground sub-agent's card starts with, in its caller's
-    conversation, so the person sees which helper asks; empty otherwise."""
-    from openprogram.runtime.permissions.policy import asks_through_caller
-    if not asks_through_caller(req):
-        return ""
-    label = str((getattr(req, "asks_through", None) or {}).get("label") or "").strip()
-    return f"[{label}] " if label else ""
-
-
 def _asker_metadata(req) -> dict:
-    """The sub-agent a card asks for, kept on the wait (``question_frame_data``)."""
+    """The sub-agent a card asks for, kept on the wait (``question_frame_data``):
+    each surface names it beside the request, so the prompt text stays the
+    same whoever asks."""
     from openprogram.runtime.permissions.policy import asks_through_caller
     if not asks_through_caller(req):
         return {}
     route = getattr(req, "asks_through", None) or {}
-    return {"asked_by": str(route.get("label") or ""),
-            "asked_for_execution": str(route.get("execution_id") or "")}
+    out = {"asked_by": str(route.get("label") or ""),
+           "asked_for_execution": str(route.get("execution_id") or "")}
+    if route.get("session_id") and route.get("session_id") != getattr(req, "session_id", None):
+        # Forked into another conversation: the card is shown in the
+        # caller's, where the person waits (waits.list_open).
+        out["asked_in_session"] = str(route["session_id"])
+    return out
 
 
 def _risk_level(tool_name: str, args: dict) -> str:

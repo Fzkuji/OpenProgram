@@ -55,7 +55,6 @@ def _todo_create_impl(subject: str, description: str = "", blocked_by: str = "")
             "subject": subject,
             "description": description or "",
             "status": "pending",
-            "owner": "",
             "blocked_by": deps,
             "created_at": now,
             "updated_at": now,

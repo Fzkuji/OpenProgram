@@ -1,3 +1,4 @@
+import { agentSettingsMoved, requestAgentSettings } from "@/lib/agents/agent-settings-request";
 import { adoptBranchIdentity, adoptStoredControls } from "@/lib/agents/branch-settings";
 /**
  * Provider / agent-settings / token-badge data layer.
@@ -76,23 +77,32 @@ export function updateProviderBadge(info: ProviderInfo | null | undefined): void
 
 /** Guards the one-shot retry below; was `(window as any)._chatRetried`. */
 let chatRetried = false;
-const settingsReads = new Map<string, number>();
+/** Each conversation's newest settings request; callers that share it
+ *  (``requestAgentSettings``) are equally current. */
+const settingsReads = new Map<string, Promise<unknown>>();
+
+/** ``written``: this page just wrote the settings, so a request that left
+ *  before the write must not answer this read. */
+export interface SettingsReadOptions {
+  written?: boolean;
+}
+
 /** The branch a settings reply describes: the named one it answered for,
  *  else (an older server) the selected one. */
 function settingsBranch(data: { branch_id?: unknown; active_branch_id?: unknown }): unknown {
   return typeof data.branch_id === "string" ? data.branch_id : data.active_branch_id;
 }
 function beginSettingsRead(sid: string) {
-  const version = (settingsReads.get(sid) ?? 0) + 1;
-  settingsReads.set(sid, version);
   const branchId = useSessionStore.getState().composerSettingsBySession[sid]?.active_branch_id ?? null;
   // The read names the pane's branch, so a pane on a branch that is not
   // selected reads its own model back (after a broadcast wiped it, too).
   const query = "?session_id=" + encodeURIComponent(sid) + (branchId ? "&branch_id=" + encodeURIComponent(branchId) : "");
-  const accept = (data: { branch_id?: unknown; active_branch_id?: unknown }) => settingsReads.get(sid) === version
+  const request = requestAgentSettings(query);
+  settingsReads.set(sid, request);
+  const accept = (data: { branch_id?: unknown; active_branch_id?: unknown }) => settingsReads.get(sid) === request
     && (useSessionStore.getState().composerSettingsBySession[sid]?.active_branch_id ?? null) === branchId
     && (settingsBranch(data) === undefined || branchId === null || settingsBranch(data) === branchId);
-  return { query, accept };
+  return { request, accept };
 }
 
 type AgentSettingsPayload = { chat?: AgentBadgeInfo; exec?: AgentBadgeInfo };
@@ -109,11 +119,11 @@ function rememberSessionAgentSettings(key: string, settings: AgentSettingsPayloa
 
 /** Model settings of one conversation that is not (necessarily) focused —
  *  a split pane's. Only that conversation's entry changes. */
-export async function loadSessionAgentSettings(sessionId: string): Promise<void> {
+export async function loadSessionAgentSettings(sessionId: string, options: SettingsReadOptions = {}): Promise<void> {
   try {
-    const { query, accept } = beginSettingsRead(sessionId);
-    const resp = await fetch("/api/agent_settings" + query);
-    const data = await resp.json();
+    if (options.written) agentSettingsMoved();
+    const { request, accept } = beginSettingsRead(sessionId);
+    const data = await request;
     if (accept(data)) {
       adoptBranchIdentity(sessionId, useSessionStore.getState().composerSettingsBySession[sessionId]?.active_branch_id ?? null, settingsBranch(data));
       adoptStoredControls(sessionId, data.settings);
@@ -131,12 +141,12 @@ export async function loadSessionAgentSettings(sessionId: string): Promise<void>
  *  here, each other shown pane's when the epoch moves. */
 export function agentSettingsChanged(): Promise<void> {
   useSessionStore.getState().markSessionAgentSettingsStale();
-  return loadAgentSettings();
+  return loadAgentSettings({ written: true });
 }
 
-export async function loadAgentSettings(): Promise<void> {
+export async function loadAgentSettings(options: SettingsReadOptions = {}): Promise<void> {
   try {
-    let url = "/api/agent_settings";
+    if (options.written) agentSettingsMoved();
     const st = useSessionStore.getState();
     // Unsent Agent tabs must not create a default-Agent session through
     // the legacy settings endpoint before their explicit first message.
@@ -146,9 +156,7 @@ export async function loadAgentSettings(): Promise<void> {
       ?? runtimeState.currentSessionId
       ?? (st.activeChatKey && st.activeChatKey !== "__new__" ? st.activeChatKey : null));
     const read = sid ? beginSettingsRead(sid) : null;
-    if (read) url += read.query;
-    const resp = await fetch(url);
-    const newSettings = await resp.json();
+    const newSettings = await (read ? read.request : requestAgentSettings());
     if (read && !read.accept(newSettings)) return;
     if (sid) adoptBranchIdentity(sid, useSessionStore.getState().composerSettingsBySession[sid]?.active_branch_id ?? null, settingsBranch(newSettings));
     if (sid) adoptStoredControls(sid, newSettings.settings);

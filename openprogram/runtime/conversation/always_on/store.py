@@ -121,7 +121,7 @@ def _handoffs_path() -> Path:
 
 
 def load_handoffs() -> dict[str, Any]:
-    """The handoff chains' turns, by user message id (see ``handoff.py``)."""
+    """The removed handoff tool's turns, by user message id, until ``handoff_migration`` moves them."""
     return _read_json(_handoffs_path())
 
 
@@ -273,7 +273,14 @@ def add_report(session_id: str, *, title: str, body: str, links: Any = None,
                kind: str = "finding", deliveries: list[dict[str, Any]] | None = None,
                execution_id: str | None = None, task_id: str | None = None,
                source: str | None = None, attached_files: Any = ()) -> dict[str, Any]:
-    title = str(title or "").strip()
+    # A report is posted as a message from the Agent. A marker in what the
+    # model wrote is not a file a tool call recorded, so it reads as the
+    # name: only ``attached_files`` get a card (send_file.with_attachments).
+    from openprogram.state.attachments import markers_as_names
+    attached_files = list(attached_files or ())
+    title = markers_as_names(str(title or ""), attached_files).strip()
+    body = markers_as_names(str(body or ""), attached_files)
+    links = [markers_as_names(str(link), attached_files) for link in links] if isinstance(links, list) else links
     if not shows_anything(title):
         raise ValueError("A report needs a title")
     if kind not in REPORT_KINDS:

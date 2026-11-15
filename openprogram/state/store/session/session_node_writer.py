@@ -8,6 +8,8 @@ threading ``(store, session_id)`` through every layer:
 
   * ``append(node)``               persist a fresh Call
   * ``update(node_id, **fields)``  fill in a placeholder in place
+  * ``merge(node_id, change)``     the same, computed from the node as it
+                                   is inside the write lock
   * ``load()``                     the session's DAG as a graph
 
 ``SessionStore`` itself deals in whole sessions and message dicts; this
@@ -135,3 +137,9 @@ class SessionNodeWriter:
         stays the same).
         """
         self.store.update_node(self.session_id, node_id, **fields)
+
+    def merge(self, node_id: str, change) -> bool:
+        """Update a node from itself as it is now, under the conversation's
+        write lock: ``change(node)`` returns the fields to write, or None.
+        For a node two writers each fill part of (``SessionStore.merge_node``)."""
+        return self.store.merge_node(self.session_id, node_id, change)

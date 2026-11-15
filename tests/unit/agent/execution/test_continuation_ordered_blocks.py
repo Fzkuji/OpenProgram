@@ -11,6 +11,7 @@ from openprogram.runtime.conversation.turn_runtime.loop_runner import (
     _seed_continuation_cards,
 )
 from openprogram.runtime.agent.turn_request import TurnRequest
+from openprogram.state.reply_text import ReplyText, reply_text
 from openprogram.models.providers.types import AgentTool, AgentToolResult
 from openprogram.models.providers.types import (
     AssistantMessage,
@@ -111,19 +112,23 @@ def test_seed_uses_full_display_when_current_decision_is_only_the_last_round():
     )
     ordered: list[dict] = []
     tool_calls: list[dict] = []
-    text_parts: list[str] = []
+    text_parts = ReplyText()
     seen_tools = _seed_continuation_cards(
         continuation,
         ordered_blocks_out=ordered,
         tool_calls=tool_calls,
-        final_text_parts=text_parts,
+        reply=text_parts,
     )
     assert [block.get("tool_call_id") or block.get("text") for block in ordered] == [
         "Counter is 1", "call-1", "Counter is 2", "call-2", "Counter is 3", "call-3",
     ]
     assert ordered[1]["result"] == "Counter: 1"
     assert ordered[1]["is_error"] is False
-    assert text_parts == ["Counter is 3"]
+    # The reply paused is one reply: its flat text is every passage it
+    # showed, as the row the stream tap kept while it ran reads.
+    assert text_parts.text == "Counter is 1\n\nCounter is 2\n\nCounter is 3" == reply_text(ordered)
+    # The passage the resumed response writes follows the tool call it waited on.
+    assert text_parts.add({"type": "text", "text": "Done."}) == "\n\nDone."
     assert seen_tools == {"call-1", "call-2", "call-3"}
     assert {row["tool_call_id"] for row in tool_calls} == {"call-1", "call-2", "call-3"}
 
@@ -148,14 +153,14 @@ def test_seed_falls_back_to_current_decision_when_display_is_absent():
     )
     ordered: list[dict] = []
     tool_calls: list[dict] = []
-    text_parts: list[str] = []
+    text_parts = ReplyText()
     seen = _seed_continuation_cards(
         continuation,
         ordered_blocks_out=ordered,
         tool_calls=tool_calls,
-        final_text_parts=text_parts,
+        reply=text_parts,
     )
-    assert text_parts == ["Counter is 4"]
+    assert text_parts.text == "Counter is 4"
     assert [block["type"] for block in ordered] == ["text", "tool", "tool"]
     assert ordered[1]["tool_call_id"] == "call-pre"
     assert ordered[2]["tool_call_id"] == "call-orphan"
@@ -192,7 +197,7 @@ def test_seed_merges_current_decision_when_display_is_a_prefix():
         continuation,
         ordered_blocks_out=ordered,
         tool_calls=[],
-        final_text_parts=[],
+        reply=ReplyText(),
     )
     labels = [block.get("tool_call_id") or block.get("text") for block in ordered]
     assert labels == ["repeated", "call-1", "saved-now", "call-3"]
@@ -225,7 +230,7 @@ def test_seed_appends_only_unmatched_tail_when_display_ends_mid_decision():
         continuation,
         ordered_blocks_out=ordered,
         tool_calls=[],
-        final_text_parts=[],
+        reply=ReplyText(),
     )
     labels = [block.get("tool_call_id") or block.get("text") for block in ordered]
     assert labels == ["Old", "call-old", "Current", "call-new"]
@@ -259,7 +264,7 @@ def test_seed_appends_remaining_tools_when_display_ends_on_first_tool_of_decisio
         continuation,
         ordered_blocks_out=ordered,
         tool_calls=[],
-        final_text_parts=[],
+        reply=ReplyText(),
     )
     labels = [block.get("tool_call_id") or block.get("text") for block in ordered]
     assert labels == ["Old", "Current", "call-a", "call-b"]

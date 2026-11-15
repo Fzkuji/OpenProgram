@@ -8,6 +8,7 @@ from ..store import ExecutionConflict
 
 from .shared import (
     ControlDispatch,
+    off_loop,
     ProjectionRecoveryRequired,
     _CANCEL_SUPERSEDES,
     _PAUSE_SUPERSEDES,
@@ -193,6 +194,32 @@ class CancellationOperations:
         expected_version: int,
         actor: Mapping[str, Any],
     ) -> ControlDispatch:
+        # The pause is written in a worker thread (the execution's records
+        # live under its conversation's lock); only the owner's signal is
+        # awaited here.
+        command, execution, delivered_now = await off_loop(
+            execution_id, self._accept_pause,
+            command_id=command_id, execution_id=execution_id,
+            expected_version=expected_version, actor=actor,
+        )
+        if delivered_now:
+            return ControlDispatch(
+                command=command, execution=execution, delivered=False
+            )
+        return await self._dispatch(command, execution, operation="pause")
+
+
+    def _accept_pause(
+        self,
+        *,
+        command_id: str,
+        execution_id: str,
+        expected_version: int,
+        actor: Mapping[str, Any],
+    ) -> tuple[ControlCommand, ExecutionRecord, bool]:
+        """Write a pause: ``(command, execution, settled)``, where ``settled``
+        means nothing is left to tell an owner (a replay, or a pause that
+        took effect at once)."""
         current = self.executions.get_execution(execution_id)
         if current is None:
             raise ExecutionConflict("not_found", f"execution not found: {execution_id}")
@@ -213,15 +240,11 @@ class CancellationOperations:
             apply_command=immediate,
         )
         if duplicate:
-            return ControlDispatch(
-                command=command, execution=execution, delivered=False
-            )
+            return command, execution, True
         if execution.status is ExecutionStatus.PAUSED:
             self._observe_paused(execution)
-            return ControlDispatch(
-                command=command, execution=execution, delivered=False
-            )
-        return await self._dispatch(command, execution, operation="pause")
+            return command, execution, True
+        return command, execution, False
 
 
     async def request_cancel(
@@ -244,7 +267,89 @@ class CancellationOperations:
         (:meth:`deliver_pending_cancel`); one that has ended returns its
         final state with ``already_terminal``. What the execution waits on
         is the caller's to stop (``run_control.stop_with_descendants``).
+
+        Every write (the command, the transition, the cancelled reply in
+        the conversation) runs in a worker thread, in the order it always
+        had; the owner's signal is awaited on the caller's loop, so a held
+        conversation delays this stop and nothing else.
         """
+        command, execution, outcome = await off_loop(
+            execution_id, self._accept_cancel,
+            command_id=command_id, execution_id=execution_id, actor=actor,
+            reason_code=reason_code, expected_version=expected_version,
+        )
+        if outcome == "terminal":
+            return ControlDispatch(
+                command=None, execution=execution, delivered=False,
+                issue_code="already_terminal",
+            )
+        if outcome == "replayed" and execution.status in TERMINAL_EXECUTION_STATUSES:
+            # The same stop again (an internal stop reuses its id), after
+            # the execution ended: this call ended nothing.
+            await off_loop(execution_id, self.reconcile_terminal_cancel, execution)
+            return ControlDispatch(
+                command=command, execution=execution, delivered=False,
+                issue_code="already_terminal",
+            )
+        if outcome != "accepted":
+            # The stop in force reaches its current owner unless that owner
+            # already took it.
+            redelivered = await self.deliver_pending_cancel(
+                execution_id=execution_id,
+                attempt_id=execution.current_attempt_id,
+                generation=execution.owner_lease.get("generation"),
+            )
+            return redelivered or ControlDispatch(
+                command=command, execution=execution, delivered=False,
+            )
+        if execution.current_attempt_id is None:
+            return await off_loop(
+                execution_id, self._cancel_without_owner, command, execution, reason_code,
+            )
+        return await self._deliver_cancel_once(command, execution)
+
+
+    async def _deliver_cancel_once(
+        self, command: ControlCommand, execution: ExecutionRecord,
+    ) -> ControlDispatch:
+        """Hand a cancel to its owner unless it has it or is being handed it.
+
+        The claim is taken and dropped under the delivery lock, never held
+        across the owner's await: stops of one execution are written in
+        worker threads and arrive here interleaved, and a thread lock held
+        over an await would make those threads wait on the loop."""
+        command_id = command.command_id
+        with self._cancel_delivery_lock:
+            if (
+                command_id in self._delivered_cancel_commands
+                or command_id in self._cancel_deliveries_in_flight
+            ):
+                return ControlDispatch(
+                    command=command, execution=execution, delivered=False,
+                    issue_code="already_delivered",
+                )
+            self._cancel_deliveries_in_flight.add(command_id)
+        try:
+            dispatch = await self._dispatch(command, execution, operation="cancel")
+            if dispatch.delivered:
+                self._remember_cancel_delivery(execution.execution_id, command_id)
+                self._schedule_cancel_escalation(command, execution)
+            return dispatch
+        finally:
+            with self._cancel_delivery_lock:
+                self._cancel_deliveries_in_flight.discard(command_id)
+
+
+    def _accept_cancel(
+        self,
+        *,
+        command_id: str,
+        execution_id: str,
+        actor: Mapping[str, Any],
+        reason_code: str,
+        expected_version: int | None,
+    ):
+        """Write the stop: ``(command, execution, outcome)`` of ``accept_cancel``."""
         current = self.executions.get_execution(execution_id)
         if current is None:
             raise ExecutionConflict("not_found", f"execution not found: {execution_id}")
@@ -261,7 +366,6 @@ class CancellationOperations:
                 connection, execution_id
             )
 
-        accepted = None
         terminal_candidate = (
             current.status is ExecutionStatus.QUEUED
             and current.current_attempt_id is None
@@ -280,7 +384,7 @@ class CancellationOperations:
                 self._record_terminal_recovery(current, command_id)
                 raise ProjectionRecoveryRequired(execution_id) from exc
             try:
-                accepted = self.executions.accept_cancel(
+                return self.executions.accept_cancel(
                     command_id=command_id, execution_id=execution_id,
                     actor=actor, reason_code=reason_code,
                     supersede_kinds=_CANCEL_SUPERSEDES,
@@ -290,76 +394,70 @@ class CancellationOperations:
             except Exception as exc:
                 self._record_terminal_recovery(current, command_id)
                 raise ProjectionRecoveryRequired(execution_id) from exc
-        if accepted is None:
-            accepted = self.executions.accept_cancel(
-                command_id=command_id, execution_id=execution_id,
-                actor=actor, reason_code=reason_code,
-                supersede_kinds=_CANCEL_SUPERSEDES,
-                after_transition=close_waits,
-            )
-        command, execution, outcome = accepted
-        if outcome == "terminal":
-            return ControlDispatch(
-                command=None, execution=execution, delivered=False,
-                issue_code="already_terminal",
-            )
-        if outcome == "replayed" and execution.status in TERMINAL_EXECUTION_STATUSES:
-            # The same stop again (an internal stop reuses its id), after
-            # the execution ended: this call ended nothing.
-            self.reconcile_terminal_cancel(execution)
-            return ControlDispatch(
-                command=command, execution=execution, delivered=False,
-                issue_code="already_terminal",
-            )
-        if outcome != "accepted":
-            # The stop in force reaches its current owner unless that owner
-            # already took it.
-            redelivered = await self.deliver_pending_cancel(
-                execution_id=execution_id,
-                attempt_id=execution.current_attempt_id,
-                generation=execution.owner_lease.get("generation"),
-            )
-            return redelivered or ControlDispatch(
-                command=command, execution=execution, delivered=False,
-            )
-        if execution.current_attempt_id is None:
-            execution = self.executions.transition_execution(
-                execution.execution_id,
-                expected_version=execution.status_version,
-                target=ExecutionStatus.CANCELLED,
-                reason_code=reason_code,
-            )
+        return self.executions.accept_cancel(
+            command_id=command_id, execution_id=execution_id,
+            actor=actor, reason_code=reason_code,
+            supersede_kinds=_CANCEL_SUPERSEDES,
+            after_transition=close_waits,
+        )
+
+
+    def _cancel_without_owner(
+        self, command: ControlCommand, execution: ExecutionRecord, reason_code: str,
+    ) -> ControlDispatch:
+        """End an accepted stop of an execution no attempt runs: it is
+        cancelled here, and its cancelled reply written to the conversation."""
+        execution = self.executions.transition_execution(
+            execution.execution_id,
+            expected_version=execution.status_version,
+            target=ExecutionStatus.CANCELLED,
+            reason_code=reason_code,
+        )
+        try:
+            self._observe_terminal(execution)
+        except Exception as exc:
             try:
-                self._observe_terminal(execution)
-            except Exception as exc:
-                try:
-                    command = self.executions.transition_command(
-                        command.command_id,
-                        expected_status=CommandStatus.APPLYING,
-                        target=CommandStatus.REJECTED,
-                        result_version=execution.status_version,
-                        rejection_code=ProjectionRecoveryRequired.code,
-                        receipt={"error": str(exc)},
-                    )
-                except Exception:
-                    _log.exception(
-                        "failed to persist projection recovery command state for %s",
-                        execution.execution_id,
-                    )
-                raise ProjectionRecoveryRequired(
+                command = self.executions.transition_command(
+                    command.command_id,
+                    expected_status=CommandStatus.APPLYING,
+                    target=CommandStatus.REJECTED,
+                    result_version=execution.status_version,
+                    rejection_code=ProjectionRecoveryRequired.code,
+                    receipt={"error": str(exc)},
+                )
+            except Exception:
+                _log.exception(
+                    "failed to persist projection recovery command state for %s",
                     execution.execution_id,
-                ) from exc
-            command = self._mark_applied(command, execution)
-            return ControlDispatch(
-                command=command, execution=execution, delivered=False
-            )
-        dispatch = await self._dispatch(command, execution, operation="cancel")
-        if dispatch.delivered:
-            self._remember_cancel_delivery(
-                execution_id, command.command_id,
-            )
-            self._schedule_cancel_escalation(command, execution)
-        return dispatch
+                )
+            raise ProjectionRecoveryRequired(
+                execution.execution_id,
+            ) from exc
+        command = self._mark_applied(command, execution)
+        return ControlDispatch(
+            command=command, execution=execution, delivered=False
+        )
+
+
+    def _pending_cancel(
+        self, execution_id: str,
+    ) -> tuple[ExecutionRecord, ControlCommand | None] | None:
+        """The execution and its stop in force, read in a worker thread;
+        ``None`` when the execution is gone or has ended (its stops settled)."""
+        execution = self.executions.get_execution(execution_id)
+        if execution is None:
+            return None
+        if execution.status in TERMINAL_EXECUTION_STATUSES:
+            self._reconcile_terminal_cancel(execution)
+            self._forget_cancel_delivery(execution_id)
+            return None
+        self._prune_cancel_delivery(execution_id)
+        pending = self.executions.list_commands(
+            execution_id,
+            statuses=(CommandStatus.APPLYING,),
+            kinds=(CommandKind.CANCEL,),
+        )
+        return execution, (pending[0] if pending else None)
 
 
     async def deliver_pending_cancel(
@@ -377,20 +475,10 @@ class CancellationOperations:
         that did not reach it, and an owner that took over since (recovery
         forgets the earlier delivery), get the command now.
         """
-        execution = self.executions.get_execution(execution_id)
-        if execution is None:
+        found = await off_loop(execution_id, self._pending_cancel, execution_id)
+        if found is None:
             return None
-        if execution.status in TERMINAL_EXECUTION_STATUSES:
-            self._reconcile_terminal_cancel(execution)
-            self._forget_cancel_delivery(execution_id)
-            return None
-        self._prune_cancel_delivery(execution_id)
-        pending = self.executions.list_commands(
-            execution_id,
-            statuses=(CommandStatus.APPLYING,),
-            kinds=(CommandKind.CANCEL,),
-        )
-        command = pending[0] if pending else None
+        execution, command = found
         if command is None or (
             command.kind is not CommandKind.CANCEL
             or command.status is not CommandStatus.APPLYING
@@ -414,20 +502,4 @@ class CancellationOperations:
                 delivered=False,
                 issue_code="stale_owner",
             )
-        with self._cancel_delivery_lock:
-            if command.command_id in self._delivered_cancel_commands:
-                return ControlDispatch(
-                    command=command,
-                    execution=execution,
-                    delivered=False,
-                    issue_code="already_delivered",
-                )
-            dispatch = await self._dispatch(
-                command, execution, operation="cancel",
-            )
-            if dispatch.delivered:
-                self._remember_cancel_delivery(
-                    execution_id, command.command_id,
-                )
-                self._schedule_cancel_escalation(command, execution)
-            return dispatch
+        return await self._deliver_cancel_once(command, execution)

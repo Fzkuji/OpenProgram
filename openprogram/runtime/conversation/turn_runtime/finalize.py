@@ -219,6 +219,7 @@ def commit_turn_to_shadow_git(
             return None
 
         shadow = ShadowGitStore(root)
+        shadow.note_session(session_id)
         # Seed pre-turn images of files the shadow has never seen (from
         # the checkpoint's backups) so the turn diff reads as the change
         # it was: a first-turn edit diffs as modify, a bash mv pairs

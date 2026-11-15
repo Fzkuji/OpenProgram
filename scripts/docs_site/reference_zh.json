@@ -517,6 +517,7 @@
   "Which agent's conversations to import (default: all)": "导入哪个 agent 的对话（默认：全部）",
   "Only conversations active in the last DAYS days": "只导入最近 DAYS 天内有活动的对话",
   "List what would be imported, and what already was, without importing": "只列出将要导入和已导入的对话，不执行导入",
+  "Show only what this import would create or append to, and import nothing": "只显示这次导入会新建或追加的对话，不导入任何内容",
   "Build a commit into the development instance and restart its worker": "把一个提交构建进开发版并重启它的 worker",
   "CLI: dev": "开发版",
   "Commit or branch to deploy (default: dev)": "要部署的提交或分支（默认：dev）",

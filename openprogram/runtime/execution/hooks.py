@@ -135,6 +135,10 @@ _SLOTS = {
         # (execution store, cut-off execution no restart will continue) -> None
         _Slot("restart_abandoned", "openprogram.runtime.conversation", False),
         _Slot("session_goals", "openprogram.runtime.conversation", True),
+        # Activity's roster facts: .facts(job) -> {"agent_status", "usage"},
+        # .outgoing(session_id, jobs) -> unanswered sends to other conversations,
+        # .roster(session_id, jobs) -> {"agents": {job id: facts}, "outgoing"}
+        _Slot("agent_roster_facts", "openprogram.runtime.jobs", False),
     )
 }
 _registered: dict[str, Any] = {}

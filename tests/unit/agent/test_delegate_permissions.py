@@ -142,7 +142,7 @@ def test_a_foreground_sub_agent_asks_on_its_callers_card_named(owner):
     assert permission_decision(_tool(), request, {"command": "make"}).outcome == "ask"
     manifest = wrap_with_approval(_tool(), request, lambda _event: None, _live=False)._interaction_manifest(
         "c1", {"command": "make"})
-    assert manifest["prompt"].startswith("[scout] ")
+    assert "scout" not in manifest["prompt"], "the card names the asker beside the request, not in its text"
     assert manifest["request_metadata"]["asked_by"] == "scout"
 
 
@@ -202,10 +202,13 @@ def test_only_a_waited_on_sub_agent_of_a_person_asks_through_its_caller():
     assert spawn_question_route(person, PARENT, _child(), SNAPSHOT) == {
         "session_id": "p1", "execution_id": "e-parent", "label": "scout"}
     assert spawn_question_route(person, PARENT, _child(parent_msg_id="m1"), SNAPSHOT)["label"] == "scout"
-    # Background, a delivered message, another conversation, no frozen policy:
-    # nobody there waits on it.
+    # Forked into another conversation: it asks in its caller's, where the person waits.
+    assert spawn_question_route(person, PARENT, _child(parent_session_id="other", caller_session_id="p1"),
+                                SNAPSHOT) == {"session_id": "p1", "execution_id": "e-parent", "label": "scout"}
+    # Background, a delivered message, a caller in another conversation, no
+    # frozen policy: nobody there waits on it.
     for child in (_child(wait=False), _child(message_origin="agent_delivery"),
-                  _child(parent_session_id="other")):
+                  _child(parent_session_id="other", caller_session_id="elsewhere")):
         assert spawn_question_route(person, PARENT, child, SNAPSHOT) is None
     assert spawn_question_route(person, PARENT, _child(), None) is None
     # A caller no person answers for (a channel, a scheduled run) passes nobody on.
@@ -297,3 +300,43 @@ def test_a_sandbox_the_callers_project_turns_on_travels_with_the_snapshot(monkey
     snapshot = lifecycle._caller_sandbox(values, "p1")
     assert snapshot is True and calls == ["p1"]
     assert lifecycle._caller_sandbox({"sandbox_config_frozen": True, "sandbox_enabled": False}, "p1") is False
+
+
+def test_a_forked_helpers_card_is_shown_in_its_callers_conversation():
+    from openprogram.runtime.permissions.approval import _asker_metadata
+    elsewhere = SimpleNamespace(source="agent_spawn", session_id="fork-target", asks_through=ROUTE)
+    assert _asker_metadata(elsewhere)["asked_in_session"] == "s1"
+    here = SimpleNamespace(source="agent_spawn", session_id="s1", asks_through=ROUTE)
+    assert "asked_in_session" not in _asker_metadata(here)
+
+
+# ---- what a helper never gets ---------------------------------------------------
+
+def _tools(*names):
+    return [SimpleNamespace(name=name) for name in names]
+
+
+def test_a_helper_loses_the_scheduling_channel_and_memory_writing_tools():
+    from openprogram.programs.tools.agents.send_message.send_message import depth
+    from openprogram.runtime.conversation.turn_runtime.loop_runner import DELEGATE_BLOCKED, delegate_blocked
+    # Every registered scheduling, channel-sending and memory-writing tool,
+    # old names included (``cron`` is the scheduler's alias).
+    assert {"scheduler", "cron", "remind", "save_routine", "always_on_schedule",
+            "chat_send", "memory_update"} <= DELEGATE_BLOCKED
+    tools = _tools("read", "edit", *sorted(DELEGATE_BLOCKED))
+    token = depth.set_helper_turn(True)
+    try:
+        kept, unavailable = delegate_blocked(tools, {})
+        assert [t.name for t in kept] == ["read", "edit"] and unavailable == {}
+        # A forked helper keeps its caller's list (shared prompt cache): the
+        # same tools stay listed and every call is refused.
+        forked = depth.set_forked_turn(True)
+        try:
+            kept, unavailable = delegate_blocked(tools, {})
+        finally:
+            depth._forked.reset(forked)
+        assert len(kept) == len(tools) and set(unavailable) == DELEGATE_BLOCKED
+    finally:
+        depth._helper.reset(token)
+    # The conversation's own turn, or a message delivered to it, keeps them.
+    assert delegate_blocked(tools, {}) == (tools, {})

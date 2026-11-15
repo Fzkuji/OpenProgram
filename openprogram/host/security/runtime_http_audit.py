@@ -157,7 +157,7 @@ BOUNDARY_MANIFEST = (
     BoundaryExclusion(
         path="interfaces/cli/worker_client.py",
         boundary_owner="owner-control-plane",
-        reason="owner CLI commands (mcp, execution) call the authenticated OpenProgram backend",
+        reason="owner CLI commands (mcp, execution, providers status) call the authenticated OpenProgram backend",
         kinds=frozenset({"urllib.request.build_opener"}),
     ),
     BoundaryExclusion(

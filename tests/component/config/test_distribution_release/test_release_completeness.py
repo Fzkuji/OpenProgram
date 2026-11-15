@@ -18,21 +18,17 @@ from ._support import ROOT
 
 SCRIPT = ROOT / "scripts/release/release-matrix.py"
 MANIFEST_SCRIPT = ROOT / "scripts/release/create-release-manifest.py"
+OFFICE_SCRIPT = ROOT / "scripts/release/office-archive.py"
 NOTES = ROOT / ".github/release-notes"
 
-# (desktop platform, arch) -> installer suffixes, the suffix users install
-# with, and the name that stays the same across releases.
+# (desktop platform, arch) -> installer suffixes and the suffix users install with.
 INSTALLERS = {
-    ("mac", "arm64"): (["mac-arm64.dmg", "mac-arm64.zip"], "mac-arm64.dmg", "OpenProgram-mac-arm64.dmg"),
-    ("mac", "x86_64"): (["mac-x64.dmg", "mac-x64.zip"], "mac-x64.dmg", "OpenProgram-mac-x64.dmg"),
-    ("win", "x86_64"): (["win-x64.exe"], "win-x64.exe", "OpenProgram-win-x64.exe"),
-    ("win", "arm64"): (["win-arm64.exe"], "win-arm64.exe", "OpenProgram-win-arm64.exe"),
-    ("linux", "x86_64"): (
-        ["linux-amd64.deb", "linux-x86_64.AppImage"], "linux-amd64.deb", "OpenProgram-linux-amd64.deb",
-    ),
-    ("linux", "arm64"): (
-        ["linux-arm64.deb", "linux-arm64.AppImage"], "linux-arm64.deb", "OpenProgram-linux-arm64.deb",
-    ),
+    ("mac", "arm64"): (["mac-arm64.dmg", "mac-arm64.zip"], "mac-arm64.dmg"),
+    ("mac", "x86_64"): (["mac-x64.dmg", "mac-x64.zip"], "mac-x64.dmg"),
+    ("win", "x86_64"): (["win-x64.exe"], "win-x64.exe"),
+    ("win", "arm64"): (["win-arm64.exe"], "win-arm64.exe"),
+    ("linux", "x86_64"): (["linux-amd64.deb", "linux-x86_64.AppImage"], "linux-amd64.deb"),
+    ("linux", "arm64"): (["linux-arm64.deb", "linux-arm64.AppImage"], "linux-arm64.deb"),
 }
 EVERYTHING = {
     "OPENPROGRAM_MAC_SIGNING_AVAILABLE": "true",
@@ -74,9 +70,15 @@ def _desktop_directory(row: dict) -> str:
     return f"desktop-{row['layout']}-{row['platform']}-{row['arch']}"
 
 
+def _office_name() -> str:
+    return subprocess.run([sys.executable, str(OFFICE_SCRIPT), "name"],
+                          capture_output=True, text=True, check=True).stdout.strip()
+
+
 def _built_tree(root: Path, plan: dict, version: str) -> None:
     """What ``actions/download-artifact`` leaves when every job succeeded."""
     _file(root / "developer-python-distributions" / f"openprogram-{version}-py3-none-any.whl")
+    _file(root / "office-assets" / _office_name())
     update_platforms = {}
     for row in plan["runtime"]:
         key = f"{row['platform']}-{row['arch']}"
@@ -97,7 +99,6 @@ def _built_tree(root: Path, plan: dict, version: str) -> None:
         directory = root / _desktop_directory(row)
         for suffix in INSTALLERS[(row["platform"], row["arch"])][0]:
             _file(directory / _installer_name(version, suffix, row["signing"]))
-        _file(directory / f"SHA256SUMS-{row['platform']}-{row['arch']}")
     if update_platforms:
         (root / "official-update" / "update-manifest.json").write_text(
             json.dumps({"platforms": update_platforms}), encoding="utf-8",
@@ -110,7 +111,7 @@ def _assemble(root: Path, plan: dict, version: str, work: Path, notes: Path) -> 
     result = subprocess.run(
         [sys.executable, str(SCRIPT), "assemble", str(root), "--version", f"v{version}",
          "--plan", json.dumps(plan), "--notes", str(notes),
-         "--notes-output", str(work / "notes.md"), "--links-output", str(work / "links"),
+         "--notes-output", str(work / "notes.md"),
          "--incomplete-output", str(work / "incomplete.txt")],
         capture_output=True, text=True,
     )
@@ -124,7 +125,6 @@ def _assemble(root: Path, plan: dict, version: str, work: Path, notes: Path) -> 
     return {
         "notes": (work / "notes.md").read_text(encoding="utf-8"),
         "incomplete": (work / "incomplete.txt").read_text(encoding="utf-8").splitlines(),
-        "links": {path.name for path in (work / "links").iterdir()},
         "published": {path.name for path in root.rglob("*") if path.is_file()},
         "manifest": {Path(entry["path"]).name for entry in manifest["files"]},
     }
@@ -155,20 +155,24 @@ def test_a_release_whose_jobs_all_passed_carries_an_installer_for_every_planned_
     for row in plan["desktop"]:
         key = (row["platform"], row["arch"])
         assert key in INSTALLERS, f"the matrix builds {key}; name its installer in INSTALLERS"
-        suffixes, main, stable = INSTALLERS[key]
+        suffixes, main = INSTALLERS[key]
         for suffix in suffixes:
             name = _installer_name(version, suffix, row["signing"])
             assert name in release["published"], f"{key} has no {suffix} in the release"
             assert name in release["manifest"]
-        assert stable in release["links"], f"{key} has no always-latest name"
-        assert stable not in release["manifest"]
-        assert f"SHA256SUMS-{row['platform']}-{row['arch']}" in release["published"]
         if row["layout"] == "thin":
             assert f"version-{row['runtime_platform']}-{row['arch']}.tar.zst" in release["published"]
         assert _installer_name(version, main, row["signing"]) in release["published"]
     for row in plan["runtime"]:
         extension = "zip" if row["platform"] == "windows" else "tar.gz"
         assert f"OpenProgram-{version}-runtime-{row['platform']}-{row['arch']}.{extension}" in release["published"]
+    # One file per download: no version-free copy and no per-platform checksum
+    # file; release-manifest.json carries every file's SHA-256.
+    assert not [name for name in release["published"]
+                if name.startswith("SHA256SUMS-") or re.fullmatch(r"OpenProgram-[a-z]+-[A-Za-z0-9_]+\.\w+", name)]
+    assert release["published"] - {"release-manifest.json"} == release["manifest"]
+    # The App installs Office from this file of its own version's release.
+    assert [name for name in release["published"] if name.startswith("OfficeAssets-")] == [_office_name()]
 
     # Every download the notes offer exists, the Windows installer among them.
     offered = re.findall(rf"/releases/download/v{re.escape(version)}/([^)\s]+)\)", release["notes"])
@@ -176,7 +180,7 @@ def test_a_release_whose_jobs_all_passed_carries_an_installer_for_every_planned_
     windows = _installer_name(version, "win-x64.exe", dict(
         ((row["platform"], row["arch"]), row["signing"]) for row in plan["desktop"]
     )[("win", "x86_64")])
-    assert windows in offered and "SHA256SUMS-win-x86_64" in offered
+    assert windows in offered and not any(name.startswith("SHA256SUMS-") for name in offered)
     assert ("Run anyway" in release["notes"]) == windows.endswith("-unsigned.exe")
     _, _, left_out = release["notes"].partition("## Not in this release\n\n")
     left_out = left_out.partition("\n## ")[0]
@@ -189,9 +193,11 @@ def _break(root: Path, row: dict, how: str) -> None:
         for path in directory.iterdir():
             path.unlink()
         directory.rmdir()
-    elif how == "only checksums uploaded":
+    elif how == "no installer uploaded":
+        # The leg uploaded something, but not the file users install with.
+        installer = INSTALLERS[(row["platform"], row["arch"])][1].rpartition(".")[2]
         for path in directory.iterdir():
-            if not path.name.startswith("SHA256SUMS-"):
+            if path.suffix == f".{installer}":
                 path.unlink()
     else:
         manifest = root / "official-update" / "update-manifest.json"
@@ -200,7 +206,7 @@ def _break(root: Path, row: dict, how: str) -> None:
         manifest.write_text(json.dumps(content), encoding="utf-8")
 
 
-@pytest.mark.parametrize("how", ["job failed", "only checksums uploaded", "update files missing"])
+@pytest.mark.parametrize("how", ["job failed", "no installer uploaded", "update files missing"])
 def test_a_planned_platform_without_an_installer_is_named(how: str, tmp_path: Path) -> None:
     version, notes = _latest_notes()
     plan = _plan({**EVERYTHING, "OPENPROGRAM_RELEASE_WINDOWS_ARM64": "true"})
@@ -223,12 +229,9 @@ def test_a_planned_platform_without_an_installer_is_named(how: str, tmp_path: Pa
         assert release["incomplete"][0] in release["notes"]
         # Nothing of a platform that has no installer is published, and the rest is untouched.
         assert not (root / _desktop_directory(row)).exists()
-        others = [other for other in plan["desktop"] if other is not row]
-        assert release["links"] == {
-            "OpenProgram-" + suffix
-            for other in others
-            for suffix in INSTALLERS[(other["platform"], other["arch"])][0] if not suffix.endswith(".zip")
-        }
+        for other in plan["desktop"]:
+            if other is not row:
+                assert (root / _desktop_directory(other)).is_dir()
 
 
 def test_a_runtime_job_that_uploaded_no_archive_is_named(tmp_path: Path) -> None:
@@ -264,7 +267,6 @@ def test_update_files_missing_for_a_platform_whose_app_does_not_read_them_are_na
     # The App and the runtime do not depend on them, so both still ship.
     assert f"OpenProgram-{version}-mac-arm64.dmg" in release["published"]
     assert f"OpenProgram-{version}-runtime-macos-arm64.tar.gz" in release["published"]
-    assert "OpenProgram-mac-arm64.dmg" in release["links"]
 
 
 def test_update_files_that_could_not_be_signed_are_named_for_every_platform(tmp_path: Path) -> None:
@@ -296,28 +298,6 @@ def test_no_trusted_update_key_plans_no_update_files(tmp_path: Path) -> None:
     assert _assemble(root, plan, version, tmp_path, notes)["incomplete"] == []
 
 
-def test_an_installer_without_its_checksum_file_is_named_and_still_ships(tmp_path: Path) -> None:
-    version, notes = _latest_notes()
-    plan = _plan(EVERYTHING)
-    labels = {("mac", "arm64"): "macOS Apple Silicon", ("mac", "x86_64"): "macOS Intel",
-              ("win", "x86_64"): "Windows x64", ("linux", "x86_64"): "Linux x86_64",
-              ("linux", "arm64"): "Linux arm64"}
-    for index, row in enumerate(plan["desktop"]):
-        work = tmp_path / str(index)
-        root = work / "release-artifacts"
-        _built_tree(root, plan, version)
-        key = (row["platform"], row["arch"])
-        checksums = f"SHA256SUMS-{row['platform']}-{row['arch']}"
-        (root / _desktop_directory(row) / checksums).unlink()
-        release = _assemble(root, plan, version, work, notes)
-        assert release["incomplete"] == [
-            f"{labels[key]} App: its checksum file is missing; the installer is available."
-        ]
-        assert INSTALLERS[key][2] in release["links"]
-        assert _installer_name(version, INSTALLERS[key][1], row["signing"]) in release["published"]
-        assert f"/{checksums})" not in release["notes"]
-
-
 def test_what_a_switch_or_a_missing_key_leaves_out_is_not_an_incomplete_release(tmp_path: Path) -> None:
     version, notes = _latest_notes()
     plan = _plan({"OPENPROGRAM_RELEASE_DESKTOP_LINUX": "false"})
@@ -344,11 +324,11 @@ def test_the_publish_job_goes_red_after_publishing_an_incomplete_release() -> No
     assert "continue-on-error" not in body and "if: " not in body
     # Every file an installer leg makes is in the upload, so the tree above matches the jobs.
     desktop = workflow[workflow.index("  desktop:\n"):workflow.index("  cli-installer:\n")]
-    for pattern in ("*.dmg", "*.zip", "OpenProgram-*.exe", "*.AppImage", "*.deb", "SHA256SUMS-*"):
+    for pattern in ("*.dmg", "*.zip", "OpenProgram-*.exe", "*.AppImage", "*.deb"):
         assert f"apps/desktop/dist/{pattern}\n" in desktop
     assert "name: desktop-${{ matrix.layout }}-${{ matrix.platform }}-${{ matrix.arch }}" in desktop
-    assert '"apps/desktop/dist/SHA256SUMS-${{ matrix.platform }}-${{ matrix.arch }}"' in desktop
-    assert "> SHA256SUMS-${{ matrix.platform }}-${{ matrix.arch }}" in desktop
+    # Each file is uploaded once: no per-platform checksum file, no version-free copy.
+    assert "SHA256SUMS-" not in workflow and "release-links" not in workflow
 
 
 def test_the_windows_install_check_names_a_release_without_windows_files() -> None:
@@ -388,7 +368,9 @@ def test_a_rehearsal_builds_and_checks_everything_and_publishes_nothing() -> Non
     assert "gh release" not in "".join(
         str(step.get("run", "")) for name, step in steps.items() if name not in public
     )
-    assert "gh release" not in text[:text.index("  publish:\n")]
+    # Before publishing, a release is only read: the Office job downloads the
+    # copy the owner put on the tag's draft.
+    assert re.findall(r"gh release (\w+)", text[:text.index("  publish:\n")]) == ["download"]
 
 
 def test_the_windows_install_check_can_take_a_rehearsal_runs_files() -> None:
@@ -410,3 +392,17 @@ def test_the_windows_install_check_can_take_a_rehearsal_runs_files() -> None:
     for name in ("The release ZIP installs and starts a healthy worker",
                  "Silent installer, first launch to a healthy worker, older then newer"):
         assert "if" not in steps[name]
+
+
+def test_a_release_without_the_office_archive_is_refused(tmp_path: Path) -> None:
+    version, notes = _latest_notes()
+    plan = _plan(EVERYTHING)
+    root = tmp_path / "release-artifacts"
+    _built_tree(root, plan, version)
+    (root / "office-assets" / _office_name()).unlink()
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "assemble", str(root), "--version", f"v{version}",
+         "--plan", json.dumps(plan), "--notes", str(notes), "--notes-output", str(tmp_path / "notes.md")],
+        capture_output=True, text=True,
+    )
+    assert result.returncode != 0 and "the Office archive is missing" in result.stderr

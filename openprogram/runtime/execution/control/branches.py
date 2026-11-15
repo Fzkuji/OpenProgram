@@ -15,6 +15,7 @@ from .shared import (
     Activator,
     BranchCompletion,
     ControlDispatch,
+    off_loop,
 )
 
 
@@ -34,22 +35,8 @@ class BranchesOperations:
         """Resume a paused execution without changing its revision or identity."""
         if code_change_policy is not None and (not isinstance(code_change_policy, str) or code_change_policy not in {"keep_original", "use_latest"}):
             raise InvalidCommand("invalid_payload", "invalid function code policy")
-        current = self.executions.get_execution(execution_id)
-        input_record = self.executions.get_execution_input(execution_id) if current is not None else None
-        if (
-            current is not None
-            and input_record is not None
-            and input_record.entrypoint == "openprogram.runtime.conversation.production_driver:AgentProductionDriver"
-            and activator is None and driver is None and self.activator is None
-        ):
-            raise AgentSafePointConflict("activation_unavailable", "Agent continuation requires a production activation owner")
-        if (
-            current is not None
-            and "pause" not in current.capabilities
-            and current.reason_code != "restart_pending"
-        ):
-            raise AgentSafePointConflict("unsupported", "execution does not declare the pause capability")
-        command, execution, attempt, checkpoint, steer_inputs, duplicate = self._resume_transaction(
+        command, execution, attempt, checkpoint, steer_inputs, duplicate = await off_loop(
+            execution_id, self._accept_resume,
             command_id=command_id,
             execution_id=execution_id,
             expected_version=expected_version,
@@ -57,14 +44,16 @@ class BranchesOperations:
             kind=CommandKind.CONTINUE,
             payload={"code_change_policy": code_change_policy} if code_change_policy is not None else {},
             owner_id=owner_id or self.owner_id,
+            needs_owner=activator is None and driver is None and self.activator is None,
         )
         if duplicate:
             return ControlDispatch(command=command, execution=execution, delivered=False)
         delivered, issue = await self._activate(
             attempt, checkpoint, steer_inputs, activator=activator, driver=driver
         )
-        command, execution = self._finish_activation(
-            attempt, command, delivered=delivered, issue_code=issue
+        command, execution = await off_loop(
+            execution_id, self._finish_activation,
+            attempt, command, delivered=delivered, issue_code=issue,
         )
         return ControlDispatch(
             command=command,
@@ -72,6 +61,37 @@ class BranchesOperations:
             delivered=delivered,
             issue_code=issue,
         )
+
+
+    def _accept_resume(
+        self,
+        *,
+        execution_id: str,
+        needs_owner: bool,
+        needs_pause: bool = True,
+        **transaction: Any,
+    ):
+        """Check and write a continue or step, in a worker thread: the
+        ``_resume_transaction`` tuple. ``needs_owner``: no activation owner
+        was passed, so an Agent execution cannot be continued here;
+        ``needs_pause``: the execution must declare pause (a continue)."""
+        current = self.executions.get_execution(execution_id)
+        input_record = self.executions.get_execution_input(execution_id) if current is not None else None
+        if (
+            current is not None
+            and input_record is not None
+            and input_record.entrypoint == "openprogram.runtime.conversation.production_driver:AgentProductionDriver"
+            and needs_owner
+        ):
+            raise AgentSafePointConflict("activation_unavailable", "Agent continuation requires a production activation owner")
+        if (
+            needs_pause
+            and current is not None
+            and "pause" not in current.capabilities
+            and current.reason_code != "restart_pending"
+        ):
+            raise AgentSafePointConflict("unsupported", "execution does not declare the pause capability")
+        return self._resume_transaction(execution_id=execution_id, **transaction)
 
 
     async def request_step(
@@ -86,29 +106,25 @@ class BranchesOperations:
         driver: Any | None = None,
     ) -> ControlDispatch:
         """Create exactly one durable permit and activate a fresh attempt."""
-        current = self.executions.get_execution(execution_id)
-        input_record = self.executions.get_execution_input(execution_id) if current is not None else None
-        if (
-            current is not None and input_record is not None
-            and input_record.entrypoint == "openprogram.runtime.conversation.production_driver:AgentProductionDriver"
-            and activator is None and driver is None and self.activator is None
-        ):
-            raise AgentSafePointConflict("activation_unavailable", "Agent continuation requires a production activation owner")
-        command, execution, attempt, checkpoint, steer_inputs, duplicate = self._resume_transaction(
+        command, execution, attempt, checkpoint, steer_inputs, duplicate = await off_loop(
+            execution_id, self._accept_resume,
             command_id=command_id,
             execution_id=execution_id,
             expected_version=expected_version,
             actor=actor,
             kind=CommandKind.STEP,
             owner_id=owner_id or self.owner_id,
+            needs_owner=activator is None and driver is None and self.activator is None,
+            needs_pause=False,
         )
         if duplicate:
             return ControlDispatch(command=command, execution=execution, delivered=False)
         delivered, issue = await self._activate(
             attempt, checkpoint, steer_inputs, activator=activator, driver=driver
         )
-        command, execution = self._finish_activation(
-            attempt, command, delivered=delivered, issue_code=issue
+        command, execution = await off_loop(
+            execution_id, self._finish_activation,
+            attempt, command, delivered=delivered, issue_code=issue,
         )
         return ControlDispatch(
             command=command,

@@ -16,8 +16,8 @@ it)::
 ``status`` is one of completed, failed, stopped, stalled. A stop carries a
 ``reason`` (``user``, ``timeout``, ``spend cap``). ``files`` appears only
 when the helper worked in its own worktree. ``usage`` is read from the
-usage ledger (tokens and cost of the Job's model calls) and from the
-helper's branch (tool calls); a price the ledger does not know reads
+usage ledger (tokens and cost of the model calls of the Job and of every
+helper it started) and from the helper's branch (tool calls); a price the ledger does not know reads
 ``cost unknown``.
 
 ``usage`` is also stored on the attach card, so the interface can show it
@@ -89,7 +89,31 @@ def _tool_calls(job: Job) -> Optional[int]:
         return None
 
 
-def _ledger_usage(job_id: str, ledger: Any = None) -> Optional[dict[str, Any]]:
+def subtree_job_ids(job: Job) -> list[str]:
+    """``job`` and every helper started under it (``parent_job_id``) in the
+    conversations the tree runs in (a helper forked into a conversation none
+    of them runs in is not found). Tool calls stay the helper's own; tokens
+    and cost are the subtree's, since a helper's helpers spend on its task."""
+    found = [job.id]
+    try:
+        from openprogram.runtime.jobs.store import list_jobs
+        # Each helper is stored in the conversation it runs in; its own
+        # helpers are looked for there and in the conversation it started in.
+        sessions, frontier, seen = {job.parent_session_id}, {job.id}, {job.id}
+        while frontier:
+            children = [j for sid in sorted(sessions) for j in list_jobs(sid)
+                        if j.parent_job_id in frontier and j.id not in seen]
+            frontier = {j.id for j in children}
+            seen |= frontier
+            found += [j.id for j in children]
+            sessions |= {j.parent_session_id for j in children}
+    except Exception:  # noqa: BLE001 - the helper's own usage still counts
+        _log.debug("helpers under job %s not listed", job.id, exc_info=True)
+    return found
+
+
+def _ledger_usage(job_ids: list[str] | str, ledger: Any = None) -> Optional[dict[str, Any]]:
+    ids = [job_ids] if isinstance(job_ids, str) else list(job_ids)
     try:
         if ledger is None:
             # Only the running Worker's ledger: rendering a result never
@@ -99,19 +123,25 @@ def _ledger_usage(job_id: str, ledger: Any = None) -> Optional[dict[str, Any]]:
             if runner is None:
                 return None
             ledger = runner._governor.ledger  # noqa: SLF001 — the runner's ledger
-        return ledger.job_resource_usage(job_id)
+        rows = [ledger.job_resource_usage(job_id) for job_id in ids]
     except Exception:
-        _log.debug("usage of job %s not read", job_id, exc_info=True)
+        _log.debug("usage of jobs %s not read", ids, exc_info=True)
         return None
+    return {
+        "total_tokens": sum(int(r.get("total_tokens") or 0) for r in rows),
+        "cost_values": [v for r in rows for v in (r.get("cost_values") or ())],
+        "unknown_cost_events": sum(int(r.get("unknown_cost_events") or 0) for r in rows),
+    }
 
 
 def usage_of(job: Job, *, ledger: Any = None, now: Optional[float] = None) -> dict[str, Any]:
     """Duration (s), tool calls, tokens and cost (USD text, or None when a
-    price is unknown) of one helper Job. A field that cannot be read is None."""
+    price is unknown) of one helper Job. Tokens and cost include the helpers
+    it started (``subtree_job_ids``). A field that cannot be read is None."""
     end = job.completed_at or (time.time() if now is None else now)
     start = job.started_at or job.queued_at or job.created_at
     duration = max(0.0, float(end) - float(start)) if start else None
-    usage = _ledger_usage(job.id, ledger)
+    usage = _ledger_usage(subtree_job_ids(job), ledger)
     tokens = cost = None
     if usage is not None:
         tokens = int(usage.get("total_tokens") or 0)
@@ -178,6 +208,27 @@ def files_line(job: Job) -> str:
     pending = ", uncommitted" if summary.get("dirty") else ""
     return (f"files: worktree {worktree.worktree_path}, {len(names)} changed{pending}"
             + (f" ({shown})" if names else ""))
+
+
+def files_of(job: Job) -> Optional[dict[str, Any]]:
+    """What an isolated helper changed, for its card: ``{"count", "branch",
+    "dirty"}``. None when it shared the folder or changed nothing."""
+    if not job.worktree_id:
+        return None
+    try:
+        from openprogram.state.worktree.manager import get_manager
+        manager = get_manager()
+        worktree = manager.get_worktree(job.worktree_id)
+        if worktree is None:
+            return None
+        summary = manager.summarize(worktree)
+    except Exception:
+        _log.debug("worktree of job %s not summarized", job.id, exc_info=True)
+        return None
+    count = len(summary.get("files") or ())
+    if not count:
+        return None
+    return {"count": count, "branch": worktree.branch_name, "dirty": bool(summary.get("dirty"))}
 
 
 def clip_reply(text: str, job_id: str) -> str:

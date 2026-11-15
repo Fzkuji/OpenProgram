@@ -26,7 +26,7 @@ from typing import Iterator
 
 from openprogram.host._platform import locking
 from openprogram.operations.self_update.github_release import github
-from openprogram.operations.self_update.versions.layout import Layout, current_runtime
+from openprogram.operations.self_update.versions.layout import Layout, current_runtime, disk_shortfall
 
 from . import assets, replay
 from .assets import Release, ReleaseError
@@ -167,7 +167,8 @@ def _check_space(layout: Layout, release: Release) -> None:
     if free < required:
         raise ReleaseError(
             f"Not enough disk space for this update: it needs about {required / GIB:.1f} GB and "
-            f"{free / GIB:.1f} GB is free. Free some space and run `openprogram upgrade` again."
+            f"{free / GIB:.1f} GB is free, {disk_shortfall(required, free)} short. "
+            "Free some space and run `openprogram upgrade` again."
         )
 
 

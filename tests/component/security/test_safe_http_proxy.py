@@ -488,11 +488,11 @@ def test_web_fetch_behind_fake_ip_proxy_reaches_target_through_real_proxy(monkey
             lambda **_kwargs: pytest.fail("public URL must not bypass the proxy"),
         )
 
-        result = web_fetch.execute(url="http://github.com/fzkuji2026/ctxpress", format="text")
+        result = web_fetch.execute(url="http://github.com/example-org/ctxpress", format="text")
 
         assert not result.startswith("Error"), result
         assert "ok" in result
-        assert proxy.request_lines == ["GET http://github.com/fzkuji2026/ctxpress HTTP/1.1"]
+        assert proxy.request_lines == ["GET http://github.com/example-org/ctxpress HTTP/1.1"]
     finally:
         proxy.close()
 
@@ -526,7 +526,7 @@ def test_https_public_url_tunnels_by_hostname_through_pinned_proxy(monkeypatch, 
             pass
 
     monkeypatch.setattr(httpcore, "AsyncHTTPProxy" if asynchronous else "HTTPProxy", Pool)
-    url = "https://github.com/fzkuji2026/ctxpress"
+    url = "https://github.com/example-org/ctxpress"
     if asynchronous:
         async def exercise():
             async with safe_async_client("tool.web_fetch") as client:

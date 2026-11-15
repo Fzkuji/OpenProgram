@@ -100,7 +100,8 @@ def test_deferred_defaults_appear_in_catalog_line():
     from openprogram.programs._host.runtime import DEFERRED_NAMES_SHOWN
     text = deferred_catalog_text(catalog)
     assert text.startswith(f"{len(catalog)} deferred tools are available")
-    assert "Their schemas are not loaded" in text
+    assert "Only these tools need loading" in text
+    assert "Every tool already in your tools list is callable as it is" in text
     assert "tool_search" in text
     shown = [name for name, _ in catalog][:DEFERRED_NAMES_SHOWN]
     assert all(name in text for name in shown)
@@ -270,3 +271,30 @@ def test_deferred_catalog_component_reflects_deferral():
     prompt = build_system_prompt(None, tools=agent_tools(toolset="full"))
     for name in DEFERRED_DEFAULT_TOOLS:
         assert name in prompt, f"{name} missing from assembled system prompt"
+
+
+def test_a_tool_name_loads_exactly_that_tool():
+    """``select:scheduler`` and a query that is the name ``scheduler`` both
+    load the one tool: other tools that merely mention scheduling (``cron``,
+    ``remind``) are what a keyword query is for. The argument is itself
+    called ``select``, so a model asking for one tool writes either form."""
+    apply_default_deferral()
+    from openprogram.programs._host.runtime import _tool_search_run
+
+    for query in ("select:scheduler", "select: scheduler", "scheduler"):
+        text, loaded = _tool_search_run(query)
+        assert [t.name for t in loaded] == ["scheduler"], query
+        assert text.startswith("Loaded 1 deferred tool."), query
+        assert "matching" not in text.splitlines()[0], query
+
+    _text, loaded = _tool_search_run("select:scheduler,cron")
+    assert [t.name for t in loaded] == ["scheduler", "cron"]
+
+
+def test_a_keyword_query_still_matches_several_tools():
+    apply_default_deferral()
+    from openprogram.programs._host.runtime import _tool_search_run
+
+    text, loaded = _tool_search_run("scheduler recurring")
+    assert len(loaded) > 1
+    assert "matching 'scheduler recurring'" in text

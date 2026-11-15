@@ -16,8 +16,9 @@ const ALLOWED_HOSTS = new Set([
 // Only read when GitHub cannot answer. It can name a new repository and the
 // hosts its files come from, and counts only with a signature from one of the
 // keys below, the same keys as RELEASE_PUBLIC_KEYS in official/assets.py.
-const UPDATE_SOURCE_URL = "https://openprogram.io/update-source.json";
-const UPDATE_SOURCE_HOSTS = new Set(["openprogram.io"]);
+// The address is UPDATE_SOURCE_URL in openprogram/operations/project_site.py.
+const UPDATE_SOURCE_URL = "https://fuzzykuji.github.io/openprogram-site/update-source.json";
+const UPDATE_SOURCE_HOSTS = new Set(["fuzzykuji.github.io"]);
 const RELEASE_PUBLIC_KEYS = ["e40d13b9572ab80002742e74a4243faa3312a8acec0d08a63ce71999e8531381"];
 const ED25519_PUBLIC_KEY_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
 const GITHUB_WEB_ROOT = "https://github.com";

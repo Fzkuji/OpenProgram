@@ -8,7 +8,7 @@
  * swaps the content into an inline editor that POSTs `/api/chat/edit`
  * (a React port of legacy `message-actions-edit.js`).
  */
-import { useState } from "react";
+import { useState, type MouseEvent } from "react";
 import { CircleAlert } from "lucide-react";
 
 import { useSessionStore, type ChatMsg } from "@/lib/session-store";
@@ -25,6 +25,7 @@ import { collapsePastedSpans, pasteSentinel } from "@/lib/chat/send/paste-elemen
 import { collapseSecrets, maskSecrets, secretParts, secretSentinel } from "@/lib/chat/transcript/secret-mask";
 import { channelName, isChannelSource, speakerName, splitRoomEvent, splitRoomHistory, stripLegacySpeakerLabel } from "@/lib/chat/transcript/channel-speaker";
 import { buttonVariants } from "@/components/ui/button";
+import { SolarIcon } from "@/components/solar-icons";
 import { useRowSessionId } from "../list/transcript-view-scope";
 
 /** Send a message that never reached the backend again, through the send
@@ -100,6 +101,54 @@ function withSecrets(html: string, secrets: string[], revealed: ReadonlySet<numb
     out = out.split(secretSentinel(index)).join(span);
   });
   return out;
+}
+
+const MD_OPEN = '<span class="md-rendered">';
+
+/** Split a rendered user message into its opening paragraph and the blocks
+ *  after it. Each block of `.md-rendered` is a grid item, so a label beside
+ *  it can never share its first line; the opening paragraph is lifted out
+ *  instead. `lead` is null when the message opens with another block (a
+ *  list, a code block); plain text (no markdown wrapper) is all lead. */
+export function splitLeadParagraph(html: string): { lead: string | null; rest: string } {
+  if (!html.startsWith(MD_OPEN)) return { lead: html, rest: "" };
+  if (!html.startsWith(MD_OPEN + "<p>")) return { lead: null, rest: html };
+  const start = MD_OPEN.length + 3;
+  const end = html.indexOf("</p>", start);
+  if (end < 0) return { lead: null, rest: html };
+  const after = html.slice(end + 4).replace(/^\s+/, "");
+  return {
+    lead: html.slice(start, end),
+    rest: after === "</span>" ? "" : MD_OPEN + after,
+  };
+}
+
+/** The message that set a Goal starts with the Goal label, on the first
+ *  line of its text: the label and the opening paragraph are one paragraph,
+ *  and the blocks after it follow as in any message. The label is drawn,
+ *  not part of the message: copy and edit see the objective alone. */
+function GoalLabel() {
+  const { text } = useTranslation();
+  return (
+    <span className="user-goal-label">
+      <SolarIcon name="target" size={16} motionPreset="none" />
+      {text("Goal", "目标")}
+    </span>
+  );
+}
+
+function UserMarkdown({ html, goal, onClick }: { html: string; goal: boolean; onClick: (event: MouseEvent<HTMLDivElement>) => void }) {
+  if (!goal) return <div className="user-md" onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />;
+  const { lead, rest } = splitLeadParagraph(html);
+  return (
+    <div className="user-goal" onClick={onClick}>
+      <p className="user-goal-lead">
+        <GoalLabel />
+        {lead !== null ? <span className="user-md" dangerouslySetInnerHTML={{ __html: lead }} /> : null}
+      </p>
+      {rest ? <div className="user-md" dangerouslySetInnerHTML={{ __html: rest }} /> : null}
+    </div>
+  );
 }
 
 export function UserBubble({ msg, sessionIdOverride }: { msg: ChatMsg; sessionIdOverride?: string }) {
@@ -197,8 +246,8 @@ export function UserBubble({ msg, sessionIdOverride }: { msg: ChatMsg; sessionId
             {recordings.map((recording) => <RecordingCard key={recording.id} info={recording} />)}
             <AttachmentChips sessionId={sessionId} items={attachments} />
             {cleanText ? (
-              <div
-                className="user-md"
+              <UserMarkdown
+                goal={msg.startsGoal === true}
                 onClick={(event) => {
                   const target = event.target as Element;
                   if (target.closest?.(".user-paste-chip")) setPastesExpanded(true);
@@ -212,14 +261,12 @@ export function UserBubble({ msg, sessionIdOverride }: { msg: ChatMsg; sessionId
                     });
                   }
                 }}
-                dangerouslySetInnerHTML={{
-                  __html: withSecrets(
-                    withPasteChips(renderUserMarkdown(cleanText), collapsed.spans, text("Show pasted text", "展开粘贴内容")),
-                    secrets,
-                    revealed,
-                    [text("Show secret", "显示密钥"), text("Hide secret", "隐藏密钥"), text("hidden", "已隐藏")],
-                  ),
-                }}
+                html={withSecrets(
+                  withPasteChips(renderUserMarkdown(cleanText), collapsed.spans, text("Show pasted text", "展开粘贴内容")),
+                  secrets,
+                  revealed,
+                  [text("Show secret", "显示密钥"), text("Hide secret", "隐藏密钥"), text("hidden", "已隐藏")],
+                )}
               />
             ) : null}
           </>

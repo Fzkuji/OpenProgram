@@ -70,6 +70,7 @@
 <tr><th scope="row">API-key and CLI-delegated credentials (read another tool's login by reference)</th><td>Conversations, Agents, memory</td></tr>
 </tbody>
 </table>
+<p>The ChatGPT login is shared: the development instance reads the Codex CLI's <code translate="no">~/.codex/auth.json</code>, and the stable instance mirrors its login of the same account into that file. Each adopts the newer login the other wrote instead of spending a used refresh token (<a href="../providers/auth/unified-auth-storage.html#codex-shared-login">One ChatGPT login per machine</a>).</p>
 
 <h3 id="from-a-conversation">From a conversation</h3>
 <p>With a <code translate="no">stable</code> branch, <code translate="no">self_update(action="prepare")</code> uses the <code translate="no">dev_stable</code> backend: the development instance is the trial, promotion the switch. The call saves the request and starts a detached controller; the rest runs after the calling turn is saved.</p>
@@ -91,7 +92,7 @@
 <thead><tr><th scope="col">Ends as</th><th scope="col">When</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">aborted</code></th><td>A rebase conflict or a dirty file in the way (lists the files); step 3 or 4 fails (the commit stays on <code translate="no">dev</code>, and the result says so); a second promotion refusal</td></tr>
-<tr><th scope="row"><code translate="no">rolled_back</code></th><td>The refresh fails after its retry, or stable does not come up healthy. <code translate="no">stable</code> never moves backward: one revert commit lands on <code translate="no">dev</code> and is deployed and promoted; the result names it</td></tr>
+<tr><th scope="row"><code translate="no">rolled_back</code></th><td>The refresh fails, which leaves <code translate="no">stable</code> and the App on the previous version, or stable does not come up healthy. <code translate="no">stable</code> never moves backward: one revert commit lands on <code translate="no">dev</code>, so it stays promotable, and is deployed and promoted; the result names it</td></tr>
 <tr><th scope="row"><code translate="no">needs_manual_recovery</code></th><td>The repair fails too (both reasons given), or a later promotion already carries the commit, which is never reverted</td></tr>
 </tbody>
 </table>
@@ -105,7 +106,7 @@
 <tr><th scope="row">Runs as</th><td>A launchd job on macOS, a detached session elsewhere. A worker start restarts one that died</td></tr>
 <tr><th scope="row">Environment</th><td>No <code translate="no">OPENPROGRAM_SESSION_ID</code>: with it, <code translate="no">scripts/refresh-local-app.sh</code> detaches and reports success at once</td></tr>
 <tr><th scope="row">Restart</th><td>Steps are idempotent. A journal in the update's directory records the landed commit and its rebase base, so a restart continues from its phase</td></tr>
-<tr><th scope="row">Another session's promotion</th><td>It moves <code translate="no">stable</code> first and installs for minutes; the controller keeps waiting for the App to serve the commit</td></tr>
+<tr><th scope="row">Another session's promotion</th><td>It moves <code translate="no">stable</code> once its new worker is healthy; the controller keeps waiting for the App to serve the commit</td></tr>
 <tr><th scope="row">Undo</th><td><code translate="no">self_update(action="undo", target=&lt;commit&gt;)</code> makes a <code translate="no">git revert</code> in a worktree of <code translate="no">dev</code> and submits it as a normal <code translate="no">prepare</code></td></tr>
 <tr><th scope="row">Retry</th><td><code translate="no">self_update(action="retry")</code> does not apply; a fix is a new <code translate="no">prepare</code></td></tr>
 </tbody>
@@ -128,17 +129,30 @@
 
 <ol>
 <li>Back up the stable profile (<code translate="no">openprogram backup</code>, label <code translate="no">pre-promote</code>; the newest 5 are kept) while the old worker still serves.</li>
-<li>Move <code translate="no">refs/heads/stable</code> by compare-and-swap, so two promotions cannot overwrite each other.</li>
 <li>Check the commit out into <code translate="no">~/.openprogram/release-source</code>.</li>
-<li>Run <code translate="no">scripts/refresh-local-app.sh</code>, which reuses the development build of the same commit, installs the App transactionally and restarts the stable worker. A failed refresh runs once more; the transaction leaves the previous App in place, so the retry starts clean.</li>
+<li>Run <code translate="no">scripts/refresh-local-app.sh</code> with <code translate="no">OPENPROGRAM_PROMOTE_FROM</code> set to the <code translate="no">stable</code> tip read above, and wait for it, even from inside a conversation. It reuses the development build of the same commit and installs it as a transaction (below).</li>
+<li>Once the new worker is healthy, the script moves <code translate="no">refs/heads/stable</code> to the commit by compare-and-swap from that tip: two promotions cannot overwrite each other, and <code translate="no">stable</code> only fast-forwards.</li>
 </ol>
+
+<p>A failed refresh is not run again: it leaves stable running what it ran before, so a second run would only repeat the failure and the outage. The error is one line: why the commit was not promoted, where <code translate="no">stable</code> points, which commit the App runs and whether it answers, and the refresh log.</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Refresh step</th><th scope="col">Old App and worker</th><th scope="col">On failure</th></tr></thead>
+<tbody>
+<tr><th scope="row">Copy the installed App into <code translate="no">.openprogram-refresh.*</code> beside it; install the packages into that runtime, assemble it, verify it with <code translate="no">verify-product-runtime.py --write</code>, add the App files, sign; then the command-line package</th><td>Serving</td><td>The copy is deleted. Nothing was stopped or replaced</td></tr>
+<tr><th scope="row">Quit the App, stop the worker, swap the two Apps by rename, start the new worker, wait for <code translate="no">/healthz</code>, check its interpreter, move <code translate="no">stable</code></th><td>Stopped; the old App waits as <code translate="no">previous.app</code></td><td>The previous App is renamed back, its worker started and checked the same way, and the App reopened. The script exits non-zero naming the failed step and saying the previous version runs again; if that also fails, it names both steps and keeps the files. The restore reads how far the switch got from the files, not from flags a signal could outrun, and a signal cannot land between moving <code translate="no">stable</code> and recording it</td></tr>
+<tr><th scope="row">Reopen the App</th><td>The old App is deleted</td><td>The new version stays; the script says so and exits non-zero. <code translate="no">stable</code> has moved, so promotion reports the commit promoted with a warning and the self-update controller does not revert it</td></tr>
+</tbody>
+</table>
+
+<p>This is how the App installer (<a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/desktop/scripts/install-app.sh"><code translate="no">install-app.sh</code></a>) replaces an App: the whole bundle is staged on the same volume and switched by rename, so the outage covers only the switch and the worker start, and no step that can fail on the new version runs on the installed one.</p>
 
 <p>Promotion only reads the stable stores, to see what is running. Only the process holding <code translate="no">worker.lock</code> writes run state, so the restarted worker takes over on the new code (see <a href="../runtime/execution/control.html#store-schema-ownership">Who owns run state</a>).</p>
 
 <details>
 <summary>Refresh gate and Electron upgrades</summary>
-<p><code translate="no">scripts/refresh-local-app.sh</code> installs only <code translate="no">refs/heads/stable</code> once that branch exists; from any other commit it refuses and points to the development instance.</p>
-<p>A stable refresh replaces <code translate="no">app.asar</code> and keeps the App's Electron. When <code translate="no">apps/desktop/package.json</code> pins another Electron or carries a newer version, the script builds the same shell and moves its frameworks, executable, <code translate="no">Info.plist</code> and locales in while the App is closed, so promotion brings the Electron the development App already ran.</p>
+<p><code translate="no">scripts/refresh-local-app.sh</code> installs only <code translate="no">refs/heads/stable</code> once that branch exists; from any other commit it refuses and points to the development instance. During a promotion it installs the commit being promoted instead, and refuses unless <code translate="no">stable</code> is still the tip the promotion read and the commit contains it, both before building and again right before the App stops.</p>
+<p>A stable refresh replaces <code translate="no">app.asar</code> and keeps the App's Electron. When <code translate="no">apps/desktop/package.json</code> pins another Electron or carries a newer version, the script builds the same shell and moves its frameworks, executable, <code translate="no">Info.plist</code> and locales into the staged App, so promotion brings the Electron the development App already ran.</p>
 </details>
 
 <h2 id="publishing">Publishing</h2>

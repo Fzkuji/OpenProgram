@@ -15,6 +15,7 @@ import type {
   DiscoveredCredential,
   PoolView,
 } from "@/lib/types";
+import type { PickerProvider } from "@/lib/settings/provider-status.generated";
 
 /** ``/api/model``'s answer: the branch written (``branch_id``), the one
  *  selected, that branch's stored settings and the model's own controls. */
@@ -86,6 +87,14 @@ export const api = {
     jsonFetch<{ models: RawModel[] }>("/api/models/enabled").then((d) =>
       d.models.map((m) => mapModel(m, m.provider ?? ""))
     ),
+
+  /** The model picker's read: the enabled models plus, per provider, what
+   *  the picker shows beside them (state, fix, quota left, balance). */
+  listPickerModels: () =>
+    jsonFetch<{ models: RawModel[]; providers?: Record<string, PickerProvider> }>("/api/models/enabled").then((d) => ({
+      models: d.models.map((m) => mapModel(m, m.provider ?? "")),
+      providers: d.providers ?? {},
+    })),
 
   toggleProvider: (provider: string, enabled: boolean) =>
     jsonFetch<{ ok: true }>(`/api/providers/${provider}/toggle`, {

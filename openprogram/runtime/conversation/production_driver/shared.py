@@ -179,7 +179,7 @@ _PAYLOAD_ENVELOPE_KEYS = frozenset({"version", "kind", "request", "tool_name", "
 # only repeats its default is left out and the stored turn stays readable there.
 _ADDED_REQUEST_DEFAULTS = {
     "last_round_text": "", "resumes_message_id": None, "automation": None,
-    "recall_query": None, "detached": False,
+    "recall_query": None, "detached": False, "starts_goal": False,
 }
 
 

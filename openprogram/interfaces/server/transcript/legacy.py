@@ -15,6 +15,9 @@ _PASTE_HEAD = 32
 _PASTE_LABEL = 80
 # The receipt line send_message puts before a message it delivers.
 _RECEIPT = re.compile(r"^\[(task|message) from (\S+?)(?: \((.*?)\))?\][^\n]*\n+")
+# The header the removed handoff tool put before a message or reply it
+# carried between conversations: ``📨 Message from “Title” (id):``.
+_HANDOFF = re.compile(r"^(?:📨 Message from|↩️ Reply from) “[^”\n]*” \(([^()\s]+)\)[^\n]*:\n")
 
 
 def parsed_extra(row: dict) -> dict | None:
@@ -160,5 +163,10 @@ def branch_row_ids(db: Any, session_id: str, head: str | None) -> list[str]:
 
 def receipt_address(content: str) -> str | None:
     """The address on a delivery's receipt line, or None when there is no receipt."""
-    match = _RECEIPT.match(content) if isinstance(content, str) else None
-    return match.group(2) if match else None
+    if not isinstance(content, str):
+        return None
+    match = _RECEIPT.match(content)
+    if match:
+        return match.group(2)
+    handed = _HANDOFF.match(content)
+    return handed.group(1) if handed else None

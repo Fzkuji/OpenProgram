@@ -481,7 +481,7 @@ async def handle_review_revert_hunk(ws, cmd: dict) -> None:
     from openprogram.interfaces.server import server as server
     if validation_error or scope not in _REVIEW_SCOPES or not session_id or not path or not isinstance(hunk, dict):
         result = {"status": "error", "error_code": "INVALID_REQUEST", "error": validation_error or "invalid request"}
-    elif server._is_run_active(session_id):
+    elif await _run(lambda: server._is_run_active(session_id)):
         result = {"status": "blocked", "error_code": "RUN_ACTIVE", "error": "run_active"}
     else:
         try:

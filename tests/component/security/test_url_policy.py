@@ -461,7 +461,7 @@ def evaluate_proxied(url: str, resolver=answers("198.18.0.104")):
 @pytest.mark.parametrize("answer", ["198.18.0.104", "198.19.255.1", PUBLIC_IP])
 def test_proxy_resolved_public_hostname_accepts_fake_ip_and_requires_proxy(answer):
     decision = evaluate_proxied(
-        "https://github.com/fzkuji2026/ctxpress", resolver=answers(answer)
+        "https://github.com/example-org/ctxpress", resolver=answers(answer)
     )
 
     assert decision.requires_proxy

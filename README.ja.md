@@ -29,7 +29,7 @@
 </p>
 
 <p align="center">
-  <a href="https://openprogram.io">ウェブサイト</a> · <a href="#install">インストール</a> · <a href="https://openprogram.io/docs/">ドキュメント</a>
+  <a href="https://fuzzykuji.github.io/openprogram-site/">ウェブサイト</a> · <a href="#install">インストール</a> · <a href="https://fuzzykuji.github.io/openprogram-site/docs/">ドキュメント</a>
 </p>
 
 <p align="center">
@@ -47,10 +47,10 @@
 ## インストール
 
 ```bash
-curl -fsSL https://openprogram.io/install | sh
+curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh
 ```
 
-Windows（v1.2.0 から）：`irm https://openprogram.io/install.ps1 | iex`。macOS デスクトップ App は DMG として[リリースページ](https://github.com/FuzzyKuji/OpenProgram/releases)で配布しています。Linux App は同じページに deb と AppImage があり、Windows App は v1.2.0 から提供します。openprogram.io に接続できない場合：`curl -fsSL https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/main/docs/_static_root/install.sh | sh`。その他の方法は[インストールガイド](https://openprogram.io/docs/install/install.html)（英語）を参照してください。
+Windows（v1.2.0 から）：`irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex`。macOS デスクトップ App は DMG として[リリースページ](https://github.com/FuzzyKuji/OpenProgram/releases)で配布しています。Linux App は同じページに deb と AppImage があり、Windows App は v1.2.0 から提供します。Web サイトに接続できない場合：`curl -fsSL https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/main/docs/_static_root/install.sh | sh`。その他の方法は[インストールガイド](https://fuzzykuji.github.io/openprogram-site/docs/install/install.html)（英語）を参照してください。
 
 ## クイックスタート
 
@@ -86,48 +86,48 @@ class SupportAgent(Agent):
 
 | | |
 |---|---|
-| **[エージェントクラス](https://openprogram.io/docs/reference/design/function/agentic-program.html)** | エージェントは Python クラス。分岐、リトライ、チェックはコードで、`self(...)` がモデル呼び出しです。 |
-| **[実行 DAG](https://openprogram.io/docs/reference/design/runtime/dag/overview.html)** | ユーザーのターン、モデル呼び出し、関数呼び出しはすべてノードとなり、確認、分岐、再実行ができます。 |
-| **[コンテキスト](https://openprogram.io/docs/reference/design/context/overview.html)** | 各呼び出しは伸び続ける会話履歴ではなく選ばれたノードを読み、自動で圧縮されます。 |
-| **[セルフプログラミング](https://openprogram.io/docs/reference/design/runtime/workflows/workflow.html)** | エージェントが自分のクラスに新しいメソッドを書き、次のターンからツールになります。 |
-| **[検証付きの判断](https://openprogram.io/docs/reference/design/runtime/execution/next-step-decision.html)** | モデルは決められた選択肢から選び、実行前にコードがその選択を検証します。 |
-| **[サブエージェント](https://openprogram.io/docs/reference/design/runtime/collaboration/agent-collaboration.html)** | サブエージェントは自分のブランチ（必要なら Git worktree）で動き、結果だけを返します。 |
-| **[イベント](https://openprogram.io/docs/reference/design/proactive/event-layer.html)** | 型付きのイベントバス。プラグインはイベントを監視したり、ツール呼び出しを止めたりできます。 |
-| **[常駐エージェント](https://openprogram.io/docs/reference/design/runtime/always-on-agents.html)** | バックグラウンドで動き続け、イベントに反応するエージェント。 |
-| **[ゴールと復旧](https://openprogram.io/docs/reference/design/runtime/reliability/goal-and-recovery.html)** | 長期のゴールは再起動後も残り、中断したところから再開します。 |
-| **[フォールトトレランス](https://openprogram.io/docs/reference/design/providers/reliability/llm-fault-tolerance.html)** | すべてのモデル呼び出しにリトライ、タイムアウト、エラー分類があります。 |
+| **[エージェントクラス](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/function/agentic-program.html)** | エージェントは Python クラス。分岐、リトライ、チェックはコードで、`self(...)` がモデル呼び出しです。 |
+| **[実行 DAG](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/dag/overview.html)** | ユーザーのターン、モデル呼び出し、関数呼び出しはすべてノードとなり、確認、分岐、再実行ができます。 |
+| **[コンテキスト](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/context/overview.html)** | 各呼び出しは伸び続ける会話履歴ではなく選ばれたノードを読み、自動で圧縮されます。 |
+| **[セルフプログラミング](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/workflows/workflow.html)** | エージェントが自分のクラスに新しいメソッドを書き、次のターンからツールになります。 |
+| **[検証付きの判断](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/execution/next-step-decision.html)** | モデルは決められた選択肢から選び、実行前にコードがその選択を検証します。 |
+| **[サブエージェント](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/collaboration/agent-collaboration.html)** | サブエージェントは自分のブランチ（必要なら Git worktree）で動き、結果だけを返します。 |
+| **[イベント](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/proactive/event-layer.html)** | 型付きのイベントバス。プラグインはイベントを監視したり、ツール呼び出しを止めたりできます。 |
+| **[常駐エージェント](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/always-on-agents.html)** | バックグラウンドで動き続け、イベントに反応するエージェント。 |
+| **[ゴールと復旧](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/reliability/goal-and-recovery.html)** | 長期のゴールは再起動後も残り、中断したところから再開します。 |
+| **[フォールトトレランス](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/providers/reliability/llm-fault-tolerance.html)** | すべてのモデル呼び出しにリトライ、タイムアウト、エラー分類があります。 |
 
 ### ワークスペース
 
 | | |
 |---|---|
-| **[デスクトップと Web UI](https://openprogram.io/docs/reference/design/ui/README.html)** | macOS と Linux では App、v1.2.0 からは Windows でも App。Web UI はそのいずれでもサーバーでも使えます。 |
-| **[分割ペイン](https://openprogram.io/docs/reference/design/ui/workspace/center-tabs-and-split-layout.html)** | チャット、ファイル、ターミナル、Web ページを並べて表示。 |
-| **[内蔵ブラウザ](https://openprogram.io/docs/reference/design/ui/browser/built-in-browser.html)** | エージェントが読んで操作するブラウザを、そばで見守れます。 |
-| **[統合ターミナル](https://openprogram.io/docs/reference/design/ui/workspace/integrated-terminal.html)** | ワークスペース内のターミナルをエージェントと共有。 |
-| **[Computer use](https://openprogram.io/docs/reference/design/integrations/computer-and-browser-use.html)** | デスクトップアプリ、ブラウザのページ、リモート VM を操作します。 |
-| **[CLI と TUI](https://openprogram.io/docs/reference/design/cli/README.html)** | 同じエージェントをターミナルから。 |
-| **[リモートアクセス](https://openprogram.io/docs/reference/design/ui/remote-web-access.html)** | 別のデバイスから自分のインスタンスにアクセス（本人のみ）。 |
+| **[デスクトップと Web UI](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/README.html)** | macOS と Linux では App、v1.2.0 からは Windows でも App。Web UI はそのいずれでもサーバーでも使えます。 |
+| **[分割ペイン](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/workspace/center-tabs-and-split-layout.html)** | チャット、ファイル、ターミナル、Web ページを並べて表示。 |
+| **[内蔵ブラウザ](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/browser/built-in-browser.html)** | エージェントが読んで操作するブラウザを、そばで見守れます。 |
+| **[統合ターミナル](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/workspace/integrated-terminal.html)** | ワークスペース内のターミナルをエージェントと共有。 |
+| **[Computer use](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/integrations/computer-and-browser-use.html)** | デスクトップアプリ、ブラウザのページ、リモート VM を操作します。 |
+| **[CLI と TUI](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/cli/README.html)** | 同じエージェントをターミナルから。 |
+| **[リモートアクセス](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/remote-web-access.html)** | 別のデバイスから自分のインスタンスにアクセス（本人のみ）。 |
 
 ### エージェントと安全性
 
 | | |
 |---|---|
-| **[エージェント設定](https://openprogram.io/docs/reference/design/runtime/agent-configuration/agent-configuration-ui.html)** | モデル、指示、ツール、メモリ権限を再利用できるエージェントとして保存。 |
-| **[メモリ](https://openprogram.io/docs/reference/design/memory/overview.html)** | 出典付きのメモリ。検索とバックグラウンドでの書き込みに対応。 |
-| **[権限とサンドボックス](https://openprogram.io/docs/reference/design/runtime/security/sandbox-architecture.html)** | ツール呼び出しをメモ付きで許可または拒否。コマンドはサンドボックスで実行されます。 |
-| **[Programs](https://openprogram.io/docs/reference/design/runtime/programs/programs-architecture.html)** | ツールとアプリケーションをインストール可能な Program として扱います。 |
+| **[エージェント設定](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/agent-configuration/agent-configuration-ui.html)** | モデル、指示、ツール、メモリ権限を再利用できるエージェントとして保存。 |
+| **[メモリ](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/memory/overview.html)** | 出典付きのメモリ。検索とバックグラウンドでの書き込みに対応。 |
+| **[権限とサンドボックス](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/security/sandbox-architecture.html)** | ツール呼び出しをメモ付きで許可または拒否。コマンドはサンドボックスで実行されます。 |
+| **[Programs](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/programs/programs-architecture.html)** | ツールとアプリケーションをインストール可能な Program として扱います。 |
 
 ### モデルと連携
 
 | | |
 |---|---|
-| **[プロバイダー](https://openprogram.io/docs/reference/design/providers/README.html)** | Anthropic、OpenAI、Gemini など。プロバイダーごとに複数アカウント。 |
-| **[ローカルモデル](https://openprogram.io/docs/reference/design/providers/local-models.html)** | ローカル推論サーバー。認証も設定可能。 |
-| **[MCP](https://openprogram.io/docs/reference/design/integrations/mcp-integration.html)** | MCP サーバーを使う、または OpenProgram を MCP サーバーとして公開。 |
-| **[スキルとプラグイン](https://openprogram.io/docs/reference/design/integrations/skills-and-plugins.html)** | エージェントの知識と呼び出せるツールを拡張します。 |
-| **[チャンネル](https://openprogram.io/docs/reference/design/channels/README.html)** | Telegram、Discord、Slack、WeChat からエージェントと会話。 |
-| **[自動更新](https://openprogram.io/docs/reference/design/distribution/automatic-updates.html)** | 署名済みリリースをその場で更新。 |
+| **[プロバイダー](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/providers/README.html)** | Anthropic、OpenAI、Gemini など。プロバイダーごとに複数アカウント。 |
+| **[ローカルモデル](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/providers/local-models.html)** | ローカル推論サーバー。認証も設定可能。 |
+| **[MCP](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/integrations/mcp-integration.html)** | MCP サーバーを使う、または OpenProgram を MCP サーバーとして公開。 |
+| **[スキルとプラグイン](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/integrations/skills-and-plugins.html)** | エージェントの知識と呼び出せるツールを拡張します。 |
+| **[チャンネル](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/channels/README.html)** | Telegram、Discord、Slack、WeChat からエージェントと会話。 |
+| **[自動更新](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/distribution/automatic-updates.html)** | 署名済みリリースをその場で更新。 |
 
 ## 引用
 
@@ -143,7 +143,7 @@ class SupportAgent(Agent):
 
 ## ライセンス
 
-[AGPL-3.0](LICENSE) © 2026 Fzkuji。利用、改変、配布、ネットワークサービス提供に関する義務はライセンス本文に従います。
+[AGPL-3.0](LICENSE) © 2026 FuzzyKuji。利用、改変、配布、ネットワークサービス提供に関する義務はライセンス本文に従います。
 
 ## 謝辞
 

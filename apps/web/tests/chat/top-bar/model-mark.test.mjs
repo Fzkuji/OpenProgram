@@ -67,5 +67,6 @@ test("the model chip draws the mark, not the old speech bubble", () => {
 
 test("each provider row of the model menu starts with that provider's logo", () => {
   const menu = source("components/chat/top-bar/menus/agent-selector.tsx");
-  assert.match(menu, /<ModelMark provider=\{group\.provider\}[^>]*\/>\s*\{providerName\(group\.provider\)\}/);
+  assert.match(menu, /<ModelMark provider=\{id\}[^>]*\/>\s*\{name\}/);
+  assert.match(menu, /id=\{group\.provider\}\s*name=\{providerName\(group\.provider\)\}/);
 });

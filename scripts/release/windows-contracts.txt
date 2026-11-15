@@ -13,6 +13,7 @@ tests/component/config/test_windows_runtime_preparation.py
 tests/component/config/test_windows_refresh_publication.py
 tests/component/config/test_windows_build_environment.py
 tests/component/config/test_windows_release_version.py
+tests/component/config/test_distribution_release/test_build_base_packages.py
 tests/component/runtime/test_process_liveness.py
 tests/component/runtime/test_local_backend_process_tree.py
 tests/component/runtime/test_git_bash_source_transport.py

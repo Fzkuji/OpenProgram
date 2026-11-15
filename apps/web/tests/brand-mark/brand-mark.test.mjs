@@ -198,10 +198,12 @@ describe("one drawer", () => {
     ["components/sidebar/sessions/conv-item.tsx", ["<ChannelLogo channel={conv.channel} size={14} />"]],
     ["components/command-palette.tsx", ["<ChannelLogo channel={conv.channel} size={16} />"]],
     ["components/chats/chats-page.tsx", ["<ChannelLogo channel={conv.channel} size={16} />"]],
-    ["components/settings/providers/provider-item.tsx", ["<ProviderIcon id={p.id} size={20} />"]],
-    ["components/settings/providers/model-list.tsx", ["<ProviderIcon id={providerId} size={20} />"]],
     ["components/settings/providers/routing-overview.tsx", ["<ProviderIcon id={g.provider} size={16} />"]],
-    ["components/settings/providers/detail.tsx", ["<ProviderIcon id={provider.id} size={40} />"]],
+    ["components/settings/providers/detail.tsx", ["<ProviderIcon id={provider.id} size={32} />"]],
+    ["components/settings/providers/status/provider-card.tsx", ["<ProviderIcon id={p.id} size={24} />"]],
+    ["components/settings/providers/status/provider-rows.tsx", ["<ProviderIcon id={p.id} size={20} />"]],
+    ["components/settings/providers/add/add-provider-dialog.tsx", ["<ProviderIcon id={choice.id} size={28} />", "<ProviderIcon id={step.choice.id} size={28} />"]],
+    ["components/settings/providers/add/pick.tsx", ["<ProviderIcon id={icon} size={20} />", "<ProviderIcon id={p.id} size={20} />", '<ProviderIcon id={c.id} size={40} plate="brand" />', '<ProviderIcon id={row.id} size={40} plate="brand" />']],
   ]);
   const DRAWERS = new Set([
     "components/brand-mark/brand-mark.tsx",

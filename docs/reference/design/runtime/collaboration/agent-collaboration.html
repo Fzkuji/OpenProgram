@@ -46,9 +46,10 @@
 <thead><tr><th scope="col">Hidden from the model</th><th scope="col">Replaced by</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">agent(to=...)</code></th><td><code translate="no">send_message(to=...)</code>; the parameter is refused with that pointer</td></tr>
-<tr><th scope="row"><code translate="no">handoff</code></th><td><code translate="no">send_message</code>, which resolves conversations by title and Agents by name</td></tr>
+<tr><th scope="row"><code translate="no">handoff</code></th><td>Removed. <code translate="no">send_message</code> resolves conversations by title and Agents by name; stored hand-offs moved onto it (<a href="#stored-handoffs">Stored hand-offs</a>)</td></tr>
 <tr><th scope="row"><code translate="no">job_output</code>, <code translate="no">list_jobs</code></th><td><code translate="no">read_conversation(execution_id)</code>, <code translate="no">list_agents</code></td></tr>
 <tr><th scope="row"><code translate="no">archive_agent</code></th><td><code translate="no">close_agent</code></td></tr>
+<tr><th scope="row"><code translate="no">mixture_of_agents</code></th><td>Opt-in: left out of the <code translate="no">full</code> preset, so an automatic Agent does not carry it; an Agent gets it by naming it or with the <code translate="no">mixture_of_agents</code> preset. It asks several models for one answer, which is not collaboration, and every listed tool costs prefix tokens (Pi keeps its list small for the same reason).</td></tr>
 </tbody>
 </table>
 <p class="note">A stored call to a hidden tool still renders and replays. A background call returns <code translate="no">execution_id</code>, equal to <code translate="no">Job.id</code>. The UI and API cancel through the <code translate="no">execution.command</code> envelope (<a href="../execution/control.html">execution control</a>).</p>
@@ -72,11 +73,11 @@
 <tbody>
 <tr><th scope="row"><code translate="no">agent</code> schema</th><td><code translate="no">prompt</code>, <code translate="no">description</code>, <code translate="no">agent</code>, <code translate="no">start_from="fresh"</code>, <code translate="no">run_in_background=False</code>, <code translate="no">isolation=""</code>, <code translate="no">archive_when_done=False</code>. No model parameter.</td></tr>
 <tr><th scope="row"><code translate="no">send_message</code> schema</th><td><code translate="no">to</code>, <code translate="no">message=""</code>, <code translate="no">notify_when_idle=False</code></td></tr>
-<tr><th scope="row"><code translate="no">start_from</code></th><td><code translate="no">fresh</code> (default): only the prompt. <code translate="no">fork</code>: the caller's history; with another Agent it falls back to fresh and says so. <code translate="no">SID:MSG</code>: that node. The older <code translate="no">inherit</code> and <code translate="no">clean</code> still mean fork and fresh.</td></tr>
-<tr><th scope="row"><code translate="no">agent</code></th><td>A saved Agent by id or name from the roster at the end of the tool description. Empty: the caller's own Agent. An Agent with delegation off is refused unless it is the caller's own.</td></tr>
+<tr><th scope="row"><code translate="no">start_from</code></th><td><code translate="no">fresh</code> (default): only the prompt. <code translate="no">fork</code>: the caller's history, and the system prompt the caller's branch recorded, byte for byte (<code translate="no">loop_runner.forked_prompt</code>), so the provider's prompt cache is shared; with another Agent it falls back to fresh and says so. <code translate="no">SID:MSG</code>: that node. The older <code translate="no">inherit</code> and <code translate="no">clean</code> still mean fork and fresh.</td></tr>
+<tr><th scope="row"><code translate="no">agent</code></th><td>A saved Agent, or an Agent from a Markdown agent file (<a href="#agent-settings">Saved Agent settings</a>), by id or name from the roster at the end of the tool description. Empty: the caller's own Agent. An Agent with delegation off is refused unless it is the caller's own.</td></tr>
 <tr><th scope="row"><code translate="no">isolation</code></th><td><code translate="no">worktree</code>, <code translate="no">none</code>, or empty for the rule under <a href="#agent-settings">Saved Agent settings</a></td></tr>
 <tr><th scope="row">When to spawn</th><td>The base instructions (<code translate="no">runtime/context/guides/base.md</code>) forbid spawning unless the user, AGENTS.md or a skill asks for sub-agents, delegation or parallel work, as Codex does. This rule is kept as is.</td></tr>
-<tr><th scope="row"><code translate="no">to</code> address</th><td>In order: <code translate="no">SID:HEAD</code>, a branch or helper name, a conversation id or exact title, a saved Agent's name or id (its one conversation). Ambiguous names fail with candidates; a missing target is an error, never a new branch.</td></tr>
+<tr><th scope="row"><code translate="no">to</code> address</th><td>In order: <code translate="no">SID:HEAD</code>, a branch or helper name, a conversation id or exact title, a saved Agent's name or id (its one conversation). Ambiguous names fail with candidates; a missing target is an error, never a new branch. A message to a running helper the sending turn started reaches it at its next tool step (<a href="#busy-targets">Busy targets</a>).</td></tr>
 <tr><th scope="row">Direct self-delivery</th><td>Refused</td></tr>
 </tbody>
 </table>
@@ -95,15 +96,24 @@
 <tr><th scope="row">One result shape</th><td>Claude Code <code translate="no">task-notification</code></td><td>OpenCode pushes a child's text only; usage and files make a result checkable without reading the transcript.</td></tr>
 <tr><th scope="row">Stop is told to the caller</th><td>OpenCode push on child end</td><td>A stop by the person or a limit arrives as a notice like a finish, so the caller never waits on a helper that is gone.</td></tr>
 <tr><th scope="row">Callable Agents in the description</th><td>Claude Code lists <code translate="no">subagent_type</code>s in its Agent tool</td><td>OpenCode marks agents <code translate="no">primary</code> or <code translate="no">subagent</code>; one switch per Agent does the same. The list is sorted by id so one edit moves nothing else.</td></tr>
-<tr><th scope="row">No per-call model</th><td>OpenCode and Claude Code agent files</td><td>Codex lets the call pick a model; keeping it on the Agent makes cost and behaviour a setting the person controls.</td></tr>
-<tr><th scope="row">Read-only Explorer</th><td>Claude Code <code translate="no">Explore</code> agent</td><td>A safe default helper for search and reading that never needs a worktree.</td></tr>
+<tr><th scope="row">No per-call model</th><td>OpenCode and Claude Code agent files</td><td>Codex lets the call pick a model; keeping it on the Agent makes cost and behaviour a setting the person controls. A helper runs in its caller's conversation, whose model would otherwise win, so <code translate="no">agent(agent=…)</code> passes the specialist's own model with the call (<code translate="no">delegation.delegate_model</code>); running the caller's own Agent keeps the conversation's model.</td></tr>
+<tr><th scope="row">Read-only Explorer on the utility model</th><td>Claude Code <code translate="no">Explore</code>, Codex <code translate="no">explorer</code>, OpenCode <code translate="no">explore</code></td><td>A safe default helper for search and reading that never needs a worktree. All three run their scout on a small model; without a model of its own Explorer takes the Lightweight helper's, so the person picks the cheap model once.</td></tr>
 <tr><th scope="row">One message tool</th><td>Codex <code translate="no">send_input</code>, Claude Code <code translate="no">SendMessage</code></td><td>Three ways to reach an agent (<code translate="no">agent(to=)</code>, <code translate="no">send_message</code>, <code translate="no">handoff</code>) differed only in addressing; one tool with all addresses removes the choice.</td></tr>
-<tr><th scope="row">4 hops, 20 per hour, no approval</th><td>The earlier handoff limits; Hermes, Maka</td><td>A hop limit stops ping-pong; the hourly limit stops a loop the hop count misses. No peer asks the person between agents.</td></tr>
+<tr><th scope="row">4 hops, 20 per hour, no approval</th><td>The earlier handoff limits; Hermes, Maka</td><td>A hop limit stops ping-pong; the hourly limit stops a loop the hop count misses, and is kept in the sender's conversation folder so a restart does not start a new hour. No peer asks the person between agents.</td></tr>
+<tr><th scope="row">A message back up its own chain is refused</th><td>The always-on hand-off's <code translate="no">ancestors</code></td><td>A→B→A otherwise runs until the hop count ends it, after several useless turns. Each delivery carries who waits above it, so the loop is refused when it forms.</td></tr>
+<tr><th scope="row">A passed-on message waits for the real answer</th><td>The always-on hand-off's <code translate="no">owed_after</code> chain</td><td>Without it, when B passes A's message to C, A hears B say "I asked C". The answer to A is held until C's reply has reached B and B's turn on it has ended (a relay entry in A's <code translate="no">notices.json</code>). B's notice turn records its end (<code translate="no">answered</code>); after a restart, notices already taken count as answered.</td></tr>
+<tr><th scope="row">A message to one's own running helper steers it</th><td>Hermes <code translate="no">action: steer</code>, Grok's steer delivery</td><td>Claude Code queues every <code translate="no">SendMessage</code> until the turn ends, which lets a helper finish the wrong task. The relation decides, with no parameter: the turn that started the helper reaches it at its next tool boundary through the same durable steer command Activity's "Add instruction" uses; anyone else's message queues.</td></tr>
 <tr><th scope="row">Background writer gets a worktree</th><td>Claude Code <code translate="no">isolation: worktree</code></td><td>Two writers in one folder corrupt each other's edits; a foreground helper has the caller waiting, so it shares.</td></tr>
+<tr><th scope="row">Merge and discard wait for the helper</th><td>Kimi Tower (one writer per worktree)</td><td>A worktree merged while its helper still writes loses the rest of its work or merges half an edit. Merge and discard are refused with <code translate="no">owner_running</code> until the helper Job ends; the helper's own end and a spawn that failed to start pass <code translate="no">owner_done</code>.</td></tr>
+<tr><th scope="row">A helper loses scheduling, channel and memory-writing tools</th><td>Hermes' delegate blocklist, reduced</td><td>A helper reports; the agent that started it schedules, posts and writes memory. <code translate="no">scheduler</code> (and its older name <code translate="no">cron</code>), <code translate="no">remind</code>, <code translate="no">save_routine</code>, <code translate="no">always_on_schedule</code>, <code translate="no">chat_send</code> and <code translate="no">memory_update</code> leave a fresh helper's list; a forked helper keeps them listed and refused, so its list stays its caller's bytes.</td></tr>
+<tr><th scope="row">The caller's transcript only grows</th><td>Claude Code results in one call; OpenCode's child session</td><td>A background helper's card is written while it runs and renders only what it was written with (name, task, its <code translate="no">execution_id</code>); status, reply and usage stay on the node for the interface and the result arrives as the notice. Re-rendering the card when it ends would change bytes in the middle of the caller's cached prefix. Such a card is marked <code translate="no">result_in="notice"</code>; an older card without it still renders its report.</td></tr>
+<tr><th scope="row">Markdown agent files are read</th><td>Kimi CLI reads its peers' agent files</td><td>A project's <code translate="no">.claude/agents</code> or <code translate="no">.agents/agents</code> works in every tool that opens it. They are read-only here: the file stays the place to edit them.</td></tr>
+<tr><th scope="row">Activity lists a helper while it runs, needs the person or failed; the rest fold into "N finished"</th><td>Claude Code's background task list and its one-line "Done" for a finished subagent; Codex's <code translate="no">/agent</code> switcher</td><td>Claude Code lists background work while it runs and shows a finished subagent as one line; Codex lists open agent threads; OpenCode keeps child sessions out of its session list. None keeps finished helpers in the open; a long conversation starts dozens. A failed helper stays to be acted on. Finished ones sit behind one row, still counted in the total. A folded agent row keeps its red count, so it never hides a request for approval.</td></tr>
+<tr><th scope="row">Todos carry no owner</th><td>Codex and Claude Code todo lists</td><td>Who works on what is the agent tree and Activity; an owner field on a todo was a second, unchecked claim. Old boards still show theirs.</td></tr>
 <tr><th scope="row">A helper's permission is its caller's, cut by its own Agent</th><td>Codex roles (<code translate="no">core/src/agent/role.rs</code>)</td><td>Claude Code lets a parent in Bypass or Accept edits override the subagent's own <code translate="no">permissionMode</code>, so a strict Agent can be loosened by its caller. Intersecting both ways means neither side can widen the other, and an Agent that sets nothing runs as its caller, asking nothing new.</td></tr>
 <tr><th scope="row">A foreground helper asks on its caller's card</th><td>Claude Code foreground subagents and fork (<code translate="no">permissionMode: 'bubble'</code>, <code translate="no">leaderPermissionBridge.ts</code>)</td><td>Copilot CLI shows the prompt inside the subagent view and Antigravity makes the person jump to it (Alt+J); both move the person away from the conversation they are in. The caller is already waiting, so its card is where the person looks.</td></tr>
 <tr><th scope="row">A background helper is refused instead of asking</th><td>Claude Code background agents (<code translate="no">shouldAvoidPermissionPrompts</code>)</td><td>Nobody waits on it, and a card left open would hold the helper and its worktree for good. The refusal tells it to report what it needed, so the caller can do it or ask.</td></tr>
-<tr><th scope="row">Stored hand-offs move to <code translate="no">send_message</code></th><td>Claude Code <code translate="no">SendMessage</code>; the Job-keyed recovery of wave 4</td><td>Keeping the old replay would keep a second store and its ten-minute drop. Moving each waiting entry once onto a tracked Job with an id fixed by the entry makes a repeated start deliver nothing twice.</td></tr>
+<tr><th scope="row">Stored hand-offs move to <code translate="no">send_message</code></th><td>Claude Code <code translate="no">SendMessage</code>; the Job-keyed recovery of wave 4</td><td>Keeping the old replay would keep a second store and its ten-minute drop. Every entry moves once, onto a tracked Job, a watch or a relay with an id fixed by the entry, so a repeated start delivers nothing twice and the replay code is gone.</td></tr>
 </tbody>
 </table>
 
@@ -112,12 +122,14 @@
 <thead class="sr"><tr><th scope="col">Setting</th><th scope="col">Rule</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">delegation</code></th><td><code translate="no">on</code>: listed in the <code translate="no">agent</code> description and startable by other agents. Empty: on for an Agent with tools, off for one without (<code translate="no">tools.mode="none"</code>). Editing the list announces a prefix-cache break (<code translate="no">agent_roster</code>).</td></tr>
-<tr><th scope="row"><code translate="no">isolation</code></th><td><code translate="no">worktree</code> or <code translate="no">none</code> when started by another agent. Empty: a background helper whose tools can write gets its own worktree in a git repository, otherwise shares the folder. A call's <code translate="no">isolation</code> wins.</td></tr>
+<tr><th scope="row"><code translate="no">isolation</code></th><td><code translate="no">worktree</code> or <code translate="no">none</code> when started by another agent. Empty: a background helper whose tools can write gets its own worktree in a git repository, otherwise shares the folder. A call's <code translate="no">isolation</code> wins. The worktree cannot be merged or discarded while its helper runs (<code translate="no">owner_running</code>).</td></tr>
 <tr><th scope="row"><code translate="no">permissions</code></th><td>What it may do when another agent starts it: <code translate="no">mode</code>, <code translate="no">allow</code>, <code translate="no">deny</code>, <code translate="no">ask</code> (rules), <code translate="no">additional_directories</code>, <code translate="no">sandbox</code>. Each key only narrows its caller (<a href="#permissions">Permissions</a>). Empty: it runs as its caller. Its tool policy narrows the same way.</td></tr>
-<tr><th scope="row">Explorer</th><td>Built-in, read-only (read, search, web, <code translate="no">read_conversation</code>)</td></tr>
+<tr><th scope="row">Explorer</th><td>Built-in, read-only (read, search, web, <code translate="no">read_conversation</code>). Without a model of its own it runs on the utility tier: the Lightweight helper's model when that has one, else the usual fallback (<code translate="no">builtin_agents.UTILITY_TIER</code>).</td></tr>
+<tr><th scope="row">Markdown agent files</th><td><code translate="no">.claude/agents/*.md</code> and <code translate="no">.agents/agents/*.md</code> in the project folder (up to its git root) and the home folder, nearest first, at most 50. Frontmatter <code translate="no">name</code> and <code translate="no">description</code> are required; <code translate="no">tools</code> maps Claude Code names (<code translate="no">Read</code>, <code translate="no">Bash</code>, …) and drops the rest, none meaning every tool; <code translate="no">model</code> counts only as <code translate="no">provider/model</code>; <code translate="no">isolation</code> as above; the body is the system prompt.</td></tr>
+<tr><th scope="row">A Markdown agent here</th><td>Id <code translate="no">md:&lt;file stem&gt;</code>, delegation on, memory off. A saved Agent wins a name. Writes do not see them (update, delete and set-default report not found); duplicate one to edit it here. Not on the Agents page.</td></tr>
 </tbody>
 </table>
-<p class="note">Both settings are stored on <code translate="no">agent.json</code> and travel through <code translate="no">PATCH /api/agents/{id}</code> and <code translate="no">AgentConfigDTO</code>. Empty means the default, so no stored Agent is rewritten.</p>
+<p class="note">The Agents page edits both: General has the switch "Other agents can use it" (<code translate="no">delegation</code>; an Agent that never set it shows its default), Advanced has "When delegated" (<code translate="no">isolation</code>: Automatic, Same folder, Own worktree). Both settings are stored on <code translate="no">agent.json</code> and travel through <code translate="no">PATCH /api/agents/{id}</code> and <code translate="no">AgentConfigDTO</code>. Empty means the default, so no stored Agent is rewritten.</p>
 
 <h2 id="permissions">Permissions</h2>
 <p>For every helper and delivered message, the caller's mode, rules, extra folders and Sandbox are frozen into the Job when it is admitted (<code translate="no">spawn_permission_snapshot</code>), a Sandbox left to the caller's project resolved against the caller's conversation; the Agent's <code translate="no">permissions</code> block then narrows them.</p>
@@ -134,8 +146,9 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">A call that needs approval, in</th><th scope="col">Result</th></tr></thead>
 <tbody>
-<tr><th scope="row">A foreground helper (fresh or fork) of a person's turn</th><td>The existing approval card in the caller's conversation, its prompt starting with the helper's name, e.g. <code translate="no">[scout]</code>. The answer resumes the helper; the caller's tool call keeps waiting through it. "Always allow" saves the rule for the conversation as usual.</td></tr>
-<tr><th scope="row">A background helper, a delivered message, a fork into another conversation, or a caller no person answers for</th><td>Refused at once (<code translate="no">HELPER_CANNOT_ASK</code>): the tool result says to go on without it and name what was needed in the final reply. Nothing waits.</td></tr>
+<tr><th scope="row">A foreground helper (fresh or fork) of a person's turn</th><td>The existing approval card in the caller's conversation. Its title row names the helper in a badge (<code translate="no">asked_by</code> on the question frame) on the command, screen and terminal cards; the CLI prompt and a channel message put the name after their heading. The answer resumes the helper; the caller's tool call keeps waiting through it. "Always allow" saves the rule for the conversation as usual.</td></tr>
+<tr><th scope="row">A foreground helper forked into another conversation (<code translate="no">start_from="SID:MSG"</code>)</th><td>The same card, shown in the caller's conversation where the person waits: the question carries <code translate="no">asked_in_session</code>, so the live frame and a reload's list (<code translate="no">waits.list_open</code>) put it there.</td></tr>
+<tr><th scope="row">A background helper, a delivered message, or a caller no person answers for</th><td>Refused at once (<code translate="no">HELPER_CANNOT_ASK</code>): the tool result says to go on without it and name what was needed in the final reply. Nothing waits.</td></tr>
 </tbody>
 </table>
 <p class="note">The route is frozen on the helper's stored input (<code translate="no">asks_through</code>) at admission, only when its caller is the live owner turn whose policy it inherited. This moves where an existing question is shown; it adds none.</p>
@@ -147,7 +160,7 @@
 <tr><th scope="row"><code translate="no">list_agents(scope, limit, agent_id, source)</code></th><td><code translate="no">session</code> (default): this session's branches and its running or queued work. <code translate="no">all</code>: every session, most recent first, no previews. <code translate="no">archived</code>: this session's archived branches.</td></tr>
 <tr><th scope="row">Each line</th><td>Session: id, title, agent, busy or idle. Branch: name, <code translate="no">to="SID:HEAD"</code>, turns, size, tip preview.</td></tr>
 <tr><th scope="row">Names</th><td>From <code translate="no">description</code>, else the prompt truncated to about 24 characters; a background LLM retitles at turns 1, 6, 16 and 40 (<a href="../operations/branch-naming.html">branch naming</a>)</td></tr>
-<tr><th scope="row">Spawn name</th><td>The <code translate="no">description</code> as written, on one line, at most 48 characters cut at a word. The branch, <code translate="no">list_agents</code>, Activity, notices and the result's <code translate="no">name</code> show it. Only a worktree's ref and folder use a slug of it.</td></tr>
+<tr><th scope="row">Spawn name</th><td>The <code translate="no">description</code> as written, at most 48 characters cut at a word. Spaces stay as typed, two in a row included, as Claude Code keeps an Agent call's description; only a line break or tab becomes one space. The branch, <code translate="no">list_agents</code>, Activity, notices and the result's <code translate="no">name</code> show it. Only a worktree's ref and folder use a slug of it.</td></tr>
 <tr><th scope="row">Addressing a name</th><td>Stays an address for life: <code translate="no">to="scout"</code> reaches the current tip after a rename or finish. A name with spaces is written as it is (<code translate="no">to="Spell the word harbor"</code>); case, spaces and punctuation are folded only when no exact match exists, so the underscore form older agents were stored with reaches the same agent.</td></tr>
 </tbody>
 </table>
@@ -176,33 +189,34 @@ usage: 2 min 10 s · 18 tool calls · 41.2k tokens · $0.084
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">status</code></th><td><code translate="no">completed</code>, <code translate="no">failed</code>, <code translate="no">stopped</code> or <code translate="no">stalled</code>; a limit adds <code translate="no">reason</code> (<code translate="no">user</code>, <code translate="no">spend cap</code>, <code translate="no">timeout</code>, <code translate="no">idle limit</code>)</td></tr>
-<tr><th scope="row">Reply</th><td>The final reply, cut at 20,000 characters with a <code translate="no">read_conversation</code> pointer; a background spawn's reply is on its card, so the notice says so instead of repeating it; a stopped helper, waited on or in the background, has no final reply and reads <code translate="no">(no reply) Its work so far: read_conversation("&lt;id&gt;")</code>, with its branch tip set to the reply row it was writing, as Claude Code tells the caller only that the task was stopped</td></tr>
+<tr><th scope="row">Reply</th><td>The final reply, cut at 20,000 characters with a <code translate="no">read_conversation</code> pointer; a background spawn's reply travels in the notice (an older unmarked card carries it instead); a stopped helper, waited on or in the background, has no final reply and reads <code translate="no">(no reply) Its work so far: read_conversation("&lt;id&gt;")</code>, with its branch tip set to the reply row it was writing, as Claude Code tells the caller only that the task was stopped</td></tr>
 <tr><th scope="row">Files</th><td>When the helper had its own worktree: changed files and line counts</td></tr>
-<tr><th scope="row">Usage</th><td>Duration, tool calls on its branch, tokens and cost from the usage ledger; a cost with an unknown price is left out, not guessed</td></tr>
+<tr><th scope="row">Usage</th><td>Duration and tool calls on its branch; tokens and cost from the usage ledger for the helper and every helper under it (<code translate="no">agent_result.subtree_job_ids</code>); a cost with an unknown price is left out, not guessed</td></tr>
 </tbody>
 </table>
 <table class="stack fixed">
 <thead><tr><th scope="col">Stage</th><th scope="col">Behaviour</th></tr></thead>
 <tbody>
-<tr><th scope="row">Queue</th><td>Every terminal path goes through <code translate="no">JobRunner._update_attach_card</code>: patches the card with status and usage, applies <code translate="no">archive_when_done</code>, queues an entry in the caller's <code translate="no">notices.json</code>. Background Jobs that completed, errored, or were stopped by the person or a limit; a stall is queued once as its own entry.</td></tr>
+<tr><th scope="row">Queue</th><td>Every terminal path goes through <code translate="no">JobRunner._update_attach_card</code>: patches the card with status, usage and, for a helper with its own worktree, the files it changed (<code translate="no">attach.files</code>: count, branch, uncommitted), applies <code translate="no">archive_when_done</code>, queues an entry in the caller's <code translate="no">notices.json</code>. Background Jobs that completed, errored, or were stopped by the person or a limit; a stall is queued once as its own entry.</td></tr>
 <tr><th scope="row">Deliver</th><td><code translate="no">run_job_notices</code> sweeps every 2 s; a session is busy while a foreground execution runs. All pending entries become one automated notice turn (<code translate="no">source="job_followup"</code>). A notice has no timeout, so a reply is never dropped while the caller is busy.</td></tr>
 <tr><th scope="row">Failure</th><td>Reported the same way; the notice says to retry narrower with <code translate="no">send_message</code> or tell the user. Nothing is resubmitted automatically.</td></tr>
 </tbody>
 </table>
 <h3 id="stored-handoffs">Stored hand-offs</h3>
-<p>The removed <code translate="no">handoff</code> tool kept its turns in <code translate="no">&lt;state&gt;/always_on/handoffs.json</code>. When the Worker starts, before the old replay reads the file, each entry still waiting for a busy conversation moves to <code translate="no">send_message</code> (<code translate="no">always_on/handoff_migration.py</code>):</p>
+<p>The removed <code translate="no">handoff</code> tool kept its turns in <code translate="no">&lt;state&gt;/always_on/handoffs.json</code>. When the Worker starts, every entry moves (<code translate="no">always_on/handoff_migration.py</code>) and the file is left empty; the hand-off's own replay is gone:</p>
 <table class="stack fixed">
 <thead><tr><th scope="col">Entry</th><th scope="col">Becomes</th></tr></thead>
 <tbody>
-<tr><th scope="row">Waiting message</th><td>A delivery from its sender to its target, keeping its hop count; the reply comes back as a notice</td></tr>
+<tr><th scope="row">Waiting message</th><td>A delivery from its sender to its target, keeping its hop count and who waits above it; the reply comes back as a notice</td></tr>
 <tr><th scope="row">Waiting reply</th><td>A delivery from the conversation that answered (named in the reply) to the one that asked</td></tr>
-<tr><th scope="row">Running or paused turn</th><td>Stays; the reply it owes is sent when it ends, as before</td></tr>
-<tr><th scope="row">Waiting message that also owes earlier conversations (<code translate="no">owed_after</code>)</th><td>Stays; <code translate="no">send_message</code> has no relay chain, so the old replay carries it on</td></tr>
-<tr><th scope="row">Finished, or a reply naming no conversation</th><td>Stays, and ages out after a day as before</td></tr>
+<tr><th scope="row">Running or paused turn</th><td>A watch: its sender gets the conversation's latest reply once it is idle (<code translate="no">notices.watch</code>)</td></tr>
+<tr><th scope="row">Earlier conversations it also owes (<code translate="no">owed_after</code>)</th><td>A relay each, nearest first: each gets the answer of the one below it once that one has answered (<code translate="no">notices.hold_reply</code>)</td></tr>
+<tr><th scope="row">Finished, or a reply naming no conversation</th><td>Kept in the record only</td></tr>
 </tbody>
 </table>
-<p class="note">The file is copied once to <code translate="no">handoffs.before-migration.json</code> first. Every moved entry is kept as it was in <code translate="no">handoffs.migrated.json</code> with its delivery state and <code translate="no">execution_id</code>. Each delivery's Job id is fixed by its entry, so a Worker that stops midway delivers each one once.</p>
+<p class="note">The file is copied once to <code translate="no">handoffs.before-migration.json</code> first. Every entry is kept as it was in <code translate="no">handoffs.migrated.json</code> with its delivery state and <code translate="no">execution_id</code>. Each delivery's Job id and each watch's id are fixed by its entry, so a Worker that stops midway delivers each one once.</p>
 <p class="note">A delivery <code translate="no">send_message</code> refuses stays pending under a new Job id and is tried again at the next Worker start; one whose conversation is gone is marked failed. <code translate="no">migrate()</code> without <code translate="no">apply</code> only reports. The transcripts' 📨 and ↩️ rows are unchanged.</p>
+<p class="note">The chat reads a stored row's header and draws it as the one-line row other agent traffic gets, when the conversation it names exists.</p>
 
 <p class="note">The recipient answers in its final reply; a <code translate="no">send_message</code> back would deliver it twice, and the receipt says so. A message from another conversation is marked as another agent's input, not the recipient's user.</p>
 
@@ -213,7 +227,7 @@ usage: 2 min 10 s · 18 tool calls · 41.2k tokens · $0.084
 </details>
 
 <h2 id="busy-targets">Busy targets</h2>
-<p>A message to a running branch is never interrupted in or dropped.</p>
+<p>Only the turn that started a helper can reach it mid-turn; every other message waits, and none is lost.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Case</th><th scope="col">Behaviour</th></tr></thead>
 <tbody>
@@ -222,6 +236,8 @@ usage: 2 min 10 s · 18 tool calls · 41.2k tokens · $0.084
 <tr><th scope="row">Queued in</th><td><code translate="no">&lt;session-repo&gt;/inbox.json</code>; the entry also travels on the Job (<code translate="no">Job.deferred_inbox</code>), so a Worker that dies before or after the write recreates it once</td></tr>
 <tr><th scope="row">Drained</th><td>At turn end and by the 2 s sweep. Deleted only after submission; a Job that already left the queue only removes the entry (<a href="../execution/async-job-lifecycle.html#handoffs">hand-offs across a crash</a>)</td></tr>
 <tr><th scope="row">Full, duplicate</th><td>50 entries, the oldest dropped with a notice to its sender; the same text from the same sender within 60 s is refused and its Job cancelled</td></tr>
+<tr><th scope="row">The sender started the target</th><td>A running helper the sending turn started (same conversation, same parent Job) gets the message as a steer at its next tool boundary (<code translate="no">send_message/steer.py</code>), stored with its execution like the person's "Add instruction" and written into its branch as agent input. The inbox entry is written too, marked with the steer's command id: a steer the turn never reached is delivered at turn end, one it took is dropped.</td></tr>
+<tr><th scope="row">"Add instruction" on a helper</th><td>A helper's own turn takes steers, so the person's instruction reaches sub-agents too</td></tr>
 </tbody>
 </table>
 
@@ -235,7 +251,7 @@ usage: 2 min 10 s · 18 tool calls · 41.2k tokens · $0.084
 <tr><th scope="row"><code translate="no">agent.stall_minutes</code></th><td>10</td><td>Minutes without model or tool activity before a helper is reported stalled, once</td></tr>
 <tr><th scope="row"><code translate="no">agent.max_agent_hours</code></th><td>2</td><td>Hours a helper may run before it is stopped</td></tr>
 <tr><th scope="row"><code translate="no">agent.max_hops</code></th><td>4</td><td>Times a message may be passed on along a chain</td></tr>
-<tr><th scope="row"><code translate="no">agent.max_sends_per_hour</code></th><td>20</td><td>Messages one conversation sends per hour</td></tr>
+<tr><th scope="row"><code translate="no">agent.max_sends_per_hour</code></th><td>20</td><td>Messages one conversation sends per hour, counted in its folder (<code translate="no">sends.json</code>) so a restart keeps the hour</td></tr>
 <tr><th scope="row"><code translate="no">agent.max_spawn_fanout</code></th><td>0 (off)</td><td>New branches per caller turn</td></tr>
 <tr><th scope="row"><code translate="no">agent.max_messages</code></th><td>0 (off)</td><td>The older message budget along a chain; still honoured when set</td></tr>
 </tbody>
@@ -247,6 +263,7 @@ usage: 2 min 10 s · 18 tool calls · 41.2k tokens · $0.084
 <tbody>
 <tr><th scope="row">Depth, fan-out, messages, tree spend</th><td>The spawn is refused with the setting to change; no branch or Job. At the depth limit the <code translate="no">agent</code> tool is not offered.</td></tr>
 <tr><th scope="row">Hops, sends per hour</th><td><code translate="no">send_message</code> is refused with the setting to change</td></tr>
+<tr><th scope="row">A message to a conversation waiting on this chain</th><td>Refused when it would close the loop (<code translate="no">depth.closes_cycle</code>); nothing is sent</td></tr>
 <tr><th scope="row">Tree spend while running</th><td>Running helpers of that tree stop with <code translate="no">budget.tree_cost_exhausted</code>; the caller gets the notice</td></tr>
 <tr><th scope="row">Two hours</th><td>The helper stops with <code translate="no">budget.runtime_exhausted</code>; the caller gets the notice</td></tr>
 <tr><th scope="row">Stall</th><td>Nothing stops; the caller gets one <code translate="no">stalled</code> notice and may <code translate="no">close_agent</code> or wait</td></tr>
@@ -276,9 +293,11 @@ usage: 2 min 10 s · 18 tool calls · 41.2k tokens · $0.084
 <thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Behaviour</th></tr></thead>
 <tbody>
 <tr><th scope="row">Live updates</th><td>Both sides update as deliveries and replies land (<a href="../../proactive/event-layer.html">event layer</a>)</td></tr>
-<tr><th scope="row">Agent traffic</th><td>Rows, never user bubbles; the receiver's row is named after the sender from the header <code translate="no">[message from SID:HEAD (sender)]</code></td></tr>
+<tr><th scope="row">Agent traffic</th><td>Rows, never user bubbles; the receiver's row is named after the sender from the header <code translate="no">[message from SID:HEAD (sender)]</code>, and a reply from another conversation reads “Butler” replied. Each is one line that opens in place to the full text; a find match inside a closed line opens it. A message a person typed stays a bubble.</td></tr>
+<tr><th scope="row">Reference card</th><td>A helper that runs in another conversation, or a branch attached by hand, keeps a card in the caller's transcript: one row with its character, name, state, task, time and cost, opened to its reply and changed files (<a href="../../ui/chat/sub-agent-row.html#the-reference-card">the reference card</a>). A helper of this conversation is a step row in the turn's timeline.</td></tr>
 <tr><th scope="row">Unattended</th><td>A policy denying side effects holds <code translate="no">send_message</code> and sub-agents before they act</td></tr>
 <tr><th scope="row">Result access</th><td><code translate="no">read_conversation(execution_id)</code> and <code translate="no">close_agent</code> require the execution, caller or an ancestor session</td></tr>
+<tr><th scope="row">Activity roster</th><td><code translate="no">GET /api/session/{id}/activity/roster</code> gives every Job of the conversation by id: <code translate="no">agent_status</code> (running, needs approval, needs input, stalled, idle, failed), <code translate="no">queued</code> and <code translate="no">usage</code> (tokens and cost of its subtree, its own <code translate="no">tool_calls</code>), plus <code translate="no">outgoing</code>, the unanswered messages to others. A helper that ended with everything under it is read once. A run's events carry the same status and usage; a Job's resource view adds <code translate="no">budget.subtree</code>. Source: the <code translate="no">agent_roster_facts</code> hook (<code translate="no">runtime/jobs/agent_status.py</code>). Drawn as in <a href="../../ui/chat/activity-panel.html#agent-roster">Activity panel</a>.</td></tr>
 </tbody>
 </table>
 
@@ -288,12 +307,13 @@ usage: 2 min 10 s · 18 tool calls · 41.2k tokens · $0.084
 <thead class="sr"><tr><th scope="col">Area</th><th scope="col">Location</th></tr></thead>
 <tbody>
 <tr><th scope="row">Agent tool</th><td><code translate="no">openprogram/programs/tools/agents/agent/agent/</code></td></tr>
-<tr><th scope="row">Messages, close</th><td><code translate="no">openprogram/programs/tools/agents/send_message/</code></td></tr>
+<tr><th scope="row">Messages, close, steer</th><td><code translate="no">openprogram/programs/tools/agents/send_message/</code> (<code translate="no">steer.py</code>, <code translate="no">dispatch.py</code>)</td></tr>
 <tr><th scope="row">Chain limits</th><td><code translate="no">openprogram/programs/tools/agents/send_message/send_message/depth.py</code></td></tr>
-<tr><th scope="row">Saved Agent settings</th><td><code translate="no">openprogram/runtime/agent_registry/delegation.py</code></td></tr>
+<tr><th scope="row">Saved Agent settings, Markdown agents</th><td><code translate="no">openprogram/runtime/agent_registry/delegation.py</code>, <code translate="no">markdown_imports.py</code></td></tr>
+<tr><th scope="row">Merge hold</th><td><code translate="no">openprogram/state/worktree/manager.py</code>, <code translate="no">runtime/jobs/execution_hooks.py</code></td></tr>
 <tr><th scope="row">Permission intersection, question route</th><td><code translate="no">openprogram/runtime/permissions/delegation.py</code>, <code translate="no">lifecycle.py</code> (<code translate="no">spawn_question_route</code>), <code translate="no">runtime/jobs/input.py</code></td></tr>
 <tr><th scope="row">Stored hand-offs</th><td><code translate="no">openprogram/runtime/conversation/always_on/handoff_migration.py</code></td></tr>
-<tr><th scope="row">Result shape</th><td><code translate="no">openprogram/runtime/jobs/agent_result.py</code>, <code translate="no">notices.py</code></td></tr>
+<tr><th scope="row">Result shape, relays, roster facts</th><td><code translate="no">openprogram/runtime/jobs/agent_result.py</code>, <code translate="no">notices.py</code>, <code translate="no">agent_status.py</code></td></tr>
 <tr><th scope="row">Spend, stall, hard stop</th><td><code translate="no">openprogram/runtime/jobs/delegation_watch.py</code>, <code translate="no">runner/progress.py</code></td></tr>
 <tr><th scope="row">Inbox</th><td><code translate="no">openprogram/runtime/conversation/inbox.py</code></td></tr>
 </tbody>
@@ -304,15 +324,10 @@ usage: 2 min 10 s · 18 tool calls · 41.2k tokens · $0.084
 <table class="stack fixed">
 <thead><tr><th scope="col">Area</th><th scope="col">Remaining</th></tr></thead>
 <tbody>
-<tr><th scope="row">Questions across conversations</th><td>A foreground helper forked into another conversation (<code translate="no">start_from="SID:MSG"</code>) is refused instead of asking: its card would belong to a conversation the person is not reading</td></tr>
-<tr><th scope="row">Named cards</th><td>The screen and terminal approval cards draw their own layout and do not show the helper's name yet</td></tr>
-<tr><th scope="row">Mid-turn delivery</th><td>A message waits for the turn to end; steering a running helper needs a non-user actor on the execution command path</td></tr>
-<tr><th scope="row">Stored hand-off code</th><td>The old replay still finishes turns that were running when the Worker stopped; it goes once none are left</td></tr>
-<tr><th scope="row">Explorer model</th><td>Explorer runs on the default model; a utility tier is not chosen for it</td></tr>
-<tr><th scope="row">Hourly send window</th><td>Kept in Worker memory; a restart starts a new hour</td></tr>
-<tr><th scope="row">Message cycles</th><td>A→B→A is bounded by hops, not refused when it forms</td></tr>
-<tr><th scope="row">Passed-on replies</th><td>When B passes A's message to C, A gets the answer of B's own turn; the stored hand-off chains held A's reply until C had answered B, and messages do not yet</td></tr>
-<tr><th scope="row">Settings UI</th><td>The Agent's <code translate="no">delegation</code>, <code translate="no">isolation</code> and <code translate="no">permissions</code> and the new limits have no controls in the App yet; <code translate="no">PATCH /api/agents/{id}</code> sets them</td></tr>
+<tr><th scope="row">Subtree reach</th><td>Usage follows helpers in the conversations the tree runs in; a helper forked into a conversation none of them runs in is not counted</td></tr>
+<tr><th scope="row">Settings UI</th><td>The Agent's <code translate="no">permissions</code> and the limits have no controls in the App yet; <code translate="no">PATCH /api/agents/{id}</code> and the settings file set them</td></tr>
+<tr><th scope="row">Queued-message row</th><td>A message that waits because its target is busy is told to the sending agent in the tool result only; the transcript has no row for it</td></tr>
 <tr><th scope="row">History visibility</th><td><code translate="no">read_conversation</code> reads the local store with no per-Agent owner check</td></tr>
+<tr><th scope="row">Built on demand</th><td>A request limit per provider in place of the fixed pool of 4, and an <code translate="no">output_schema</code> on <code translate="no">agent</code> for programs, are not built</td></tr>
 </tbody>
 </table>

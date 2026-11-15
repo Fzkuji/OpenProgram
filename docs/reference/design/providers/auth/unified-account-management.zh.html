@@ -43,7 +43,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">界面</th><th scope="col">组件</th></tr></thead>
 <tbody>
-<tr><th scope="row">网页</th><td>所有供应商共用 <code translate="no">account-manager.tsx</code>。后端只在怎么添加、身份长什么样上不同。</td></tr>
+<tr><th scope="row">网页</th><td>所有供应商共用一个密钥面板（<code translate="no">detail/keys-panel.tsx</code>）。后端只在怎么添加、身份长什么样上不同。</td></tr>
 <tr><th scope="row">TUI</th><td><code translate="no">providerAccounts.tsx</code>、<code translate="no">providerLoginFlow.tsx</code>，基于 <code translate="no">/login/*</code>；<code translate="no">/login &lt;provider&gt;</code> 对任何供应商可用</td></tr>
 <tr><th scope="row">CLI</th><td><code translate="no">providers use &lt;provider&gt; [profile]</code>；<code translate="no">providers list</code> 里的 <code translate="no">← active</code></td></tr>
 </tbody>

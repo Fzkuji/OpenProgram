@@ -10,6 +10,8 @@ import sys
 
 import pytest
 
+from openprogram.operations.project_site import SITE_HOST
+
 
 ROOT = Path(__file__).resolve().parents[3]
 NATIVE_WINDOWS = pytest.mark.skipif(sys.platform != "win32", reason="native Windows launchers")
@@ -104,7 +106,7 @@ def test_windows_downloads_resume_check_disk_and_name_the_proxy() -> None:
 )
 def test_windows_error_links_use_the_github_docs(relative: str) -> None:
     source = _read(relative)
-    assert "openprogram.io/docs" not in source
+    assert f"{SITE_HOST}/" not in source
     assert "github.com/FuzzyKuji/OpenProgram/blob/main/docs/install/install.html" in source
 
 
@@ -130,7 +132,7 @@ def test_windows_bootstrap_leaves_nothing_behind_in_the_persons_window() -> None
 def test_windows_seed_base_moves_into_the_store_only_when_complete() -> None:
     source = _read("scripts/release/install-release.ps1")
     install = source[source.index("function Install-SeedBase") : source.index("function Install-FromSeed")]
-    assert install.index('-xzf $Archive -C $BaseWork') < install.index("[IO.Directory]::Move($Unpacked, $Destination)")
+    assert install.index("Expand-TarArchive $Archive $BaseWork") < install.index("[IO.Directory]::Move($Unpacked, $Destination)")
     assert "-C $Store" not in source[source.index("function Install-FromSeed") :]
 
 
@@ -334,3 +336,142 @@ def test_package_architecture_selection(tmp_path: Path, native: str, build: int,
     )
     assert result.returncode == 0, (result.stdout, result.stderr)
     assert result.stdout.strip() == expected
+
+
+# Every batch launcher reads its paths only after this, in the same words.
+CMD_PREAMBLE = [
+    "@echo off",
+    "setlocal DisableDelayedExpansion",
+    'set "_OPENPROGRAM_CODEPAGE=%_OPENPROGRAM_CALLER_CODEPAGE%"',
+    'set "_OPENPROGRAM_CALLER_CODEPAGE="',
+    'if not defined _OPENPROGRAM_CODEPAGE for /f "tokens=2 delims=:." %%P in (\'chcp\') do set "_OPENPROGRAM_CODEPAGE=%%P"',
+    "chcp 65001 >nul",
+]
+
+
+def _code_lines(text: str) -> list[str]:
+    return [line.strip() for line in text.replace("\r\n", "\n").splitlines()
+            if line.strip() and line.strip().lower().split(" ", 1)[0] != "rem"]
+
+
+def test_every_batch_launcher_switches_the_code_page_before_it_reads_a_path() -> None:
+    installer = _read("scripts/release/install-release.ps1").replace("\r\n", "\n")
+    writer = installer[installer.index("function Write-CmdLauncher") : installer.index("function Get-Sha256")]
+    written = re.findall(r"^        (?:'(.*)'|\"(.*)\"),?$", writer[: writer.index("if ($HandOffTo)")], re.M)
+    assert [single.replace("''", "'") or double for single, double in written] == CMD_PREAMBLE
+    # The installer writes a .cmd only through it: the launcher on PATH and the
+    # runtime's launcher both, and no other line switches a code page.
+    assert installer.count("Write-CmdLauncher ") == 1 + 2  # the definition and its two callers
+    assert 'Write-CmdLauncher (Join-Path $Bin "openprogram.cmd") -HandOffTo' in installer
+    assert "Write-CmdLauncher $CmdTemporary -Run" in installer
+    assert installer.count("chcp") == writer.count("chcp")
+    assert installer.count("Write-Utf8NoBom ") == 1 + writer.count("Write-Utf8NoBom ")
+    # The launcher it hands over to is the store's, which restores the caller's code page.
+    assert "call " not in writer
+    store = _code_lines(_read("scripts/release/bootstrap/bin-openprogram.cmd"))
+    assert store[: len(CMD_PREAMBLE)] == CMD_PREAMBLE
+    assert store[-2:] == ["chcp %_OPENPROGRAM_CODEPAGE% >nul", "exit /b %_OPENPROGRAM_EXIT%"]
+    source = _code_lines(_read("scripts/install.ps1"))
+    start = source.index("@echo off")
+    assert source[start : start + len(CMD_PREAMBLE)] == CMD_PREAMBLE
+
+
+@pytest.fixture
+def seed_store(tmp_path: Path) -> tuple[Path, Path]:
+    """A version store under a folder no legacy code page can spell, as a seed install leaves it."""
+    store = tmp_path / "José 李 50% ^&!" / ".openprogram" / "runtime"
+    venv = store / "versions" / "9.9.9" / "venv"
+    subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(venv)],
+                   check=True, capture_output=True, timeout=60)
+    package = venv / "Lib" / "site-packages" / "openprogram"
+    package.mkdir()
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "__main__.py").write_text(
+        "import json, os, sys\n"
+        "print(json.dumps({'args': sys.argv[1:], 'python': sys.executable,"
+        " 'handed': os.environ.get('_OPENPROGRAM_CALLER_CODEPAGE')}))\n"
+        "raise SystemExit(17)\n",
+        encoding="utf-8",
+    )
+    (store / "current").write_text("version=9.9.9\nbase=none\n", encoding="ascii")
+    (store / "bin").mkdir()
+    sys.path.insert(0, str(ROOT / "scripts" / "release" / "bootstrap"))
+    try:
+        from install_seed import write_batch_file
+    finally:
+        sys.path.pop(0)
+    write_batch_file(ROOT / "scripts/release/bootstrap/bin-openprogram.cmd", store / "bin" / "openprogram.cmd")
+    return store, venv / "Scripts" / "python.exe"
+
+
+def _publish_store_launcher(tmp_path: Path, store: Path, bin_dir: Path) -> Path:
+    source = _read("scripts/release/install-release.ps1")
+    functions = source[source.index("function Write-Utf8NoBom") : source.index("$Version =")]
+    start = source.index("function Publish-StoreLauncher")
+    publish = source[start : source.index("# An existing store updates", start)]
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    driver = tmp_path / "publish.ps1"
+    driver.write_text(
+        "$ErrorActionPreference='Stop'\n$env:OPENPROGRAM_BIN_DIR='set'\n" + functions + "\n" + publish
+        + f"\nPublish-StoreLauncher {_ps(store)} {_ps(bin_dir)}\n",
+        encoding="utf-8-sig",
+    )
+    result = subprocess.run(
+        [shutil.which("powershell.exe"), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+         "-File", str(driver)],
+        capture_output=True, timeout=30, creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    return bin_dir / "openprogram.cmd"
+
+
+@NATIVE_WINDOWS
+@pytest.mark.parametrize("codepage", [437, 936, 65001])
+def test_the_launcher_on_path_reaches_a_store_under_a_unicode_profile(
+    tmp_path: Path, seed_store: tuple[Path, Path], codepage: int,
+) -> None:
+    store, python = seed_store
+    launcher = _publish_store_launcher(tmp_path, store, tmp_path / "bin")
+    wrapper = tmp_path / "invoke.cmd"
+    # The wrapper stays ASCII, as a person's own script in any code page; the
+    # non-ASCII argument reaches it through the environment.
+    wrapper.write_bytes(
+        (f'@echo off\r\nchcp {codepage}>nul\r\ncall "{launcher}" "argument with spaces" %OP_ARGUMENT%\r\n'
+         'set "LAUNCH_EXIT=%ERRORLEVEL%"\r\nchcp\r\nset _OPENPROGRAM\r\nexit /b %LAUNCH_EXIT%\r\n').encode("ascii")
+    )
+    result = subprocess.run(
+        ["cmd.exe", "/d", "/c", str(wrapper)], cwd=tmp_path,
+        env={**os.environ, "OP_ARGUMENT": "李é"},
+        capture_output=True, timeout=30, creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    assert result.returncode == 17, (result.stdout, result.stderr)
+    lines = result.stdout.splitlines()
+    data = json.loads(next(line for line in lines if line.startswith(b"{")))
+    assert data == {"args": ["argument with spaces", "李é"], "python": str(python), "handed": None}
+    # The caller gets its own code page back and none of the launcher's variables.
+    assert str(codepage).encode("ascii") in lines[-1]
+    assert b"not defined" in result.stderr
+
+
+@NATIVE_WINDOWS
+def test_the_launcher_on_path_passes_every_argument_unchanged_from_powershell(
+    tmp_path: Path, seed_store: tuple[Path, Path],
+) -> None:
+    store, python = seed_store
+    launcher = _publish_store_launcher(tmp_path, store, tmp_path / "启动 bin")
+    arguments = ["caret^inside quotes", "你好 é", "trailing\\", "amp&bang!"]
+    invocation_args = [*arguments[:3], '"' + arguments[3] + '"']
+    driver = tmp_path / "invoke.ps1"
+    driver.write_text(
+        "$ErrorActionPreference='Stop'\n"
+        f"& {_ps(launcher)} " + " ".join(map(_ps, invocation_args)) + "\nexit $LASTEXITCODE\n",
+        encoding="utf-8-sig",
+    )
+    result = subprocess.run(
+        [shutil.which("powershell.exe"), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+         "-File", str(driver)],
+        cwd=tmp_path, capture_output=True, timeout=30, creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    assert result.returncode == 17, (result.stdout, result.stderr)
+    data = json.loads(result.stdout)
+    assert data == {"args": arguments, "python": str(python), "handed": None}

@@ -110,6 +110,9 @@ def test_web_auth_url_command_fails_without_an_active_server(monkeypatch, capsys
         "openprogram.operations.worker.lifecycle.read_worker_port",
         lambda: None,
     )
+    monkeypatch.setattr(
+        "openprogram.interfaces.cli.commands.web._port_in_use", lambda _port: False,
+    )
 
     assert _cmd_web_auth_url("http://127.0.0.1:18100") == 1
     captured = capsys.readouterr()
@@ -153,6 +156,8 @@ def test_web_start_that_never_binds_says_how_to_open_the_page_signed_in(monkeypa
     opened: list[str] = []
     monkeypatch.setattr(web, "_port_in_use", lambda _port: False)
     monkeypatch.setattr("openprogram.operations.worker.spawn_detached", lambda: 0)
+    # The worker names the port it settled on as it starts.
+    monkeypatch.setattr("openprogram.operations.worker.lifecycle.read_worker_port", lambda: 18100)
     waits: list[float] = []
     monkeypatch.setattr("openprogram.interfaces.cli.ink._wait_until_listening", lambda port, timeout: waits.append(timeout) or False)
     monkeypatch.setattr("openprogram.host._platform.environment.tui_worker_ready_timeout_seconds", lambda: 120.0)
@@ -162,7 +167,7 @@ def test_web_start_that_never_binds_says_how_to_open_the_page_signed_in(monkeypa
 
     assert opened == []
     out = capsys.readouterr().out
-    assert "still starting on port 18100" in out
+    assert "still starting" in out
     assert "Run `openprogram web` again" in out
     # As long as the TUI waits: a first Windows start runs under Defender's scan.
-    assert waits == [120.0]
+    assert len(waits) == 1 and 119.0 < waits[0] <= 120.0

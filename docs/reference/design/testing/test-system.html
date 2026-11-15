@@ -30,6 +30,9 @@
 <ul>
 <li>Repository contracts read only Git-tracked files, so clean checkouts and ones with ignored or nested repositories give identical results. Callers supply roots to generic scanners.</li>
 <li>Top-level <code translate="no">conftest.py</code> keeps only what prevents access to real user state; domain fixtures stay local. Temporary HOME has deterministic cleanup.</li>
+<li>Every test process, each xdist worker included, clears inherited <code translate="no">GIT_DIR</code>-style variables and installs an audit hook (<code translate="no">tests/support/host_guard.py</code>). It refuses a git command that would change the checkout the suite runs from, any write inside its <code translate="no">.git</code> or the real <code translate="no">~/.openprogram*</code>, and a Python child started with HOME unset or set to the real home.</li>
+<li>A refused test fails by name; a session-end check of <code translate="no">.git/config</code> and of worktrees registered from the run's HOME covers child processes.</li>
+<li>Product code never falls back to the process's working directory for a repository: a worktree is made only from a path the call passes, the turn's worktree, the conversation's project folder or the configured default folder.</li>
 <li>Concurrent results use Event, Condition or deadline-based waits.</li>
 <li>Tests do not replace global thread classes or create real threads or pools. Background resources in production modules are joined or closed at teardown.</li>
 </ul>

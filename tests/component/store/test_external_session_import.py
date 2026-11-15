@@ -333,3 +333,117 @@ def test_an_earlier_import_in_the_default_project_moves_when_imported_again(home
     assert store.get_session(first["session_id"])["project_id"] == project.id
     # A conversation already in a project stays there.
     assert _import(homes, store, tmp_path, paths=[path])[0]["moved"] is False
+
+
+def test_malformed_lines_are_skipped_not_fatal(homes, store, tmp_path):
+    cc = homes["claude-code"] / "projects" / "-work-repo" / "cc-1.jsonl"
+    cx = homes["codex"] / "sessions" / "2026" / "10" / "02" / "rollout-cx-1.jsonl"
+    for path in (cc, cx):
+        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+        lines.insert(2, "{not json\n")
+        lines.insert(4, "[1, 2]\n")
+        lines.append('{"type": "user", "message": ')  # a record still being written
+        path.write_bytes("".join(lines).encode("utf-8") + b"\xff\n")
+    assert [t.user_text for t in claude_code.parse(cc).turns] == ["Fix the parser", "Now add tests"]
+    assert [t.user_text for t in codex.parse(cx).turns] == ["Summarise the repo"]
+    assert sorted(r["status"] for r in _import(homes, store, tmp_path)) == ["created", "created"]
+
+
+def test_credentials_in_a_transcript_are_not_copied(homes, store, tmp_path):
+    key = "sk-ant-" + "a1B2" * 10
+    gh = "ghp_" + "Z9" * 20
+    (homes["claude-code"] / ".credentials.json").write_text(json.dumps({"token": key}))
+    (homes["codex"] / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": key}))
+    path = homes["claude-code"] / "projects" / "-work-repo" / "cc-9.jsonl"
+    _jsonl(path, [
+        _cc("u1", None, "user", f"use {key} for the key point of the token count", 1),
+        _cc("a1", "u1", "assistant", [{"type": "tool_use", "id": "t1", "name": "Bash",
+                                        "input": {"command": "cat .env", "api_key": "plain-value"}}], 2),
+        _cc("r1", "a1", "user", [{"type": "tool_result", "tool_use_id": "t1",
+                                   "content": f"GITHUB_TOKEN={gh}\nPASSWORD=hunter2hunter2"}], 3),
+        _cc("a2", "r1", "assistant", [{"type": "text", "text": f"Found {gh}."}], 4),
+    ])
+    row = _import(homes, store, tmp_path, paths=[path])[0]
+    dump = json.dumps(store.get_messages(row["session_id"])) + json.dumps(store.get_session(row["session_id"]))
+    # The listing's scan cache keeps a first message too.
+    dump += "".join(f.read_text() for f in (tmp_path / "ledger").glob("*.json"))
+    for secret in (key, gh, "plain-value", "hunter2hunter2"):
+        assert secret not in dump
+    assert "the key point of the token count" in dump  # prose about keys is untouched
+    assert _import(homes, store, tmp_path, paths=[path])[0]["status"] == "unchanged"
+
+
+def test_cli_dry_run_lists_pending_and_writes_nothing(homes, store, tmp_path, monkeypatch, capsys):
+    from openprogram.interfaces.cli.commands.sessions import _cmd_sessions_import
+    from openprogram.state.store.session import external_import as ext
+
+    _import(homes, store, tmp_path, agents=["codex"])
+    monkeypatch.setattr(ext, "list_candidates", lambda agents, since=None: service.list_candidates(
+        agents, since=since, homes=homes, store=store, ledger_root=tmp_path / "ledger"))
+    monkeypatch.setattr(ext, "plan_imports", lambda agents, paths=None: service.plan_imports(
+        agents, paths=paths, homes=homes, store=store, ledger_root=tmp_path / "ledger"))
+
+    def refuse(*a, **kw):
+        raise AssertionError("a dry run must not import")
+    monkeypatch.setattr(ext, "import_transcripts", refuse)
+    _cmd_sessions_import([], "all", None, False, True)
+    out = capsys.readouterr().out
+    assert "Would import 1 conversation(s)" in out
+    assert "create  Claude Code" in out and "Fix the parser" in out
+    assert "Repo summary" not in out  # already imported
+    assert len(store.list_sessions(limit=50)) == 1
+
+
+def test_a_turn_written_with_a_secret_is_rewritten_when_its_source_grows(homes, store, tmp_path, monkeypatch):
+    key = "sk-proj-" + "q7" * 15
+    path = homes["claude-code"] / "projects" / "-work-repo" / "cc-8.jsonl"
+    _jsonl(path, [
+        _cc("u1", None, "user", f"try {key}", 1),
+        _cc("a1", "u1", "assistant", [{"type": "text", "text": f"Using {key}."}], 2),
+    ])
+    monkeypatch.setattr(service, "remove_secrets", lambda session: session)
+    first = _import(homes, store, tmp_path, paths=[path])[0]
+    monkeypatch.undo()
+    # Unchanged, it is left alone; once the source grows, the turn it
+    # last imported is rewritten, in the same session.
+    assert _import(homes, store, tmp_path, paths=[path])[0]["status"] == "unchanged"
+    _jsonl(path, [
+        _cc("u1", None, "user", f"try {key}", 1),
+        _cc("a1", "u1", "assistant", [{"type": "text", "text": f"Using {key}."}], 2),
+        _cc("u2", "a1", "user", "thanks", 3),
+        _cc("a2", "u2", "assistant", [{"type": "text", "text": "Done."}], 4),
+    ])
+    again = _import(homes, store, tmp_path, paths=[path])[0]
+    assert again["session_id"] == first["session_id"] and again["status"] == "appended"
+    assert key not in json.dumps(store.get_messages(first["session_id"]))
+    assert len(store.list_sessions(limit=50)) == 1
+
+
+def test_dry_run_reports_a_rewound_source_as_a_new_conversation(homes, store, tmp_path):
+    path = homes["codex"] / "sessions" / "2026" / "10" / "02" / "rollout-cx-1.jsonl"
+    first = _import(homes, store, tmp_path, agents=["codex"])[0]
+    records = _codex_records()
+    records[3]["payload"]["content"][1]["text"] = "Summarise it differently"  # rewound
+    records.append({"type": "response_item", "timestamp": "2026-10-02T09:05:00Z",
+                    "payload": {"type": "message", "role": "assistant",
+                                "content": [{"type": "output_text", "text": "Again."}]}})
+    _jsonl(path, records)
+    ledger = (tmp_path / "ledger" / "external_sessions.json").read_text()
+    plan = service.plan_imports(["codex"], homes=homes, store=store, ledger_root=tmp_path / "ledger")
+    assert [p["status"] for p in plan] == ["created"]
+    assert (tmp_path / "ledger" / "external_sessions.json").read_text() == ledger
+    assert len(store.list_sessions(limit=50)) == 1
+    real = _import(homes, store, tmp_path, agents=["codex"])[0]
+    assert real["status"] == "created" and real["session_id"] != first["session_id"]
+
+
+def test_a_key_cut_by_the_title_limit_does_not_survive_in_the_title(homes, store, tmp_path):
+    key = "sk-ant-" + "k3" * 30
+    path = homes["claude-code"] / "projects" / "-work-repo" / "cc-7.jsonl"
+    _jsonl(path, [
+        _cc("u1", None, "user", "x" * 60 + " " + key, 1),
+        _cc("a1", "u1", "assistant", [{"type": "text", "text": "ok"}], 2),
+    ])
+    row = _import(homes, store, tmp_path, paths=[path])[0]
+    title = store.get_session(row["session_id"])["title"]
+    assert "sk-ant-k3" not in title and "k3k3" not in title

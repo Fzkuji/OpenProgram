@@ -85,6 +85,30 @@ try {
     `http://127.0.0.1:18100/settings/general#token=${token}`,
     "packaged desktop must bootstrap auth with its embedded Python",
   );
+
+  // A port another program or account holds: `web auth-url` exits 3 and
+  // names the holder. The App learns who it is and hands out no token; the
+  // next command is not asked, since it would answer about the same port.
+  const heldHelper = path.join(temp, "held-helper.js");
+  fs.writeFileSync(
+    heldHelper,
+    `process.stderr.write("port 18100 is in use by PID 4242: other.exe\\n");\nprocess.exit(3);\n`,
+  );
+  const neverHelper = path.join(temp, "never-helper.js");
+  fs.writeFileSync(neverHelper, `require("fs").writeFileSync(${JSON.stringify(path.join(temp, "asked"))}, "1");\n`);
+  const holders = [];
+  const held = resolveAuthenticatedStartUrl(
+    "http://127.0.0.1:18100/chat",
+    process.env,
+    [
+      { command: process.execPath, args: [heldHelper] },
+      { command: process.execPath, args: [neverHelper] },
+    ],
+    (holder) => holders.push(holder),
+  );
+  assert.equal(held, null, "a held port must never yield a token URL");
+  assert.deepEqual(holders, ["PID 4242: other.exe"]);
+  assert.equal(fs.existsSync(path.join(temp, "asked")), false);
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }

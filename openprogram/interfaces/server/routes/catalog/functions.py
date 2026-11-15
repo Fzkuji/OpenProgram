@@ -166,7 +166,8 @@ def register(app):
         """Run meta edit() on a function."""
         from openprogram.interfaces.server import server as _s
         session_id = (body or {}).get("session_id")
-        conv = _s._get_or_create_session(session_id)
+        from openprogram.state.store.session.conversation_work import run_for_conversation
+        conv = await run_for_conversation(session_id, _s._get_or_create_session, session_id)
         msg_id = uuid.uuid4().hex
 
         def _do_edit():
@@ -212,7 +213,8 @@ def register(app):
         if not body or "description" not in body:
             return JSONResponse(content={"error": "no description"}, status_code=400)
         session_id = body.get("session_id")
-        conv = _s._get_or_create_session(session_id)
+        from openprogram.state.store.session.conversation_work import run_for_conversation
+        conv = await run_for_conversation(session_id, _s._get_or_create_session, session_id)
         msg_id = uuid.uuid4().hex
 
         def _do_create():

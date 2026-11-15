@@ -197,6 +197,7 @@ class DispatchOperations:
                         owner_instance_id=self._instance_id,
                         excluded_sessions=blocked_sessions,
                         only_job_id=self._claim_only_job_id,
+                        store=self._self_update_store,
                     )
                 except Exception:
                     self._executor_slots.release()

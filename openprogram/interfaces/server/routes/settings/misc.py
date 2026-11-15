@@ -279,8 +279,10 @@ def register(app):
             db = default_db()
             info["database_ok"] = True
             info["has_visible_sessions"] = bool(db.list_sessions(limit=1))
-            info["message_count_24h"] = db.count_recent_nodes(
-                _time.time() - 24 * 3600
+            # Counting reads each conversation under its lock: off the loop.
+            from openprogram.state.store.session.conversation_work import run_for_conversation
+            info["message_count_24h"] = await run_for_conversation(
+                "diagnostics", db.count_recent_nodes, _time.time() - 24 * 3600,
             )
         except Exception as exc:  # noqa: BLE001
             info["database_ok"] = False

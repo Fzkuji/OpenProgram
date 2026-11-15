@@ -354,7 +354,7 @@ def check_in_prompt(config: dict, last_check_in: float | None, now: float, *,
             "If a finding needs real work, you may create a Goal for it with create_goal and plan it "
             "with the todo tools; it runs next under your normal permissions, without page scripts "
             "or destructive deletes. When another of the "
-            "user's conversations owns that kind of work, hand it over with handoff instead. "
+            "user's conversations owns that kind of work, send it there with send_message instead. "
             "A check-in cannot wait for approval: a call that needs one is refused, so propose it "
             "in a report of kind approval. Report what you started."
         )

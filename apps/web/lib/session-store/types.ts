@@ -4,6 +4,7 @@
 // import paths are unchanged.
 
 import type { RowKind, RowOrigin } from "../chat/transcript/wire-types.generated";
+import type { FailureCause } from "../models/provider-state";
 
 export type MessageStatus =
   | "pending"
@@ -90,6 +91,8 @@ export interface PendingDecision {
   /** approval-only: danger level for card highlighting. */
   risk_level?: "low" | "medium" | "high";
   allowedScopes?: string[];
+  /** The sub-agent that asks, when it is not the conversation's own agent. */
+  askedBy?: string;
   /** form-only: flat-object field schema (field name → {type, title,
    *  description, enum, default, …}). The answer is an object (field → value).
    *  See runtime.form / docs/design/runtime/user-input-requests.md Phase 4a. */
@@ -238,6 +241,9 @@ export interface ChatMsg {
   /** What started a runtime turn: "restart" for the turn that carries on
    *  work a worker restart cut off (turn_runtime/prep.py). */
   trigger?: "restart";
+  /** User rows: the message that set a Goal (``/goal <objective>``); the
+   *  bubble labels it Goal. Its content is the objective alone. */
+  startsGoal?: boolean;
   /** On a reply a restart cut off: the reply that continues it, which
    *  draws both (lib/chat/transcript/restart-continuation.ts). */
   continuedBy?: string;
@@ -289,6 +295,10 @@ export interface ChatMsg {
   errorReason?: string;
   errorRetryable?: boolean;
   errorRetryAfterS?: number;
+  /** Which limit or refusal stopped the reply (`errors.failure_cause`):
+   *  a spent quota names its provider, limit, reset and the key's other
+   *  limits, and draws the spent-quota card. */
+  errorCause?: FailureCause | null;
   /** Stream position (`seq` of the reply's stream events) this row's
    *  content reflects; later events apply on top, earlier ones are dropped. */
   streamSeq?: number;
@@ -355,6 +365,20 @@ export interface ChatMsg {
     /** Canonical execution identity and optimistic-concurrency version. */
     execution_id?: string;
     status_version?: number;
+    /** What the finished agent used, with the agents it started: seconds,
+     *  tool calls, tokens and cost in USD (null when a price is unknown). */
+    usage?: {
+      duration_s?: number | null;
+      tool_calls?: number | null;
+      tokens?: number | null;
+      cost_usd?: string | null;
+    };
+    /** How the agent ended, in the result block's words, and why a limit
+     *  or the person stopped it. */
+    result_status?: "completed" | "failed" | "stopped" | "stalled";
+    result_reason?: string;
+    /** What an agent with its own worktree changed there. */
+    files?: { count: number; branch?: string; dirty?: boolean };
   };
   /** Which agent produced this turn. Same-session multi-agent: a
    *  conversation can have N agents writing branches in the same

@@ -101,7 +101,7 @@
 <tr><th scope="row">Tier lacks the capability</th><td><code translate="no">isError: true</code>, names the capability</td><td>Tool exists but is unavailable here</td></tr>
 <tr><th scope="row">Approval denied or unavailable</th><td><code translate="no">isError: true</code>, fixed gate reason</td><td>No owner present; no tool details passed through</td></tr>
 <tr><th scope="row">Tool ran and failed</th><td><code translate="no">isError: true</code>, fixed sanitized body and reason code</td><td>No exceptions, traces or tool-reported reasons cross the boundary</td></tr>
-<tr><th scope="row">SDK cancels an in-flight request</th><td><code translate="no">ErrorData(code=0, message="Request cancelled", data=None)</code>, no tool result</td><td>The SDK owns the response; OpenProgram stops, cleans up, audits</td></tr>
+<tr><th scope="row">SDK cancels an in-flight request</th><td><code translate="no">ErrorData(code=0, message="Request cancelled", data=None)</code>, no tool result</td><td>The SDK owns the response and may send it first; the handler, in a shielded cancel scope, returns only after the turn is stopped, the request cleared and the audit written</td></tr>
 <tr><th scope="row"><code translate="no">prompt_cancel</code></th><td>Active turn on the same connection: <code translate="no">cancelled=true</code>; foreign or finished: false</td><td>A wrapper, not the SDK notification</td></tr>
 </tbody>
 </table>

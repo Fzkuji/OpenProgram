@@ -73,8 +73,11 @@ export const JSON_ATTACHED_MENTION =
 // JSON string; the two bare lines are the empty and truncated notes.
 const FOLDER_LISTING =
   /\n?First-level directory listing for "(?:\\.|[^"\\])*":(?:\n(?:"(?:\\.|[^"\\])*"|\(empty folder\)|… \(first level truncated\)))+/g;
+// The server's own lexicon (``state/attachments.py``), name class included:
+// a reply's markers are checked there, so nothing it would not match may
+// turn into a card here.
 const LEGACY_ATTACHED_MENTION =
-  /\[attach(?:ed|ment):\s*([^()]+?)\s*\(([^,)]+),\s*([\d.]+)\s*KB(?:,\s*([^)]+))?\)(?:\s*@(?!json\s)\s*([^\]]+))?\]/g;
+  /\[attach(?:ed|ment):\s*([^()\[\]]+?)\s*\(([^,)]+),\s*([\d.]+)\s*KB(?:,\s*([^)]+))?\)(?:\s*@(?!json\s)\s*([^\]]+))?\]/g;
 
 export function extractAttachmentMentions(content: string, includeRaw = false): {
   mentions: ExtractedAttachmentMention[];

@@ -137,7 +137,14 @@ def _pick_account(provider_id: str, pools: list, strategy: str):
 def classify_failure(status: Optional[int], error_text: str = "") -> str:
     """Map an HTTP status (or, lacking one, the error text) to a
     :func:`pool.mark_failure` reason. Conservative: an unknown error becomes a
-    short ``server_error`` cooldown, never a permanent disable."""
+    short ``server_error`` cooldown, never a permanent disable.
+
+    The body decides before the status code: a 401/403 (or 429) whose body
+    says the balance is spent is ``billing_blocked`` — the fix is topping
+    up, not signing in again."""
+    from openprogram.models.providers.utils.errors import is_billing_exhausted
+    if (status is None or 400 <= status < 500) and is_billing_exhausted(error_text):
+        return "billing_blocked"
     if status == 429:
         return "rate_limit"
     if status == 402:

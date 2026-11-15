@@ -9,6 +9,7 @@ import json
 import math
 import time
 import uuid
+from contextlib import ExitStack, contextmanager
 from dataclasses import asdict
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 
@@ -84,12 +85,99 @@ def _reserve(conn, goal, sid, model, options, provider_context, provider):
     return dict(asdict(plan), expires_at=time.time() + 300)
 
 
-def _record_denial(sid, goal, exc):
+# A Goal write of a request's check is redone this often when it meets a
+# Goal newer than the one it read. With the lock held nothing else writes;
+# after the wait for the lock ran out (``_goal_gate``) a writer can.
+GOAL_WRITE_TRIES = 5
+
+_IDENTITY = ("goal_id", "revision", "run_id")
+
+
+def _permits_requests(goal, identity) -> bool:
+    """Whether ``goal`` is the active Goal a request with ``identity`` belongs to."""
+    return bool(goal and all(goal.get(key) == identity[key] for key in _IDENTITY)
+                and goal.get("status") == "active" and not goal.get("stop_requested"))
+
+
+def _admitted_goal(sid, identity, moment):
+    """The Goal this request may spend from, read fresh; a refusal otherwise.
+
+    A Goal that still counts usage the old way is converted here. That write
+    is a compare-and-set on the Goal's version: when it meets a newer Goal
+    the whole step (read, check, convert, write) is done again, as
+    ``chat.turn_step`` redoes a running turn's step.
+    """
     from openprogram.models.usage import goal_port as goals
+    for attempt in range(GOAL_WRITE_TRIES):
+        goal = goals.load_goal(sid)
+        if not goal or any(goal.get(key) != identity[key] for key in _IDENTITY):
+            raise goals.GoalConflictError(f"Goal changed before provider {moment}")
+        if goal.get("status") != "active" or goal.get("stop_requested"):
+            raise goals.GoalConflictError("Goal no longer permits provider requests")
+        if goal.get("usage_mode") == "requests":
+            return goal
+        # Retain historical totals without assigning old receipts to a revision.
+        goals.accumulate_goal_usage(sid, goal)
+        if goal.get("usage_pending_until") is not None:
+            raise goals.GoalStateUnavailable("Legacy Goal usage is unavailable")
+        goal["legacy_usage"] = dict(goal.get("usage") or {})
+        goal["usage_mode"] = "requests"
+        try:
+            goals.publish(sid, goal)
+        except goals.GoalVersionConflict:
+            if attempt == GOAL_WRITE_TRIES - 1:
+                raise
+            time.sleep(0.01)
+            continue
+        return goal
+
+
+def _record_denial(sid, goal, exc):
+    """Stop the Goal a request was refused for; the refusal itself is the
+    caller's to raise.
+
+    The write is redone on a Goal newer than the one read, as long as that
+    Goal is still the active one the request belongs to: a Goal someone
+    paused, edited or ended meanwhile is left as they set it.
+    """
+    from openprogram.models.usage import goal_port as goals
+    identity = {key: goal.get(key) for key in _IDENTITY}
     exhausted = exc.reason_code in {"quota.cost_exhausted", "quota.token_exhausted"}
-    goal.update(status="budget_exhausted" if exhausted else "paused_recoverable",
-                phase="terminal" if exhausted else "paused", last_reason=exc.reason_code)
-    goals.publish(sid, goal)
+    for attempt in range(GOAL_WRITE_TRIES):
+        goal.update(status="budget_exhausted" if exhausted else "paused_recoverable",
+                    phase="terminal" if exhausted else "paused", last_reason=exc.reason_code)
+        try:
+            goals.publish(sid, goal)
+            return
+        except goals.GoalVersionConflict:
+            if attempt == GOAL_WRITE_TRIES - 1:
+                # The request is refused all the same; the turn's end closes
+                # a Goal whose budget is spent.
+                _log.warning("Goal of %s kept changing; its refusal %s was not recorded", sid, exc.reason_code)
+                return
+            time.sleep(0.01)
+            goal = goals.load_goal(sid)
+            if not _permits_requests(goal, identity):
+                return
+
+
+@contextmanager
+def _goal_gate(sid):
+    """The Goal lock around a provider request's check.
+
+    Holders only read and write the Goal's state, so the wait is short. A
+    lock that stays held anyway does not fail the request: the check runs
+    without it, on a consistent read of the Goal and inside the ledger's own
+    transaction. What the lock adds is the order against a pause committing
+    at the same moment, and a paused Goal stops its execution itself.
+    """
+    from openprogram.models.usage import goal_port as goals
+    with ExitStack() as stack:
+        try:
+            stack.enter_context(goals.locked(sid))
+        except goals.GoalBusy:
+            _log.warning("Goal lock of %s stayed held; provider request checked without it", sid)
+        yield
 
 
 class RequestReceipt:
@@ -110,21 +198,9 @@ class RequestReceipt:
         sid = context.goal_session_id
         if not sid:
             raise goals.GoalStateUnavailable("Goal request has no owning session")
-        with goals.locked(sid):
-            goal = goals.load_goal(sid)
-            if (not goal or goal.get("goal_id") != context.goal_id
-                    or goal.get("revision") != context.goal_revision or goal.get("run_id") != context.goal_run_id):
-                raise goals.GoalConflictError("Goal changed before provider request")
-            if goal.get("status") != "active" or goal.get("stop_requested"):
-                raise goals.GoalConflictError("Goal no longer permits provider requests")
-            if goal.get("usage_mode") != "requests":
-                # Retain historical totals without assigning old receipts to a revision.
-                goals.accumulate_goal_usage(sid, goal)
-                if goal.get("usage_pending_until") is not None:
-                    raise goals.GoalStateUnavailable("Legacy Goal usage is unavailable")
-                goal["legacy_usage"] = dict(goal.get("usage") or {})
-                goal["usage_mode"] = "requests"
-                goals.publish(sid, goal)
+        with _goal_gate(sid):
+            goal = _admitted_goal(sid, {"goal_id": context.goal_id, "revision": context.goal_revision,
+                                        "run_id": context.goal_run_id}, "request")
             now = time.time()
             metadata = {"context": asdict(context), "created_at": now,
                         "provider": model.provider, "api": model.api, "model_id": model.id,
@@ -170,11 +246,10 @@ class RequestReceipt:
     def start(self):
         from openprogram.models.usage import goal_port as goals
         context = self.metadata["context"]
-        with goals.locked(context["goal_session_id"]):
+        with _goal_gate(context["goal_session_id"]):
             goal = goals.load_goal(context["goal_session_id"])
-            if (not goal or goal.get("status") != "active" or goal.get("stop_requested")
-                    or goal.get("goal_id") != context["goal_id"] or goal.get("revision") != context["goal_revision"]
-                    or goal.get("run_id") != context["goal_run_id"]):
+            if not _permits_requests(goal, {"goal_id": context["goal_id"], "revision": context["goal_revision"],
+                                            "run_id": context["goal_run_id"]}):
                 raise goals.GoalConflictError("Goal changed before provider dispatch")
             from openprogram.models.providers.streaming.budget import QuotaExceeded
             try:

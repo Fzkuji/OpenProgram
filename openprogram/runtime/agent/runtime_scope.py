@@ -24,11 +24,9 @@ class _LazyRuntime(QuestionsOperations):
                 model = (options or {}).get('model')
             if not model:
                 model = self._settings.get('model')
-            if model and ':' in model:
-                provider, model_id = model.split(':', 1)
-                runtime = create_runtime(provider=provider, model=model_id)
-            elif model and '/' in model:
-                provider, model_id = model.split('/', 1)
+            from openprogram.models.providers.catalog.models import split_model_ref
+            provider, model_id = split_model_ref(model)
+            if provider and model_id:
                 runtime = create_runtime(provider=provider, model=model_id)
             elif model:
                 runtime = create_runtime(model=model)

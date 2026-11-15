@@ -227,10 +227,11 @@ class Machine:
             raise refusal
         if self.served["dev"] != sha:
             raise dev_instance.NotServedError("only the commit the development instance serves can be promoted")
-        _git(self.repo, "branch", "-f", "stable", sha)
         if self.fail_refresh:
+            # A failed refresh leaves stable and the App where they were.
             self.fail_refresh = False
-            raise dev_instance.RefreshFailedError("the App refresh failed twice")
+            raise dev_instance.RefreshFailedError(f"{sha[:10]} was not promoted: refresh-local-app.sh failed")
+        _git(self.repo, "branch", "-f", "stable", sha)
         self.served["stable"] = sha
         return sha
 
@@ -557,7 +558,7 @@ def test_a_failed_refresh_never_reverts_a_commit_a_later_promotion_carries(machi
     def overtaken(sha, **_):
         machine.calls.append(("promote", sha))
         _git(machine.repo, "branch", "-f", "stable", later)
-        raise dev_instance.RefreshFailedError("the App refresh failed twice")
+        raise dev_instance.RefreshFailedError(f"{sha[:10]} was not promoted: refresh-local-app.sh failed")
 
     monkeypatch.setattr(dev_instance, "promote", overtaken)
     tip = machine.dev_tip()

@@ -54,6 +54,12 @@ import { operationStatusText } from "@/lib/chat/run/run-operation";
 
 const JUMP_LATEST_FADE_MS = 280;
 
+/** The view a chat pane draws: its conversation, else the New chat's own
+ *  provisional key, which holds the sent first message until chat_ack. */
+export function transcriptViewKey(sessionId: string | null, chatKey: string | null): string | null {
+  return sessionId ?? (chatKey && chatKey !== "__new__" ? chatKey : null);
+}
+
 export const MessageList = memo(function MessageList({
   paintRows = true,
 }: {
@@ -62,14 +68,19 @@ export const MessageList = memo(function MessageList({
   const { text } = useTranslation();
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const chatKey = useSessionStore((s) => s.activeChatKey);
+  // The rows drawn: the conversation's, or a New chat's own before the
+  // server has acknowledged it. A first message is shown the moment it is
+  // sent; until its chat_ack the draft has no conversation id, and a slow
+  // acknowledgement must not leave the page blank while the turn runs.
+  const viewKey = transcriptViewKey(sessionId, chatKey);
   useHistoryWindow(sessionId, paintRows);
-  const ids = useMessageIds(sessionId);
+  const ids = useMessageIds(viewKey);
   useOriginalsToggle();
-  const { shown: botView, markerRef: viewMarker, labelledRows } = useBotViewTransition(sessionId, useBotView(sessionId));
-  const heldRows = selectViewRows(sessionId)(useSessionStore.getState());
+  const { shown: botView, markerRef: viewMarker, labelledRows } = useBotViewTransition(viewKey, useBotView(viewKey));
+  const heldRows = selectViewRows(viewKey)(useSessionStore.getState());
   const { covered: coveredSet, hidden: hiddenCovered } = coveringOf(ids, heldRows, botView);
   const runningTask = useSessionStore((s) =>
-    sessionId ? s.runningTasks[sessionId] ?? null : null,
+    viewKey ? s.runningTasks[viewKey] ?? null : null,
   );
   // Pin to #chatView (column, not the scroller). Portal into #chatArea
   // puts absolute-bottom on the scroll content, so the button is off
@@ -84,7 +95,7 @@ export const MessageList = memo(function MessageList({
   const lastId = ids.length ? ids[ids.length - 1] : null;
   const pendingAnchor = runtimeState._pendingExpandAttach?.anchor;
   const lastRole = useSessionStore((s) =>
-    !selectRow(sessionId, lastId)(s)?.steeringReplyId ? (selectRow(sessionId, lastId)(s)?.role ?? null) : null,
+    !selectRow(viewKey, lastId)(s)?.steeringReplyId ? (selectRow(viewKey, lastId)(s)?.role ?? null) : null,
   );
   const loadingId = useSessionStore((s) => s.transcriptLoadingId);
   const readStatus = useSessionStore(s => sessionId ? s.transcriptReadStatus[sessionId] : undefined);
@@ -244,9 +255,9 @@ export const MessageList = memo(function MessageList({
   // compaction) is named in the indicator's place.
   const operationText = operationStatusText(runningTask, text);
   const timeLabels = useMemo(() => timeBreaks(ids.flatMap((id) => {
-    const message = selectRow(sessionId, id)(useSessionStore.getState());
+    const message = selectRow(viewKey, id)(useSessionStore.getState());
     return message ? [message] : [];
-  })), [ids, sessionId]);
+  })), [ids, viewKey]);
   labelledRows.current = timeLabels;
   const botContext = useMemo(() => botView ? { breaks: timeLabels } : null, [botView, timeLabels]);
   const placedDecisionAnchors = usePlacedDecisions(sessionId, ids);
@@ -272,7 +283,7 @@ export const MessageList = memo(function MessageList({
       {paintRows ? (
         <TranscriptRows
           sessionId={sessionId}
-          viewKey={sessionId}
+          viewKey={viewKey}
           ids={ids}
           chatKey={chatKey}
           liveRows={liveSet}

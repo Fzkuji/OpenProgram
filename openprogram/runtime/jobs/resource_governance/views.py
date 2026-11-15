@@ -202,6 +202,16 @@ def build_job_resource_view(
                 }
                 if legacy else _shared_remaining(ledger, job.id)
             ),
+            # This Job and every helper it started (Activity's cost column).
+            "subtree": _subtree(job, ledger),
         },
     )
+
+
+def _subtree(job: Job, ledger: UsageLedger) -> dict[str, Any]:
+    try:
+        from openprogram.runtime.jobs.agent_status import subtree_usage
+        return subtree_usage(job, ledger=ledger)
+    except Exception:  # noqa: BLE001 - the view stands without it
+        return {"tokens": None, "cost_usd": None}
 

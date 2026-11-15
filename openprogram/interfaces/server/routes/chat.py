@@ -69,25 +69,34 @@ def register(app):
                 content={"error": "session_id and msg_id required"}, status_code=400,
             )
 
-        from openprogram.runtime.context.session_db import default_db
-        db = default_db()
-        if not db.message_exists(session_id, pivot_id):
+        from openprogram.state.store.session.conversation_work import run_for_conversation
+
+        def move_head() -> bool:
+            # Under the conversation's lock: runs in its lane, off the loop.
+            from openprogram.runtime.context.session_db import default_db
+            db = default_db()
+            if not db.message_exists(session_id, pivot_id):
+                return False
+            db.set_head(session_id, pivot_id)
+            with _s._sessions_lock:
+                conv = _s._sessions.get(session_id)
+                if conv is not None:
+                    conv["head_id"] = pivot_id
+                    try:
+                        conv["messages"] = db.get_branch(session_id) or []
+                    except Exception:
+                        # The head move already landed in the DB; a failed reload
+                        # leaves the cached transcript on the old branch until the
+                        # next load.
+                        _log.warning(
+                            "transcript not reloaded after checkout for session %s",
+                            session_id, exc_info=True)
+            _s._invalidate_messages(session_id)
+            _s._save_session(session_id)
+            return True
+
+        if not await run_for_conversation(session_id, move_head):
             return JSONResponse(content={"error": "unknown msg"}, status_code=404)
-        db.set_head(session_id, pivot_id)
-        with _s._sessions_lock:
-            conv = _s._sessions.get(session_id)
-            if conv is not None:
-                conv["head_id"] = pivot_id
-                try:
-                    conv["messages"] = db.get_branch(session_id) or []
-                except Exception:
-                    # The head move already landed in the DB; a failed reload
-                    # leaves the cached transcript on the old branch until the
-                    # next load.
-                    _log.warning(
-                        "transcript not reloaded after checkout for session %s", session_id, exc_info=True)
-        _s._invalidate_messages(session_id)
-        _s._save_session(session_id)
         return JSONResponse(content={
             "session_id": session_id,
             "head_id": pivot_id,
@@ -111,8 +120,14 @@ def register(app):
             return JSONResponse(
                 content={"error": "session_id required"}, status_code=400,
             )
-        was_archived = bool((default_db().get_session(session_id) or {}).get("archived"))
-        if not default_db().set_archived(session_id, archived):
+        # Both take the conversation's lock: off the event loop, in its lane.
+        from openprogram.state.store.session.conversation_work import run_for_conversation
+
+        was_archived = await run_for_conversation(
+            session_id,
+            lambda: bool((default_db().get_session(session_id) or {}).get("archived")))
+        if not await run_for_conversation(session_id, default_db().set_archived,
+                                          session_id, archived):
             return JSONResponse(content={"error": "unknown session"}, status_code=404)
         if archived != was_archived:
             from openprogram.runtime.conversation.always_on.runtime import archive_changed
@@ -228,7 +243,11 @@ def register(app):
             from openprogram.runtime.context.session_db import default_db
             from openprogram.interfaces.server.ws_actions.chat import _call_predecessor
             try:
-                nodes = default_db().get_nodes(session_id)
+                # Read under the conversation's lock: off the event loop.
+                from openprogram.state.store.session.conversation_work import (
+                    run_for_conversation,
+                )
+                nodes = await run_for_conversation(session_id, default_db().get_nodes, session_id)
             except Exception:
                 nodes = []
             node = next((n for n in nodes if n.id == fork_of), None)
@@ -274,7 +293,11 @@ def register(app):
         request_id = client_request_id_of(body)
         if request_id:
             dispatch_options["client_request_id"] = request_id
-        result = run_agent_method_call(
+        # Session creation, the run slot and the call's records all take the
+        # conversation's lock (the slot waits up to the store's budget):
+        # off the event loop, so a held conversation delays this call only.
+        result = await asyncio.to_thread(
+            run_agent_method_call,
             name,
             kwargs,
             session_id,

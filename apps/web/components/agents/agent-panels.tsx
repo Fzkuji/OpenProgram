@@ -6,13 +6,15 @@ import { jsonFetch } from "@/lib/net/fetch-client";
 import { SimpleSelect } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { HoverTip } from "@/components/ui/tooltip";
 import { SettingsRow, SettingsSection } from "@/components/settings/settings-ui";
 import { AvatarPicker, type AvatarConfig, type AvatarSource } from "@/components/avatar";
 import { AGENT_AVATAR_UPLOAD_MAX_BYTES, agentAvatarConfig } from "@/lib/agents/agent-avatar";
 import { AgentButton } from "./agent-controls";
 import { Button } from "@/components/ui/button";
 import { ModelPicker, type ModelCatalog } from "./model-picker";
-import type { Agent, MemorySpace, Text } from "./agent-types";
+import { delegationOn, type Agent, type MemorySpace, type Text } from "./agent-types";
 import styles from "./agents-page.module.css";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -28,6 +30,9 @@ export function OverviewPanel({ draft, update, text, catalog, dirty }: Props & {
       <SettingsRow label={text("Display name", "显示名称")} htmlFor="agent-name"><Input id="agent-name" className="w-64" value={draft.name} maxLength={80} onChange={(event) => update({ name: event.target.value })} /></SettingsRow>
       <SettingsRow label={text("Agent ID", "Agent ID")} description={text("Used by channels and the CLI; it cannot change.", "供频道与命令行使用，不可修改。")} htmlFor="agent-id"><Input id="agent-id" className="w-64 font-mono" value={draft.id} disabled /></SettingsRow>
       <SettingsRow stacked label={text("Description", "描述")} htmlFor="agent-description"><Textarea id="agent-description" className={styles.descriptionField} rows={2} value={draft.description} maxLength={2000} onChange={(event) => update({ description: event.target.value })} placeholder={text("When to use this Agent", "说明何时使用此 Agent")} /></SettingsRow>
+      <SettingsRow label={text("Other agents can use it", "其他 Agent 可以调用")} htmlFor="agent-delegation">
+        <HoverTip label={text("Listed to other agents with its description.", "连同描述一起列给其他 Agent。")}><span className="inline-flex"><Switch id="agent-delegation" checked={delegationOn(draft)} onCheckedChange={(on) => update({ delegation: on ? "on" : "off" })} /></span></HoverTip>
+      </SettingsRow>
       <SettingsRow stacked label={text("Avatar", "头像")} description={text("A character, a generated picture, or an image of your own.", "选一个角色、一张生成的图，或上传自己的图片。")}>
         <AvatarPicker value={agentAvatarConfig(draft)} onChange={(avatar: AvatarConfig) => update({ avatar })} name={draft.name || draft.id} seed={draft.id} sources={AGENT_AVATAR_SOURCES} uploadMaxBytes={AGENT_AVATAR_UPLOAD_MAX_BYTES} />
       </SettingsRow>
@@ -91,7 +96,12 @@ export function AdvancedPanel({ draft, update, text }: Props) {
     catch { setError(text("Unable to copy this path", "无法复制路径")); }
   }
   return <><Intro title={text("Advanced", "高级")}>{text("Channel identity, optional instructions and AGENTS.md.", "频道身份、可选指令与 AGENTS.md。")}</Intro>
-    <div className={`${styles.formGrid} grid grid-cols-[repeat(2,minmax(0,1fr))] gap-[15px]`}><label>{text("Channel identity", "频道身份")}<Input value={draft.identity.name} maxLength={80} onChange={(event) => update({ identity: { ...draft.identity, name: event.target.value } })} /></label><label>{text("Mention patterns", "提及规则")}<Input value={draft.identity.mention_patterns.join(", ")} onChange={(event) => update({ identity: { ...draft.identity, mention_patterns: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) } })} /><small>{text("Comma-separated patterns.", "使用逗号分隔。")}</small></label></div>
+    <div className={`${styles.formGrid} mb-[15px] grid grid-cols-[repeat(2,minmax(0,1fr))] gap-[15px]`}><label>{text("Channel identity", "频道身份")}<Input value={draft.identity.name} maxLength={80} onChange={(event) => update({ identity: { ...draft.identity, name: event.target.value } })} /></label><label>{text("Mention patterns", "提及规则")}<Input value={draft.identity.mention_patterns.join(", ")} onChange={(event) => update({ identity: { ...draft.identity, mention_patterns: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) } })} /><small>{text("Comma-separated patterns.", "使用逗号分隔。")}</small></label>
+      <label htmlFor="agent-isolation">{text("When delegated", "被委派时")}<HoverTip label={text("Where it works when another agent starts it. Automatic: its own worktree for background work that edits files, otherwise the same folder.", "其他 Agent 启动它时在哪里工作。自动：后台且会改文件时用独立工作树，否则用同一文件夹。")}><span className="flex min-w-0"><SimpleSelect id="agent-isolation" label={text("When delegated", "被委派时")} className="w-full max-w-none" value={draft.isolation ?? ""} onValueChange={(isolation) => update({ isolation })} options={[
+        { value: "", label: text("Automatic", "自动") },
+        { value: "none", label: text("Same folder", "同一文件夹") },
+        { value: "worktree", label: text("Own worktree", "独立工作树") },
+      ]} /></span></HoverTip></label></div>
     <label className={styles.dialogField}>{text("System prompt", "系统指令")}<Textarea className={styles.instructionsField} rows={6} maxLength={100000} value={draft.system_prompt} onChange={(event) => update({ system_prompt: event.target.value })} /><small>{text("Optional. Leave empty to use instructions from the call and Context.", "可选。留空时使用调用处与 Context 提供的指令。")}</small></label>
     <section className={styles.workspaceSection}><h4>AGENTS.md</h4><p className={styles.note}>{text("Every Agent reads AGENTS.md: the global file, then each one from the project root down to the working directory. One in a subdirectory is read when the Agent opens a file there. Closer files win on a conflict.", "所有 Agent 都读 AGENTS.md：先全局文件，再从项目根到工作目录逐级读取；子目录里的在 Agent 打开那里的文件时读取。离得越近越优先。")}</p>{error ? <p role="alert" className={styles.inlineError}>{error} <Button type="button" variant="link" size="xs" onClick={() => setAttempt((value) => value + 1)}>{text("Retry", "重试")}</Button></p> : agentsMd ? <><p className={styles.workspacePath}>{text("Working directory: ", "工作目录：")}{agentsMd.working_dir}</p>{agentsMdFiles.map((file) => <div className={styles.workspaceFile} key={file.path}><span><FileTextIcon size={16} aria-hidden /></span><div><strong>{file.scope}</strong><small>{file.exists ? file.path : text(`Not created yet: ${file.path}`, `尚未创建：${file.path}`)}</small></div><AgentButton variant="ghost" size="sm" icon={CopyIcon} aria-label={text(`Copy ${file.path}`, `复制 ${file.path}`)} onClick={() => void copy(file.path)}>{copied === file.path ? text("Copied", "已复制") : text("Copy path", "复制路径")}</AgentButton></div>)}</> : <p role="status">{text("Loading AGENTS.md…", "正在加载 AGENTS.md…")}</p>}</section>
   </>;

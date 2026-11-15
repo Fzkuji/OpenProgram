@@ -146,7 +146,9 @@ def test_stop_interrupts_a_provider_that_is_mid_reply(edits, monkeypatch) -> Non
     monkeypatch.setattr(turns, "_run_loop_blocking", run_loop)
     channel = _stop_a_running_turn(started)
     assert channel.sent == ["✓ 已停止正在进行的任务。"]
-    assert edits == [_conversation.STOPPED_REPLY]
+    # The stopped reply keeps the text it had streamed; the chat app gets it,
+    # as the stored reply and CLI --print do.
+    assert edits == ["half"]
 
 
 def test_a_turn_that_fails_after_the_stop_does_not_read_as_an_error(edits, monkeypatch) -> None:

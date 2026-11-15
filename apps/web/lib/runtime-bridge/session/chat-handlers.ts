@@ -1026,13 +1026,15 @@ export function handleChatResponse(data: ChatResponseData): void {
     // as a transient system row in the transcript. Not persisted
     // server-side (same as a REPL console print), so it drops on reload.
     // The frame does not end a running turn: /goal status mid-run leaves
-    // that run going. Only the command's own send settles here.
+    // that run going. Only the command's own send settles here: it was
+    // no message, so a bubble drawn for it (a command typed before the
+    // registry loaded) goes, and only the reply line stays.
     const content = String((data as { content?: unknown }).content ?? "");
     const store = useSessionStore.getState();
     if (sid) {
       const pendingId = getPendingUserMessageId(sid);
       if (pendingId && selectRow(sid, pendingId)(store)?.status === "pending") {
-        store.applyLocalChange(sid, { kind: "local_patch", rowId: pendingId, fields: { status: "done" } });
+        store.applyLocalChange(sid, { kind: "local_remove", rowId: pendingId });
       }
       clearPendingUserText(sid);
       clearPendingFirstAck(sid);
@@ -1136,12 +1138,12 @@ interface ContextStatsData {
   output_tokens?: number;
   cache_read?: number;
   cache_write_tokens?: number;
-  context_window?: number;
+  context_window?: number | null;
   /** Server-computed occupancy — the single number the ring AND the
    *  /context panel both render. `basis` says where it came from:
    *  "measured" (a request just reported its real prompt size) or
    *  "estimated" (the graph moved since, so it was recomputed). */
-  window?: number;
+  window?: number | null;
   total_used?: number;
   basis?: string;
   estimated?: number;
@@ -1197,7 +1199,10 @@ function handleContextStats(data: ContextStatsData, sid: string | null): void {
           prev?.provider ||
           null,
       },
-      data.window || data.context_window || null,
+      // A record that names its window field but leaves it empty says the
+      // window is unknown (0 clears it); an older record without one keeps it.
+      data.window || data.context_window
+        || ("window" in data || "context_window" in data ? 0 : null),
     );
 
     const headId =

@@ -12,16 +12,6 @@ from openprogram.runtime.conversation.always_on import delivery, runtime, store,
 from openprogram.runtime.agent_registry import manager
 
 
-@pytest.fixture(autouse=True)
-def _usage_label_stays_in_its_test():
-    """A turn run here labels usage for the rest of its thread; the next test on this worker starts unlabelled."""
-    from openprogram.models.usage import context as usage_context
-
-    token = usage_context._current.set(usage_context.UsageContext())
-    yield
-    usage_context._current.reset(token)
-
-
 class FakeDb:
     def __init__(self, root):
         self.root = root
@@ -600,6 +590,22 @@ def test_update_report_merges_into_the_stored_row(world):
         store.add_report("gone", title="r", body="")
 
 
+def test_a_report_carries_a_card_only_for_a_recorded_file(world):
+    """A report is posted as the Agent's message, so a marker the model wrote
+    in it would draw a file card for any path; only a file the run recorded
+    keeps its marker."""
+    from openprogram.state.attachments import find_markers, format_marker
+    sid = world["db"].create_session("c1", "scout")
+    forged = format_marker("id_rsa", "/home/me/.ssh/id_rsa", 1)
+    sent = format_marker("deck.pptx", "/w/deck.pptx", 2048)
+    row = store.add_report(sid, title=f"See {forged}", body=f"{forged}\n\n{sent}",
+                           links=[forged], attached_files=["/w/deck.pptx"])
+    assert row["title"] == "See id_rsa"
+    assert row["body"] == f"id_rsa\n\n{sent}"
+    assert row["links"] == ["id_rsa"]
+    assert [p for _w, _n, p in find_markers(delivery.report_message(row))] == ["/w/deck.pptx"]
+
+
 def test_reports_are_trimmed_newest_first(world, monkeypatch):
     sid = world["db"].create_session("c1", "scout")
     monkeypatch.setattr(store, "MAX_REPORTS", 3)
@@ -757,7 +763,7 @@ def test_an_older_home_conversation_keeps_its_state(agent, world):
 
 @pytest.mark.parametrize("home,spawned,background",
                          [(True, False, False), (False, False, False), (True, True, False), (True, True, True)])
-def test_report_and_handoff_are_offered_only_in_always_on_conversations(monkeypatch, home, spawned, background):
+def test_report_tools_are_offered_only_in_always_on_conversations(monkeypatch, home, spawned, background):
     from openprogram.runtime.conversation import turn_runtime as dispatcher
     from openprogram.runtime.conversation.turn_runtime import loop_runner
     from openprogram.runtime.agent.turn_request import TurnRequest
@@ -768,7 +774,7 @@ def test_report_and_handoff_are_offered_only_in_always_on_conversations(monkeypa
                   base_url="https://example.invalid/v1")
     tools = [AgentTool(name=name, label=name, description=name,
                        parameters={"type": "object"}, execute=lambda *args: None)
-             for name in ("read", "always_on_report", "always_on_schedule", "always_on_preference", "handoff")]
+             for name in ("read", "always_on_report", "always_on_schedule", "always_on_preference")]
     monkeypatch.setattr(dispatcher, "_load_agent_profile", lambda *a: {})
     monkeypatch.setattr(dispatcher, "_resolve_model", lambda *a: model)
     monkeypatch.setattr(loop_runner, "_resolve_tools", lambda *a, **k: list(tools))
@@ -783,14 +789,6 @@ def test_report_and_handoff_are_offered_only_in_always_on_conversations(monkeypa
     names = {tool["name"] for tool in loop_runner.resolve_agent_runtime(request)[-1]["tools"]}
     for name in ("always_on_report", "always_on_schedule", "always_on_preference"):
         assert (name in names) is home
-    # A sub-agent's turn in the conversation does not hand work over; a
-    # background check-in, also off the head, may. The conversation's own
-    # turn keeps one tools array, so handoff stays in it and its calls are
-    # refused (``turn_availability``).
-    assert ("handoff" in names) is home
-    handoff = [tool for tool in tools if tool.name == "handoff"]
-    refused = "handoff" in loop_runner.turn_availability(request, handoff)
-    assert refused is (spawned and not background)
     assert "read" in names
 
 
@@ -940,186 +938,21 @@ def test_ticker_skips_a_quiet_wake(agent, world):
 
 @pytest.fixture
 def handoffs(monkeypatch, world):
-    """Handoff delivery with wake turns recorded instead of run."""
+    """Owner turns another conversation starts, recorded instead of run."""
     from types import SimpleNamespace
     from openprogram.runtime.conversation import owner_turn
-    from openprogram.runtime.conversation.always_on import handoff
 
     turns: list[dict] = []
-    busy: set[str] = set()
-    # Conversations whose turns keep running: their on_done waits here.
-    held: dict[str, list] = {}
 
-    def start(session_id, agent_id, text, *, msg_id=None, on_done=None, automation=None,
-              give_up_when=None, **_kw):
-        if session_id in busy or (give_up_when is not None and give_up_when()):
-            return None
-        assert automation in ("handoff", "handoff_message")
+    def start(session_id, agent_id, text, *, msg_id=None, on_done=None, automation=None, **_kw):
         turns.append({"sid": session_id, "agent_id": agent_id, "text": text, "msg_id": msg_id,
                       "automation": automation})
-        if session_id in held:
-            held[session_id].append(on_done)
-        elif on_done is not None:
+        if on_done is not None:
             on_done(SimpleNamespace(final_text=f"done in {session_id}"))
         return "exec-" + session_id
 
     monkeypatch.setattr(owner_turn, "start_owner_turn_when_free", start)
-    monkeypatch.setattr(handoff, "_spawn", handoff._deliver)
-    monkeypatch.setattr(handoff, "_spawn_reply", handoff._reply_after_restart)
-    monkeypatch.setattr(handoff, "_spawn_waiting", handoff._deliver_saved)
-    monkeypatch.setattr(handoff, "_already_admitted", lambda *_a: False)
-    monkeypatch.setattr(handoff, "_wait_for_restart_to_settle", lambda _sid: None)
-    path = world["db"].root.parent / "handoffs.json"
-    monkeypatch.setattr(store, "_handoffs_path", lambda: path)
-    monkeypatch.setattr(handoff, "_CHAINS", {})
-    monkeypatch.setattr(handoff, "_loaded", False)
-    return SimpleNamespace(module=handoff, turns=turns, busy=busy, held=held, path=path)
-
-
-def _restart_worker(handoffs, monkeypatch):
-    """A new worker process: memory is gone, the saved chains are loaded."""
-    monkeypatch.setattr(handoffs.module, "_CHAINS", {})
-    monkeypatch.setattr(handoffs.module, "_BOOT", "next-boot")
-    handoffs.module.restore()
-
-
-def test_handoff_wakes_the_target_and_brings_the_answer_back(agent, world, handoffs):
-    enable(agent)
-    db = world["db"]
-    db.create_session("planner", agent, title="Planner")
-    db.create_session("docs", "main-" + agent, title="Docs bot")
-    sent = handoffs.module.send("planner", "DOCS BOT", "Check the links")
-    assert (sent["target_id"], sent["hop"]) == ("docs", 1)
-    to_docs, back = handoffs.turns
-    assert to_docs["sid"] == "docs" and to_docs["agent_id"] == "main-" + agent
-    assert to_docs["text"].startswith("📨 Message from “Planner” (planner):\n\nCheck the links")
-    assert back["sid"] == "planner" and back["agent_id"] == agent
-    assert back["text"].startswith("↩️ Reply from “Docs bot” (docs)") and "done in docs" in back["text"]
-    # Both turns belong to the chain, one hop in.
-    assert handoffs.module.chain_of(to_docs["msg_id"])["hop"] == 1
-    # The 📨 turn stays out of a bound channel; the ↩️ turn is how a person there hears it.
-    assert (to_docs["automation"], back["automation"]) == ("handoff_message", "handoff")
-    assert handoffs.module.chain_of(back["msg_id"]) == handoffs.module.chain_of(to_docs["msg_id"])
-    # By id works too.
-    assert handoffs.module.send("planner", "docs", "Again")["target_id"] == "docs"
-
-
-def test_handoff_loop_guard(agent, world, handoffs):
-    enable(agent)
-    db = world["db"]
-    db.create_session("a", agent, title="A")
-    db.create_session("b", agent, title="B")
-    refused = handoffs.module.HandoffRefused
-    with pytest.raises(refused, match="itself"):
-        handoffs.module.send("a", "A", "hello me")
-    with pytest.raises(refused, match="empty"):
-        handoffs.module.send("a", "B", "  ")
-    # Each handoff from a handoff or reply turn is one more hop, up to the limit.
-    msg_id = None
-    for hop in range(1, handoffs.module.MAX_HOPS + 1):
-        sender = "a" if hop % 2 else "b"
-        assert handoffs.module.send(sender, "B" if sender == "a" else "A", "pass", msg_id=msg_id)["hop"] == hop
-        msg_id = handoffs.turns[-1]["msg_id"]
-    with pytest.raises(refused, match="hops"):
-        handoffs.module.send("a", "B", "once more", msg_id=msg_id)
-    # A turn outside any chain starts a new one.
-    assert handoffs.module.send("a", "B", "fresh", msg_id="typed-by-owner")["hop"] == 1
-
-
-def test_handoff_only_between_owner_conversations(agent, world, handoffs):
-    enable(agent)
-    db = world["db"]
-    db.create_session("a", agent, title="A")
-    db.create_session("sub", agent, source="agent", title="Helper")
-    db.create_session("imp", agent, source="import", title="Imported")
-    db.create_session("x", agent, title="Twin")
-    db.create_session("y", agent, title="twin")
-    db.create_session("plain", "main-" + agent, title="Plain")
-    refused = handoffs.module.HandoffRefused
-    for target in ("sub", "imp"):
-        with pytest.raises(refused, match="cannot take handoffs"):
-            handoffs.module.send("a", target, "work")
-    with pytest.raises(refused, match="No conversation is titled 'Helper'"):
-        handoffs.module.send("a", "Helper", "work")
-    with pytest.raises(refused, match="Several conversations"):
-        handoffs.module.send("a", "TWIN", "work")
-    with pytest.raises(refused, match="sub-agents"):
-        handoffs.module.send("sub", "A", "work")
-    with pytest.raises(refused, match="sub-agents"):
-        handoffs.module.send("a", "Plain", "work", advance_head=False)
-    # A conversation whose Agent is not always-on does not hand work over.
-    with pytest.raises(refused, match="always-on"):
-        handoffs.module.send("plain", "A", "work")
-    assert handoffs.turns == []
-
-
-def test_handoff_addresses_an_agent_by_name_or_id(agent, world, handoffs):
-    enable(agent)  # Named "Scout".
-    other = "desk" + uuid.uuid4().hex[:8]
-    manager.create(other, name="Front Desk")
-    try:
-        db = world["db"]
-        db.create_session("a", agent, title="A")
-        db.create_session("d1", other, title="Inbox")
-        assert handoffs.module.send("a", "front desk", "one")["target_id"] == "d1"
-        assert handoffs.module.send("a", other, "two")["target_id"] == "d1"
-        refused = handoffs.module.HandoffRefused
-        # The sender is not a candidate, so its own Agent counts as having none.
-        # It still offers the choices: not every Agent with handoff has list_agents.
-        with pytest.raises(refused, match="“Scout” has no other conversation.*Inbox \\(d1\\).*list_agents scope=\"all\""):
-            handoffs.module.send("a", "Scout", "work")
-        db.create_session("d2", other, title="Outbox")
-        with pytest.raises(refused, match=r"several conversations: .*\(d1\), .*\(d2\)"):
-            handoffs.module.send("a", "Front Desk", "work")
-        # A conversation's title still comes first.
-        db.create_session("named", agent, title="Front Desk")
-        assert handoffs.module.send("a", "Front Desk", "three")["target_id"] == "named"
-    finally:
-        manager.delete(other)
-
-
-def test_handoff_addresses_a_conversation_line_by_sid_and_head(agent, world, handoffs):
-    enable(agent)
-    db = world["db"]
-    db.create_session("a", agent, title="A")
-    db.create_session("b", agent, title="B")
-    db.create_session("imp", agent, source="import", title="Imported")
-    db.append_message("b", {"id": "m1", "timestamp": 1.0})
-    db.append_message("b", {"id": "m2", "timestamp": 2.0})
-    # An older message of the line is still that line.
-    assert handoffs.module.send("a", "b:m1", "work")["target_id"] == "b"
-    refused = handoffs.module.HandoffRefused
-    with pytest.raises(refused, match="send_message"):
-        handoffs.module.send("a", "b:side-branch", "work")
-    with pytest.raises(refused, match="cannot take handoffs"):
-        handoffs.module.send("a", "imp:m1", "work")
-    # A title with a colon is not an address.
-    db.create_session("c", agent, title="Plan: Q4")
-    assert handoffs.module.send("a", "plan: q4", "work")["target_id"] == "c"
-    with pytest.raises(refused, match='list_agents scope="all"'):
-        handoffs.module.send("a", "nobody", "work")
-
-
-def test_handoff_sid_head_follows_the_line_the_next_turn_continues(agent, tmp_path, monkeypatch):
-    """Against the real store: the addresses list_agents prints, on and off the current line."""
-    from openprogram.runtime.conversation.always_on import handoff
-    from openprogram.state.store.session.session_store import SessionStore
-
-    store = SessionStore(tmp_path / "real-sessions")
-    monkeypatch.setattr(handoff, "_db", lambda: store)
-    store.create_session("a", agent, title="A")
-    store.create_session("b", agent, title="B")
-    store.append_message("b", {"id": "m1", "role": "user", "content": "hi", "timestamp": 1.0})
-    store.append_message("b", {"id": "m2", "role": "assistant", "content": "yes", "timestamp": 2.0,
-                               "predecessor": "m1"})
-    # A sub-agent's branch, opened the way a same-session spawn opens it.
-    side = store.spawn_branch("b", "m2", source="agent", name="side", prompt="task", register_head=False)
-    assert {row["head_msg_id"] for row in store.list_branches("b")} == {"m2", side}
-
-    assert handoff.resolve_target("a", "b:m2")["id"] == "b"
-    assert handoff.resolve_target("a", "b:m1")["id"] == "b"
-    with pytest.raises(handoff.HandoffRefused, match="not on the current line.*send_message if you have it"):
-        handoff.resolve_target("a", f"b:{side}")
+    return SimpleNamespace(turns=turns)
 
 
 def test_send_message_names_the_listing():
@@ -1130,150 +963,6 @@ def test_send_message_names_the_listing():
     assert "list_agents" in get_agent_tool("send_message").description
 
 
-def test_a_busy_target_hands_the_message_back(agent, world, handoffs):
-    enable(agent)
-    db = world["db"]
-    db.create_session("a", agent, title="A")
-    db.create_session("b", agent, title="B")
-    handoffs.busy.add("b")
-    handoffs.module.send("a", "B", "urgent thing")
-    assert [(turn["sid"], turn["text"].split("\n")[0]) for turn in handoffs.turns] == [
-        ("a", "↩️ “B” (b) stayed busy for ten minutes, so the message you sent it was not delivered:")]
-
-
-def test_handoff_tool_reports_refusals(agent, world, handoffs, monkeypatch):
-    from openprogram.programs.tools.interaction.handoff import _handoff_impl as tool
-    enable(agent)
-    world["db"].create_session("a", agent, title="A")
-    world["db"].create_session("b", agent, title="B")
-    monkeypatch.setattr("openprogram.runtime.execution.run_control.get_current_session_id", lambda: "a")
-    assert tool("A", "me").startswith("[handoff refused]")
-    assert tool("B", "you").startswith("Sent to “B” (b), hop 1 of")
-
-
-def test_hop_count_survives_a_worker_restart(agent, world, handoffs, monkeypatch):
-    enable(agent)
-    db = world["db"]
-    db.create_session("a", agent, title="A")
-    db.create_session("b", agent, title="B")
-    msg_id = None
-    for hop in range(1, handoffs.module.MAX_HOPS):
-        sender = "a" if hop % 2 else "b"
-        handoffs.module.send(sender, "B" if sender == "a" else "A", "pass", msg_id=msg_id)
-        msg_id = handoffs.turns[-1]["msg_id"]
-    saved = handoffs.module.chain_of(msg_id)
-    _restart_worker(handoffs, monkeypatch)
-    assert handoffs.module.chain_of(msg_id) == saved and saved["origin"] == "a"
-    assert handoffs.module.send("b", "A", "last", msg_id=msg_id)["hop"] == handoffs.module.MAX_HOPS
-    with pytest.raises(handoffs.module.HandoffRefused, match="hops"):
-        handoffs.module.send("a", "B", "once more", msg_id=handoffs.turns[-1]["msg_id"])
-
-
-def _three_conversations(agent, world, handoffs, *held):
-    enable(agent)
-    for sid in ("a", "b", "c"):
-        world["db"].create_session(sid, agent, title=sid.upper())
-    handoffs.held.update({sid: [] for sid in held})
-
-
-def test_an_answer_passed_on_through_a_middle_conversation_reaches_the_first(agent, world, handoffs):
-    _three_conversations(agent, world, handoffs, "b", "c")
-    handoffs.module.send("a", "B", "Find out")
-    handoffs.module.send("b", "C", "Please check", msg_id=handoffs.turns[0]["msg_id"])
-    # B's own turn ends with only "I asked C": A hears nothing yet.
-    handoffs.held["b"].pop()(SimpleNamespace(final_text="I asked C"))
-    assert [turn["sid"] for turn in handoffs.turns] == ["b", "c"]
-    handoffs.held["c"].pop()(SimpleNamespace(final_text="the fact"))
-    assert handoffs.turns[-1]["sid"] == "b" and "the fact" in handoffs.turns[-1]["text"]
-    handoffs.held["b"].pop()(SimpleNamespace(final_text="B's real answer"))
-    assert handoffs.turns[-1]["sid"] == "a" and "B's real answer" in handoffs.turns[-1]["text"]
-    assert len(handoffs.turns) == 4
-
-
-def test_a_reply_owed_through_a_chain_survives_a_restart(agent, world, handoffs, monkeypatch):
-    _three_conversations(agent, world, handoffs, "b", "c")
-    handoffs.module.send("a", "B", "Find out")
-    handoffs.module.send("b", "C", "Please check", msg_id=handoffs.turns[0]["msg_id"])
-    _restart_worker(handoffs, monkeypatch)
-    handoffs.module.turn_ended(handoffs.turns[1]["msg_id"], "the fact")
-    assert handoffs.turns[-1]["sid"] == "b"
-    handoffs.module.turn_ended(handoffs.turns[-1]["msg_id"], "B's real answer")
-    assert handoffs.turns[-1]["sid"] == "a" and "B's real answer" in handoffs.turns[-1]["text"]
-
-
-def test_an_earlier_conversation_hears_when_the_middle_one_stays_busy(agent, world, handoffs):
-    _three_conversations(agent, world, handoffs, "b", "c")
-    handoffs.module.send("a", "B", "Find out")
-    handoffs.module.send("b", "C", "Please check", msg_id=handoffs.turns[0]["msg_id"])
-    handoffs.held["b"].pop()(SimpleNamespace(final_text="I asked C"))
-    handoffs.busy.add("b")
-    handoffs.held["c"].pop()(SimpleNamespace(final_text="the fact"))
-    assert handoffs.turns[-1]["sid"] == "a"
-    assert "stayed busy" in handoffs.turns[-1]["text"] and "the fact" in handoffs.turns[-1]["text"]
-
-
-def test_a_conversation_waiting_up_the_chain_cannot_be_messaged(agent, world, handoffs):
-    _three_conversations(agent, world, handoffs, "b", "c")
-    handoffs.module.send("a", "B", "Find out")
-    with pytest.raises(handoffs.module.HandoffRefused, match="waiting"):
-        handoffs.module.send("b", "A", "You do it", msg_id=handoffs.turns[0]["msg_id"])
-    handoffs.module.send("b", "C", "Please check", msg_id=handoffs.turns[0]["msg_id"])
-    with pytest.raises(handoffs.module.HandoffRefused, match="waiting"):
-        handoffs.module.send("c", "A", "You do it", msg_id=handoffs.turns[1]["msg_id"])
-    # The refused attempt left B's owed reply where it was until it really handed on.
-    handoffs.held["c"].pop()(SimpleNamespace(final_text="the fact"))
-    assert handoffs.turns[-1]["sid"] == "b"
-
-
-def test_a_goal_started_in_a_chain_cannot_escape_its_hop_limit(agent, world, handoffs, monkeypatch):
-    from openprogram.programs.tools.interaction.handoff import _handoff_impl as tool
-    _three_conversations(agent, world, handoffs)
-    msg_id = None
-    for hop in range(1, handoffs.module.MAX_HOPS + 1):
-        sender = "a" if hop % 2 else "b"
-        handoffs.module.send(sender, "B" if sender == "a" else "A", "pass", msg_id=msg_id)
-        msg_id = handoffs.turns[-1]["msg_id"]
-    _turn(monkeypatch, "b", speaker_id="local", user_msg_id=msg_id, automation="handoff")
-    _create_goal()
-    assert world["goals"]["b"]["handoff_chain"]["hop"] == handoffs.module.MAX_HOPS
-    monkeypatch.setattr("openprogram.programs.tools.planning.goal.load_goal", world["goals"].get)
-    # A later turn of that Goal has a new message id and stays in the chain.
-    _turn(monkeypatch, "b", speaker_id="local", user_msg_id="goal-turn", goal_trigger=True, automation="handoff")
-    assert "hops" in tool("C", "escape")
-    # A person typing in that conversation starts a new chain.
-    _turn(monkeypatch, "b", speaker_id="local", user_msg_id="typed")
-    assert tool("C", "a new job").startswith("Sent to")
-
-
-def test_one_conversation_can_only_send_so_many_handoffs_an_hour(agent, world, handoffs, monkeypatch):
-    _three_conversations(agent, world, handoffs)
-    limit = handoffs.module.MAX_SENDS_PER_WINDOW
-    for _ in range(limit):
-        handoffs.module.send("a", "B", "one more")
-    _restart_worker(handoffs, monkeypatch)
-    with pytest.raises(handoffs.module.HandoffRefused, match="Too many"):
-        handoffs.module.send("a", "B", "over")
-    # Another conversation has its own count, and old sends stop counting.
-    assert handoffs.module.send("c", "B", "mine")["hop"] == 1
-    for entry in handoffs.module._CHAINS.values():
-        entry["at"] -= handoffs.module.SEND_WINDOW_S + 1
-    assert handoffs.module.send("a", "B", "later")["hop"] == 1
-
-
-def test_a_conversation_archived_while_a_handoff_waits_is_not_woken(agent, world, handoffs, monkeypatch):
-    from openprogram.runtime.conversation.always_on import runtime
-    _three_conversations(agent, world, handoffs)
-    real = runtime.owner_conversation
-    monkeypatch.setattr(runtime, "owner_conversation", lambda s: bool(s) and s["id"] != "b" and real(s))
-    # Past the check at send: the target is archived during the wait.
-    target = {"id": "b", "title": "B", "agent_id": agent}
-    row = {"id": "h", "chain": "c1", "hop": 1, "origin": "a", "message": "Do it",
-           "sender": world["db"].get_session("a"), "target": target}
-    handoffs.module._deliver(row)
-    assert [turn["sid"] for turn in handoffs.turns] == ["a"]
-    assert "archived" in handoffs.turns[0]["text"] and "Do it" in handoffs.turns[0]["text"]
-
-
 def test_a_handoff_stops_polling_once_its_conversation_is_archived(monkeypatch):
     from openprogram.runtime.conversation import owner_turn, run_control
     answers = iter([False, False, True])
@@ -1282,296 +971,6 @@ def test_a_handoff_stops_polling_once_its_conversation_is_archived(monkeypatch):
     assert owner_turn.start_owner_turn_when_free(
         "b", "main", "x", poll_s=0, give_up_when=lambda: next(answers)) is None
     assert next(answers, "polled to the end") == "polled to the end"
-
-
-def test_the_middle_conversation_is_asked_for_the_answer_it_passes_on(agent, world, handoffs):
-    _three_conversations(agent, world, handoffs, "b", "c")
-    handoffs.module.send("a", "B", "Find out")
-    handoffs.module.send("b", "C", "Please check", msg_id=handoffs.turns[0]["msg_id"])
-    handoffs.held["b"].pop()(SimpleNamespace(final_text="I asked C"))
-    handoffs.held["c"].pop()(SimpleNamespace(final_text="the fact"))
-    # Told "this needs no answer", B would send A an acknowledgement.
-    relay = handoffs.turns[-1]["text"]
-    assert "needs no answer" not in relay and "“A” (a) is still waiting" in relay
-    handoffs.held["b"].pop()(SimpleNamespace(final_text="B's real answer"))
-    assert "needs no answer" in handoffs.turns[-1]["text"]
-
-
-def test_a_goal_can_message_the_conversation_its_chain_came_from(agent, world, handoffs, monkeypatch):
-    from openprogram.programs.tools.interaction.handoff import _handoff_impl as tool
-    _three_conversations(agent, world, handoffs, "b")
-    handoffs.module.send("a", "B", "Set this up")
-    _turn(monkeypatch, "b", speaker_id="local", user_msg_id=handoffs.turns[0]["msg_id"], automation="handoff")
-    _create_goal()
-    monkeypatch.setattr("openprogram.programs.tools.planning.goal.load_goal", world["goals"].get)
-    # The turn that started the Goal answers A, so A no longer waits on B.
-    handoffs.held["b"].pop()(SimpleNamespace(final_text="Goal started"))
-    _turn(monkeypatch, "b", speaker_id="local", user_msg_id="goal-turn", goal_trigger=True, automation="handoff")
-    assert "hop 2 of" in tool("A", "Progress so far")
-
-
-def test_an_earlier_conversation_hears_when_the_middle_one_is_archived_over_a_restart(
-        agent, world, handoffs, monkeypatch):
-    from openprogram.runtime.conversation.always_on import runtime
-    _three_conversations(agent, world, handoffs)
-    row = {"id": "h1", "chain": "c1", "hop": 2, "origin": "a", "owed_after": ["a"], "relay": True}
-    handoffs.module._remember("waiting-relay", "c", row, "↩️ the fact", reply_to="b", message="the fact")
-    _restart_worker(handoffs, monkeypatch)
-    real = runtime.owner_conversation
-    monkeypatch.setattr(runtime, "owner_conversation", lambda s: bool(s) and s["id"] != "b" and real(s))
-    handoffs.module.deliver_waiting()
-    assert [turn["sid"] for turn in handoffs.turns] == ["a"] and "the fact" in handoffs.turns[0]["text"]
-
-
-PAUSED_TURN = SimpleNamespace(final_text="", _execution_safe_point_handoff=True)
-
-
-def _paused_handoff(agent, world, handoffs):
-    """A handoff from a to b whose turn in b stopped for an approval."""
-    enable(agent)
-    db = world["db"]
-    db.create_session("a", agent, title="A")
-    db.create_session("b", agent, title="B")
-    handoffs.held["b"] = []
-    handoffs.module.send("a", "B", "Do it")
-    msg_id = handoffs.turns[-1]["msg_id"]
-    handoffs.held["b"].pop()(PAUSED_TURN)
-    return msg_id
-
-
-def test_a_paused_handoff_sends_nothing_until_its_real_answer_then_once(agent, world, handoffs):
-    msg_id = _paused_handoff(agent, world, handoffs)
-    module = handoffs.module
-    assert len(handoffs.turns) == 1, "a pause is not the turn's end"
-    assert module._CHAINS[msg_id]["phase"] == "paused" and module._CHAINS[msg_id]["reply_to"] == "a"
-    module.turn_resumed(msg_id)
-    module.turn_paused(msg_id)  # A second approval.
-    assert len(handoffs.turns) == 1
-    module.turn_resumed(msg_id)
-    module.turn_ended(msg_id, "the real answer")
-    module.turn_ended(msg_id, "again")
-    assert len(handoffs.turns) == 2
-    assert handoffs.turns[1]["sid"] == "a" and "the real answer" in handoffs.turns[1]["text"]
-    assert module.chain_of(handoffs.turns[1]["msg_id"])["hop"] == 1
-
-
-def test_a_paused_handoff_is_not_taken_for_a_turn_a_restart_cut_off(agent, world, handoffs, monkeypatch):
-    msg_id = _paused_handoff(agent, world, handoffs)
-    _restart_worker(handoffs, monkeypatch)
-    handoffs.module.resumed_turn_ended(msg_id, "an unrelated turn")
-    assert len(handoffs.turns) == 1 and handoffs.module._CHAINS[msg_id]["reply_to"] == "a"
-    handoffs.module.turn_ended(msg_id, "after the restart")
-    assert "after the restart" in handoffs.turns[-1]["text"]
-
-
-def _closed(msg_id, status, reason="cancel.user", automation="handoff"):
-    from openprogram.runtime.execution.model import ExecutionStatus
-    request = {"automation": automation, "user_msg_id": msg_id}
-    return (SimpleNamespace(get_agent_turn_input=lambda _id: {"request": request}),
-            SimpleNamespace(execution_id="e1", status=ExecutionStatus(status), reason_code=reason))
-
-
-def test_stopping_a_paused_handoff_tells_the_sender_once(agent, world, handoffs):
-    msg_id = _paused_handoff(agent, world, handoffs)
-    closed = _closed(msg_id, "cancelled")
-    handoffs.module.execution_closed(*closed)
-    handoffs.module.execution_closed(*closed)
-    assert len(handoffs.turns) == 2 and handoffs.module.STOPPED_ANSWER in handoffs.turns[1]["text"]
-
-
-def test_a_paused_handoff_whose_wait_failed_says_why(agent, world, handoffs):
-    msg_id = _paused_handoff(agent, world, handoffs)
-    handoffs.module.execution_closed(*_closed(msg_id, "failed", reason="wait_expired"))
-    assert "failed before it answered: wait_expired" in handoffs.turns[1]["text"]
-
-
-def test_a_stop_does_not_touch_a_handoff_turn_that_is_running(agent, world, handoffs):
-    enable(agent)
-    db = world["db"]
-    db.create_session("a", agent, title="A")
-    db.create_session("b", agent, title="B")
-    handoffs.held["b"] = []
-    handoffs.module.send("a", "B", "Do it")
-    handoffs.module.execution_closed(*_closed(handoffs.turns[-1]["msg_id"], "cancelled"))
-    assert len(handoffs.turns) == 1, "the running turn reports its own end"
-
-
-def test_a_paused_handoff_continued_by_a_new_turn_after_a_restart_stays_owed(agent, world, handoffs, monkeypatch):
-    msg_id = _paused_handoff(agent, world, handoffs)
-    _restart_worker(handoffs, monkeypatch)
-    handoffs.module.execution_closed(*_closed(msg_id, "interrupted", reason="restart_new_turn"))
-    assert len(handoffs.turns) == 1
-    handoffs.module.resumed_turn_ended(msg_id, "finished by the new turn")
-    assert "finished by the new turn" in handoffs.turns[-1]["text"]
-
-
-@pytest.mark.parametrize("status,finishes", [("cancelled", False), ("interrupted", True)])
-def test_a_stop_closes_handoffs_but_keeps_the_scheduled_run_path(monkeypatch, status, finishes):
-    from openprogram.runtime.conversation import execution_hooks
-    from openprogram.runtime.conversation.always_on import handoff
-    from openprogram.runtime.scheduler import run_finish
-
-    seen = []
-    monkeypatch.setattr(handoff, "execution_closed", lambda *_a: seen.append("handoff"))
-    monkeypatch.setattr(run_finish, "finish_resumed", lambda *_a: seen.append("run"))
-    execution_hooks._close_ownerless_run(*_closed("m", status))
-    assert seen == (["handoff", "run"] if finishes else ["handoff"])
-
-
-def test_a_failed_target_turn_tells_the_sender_why(agent, world, handoffs):
-    enable(agent)
-    db = world["db"]
-    db.create_session("a", agent, title="A")
-    db.create_session("b", agent, title="B")
-    handoffs.held["b"] = []
-    handoffs.module.send("a", "B", "Do it")
-    handoffs.held["b"].pop()(SimpleNamespace(final_text="", failed=True, error="the model refused the key"))
-    assert "failed before it answered: the model refused the key" in handoffs.turns[1]["text"]
-    assert "No answer text" not in handoffs.turns[1]["text"]
-
-
-def test_an_empty_reply_is_still_no_answer_text(agent, world, handoffs):
-    enable(agent)
-    db = world["db"]
-    db.create_session("a", agent, title="A")
-    db.create_session("b", agent, title="B")
-    handoffs.held["b"] = []
-    handoffs.module.send("a", "B", "Do it")
-    handoffs.held["b"].pop()(SimpleNamespace(final_text="  "))
-    assert "(No answer text.)" in handoffs.turns[1]["text"]
-
-
-def test_a_handoff_turn_held_for_a_version_switch_owes_its_reply(agent, world, handoffs):
-    from openprogram.operations.self_update.control.held_turns import HELD_REASON
-    enable(agent)
-    db = world["db"]
-    db.create_session("a", agent, title="A")
-    db.create_session("b", agent, title="B")
-    handoffs.held["b"] = []
-    handoffs.module.send("a", "B", "Do it")
-    msg_id = handoffs.turns[-1]["msg_id"]
-    handoffs.held["b"].pop()(SimpleNamespace(final_text="", failed=True, error_reason=HELD_REASON))
-    assert len(handoffs.turns) == 1 and handoffs.module._CHAINS[msg_id]["reply_to"] == "a"
-
-
-@pytest.mark.parametrize("ending", ["answered", "raised", "paused", "stopped", "worker_stopping"])
-def test_the_attempt_that_resumes_a_handoff_settles_it(monkeypatch, ending):
-    import threading
-    from unittest.mock import MagicMock
-    from openprogram.runtime.context import Context
-    from openprogram.runtime.context import persistence as context_persistence
-    from openprogram.runtime.conversation import bound_reply, run_control, turn_runtime
-    from openprogram.runtime.conversation.always_on import handoff
-    from openprogram.runtime.conversation.turn_runtime import finalize, persistence, turn_writer
-    from openprogram.state.memory import policy
-
-    calls = []
-    monkeypatch.setattr(handoff, "turn_resumed", lambda msg: calls.append(("resumed", msg)))
-    monkeypatch.setattr(handoff, "turn_paused", lambda msg: calls.append(("paused", msg)))
-    monkeypatch.setattr(handoff, "turn_ended", lambda msg, answer: calls.append(("ended", msg, answer)))
-    monkeypatch.setattr(Context, "turn_store", staticmethod(lambda _sid: MagicMock()))
-    monkeypatch.setattr(context_persistence, "rendered_history", lambda *a, **k: [])
-    monkeypatch.setattr(policy, "bind_history", lambda *a, **k: None)
-    monkeypatch.setattr(bound_reply, "attach", lambda *a, **k: None)
-    monkeypatch.setattr(turn_runtime, "TurnBindings", MagicMock())
-    monkeypatch.setattr(turn_runtime, "make_stream_tap", lambda **k: MagicMock(blocks=[]))
-    monkeypatch.setattr(turn_runtime, "_release_prepared_update", lambda *a: None)
-    monkeypatch.setattr(persistence, "persist_assistant_message", lambda **k: ({}, [], [], {}))
-    monkeypatch.setattr(finalize, "finalize_turn", lambda **k: True)
-    monkeypatch.setattr(turn_writer, "mark_session_finished", lambda *a, **k: None)
-    monkeypatch.setattr(run_control, "is_worker_stopping", lambda: ending == "worker_stopping")
-    cancel = threading.Event()
-    context = {}
-
-    def loop(**_kw):
-        if ending == "raised":
-            raise ValueError("broke after the approval")
-        if ending == "worker_stopping":
-            raise RuntimeError("going down")
-        if ending == "paused":
-            context["safe_point_committed"] = True
-        if ending == "stopped":
-            cancel.set()
-            return "", {}, []
-        return "the real answer", {}, []
-
-    monkeypatch.setattr(turn_runtime, "_run_loop_blocking", loop)
-    continuation = SimpleNamespace(
-        request=SimpleNamespace(session_id="b", automation="handoff", user_msg_id="m1", advance_head=True,
-                                background=False, quiet_finish=False, restart_resume=False, last_round_text=""),
-        user_message_id="m1", assistant_message_id="m1_reply")
-    run = lambda: turn_runtime.execute_continuation.__wrapped__(
-        continuation, cancel_event=cancel, execution_context=context)
-    if ending in {"raised", "worker_stopping"}:
-        with pytest.raises(Exception):
-            run()
-    else:
-        run()
-    assert calls[0] == ("resumed", "m1")
-    assert calls[1:] == {
-        "answered": [("ended", "m1", "the real answer")],
-        "raised": [("ended", "m1", "(The turn here failed before it answered: ValueError: broke after the approval)")],
-        "paused": [("paused", "m1")],
-        "stopped": [("ended", "m1", handoff.STOPPED_ANSWER)],
-        "worker_stopping": [],
-    }[ending]
-
-
-def test_an_ordinary_resumed_turn_never_reads_handoffs(monkeypatch):
-    from openprogram.runtime.conversation import turn_runtime
-    from openprogram.runtime.conversation.always_on import handoff
-
-    monkeypatch.setattr(handoff, "turn_ended", lambda *a: pytest.fail("not a handoff turn"))
-    monkeypatch.setattr(handoff, "turn_resumed", lambda *a: pytest.fail("not a handoff turn"))
-    request = SimpleNamespace(session_id="s", automation=None, restart_resume=False)
-    turn_runtime._handoff_turn_phase(request, "m", paused=False)
-    turn_runtime._end_resumed_attempt(request, "m", final_text="hello")
-
-
-def test_a_held_handoff_turn_answers_after_the_switch_and_is_no_turn_a_restart_cut_off(
-        agent, world, handoffs, monkeypatch):
-    from openprogram.operations.self_update.control import held_turns
-    from openprogram.operations.self_update.control.held_turns import HELD_REASON
-    from openprogram.runtime.conversation import turn_runtime
-
-    enable(agent)
-    db = world["db"]
-    db.create_session("a", agent, title="A")
-    db.create_session("b", agent, title="B")
-    handoffs.held["b"] = []
-    handoffs.module.send("a", "B", "Do it")
-    msg_id = handoffs.turns[-1]["msg_id"]
-    handoffs.held["b"].pop()(SimpleNamespace(final_text="waiting", error_reason=HELD_REASON))
-    _restart_worker(handoffs, monkeypatch)
-    handoffs.module.resumed_turn_ended("b", "an unrelated resumed turn")
-    assert len(handoffs.turns) == 1, "a held turn is not a turn a restart cut off"
-    monkeypatch.setattr(turn_runtime, "process_user_turn",
-                        lambda *a, **k: SimpleNamespace(final_text="the answer after the switch"))
-    values = {"session_id": "b", "agent_id": agent, "user_text": "x", "source": "web", "user_msg_id": msg_id,
-              "automation": "handoff"}
-    held_turns._run_one(values)
-    held_turns._run_one(values)
-    assert len(handoffs.turns) == 2 and "the answer after the switch" in handoffs.turns[1]["text"]
-
-
-def test_a_handoff_turn_held_again_at_replay_still_owes_its_reply(agent, world, handoffs):
-    from openprogram.operations.self_update.control.held_turns import HELD_REASON
-    msg_id = _paused_handoff(agent, world, handoffs)
-    request = SimpleNamespace(automation="handoff", user_msg_id=msg_id)
-    handoffs.module.held_turn_ended(request, SimpleNamespace(final_text="", error_reason=HELD_REASON))
-    assert len(handoffs.turns) == 1 and handoffs.module._CHAINS[msg_id]["reply_to"] == "a"
-
-
-@pytest.mark.parametrize("text,expected", [("", "stopped before it finished"), ("half an answer", "half an answer")])
-def test_a_stopped_running_handoff_says_so_or_keeps_what_it_wrote(agent, world, handoffs, text, expected):
-    enable(agent)
-    db = world["db"]
-    db.create_session("a", agent, title="A")
-    db.create_session("b", agent, title="B")
-    handoffs.held["b"] = []
-    handoffs.module.send("a", "B", "Do it")
-    handoffs.held["b"].pop()(SimpleNamespace(final_text=text, stopped=True))
-    assert expected in handoffs.turns[1]["text"] and "No answer text" not in handoffs.turns[1]["text"]
 
 
 def test_a_stopped_turn_says_so_on_its_result(tmp_path, monkeypatch):
@@ -1602,429 +1001,12 @@ def test_a_stopped_turn_says_so_on_its_result(tmp_path, monkeypatch):
         sessions.close()
 
 
-def test_a_worker_going_down_leaves_a_handoff_turn_owed(agent, world, handoffs, monkeypatch):
-    from openprogram.runtime.conversation import run_control
-    enable(agent)
-    db = world["db"]
-    db.create_session("a", agent, title="A")
-    db.create_session("b", agent, title="B")
-    handoffs.held["b"] = []
-    handoffs.module.send("a", "B", "Do it")
-    msg_id = handoffs.turns[-1]["msg_id"]
-    monkeypatch.setattr(run_control, "is_worker_stopping", lambda: True)
-    handoffs.held["b"].pop()(None)
-    assert len(handoffs.turns) == 1 and handoffs.module._CHAINS[msg_id]["phase"] == "running"
-    assert handoffs.module._CHAINS[msg_id]["reply_to"] == "a"
-
-
-def test_a_resumed_handoff_stopped_while_paused_tells_the_sender(agent, world, handoffs, monkeypatch):
-    enable(agent)
-    db = world["db"]
-    db.create_session("a", agent, title="A")
-    db.create_session("b", agent, title="B")
-    handoffs.held["b"] = []
-    handoffs.module.send("a", "B", "Do it")
-    msg_id = handoffs.turns[-1]["msg_id"]
-    _restart_worker(handoffs, monkeypatch)
-    executions, execution = _closed("new_user", "cancelled")
-    executions.get_agent_turn_input = lambda _id: {"request": {
-        "automation": "handoff", "user_msg_id": "new_user", "restart_resume": True,
-        "resumes_message_id": msg_id}}
-    execution.session_id = "b"
-    handoffs.module.execution_closed(executions, execution)
-    handoffs.module.execution_closed(executions, execution)
-    assert len(handoffs.turns) == 2 and handoffs.module.STOPPED_ANSWER in handoffs.turns[1]["text"]
-
-
-@pytest.mark.parametrize("status,reason,result,expected", [
-    ("completed", None, SimpleNamespace(final_text="the rerun's answer"), "the rerun's answer"),
-    ("failed", "agent_runner_error", SimpleNamespace(failed=True, error="the session is gone"), "the session is gone"),
-    ("failed", "agent_runner_error", None, "agent_runner_error"),
-    ("cancelled", "cancel.user", None, "stopped before it finished"),
-])
-def test_the_end_of_a_reactivated_run_settles_what_its_turn_did_not(
-        agent, world, handoffs, status, reason, result, expected):
-    msg_id = _paused_handoff(agent, world, handoffs)
-    closed = _closed(msg_id, status, reason=reason)
-    handoffs.module.run_ended(*closed, result)
-    handoffs.module.run_ended(*closed, result)
-    assert len(handoffs.turns) == 2 and expected in handoffs.turns[1]["text"]
-
-
-def test_the_end_of_a_run_a_new_turn_continues_or_held_again_settles_nothing(agent, world, handoffs):
-    from openprogram.operations.self_update.control.held_turns import HELD_REASON
-    msg_id = _paused_handoff(agent, world, handoffs)
-    handoffs.module.run_ended(*_closed(msg_id, "interrupted", reason="restart_new_turn"), None)
-    handoffs.module.run_ended(*_closed(msg_id, "completed", reason=None),
-                              SimpleNamespace(final_text="", error_reason=HELD_REASON))
-    assert len(handoffs.turns) == 1 and handoffs.module._CHAINS[msg_id]["reply_to"] == "a"
-
-
-def test_the_activator_settles_handoffs_before_the_scheduled_run_path(monkeypatch):
-    from openprogram.runtime.conversation import execution_hooks
-    from openprogram.runtime.conversation.always_on import handoff
-    from openprogram.runtime.scheduler import run_finish
-
-    seen = []
-    monkeypatch.setattr(handoff, "run_ended", lambda *_a: seen.append("handoff"))
-    monkeypatch.setattr(run_finish, "finish_resumed", lambda *_a: seen.append("run"))
-    execution_hooks._run_ended(None, None, None)
-    assert seen == ["handoff", "run"]
-
-
-def test_a_rerun_of_a_paused_first_attempt_keeps_the_saved_phase_in_step(monkeypatch):
-    from unittest.mock import MagicMock, patch
-    from openprogram.runtime.agent.turn_request import TurnRequest
-    from openprogram.runtime.context import Context
-    from openprogram.runtime.conversation import bound_reply, turn_runtime
-    from openprogram.runtime.conversation.always_on import handoff
-
-    calls = []
-    monkeypatch.setattr(handoff, "turn_resumed", lambda msg: calls.append(("resumed", msg)))
-    monkeypatch.setattr(handoff, "turn_paused", lambda msg: calls.append(("paused", msg)))
-    monkeypatch.setattr(Context, "turn_store", staticmethod(lambda _sid: MagicMock()))
-    monkeypatch.setattr(turn_runtime, "prepare_turn", lambda **_k: ({}, []))
-    monkeypatch.setattr(turn_runtime, "TurnBindings", MagicMock())
-    monkeypatch.setattr(turn_runtime, "make_stream_tap", lambda **_k: MagicMock(blocks=[]))
-    monkeypatch.setattr(bound_reply, "attach", lambda *a, **k: None)
-    context = {"restart_initial": True}
-
-    def loop(**_kw):
-        context["safe_point_committed"] = True
-        return "", {}, []
-
-    monkeypatch.setattr(turn_runtime, "_run_loop_blocking", loop)
-    request = TurnRequest(session_id="b", agent_id="claude", user_text="x", source="web",
-                          user_msg_id="m1", automation="handoff")
-    result = turn_runtime._process_turn_once.__wrapped__(request, execution_context=context)
-    assert getattr(result, "_execution_safe_point_handoff", False)
-    assert calls == [("resumed", "m1"), ("paused", "m1")]
-
-
-@pytest.mark.parametrize("error,worker_stopping,cancelled,settles", [
-    (SystemExit(), False, False, False),
-    (RuntimeError("boom"), True, False, False),
-    (RuntimeError("boom"), True, True, True),
-    (None, True, False, True),
-])
-def test_only_a_real_outcome_ends_a_resumed_attempt(monkeypatch, error, worker_stopping, cancelled, settles):
-    import threading
-    from openprogram.runtime.conversation import run_control, turn_runtime
-    from openprogram.runtime.conversation.always_on import handoff
-
-    ended = []
-    monkeypatch.setattr(handoff, "turn_ended", lambda msg, answer: ended.append(answer))
-    monkeypatch.setattr(run_control, "is_worker_stopping", lambda: worker_stopping)
-    cancel = threading.Event()
-    if cancelled:
-        cancel.set()
-    request = SimpleNamespace(session_id="b", automation="handoff", restart_resume=False)
-    turn_runtime._end_resumed_attempt(request, "m1", final_text="done", error=error, cancel_event=cancel)
-    assert bool(ended) is settles
-
-
-def test_a_turn_cut_off_by_a_restart_replies_once_when_its_continuation_ends(
-        agent, world, handoffs, monkeypatch):
-    enable(agent)
-    db = world["db"]
-    db.create_session("a", agent, title="A")
-    db.create_session("b", agent, title="B")
-    handoffs.held["b"] = []
-    handoffs.module.send("a", "B", "Check the links")
-    assert [turn["sid"] for turn in handoffs.turns] == ["b"]
-    msg_id = handoffs.turns[0]["msg_id"]
-    old_on_done = handoffs.held["b"][0]
-
-    _restart_worker(handoffs, monkeypatch)
-    # The continuation has a new message id and keeps the chain's hop.
-    assert handoffs.module.chain_of("resumed-turn", resumes=msg_id)["hop"] == 1
-    # A turn continuing some other message owes nothing.
-    handoffs.module.resumed_turn_ended("another-message", "unrelated")
-    assert len(handoffs.turns) == 1
-
-    handoffs.module.resumed_turn_ended(msg_id, "All 12 links work.")
-    reply = handoffs.turns[-1]
-    assert reply["sid"] == "a" and reply["text"].startswith("↩️ Reply from “B” (b)")
-    assert "All 12 links work." in reply["text"]
-    assert handoffs.module.chain_of(reply["msg_id"])["hop"] == 1
-    # Never twice: not on another end, nor from the old worker's callback.
-    handoffs.module.resumed_turn_ended(msg_id, "again")
-    old_on_done(SimpleNamespace(final_text="late"))
-    _restart_worker(handoffs, monkeypatch)
-    handoffs.module.resumed_turn_ended(msg_id, "after another restart")
-    assert len(handoffs.turns) == 2
-
-
-def _handoff_left_waiting(agent, world, handoffs, monkeypatch):
-    """A handoff from a to b still waiting for b when the worker stopped."""
-    enable(agent)
-    db = world["db"]
-    db.create_session("a", agent, title="A")
-    db.create_session("b", agent, title="B")
-    row = {"id": "h1", "chain": "c1", "hop": 1, "origin": "a"}
-    sender = db.get_session("a")
-    handoffs.module._remember("waiting-msg", "b", row, handoffs.module.handoff_text(sender, "Do it"),
-                              reply_to="a", message="Do it")
-    _restart_worker(handoffs, monkeypatch)
-    return "waiting-msg"
-
-
-def test_a_lazy_load_of_the_chains_delivers_nothing(agent, world, handoffs, monkeypatch):
-    msg_id = _handoff_left_waiting(agent, world, handoffs, monkeypatch)
-    assert handoffs.turns == [] and handoffs.module._CHAINS[msg_id]["phase"] == "waiting"
-
-
-def test_a_handoff_waiting_at_a_restart_is_delivered_once_and_still_answers(
-        agent, world, handoffs, monkeypatch):
-    msg_id = _handoff_left_waiting(agent, world, handoffs, monkeypatch)
-    assert handoffs.module.deliver_waiting() == 1
-    assert handoffs.module.deliver_waiting() == 0
-    assert [(turn["sid"], turn["msg_id"]) for turn in handoffs.turns[:1]] == [("b", msg_id)]
-    assert handoffs.turns[0]["text"].startswith("📨 Message from “A” (a)")
-    # The target's answer goes back, and the entry no longer holds the message.
-    assert [turn["sid"] for turn in handoffs.turns] == ["b", "a"] and "done in b" in handoffs.turns[1]["text"]
-    assert "text" not in handoffs.module._CHAINS[msg_id]
-    _restart_worker(handoffs, monkeypatch)
-    assert handoffs.module.deliver_waiting() == 0 and len(handoffs.turns) == 2
-
-
-def test_the_worker_start_sends_what_was_left_waiting_through_send_message(
-        agent, world, handoffs, monkeypatch):
-    import threading
-    from openprogram.runtime.conversation.always_on import handoff_migration, ticker
-    msg_id = _handoff_left_waiting(agent, world, handoffs, monkeypatch)
-    sent = []
-    monkeypatch.setattr(handoff_migration, "send_with_send_message",
-                        lambda delivery: (sent.append(delivery) or ("delivered", delivery["job_id"], "")))
-    monkeypatch.setattr(handoffs.module, "_wait_for_restart_to_settle", lambda _sid: None)
-    stop, thread = ticker.start_in_worker(interval=60)
-    stop.set()
-    thread.join(5)
-    for worker in [t for t in threading.enumerate() if t.name == "handoff-migration"]:
-        worker.join(5)
-    # The old replay no longer delivers it: send_message does, once.
-    assert handoffs.turns == []
-    assert [(item["from"], item["to"], item["message"]) for item in sent] == [("a", "b", "Do it")]
-    assert sent[0]["job_id"] == handoff_migration.job_id_for(msg_id)
-
-
-def test_a_second_restart_before_delivery_still_delivers_once(agent, world, handoffs, monkeypatch):
-    _handoff_left_waiting(agent, world, handoffs, monkeypatch)
-    monkeypatch.setattr(handoffs.module, "_spawn_waiting", lambda *_a: None)  # Dies right after claiming.
-    handoffs.module.deliver_waiting()
-    monkeypatch.setattr(handoffs.module, "_spawn_waiting", handoffs.module._deliver_saved)
-    monkeypatch.setattr(handoffs.module, "_CHAINS", {})
-    monkeypatch.setattr(handoffs.module, "_BOOT", "third-boot")
-    handoffs.module.restore()
-    assert handoffs.module.deliver_waiting() == 1 and [t["sid"] for t in handoffs.turns] == ["b", "a"]
-
-
-def test_a_reply_waiting_at_a_restart_is_delivered_once(agent, world, handoffs, monkeypatch):
-    enable(agent)
-    world["db"].create_session("a", agent, title="A")
-    handoffs.module._remember("reply-msg", "a", {"chain": "c", "hop": 1, "origin": "a", "id": "h"},
-                              "↩️ Reply from “B”")
-    _restart_worker(handoffs, monkeypatch)
-    handoffs.module.deliver_waiting()
-    handoffs.module.deliver_waiting()
-    assert [(t["sid"], t["msg_id"], t["text"]) for t in handoffs.turns] == [("a", "reply-msg", "↩️ Reply from “B”")]
-
-
-def test_a_turn_admitted_just_before_the_restart_is_not_delivered_again(agent, world, handoffs, monkeypatch):
-    msg_id = _handoff_left_waiting(agent, world, handoffs, monkeypatch)
-    monkeypatch.setattr(handoffs.module, "_already_admitted", lambda *_a: True)
-    handoffs.module.deliver_waiting()
-    assert handoffs.turns == [] and handoffs.module._CHAINS[msg_id]["phase"] == "running"
-
-
-def test_a_waiting_handoff_whose_target_stays_busy_comes_back_after_the_restart(
-        agent, world, handoffs, monkeypatch):
-    msg_id = _handoff_left_waiting(agent, world, handoffs, monkeypatch)
-    handoffs.busy.add("b")
-    handoffs.module.deliver_waiting()
-    assert [t["sid"] for t in handoffs.turns] == ["a"] and "stayed busy" in handoffs.turns[0]["text"]
-    assert msg_id not in handoffs.module._CHAINS
-
-
-def test_a_waiting_handoff_to_an_archived_conversation_tells_the_sender(agent, world, handoffs, monkeypatch):
-    from openprogram.runtime.conversation.always_on import runtime
-    msg_id = _handoff_left_waiting(agent, world, handoffs, monkeypatch)
-    real = runtime.owner_conversation
-    monkeypatch.setattr(runtime, "owner_conversation", lambda s: bool(s) and s["id"] != "b" and real(s))
-    handoffs.module.deliver_waiting()
-    assert [t["sid"] for t in handoffs.turns] == ["a"] and "not delivered" in handoffs.turns[0]["text"]
-    assert msg_id not in handoffs.module._CHAINS
-
-
-def test_a_waiting_handoff_to_a_deleted_conversation_tells_the_sender(agent, world, handoffs, monkeypatch):
-    msg_id = _handoff_left_waiting(agent, world, handoffs, monkeypatch)
-    real = world["db"].get_session
-    monkeypatch.setattr(world["db"], "get_session", lambda sid: None if sid == "b" else real(sid))
-    handoffs.module.deliver_waiting()
-    assert [t["sid"] for t in handoffs.turns] == ["a"] and "not delivered" in handoffs.turns[0]["text"]
-    assert msg_id not in handoffs.module._CHAINS
-
-
-def test_a_handoff_still_waiting_when_the_worker_goes_down_is_left_for_the_next_one(
-        agent, world, handoffs, monkeypatch):
-    from openprogram.runtime.conversation import run_control
-    enable(agent)
-    world["db"].create_session("a", agent, title="A")
-    world["db"].create_session("b", agent, title="B")
-    handoffs.busy.add("b")
-    monkeypatch.setattr(run_control, "is_worker_stopping", lambda: True)
-    handoffs.module.send("a", "B", "Do it")
-    # No "stayed busy" notice, and the saved entry is not dropped.
-    assert handoffs.turns == []
-    [(msg_id, entry)] = handoffs.module._CHAINS.items()
-    assert entry["phase"] == "waiting" and entry["text"].startswith("📨")
-
-    monkeypatch.setattr(run_control, "is_worker_stopping", lambda: False)
-    handoffs.busy.clear()
-    _restart_worker(handoffs, monkeypatch)
-    assert handoffs.module.deliver_waiting() == 1
-    assert [(t["sid"], t["msg_id"]) for t in handoffs.turns[:1]] == [("b", msg_id)]
-    assert [t["sid"] for t in handoffs.turns] == ["b", "a"]
-
-
-def test_the_first_step_of_a_restart_counts_as_the_worker_going_down(handoffs, monkeypatch):
-    import openprogram.runtime.jobs.runner as jobs_runner
-    assert handoffs.module._worker_going_down() is False
-    runner = SimpleNamespace(_restart_shutdown=False)
-    monkeypatch.setattr(jobs_runner, "current_runner", lambda: runner)
-    assert handoffs.module._worker_going_down() is False
-    runner._restart_shutdown = True  # What restart.prepare_shutdown sets before it pauses turns.
-    assert handoffs.module._worker_going_down() is True
-
-
 def test_a_wake_told_to_give_up_starts_nothing(monkeypatch):
     from openprogram.runtime.conversation import owner_turn
     from openprogram.runtime.conversation import run_control
     monkeypatch.setattr(run_control, "is_turn_running", lambda _sid: False)
     monkeypatch.setattr(owner_turn, "start_owner_turn", lambda *_a, **_k: pytest.fail("admitted"))
     assert owner_turn.start_owner_turn_when_free("b", "main", "x", give_up_when=lambda: True) is None
-
-
-def test_a_cut_off_handoff_the_user_then_stopped_tells_the_sender_once(agent, world, handoffs, monkeypatch):
-    msg_id = _cut_off_handoff(agent, world, handoffs, monkeypatch)
-    closed = _closed(msg_id, "cancelled", reason="owner_lost_during_cancel")
-    handoffs.module.execution_closed(*closed)
-    handoffs.module.execution_closed(*closed)
-    assert len(handoffs.turns) == 2 and handoffs.module.STOPPED_ANSWER in handoffs.turns[1]["text"]
-
-
-def test_a_cut_off_handoff_a_new_turn_will_continue_stays_owed(agent, world, handoffs, monkeypatch):
-    msg_id = _cut_off_handoff(agent, world, handoffs, monkeypatch)
-    handoffs.module.execution_closed(*_closed(msg_id, "interrupted", reason="owner_lost"))
-    assert len(handoffs.turns) == 1 and handoffs.module._CHAINS[msg_id]["reply_to"] == "a"
-
-
-def test_a_stop_of_a_turn_this_worker_runs_is_left_to_the_turn(agent, world, handoffs):
-    enable(agent)
-    world["db"].create_session("a", agent, title="A")
-    world["db"].create_session("b", agent, title="B")
-    handoffs.held["b"] = []
-    handoffs.module.send("a", "B", "Do it")
-    msg_id = handoffs.turns[-1]["msg_id"]
-    handoffs.module.execution_closed(*_closed(msg_id, "cancelled"))
-    assert len(handoffs.turns) == 1 and handoffs.module._CHAINS[msg_id]["phase"] == "running"
-
-
-def test_a_delivery_that_raises_tells_the_sender_in_its_own_words(agent, world, handoffs, monkeypatch):
-    from openprogram.runtime.conversation import owner_turn
-    enable(agent)
-    world["db"].create_session("a", agent, title="A")
-    world["db"].create_session("b", agent, title="B")
-    real, calls = owner_turn.start_owner_turn_when_free, []
-
-    def start(session_id, *args, **kwargs):
-        calls.append(session_id)
-        if session_id == "b":
-            raise RuntimeError("no such model")
-        return real(session_id, *args, **kwargs)
-
-    monkeypatch.setattr(owner_turn, "start_owner_turn_when_free", start)
-    handoffs.module.send("a", "B", "urgent thing")
-    assert calls == ["b", "a"]
-    assert "went wrong" in handoffs.turns[0]["text"] and "busy" not in handoffs.turns[0]["text"]
-    # Nothing is left for the next worker to deliver again.
-    assert not [e for e in handoffs.module._CHAINS.values() if e["session_id"] == "b"]
-
-
-def _cut_off_handoff(agent, world, handoffs, monkeypatch, sender="a", target="b"):
-    enable(agent)
-    db = world["db"]
-    for sid in (sender, target):
-        if db.get_session(sid) is None:
-            db.create_session(sid, agent, title=sid.upper())
-    handoffs.held.setdefault(target, [])
-    handoffs.module.send(sender, target, "Do it")
-    msg_id = handoffs.turns[-1]["msg_id"]
-    _restart_worker(handoffs, monkeypatch)
-    return msg_id
-
-
-def _abandoned(request):
-    return (SimpleNamespace(get_agent_turn_input=lambda _id: {"request": request}),
-            SimpleNamespace(execution_id="e1", session_id="b"))
-
-
-def test_an_unrelated_resume_closes_nothing_of_another_chain(agent, world, handoffs, monkeypatch):
-    first = _cut_off_handoff(agent, world, handoffs, monkeypatch)
-    # An owner's turn resumed in the same conversation has no chain and owes nothing.
-    assert handoffs.module.chain_of("owner-turn", resumes=None) is None
-    assert handoffs.module.send("b", "a", "fresh", msg_id="owner-turn")["hop"] == 1
-    count = len(handoffs.turns)
-    handoffs.module.run_ended(*_abandoned_ended({"automation": "handoff", "user_msg_id": "new",
-                                                 "restart_resume": True}), SimpleNamespace(final_text="x"))
-    assert len(handoffs.turns) == count and handoffs.module._CHAINS[first]["reply_to"] == "a"
-
-
-def _abandoned_ended(request):
-    from openprogram.runtime.execution.model import ExecutionStatus
-    return (SimpleNamespace(get_agent_turn_input=lambda _id: {"request": request}),
-            SimpleNamespace(execution_id="e2", session_id="b", status=ExecutionStatus("completed"), reason_code=None))
-
-
-def test_a_cut_off_handoff_closes_only_its_own_entry(agent, world, handoffs, monkeypatch):
-    enable(agent)
-    world["db"].create_session("c", agent, title="C")
-    handoffs.held["b"] = []
-    world["db"].create_session("a", agent, title="A")
-    world["db"].create_session("b", agent, title="B")
-    handoffs.module.send("a", "b", "first")
-    first = handoffs.turns[-1]["msg_id"]
-    handoffs.module.send("c", "b", "second")
-    second = handoffs.turns[-1]["msg_id"]
-    _restart_worker(handoffs, monkeypatch)
-    handoffs.module.resumed_turn_ended(first, "first answer")
-    assert handoffs.turns[-1]["sid"] == "a" and handoffs.module._CHAINS[second]["reply_to"] == "c"
-
-
-def test_a_cut_off_handoff_nothing_continues_tells_the_sender_once(agent, world, handoffs, monkeypatch):
-    msg_id = _cut_off_handoff(agent, world, handoffs, monkeypatch)
-    closed = _abandoned({"automation": "handoff", "user_msg_id": msg_id})
-    handoffs.module.restart_abandoned(*closed)
-    handoffs.module.restart_abandoned(*closed)
-    assert len(handoffs.turns) == 2 and handoffs.module.CUT_OFF_ANSWER in handoffs.turns[1]["text"]
-
-
-def test_a_second_restart_nothing_continues_settles_the_first_message(agent, world, handoffs, monkeypatch):
-    msg_id = _cut_off_handoff(agent, world, handoffs, monkeypatch)
-    _restart_worker(handoffs, monkeypatch)
-    handoffs.module.restart_abandoned(*_abandoned({
-        "automation": "handoff", "user_msg_id": "second_user", "restart_resume": True,
-        "resumes_message_id": msg_id}))
-    assert len(handoffs.turns) == 2 and handoffs.turns[1]["sid"] == "a"
-
-
-def test_a_paused_handoff_is_not_abandoned_by_a_restart_and_an_owner_turn_is_ignored(
-        agent, world, handoffs, monkeypatch):
-    msg_id = _paused_handoff(agent, world, handoffs)
-    _restart_worker(handoffs, monkeypatch)
-    handoffs.module.restart_abandoned(*_abandoned({"automation": "handoff", "user_msg_id": msg_id}))
-    handoffs.module.restart_abandoned(*_abandoned({"user_msg_id": msg_id}))
-    assert len(handoffs.turns) == 1 and handoffs.module._CHAINS[msg_id]["reply_to"] == "a"
 
 
 def _start_recovery_turn(monkeypatch, saved, adapter, *, new=None):
@@ -2047,7 +1029,7 @@ def _start_recovery_turn(monkeypatch, saved, adapter, *, new=None):
     monkeypatch.setattr(goals, "load_goal", lambda _sid: None)
     monkeypatch.setattr(restart, "window_seconds", lambda: -1)
     monkeypatch.setattr(chat_recovery, "recovery_state", lambda *_a: {"can_start_new_turn": True})
-    monkeypatch.setattr(foreground, "active_foreground_task", lambda *_a: None)
+    monkeypatch.setattr(foreground, "active_foreground_task", lambda *_a, **_k: None)
     event = SimpleNamespace(sequence=1, payload={"expected_version": 1, "interrupted_at": 0, "resume_before": None})
     return restart_turn.start_recovery_turn(executions, execution, event)
 
@@ -2072,112 +1054,6 @@ def test_a_continued_turn_names_the_first_message_of_its_chain(monkeypatch, save
     with pytest.raises(LookupError):
         _start_recovery_turn(monkeypatch, saved, Adapter)
     assert admitted[0].get("resumes_message_id") == expected and admitted[0]["user_msg_id"] == "e2_user"
-
-
-def _continuation_adapter(activate, *, failed=None):
-    class Adapter:
-        def __init__(self, **_kw):
-            pass
-
-        def admit_payload(self, *, payload, **_kw):
-            self.request = payload["request"]
-            return SimpleNamespace(execution_id="e2")
-
-        async def activate(self, _admission):
-            return activate()
-
-        def fail_admission(self, _admission, *, reason_code):
-            failed.append(reason_code)
-
-    return Adapter
-
-
-def _handoff_closed(monkeypatch):
-    """What the first turn's entry is told when its continuation ends."""
-    import threading
-    from openprogram.runtime.conversation.always_on import handoff
-    told, done = [], threading.Event()
-
-    def resumed_turn_ended(msg_id, answer):
-        told.append((msg_id, answer))
-        done.set()
-
-    monkeypatch.setattr(handoff, "resumed_turn_ended", resumed_turn_ended)
-    return told, done
-
-
-CONTINUED_HANDOFF = {"automation": "handoff", "user_msg_id": "first"}
-_SAVED_CONTINUATION = {"automation": "handoff", "user_msg_id": "e2_user", "restart_resume": True,
-                       "resumes_message_id": "first"}
-
-
-def test_a_continuation_that_cannot_start_tells_the_sender(monkeypatch):
-    import openprogram.runtime.conversation.execution_hooks  # noqa: F401  (registers the hook)
-    from openprogram.runtime.execution.model import ExecutionStatus
-    told, done = _handoff_closed(monkeypatch)
-    failed = []
-
-    def activate():
-        raise RuntimeError("no owner")
-
-    new = SimpleNamespace(execution_id="e2", session_id="b", status=ExecutionStatus.QUEUED,
-                          current_attempt_id=None, reason_code=None)
-    monkeypatch.setattr("openprogram.runtime.conversation.always_on.handoff._handoff_request",
-                        lambda _store, execution: _SAVED_CONTINUATION if execution.execution_id == "e2" else None)
-    outcome = _start_recovery_turn(
-        monkeypatch, CONTINUED_HANDOFF, _continuation_adapter(activate, failed=failed), new=new)
-    assert outcome == "new_turn_admitted" and done.wait(5)
-    from openprogram.runtime.conversation.always_on.handoff import CUT_OFF_ANSWER
-    assert failed == ["restart_activation_failed"] and told == [("first", CUT_OFF_ANSWER)]
-
-
-@pytest.mark.parametrize("result,status,reports", [
-    (SimpleNamespace(failed=True, error="RuntimeError: broke", final_text=""), "failed", True),
-    (None, "interrupted", False),  # The worker went down: the next one decides.
-])
-def test_a_continuation_that_raises_outside_its_loop_tells_the_sender(monkeypatch, result, status, reports):
-    import threading
-    from openprogram.runtime.execution.model import ExecutionStatus
-    told, done = _handoff_closed(monkeypatch)
-    finished = threading.Event()
-
-    def activate():
-        new.status = ExecutionStatus(status)
-        new.reason_code = "agent_runner_error" if reports else "owner_lost"
-        finished.set()
-        return "active", result
-
-    new = SimpleNamespace(execution_id="e2", session_id="b", status=ExecutionStatus.QUEUED,
-                          current_attempt_id=None, reason_code=None)
-    monkeypatch.setattr("openprogram.runtime.conversation.always_on.handoff._handoff_request",
-                        lambda _store, execution: _SAVED_CONTINUATION if execution.execution_id == "e2" else None)
-    _start_recovery_turn(monkeypatch, CONTINUED_HANDOFF, _continuation_adapter(activate), new=new)
-    assert finished.wait(5)
-    assert done.wait(5 if reports else 0.2) is reports
-    if reports:
-        assert told[0][0] == "first" and "failed before it answered" in told[0][1]
-
-
-def test_a_failed_continuation_still_answers_and_old_chains_expire(agent, world, handoffs, monkeypatch):
-    import json
-    import time
-    enable(agent)
-    db = world["db"]
-    db.create_session("a", agent, title="A")
-    db.create_session("b", agent, title="B")
-    handoffs.held["b"] = []
-    handoffs.module.send("a", "B", "Check the links")
-    msg_id = handoffs.turns[0]["msg_id"]
-    _restart_worker(handoffs, monkeypatch)
-    handoffs.module.resumed_turn_ended(msg_id, None)
-    assert "could not run a turn" in handoffs.turns[-1]["text"]
-
-    chains = json.loads(handoffs.path.read_text())
-    for entry in chains.values():
-        entry["at"] = time.time() - handoffs.module.CHAIN_TTL_S - 1
-    handoffs.path.write_text(json.dumps(chains))
-    _restart_worker(handoffs, monkeypatch)
-    assert json.loads(handoffs.path.read_text()) == {}
 
 
 def test_a_check_in_runs_beside_the_conversation_and_records_its_outcome(agent, world):
@@ -3233,21 +2109,6 @@ CHECK_IN_TURN = {"speaker_id": "runtime/always_on", "advance_head": False, "back
 SCHEDULED_TURN = {"speaker_id": "runtime/scheduler", "advance_head": False, "background": True, "user_msg_id": "m"}
 
 
-def test_a_check_in_can_hand_work_over_and_a_scheduled_run_cannot(agent, world, handoffs, monkeypatch):
-    from openprogram.programs.tools.interaction.handoff import _handoff_impl as tool
-    enable(agent, autonomy="act")
-    world["db"].create_session("a", agent, title="A")
-    world["db"].create_session("b", agent, title="B")
-    _turn(monkeypatch, "a", **CHECK_IN_TURN)
-    assert tool("B", "you").startswith("Sent to “B” (b), hop 1 of")
-    _turn(monkeypatch, "a", **SCHEDULED_TURN)
-    assert tool("B", "you").startswith("[handoff refused]")
-    _turn(monkeypatch, "a", **dict(CHECK_IN_TURN, spawned_from_session="parent"))
-    assert tool("B", "you").startswith("[handoff refused]")
-    _turn(monkeypatch, "a", advance_head=False, user_msg_id="m")  # a sub-agent's turn
-    assert tool("B", "you").startswith("[handoff refused]")
-
-
 @pytest.mark.parametrize("fields,origin", [
     (CHECK_IN_TURN, "check_in"), (SCHEDULED_TURN, "scheduled"),
     ({"speaker_id": "local", "user_msg_id": "in-chain", "automation": "handoff"}, "handoff"),
@@ -4177,7 +3038,6 @@ def test_a_goal_stopped_two_ways_waits_for_the_last_undo(agent, stops, monkeypat
     assert goal["status"] == "active"
 
 
-
 @pytest.mark.parametrize("conversation", [
     {"always_on": False, "source": ""},  # an ordinary Agent: nothing there would restart the Goal
     {"always_on": True, "source": "agent"},  # a sub-agent's conversation never wakes either
@@ -4513,21 +3373,6 @@ def test_try_chat_behind_a_stale_index_row_is_neither_joined_nor_woken(agent, wo
     assert store.load_state(sid) == before
 
 
-def test_a_try_chat_takes_no_handoff_by_id_or_behind_a_stale_index_row(agent, world, handoffs, monkeypatch):
-    enable(agent)
-    db = world["db"]
-    db.create_session("a", agent, title="A")
-    db.create_session("trial", agent, source="web", title="Draft", agent_trial=True)
-    listed = db.list_sessions
-    monkeypatch.setattr(db, "list_sessions", lambda **kw: [
-        {key: value for key, value in row.items() if key != "agent_trial"} for row in listed(**kw)])
-    refused = handoffs.module.HandoffRefused
-    with pytest.raises(refused, match="cannot take handoffs"):
-        handoffs.module.send("a", "trial", "work")
-    with pytest.raises(refused, match="No conversation is titled 'Draft'"):
-        handoffs.module.send("a", "Draft", "work")
-
-
 def test_real_store_lists_the_try_flag(tmp_path):
     from openprogram.state.store.session.session_store.service import SessionStore
     sessions = SessionStore(root_path=tmp_path)
@@ -4668,7 +3513,6 @@ def test_only_a_typed_turn_moves_the_wake_ladder_back(tmp_path, monkeypatch, fie
     monkeypatch.setattr(always_on_runtime, "note_user_turn", noted.append)
     _user_row_of_a_real_turn(tmp_path, monkeypatch, **{**_TYPED, **fields})
     assert noted == (["marked"] if talked else [])
-
 
 
 @pytest.mark.parametrize("agent_choice,conversation_choice,searches", [
@@ -5036,7 +3880,7 @@ def test_the_last_model_round_is_kept_apart_from_the_joined_reply():
     tally = _TurnTally()
     for said in ("Checking.", "[nothing new]"):
         _record_turn_end(round_of(said), tally, req=req, on_event=lambda _frame: None, ordered_blocks_out=None)
-    assert "".join(tally.final_text_parts) == "Checking.[nothing new]"
+    assert tally.reply.text == "Checking.[nothing new]"
     assert req.last_round_text == "[nothing new]"
 
 

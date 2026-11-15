@@ -1,26 +1,29 @@
-"""Move what the removed ``handoff`` tool left waiting onto ``send_message``.
+"""Move everything the removed ``handoff`` tool left onto ``send_message``.
 
 The always-on hand-off saved every message and reply turn in
-``<state>/always_on/handoffs.json`` (``handoff.py``). The model now reaches
-another conversation with ``send_message``, whose delivery is a tracked Job
-and whose reply comes back as a notice with no timeout. This moves the
-entries that were still **waiting** for a busy conversation onto that path;
-everything else stays where it was:
+``<state>/always_on/handoffs.json``. The model now reaches another
+conversation with ``send_message``, whose delivery is a tracked Job and
+whose reply comes back as a notice with no timeout, and the hand-off's own
+replay is gone. Every entry moves:
 
 * a waiting message (``reply_to`` set) is delivered by ``send_message``
   from its sender to its target, carrying its hop count;
 * a waiting reply is delivered by ``send_message`` from the conversation
   that answered (named in the reply's own text) to the one that asked;
-* a waiting message that also owes earlier conversations an answer
-  (``owed_after``) stays for the old replay, which carries that chain on;
+* a turn already running or paused that owes its sender a reply becomes a
+  watch (``notices.watch``): the sender gets the conversation's latest
+  reply once it is idle, which is what the old replay sent when the turn
+  ended;
+* the earlier conversations an entry also owes (``owed_after``, nearest
+  last) each get the answer of the one below them once it has answered
+  (``notices.hold_reply``), the chain the old replay carried on;
 * a delivery ``send_message`` refuses (``[send_message error]``) stays
   pending under a new Job id and is tried again at the next Worker start;
-* a turn already running or paused keeps its entry in ``handoffs.json``,
-  so the reply it owes is still sent when it ends (``handoff.turn_ended``),
-  and finished entries stay there until they age out as before.
+* finished entries, and waiting ones with nothing to deliver or nobody to
+  deliver it from, are only kept in the record.
 
-Every entry moved is kept, as it was, in ``handoffs.migrated.json`` beside
-its delivery's state and ``execution_id``, and ``handoffs.json`` is copied
+Every entry is kept, as it was, in ``handoffs.migrated.json`` beside its
+delivery's state and ``execution_id``, and ``handoffs.json`` is copied
 once to ``handoffs.before-migration.json`` before anything changes, so old
 hand-offs stay readable. The transcripts' 📨 and ↩️ rows are not touched.
 
@@ -64,37 +67,84 @@ def job_id_for(msg_id: str) -> str:
     return "j_" + hashlib.sha256(f"handoff:{msg_id}".encode("utf-8")).hexdigest()[:14]
 
 
+def watch_id_for(msg_id: str) -> str:
+    """The watch's id for one stored running turn, the same on every run."""
+    return "watch_" + hashlib.sha256(f"handoff:{msg_id}".encode("utf-8")).hexdigest()[:12]
+
+
+def _relays(msg_id: str, entry: dict[str, Any], base: str, base_from: str,
+            base_run: str) -> list[dict[str, Any]]:
+    """The earlier conversations ``entry`` owes (``owed_after``, nearest
+    last), each waiting on the answer of the one below it: the nearest on
+    ``base`` answered in ``base_from``, the next on that relay, and so on."""
+    out: list[dict[str, Any]] = []
+    passer, waits_on, run = base_from, base, base_run
+    for k, earlier in enumerate(reversed([str(e) for e in entry.get("owed_after") or [] if e])):
+        relay_id = f"relay:handoff:{msg_id}:{k}"
+        out.append({"to": earlier, "from": passer, "id": relay_id,
+                    "waits_on": [passer, waits_on, run]})
+        passer, waits_on, run = earlier, relay_id, ""
+    return out
+
+
 def plan(chains: dict[str, Any]) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
-    """``(deliveries, kept)``: what moves to ``send_message`` and what stays."""
+    """``(deliveries, retired)``: what moves to ``send_message`` and what is
+    only kept in the record (finished, or nothing left to deliver)."""
     deliveries: dict[str, dict[str, Any]] = {}
-    kept: dict[str, Any] = {}
+    retired: dict[str, Any] = {}
     for msg_id, entry in chains.items():
-        if (not isinstance(entry, dict) or entry.get("phase") != "waiting" or not entry.get("text")
-                or entry.get("owed_after")):
-            # An entry that owes earlier conversations an answer after its
-            # own (``owed_after``) has no send_message equivalent: the old
-            # replay carries that chain on.
-            kept[msg_id] = entry
+        if not isinstance(entry, dict):
+            retired[msg_id] = entry
             continue
+        phase = entry.get("phase")
         hop = int(entry.get("hop") or 0)
+        if phase in ("running", "paused"):
+            # The turn runs on (or is continued after this restart); what it
+            # owed is its latest reply once it is idle. A reply turn that
+            # carried an answer on owes the nearest earlier conversation.
+            owed = [str(e) for e in entry.get("owed_after") or [] if e]
+            if entry.get("reply_to"):
+                watcher, rest = str(entry["reply_to"]), owed
+            elif owed:
+                watcher, rest = owed[-1], owed[:-1]
+            else:
+                retired[msg_id] = entry
+                continue
+            watch = watch_id_for(msg_id)
+            deliveries[msg_id] = {
+                "kind": "watch", "from": watcher, "to": str(entry["session_id"]), "hop": hop,
+                "watch_id": watch,
+                "relays": _relays(msg_id, {"owed_after": rest}, watch, watcher, ""),
+            }
+            continue
+        if phase != "waiting" or not entry.get("text"):
+            retired[msg_id] = entry
+            continue
         if entry.get("reply_to"):
+            job_id = job_id_for(msg_id)
             deliveries[msg_id] = {
                 "kind": "message", "from": str(entry["reply_to"]), "to": str(entry["session_id"]),
                 "message": str(entry.get("message") or entry["text"]), "hop": hop,
+                # Who waited above it, the sender included: send_message
+                # refuses a message back to one of them.
+                "ancestors": [str(a) for a in entry.get("ancestors") or [entry["reply_to"]] if a],
+                "relays": _relays(msg_id, entry, job_id, str(entry["reply_to"]), str(entry["session_id"])),
             }
             continue
         answered_by = _FROM.search(str(entry["text"]))
         if answered_by is None:
-            # No conversation to send it from: the old replay delivers it.
-            kept[msg_id] = entry
+            # No conversation to send it from.
+            retired[msg_id] = entry
             continue
         deliveries[msg_id] = {
             "kind": "reply", "from": answered_by.group(1), "to": str(entry["session_id"]),
-            "message": str(entry["text"]), "hop": hop,
+            "message": str(entry["text"]), "hop": hop, "relays": [],
         }
     for msg_id, delivery in deliveries.items():
         delivery.update(job_id=job_id_for(msg_id), status="pending")
-    return deliveries, kept
+        if not delivery["relays"]:
+            delivery.pop("relays")
+    return deliveries, retired
 
 
 def _record(path: Path) -> dict[str, Any]:
@@ -113,24 +163,26 @@ def migrate(*, apply: bool = False, deliver: bool = True, send: Send | None = No
     with store.lock("handoffs"):
         chains = store._read_json(current)  # noqa: SLF001
         record = _record(migrated)
-        deliveries, kept = plan(chains)
+        deliveries, retired = plan(chains)
         report = {"messages": sum(d["kind"] == "message" for d in deliveries.values()),
                   "replies": sum(d["kind"] == "reply" for d in deliveries.values()),
-                  "kept": len(kept),
+                  "watches": sum(d["kind"] == "watch" for d in deliveries.values()),
+                  "retired": len(retired),
                   "pending": sum(d.get("status") == "pending" for d in record["deliveries"].values()),
                   "applied": False}
         if not apply:
             return report
-        if deliveries:
+        if chains:
             if current.exists() and not backup.exists():
                 shutil.copy2(current, backup)
+            for msg_id, entry in chains.items():
+                record["original"].setdefault(msg_id, entry)
             for msg_id, delivery in deliveries.items():
-                record["original"].setdefault(msg_id, chains[msg_id])
                 record["deliveries"].setdefault(msg_id, delivery)
             # The record first: a stop before the next write leaves the entry
             # in both files, and the next run moves it once.
             store._write_json(migrated, record)  # noqa: SLF001
-            store.save_handoffs(kept)
+            store.save_handoffs({})
         report["applied"] = True
     if deliver:
         report.update(deliver_pending(send=send))
@@ -149,7 +201,10 @@ def deliver_pending(*, send: Send | None = None, settle: Callable[[str], None] |
         if settle is not None:
             settle(delivery["to"])
         try:
-            status, execution_id, note = send(delivery)
+            status, execution_id, note = (watch_with_notices(delivery) if delivery["kind"] == "watch"
+                                          else send(delivery))
+            if status == "delivered":
+                hold_relays(delivery)
         except Exception as exc:  # noqa: BLE001 - one entry never stops the others
             _log.warning("hand-off %s not delivered: %s: %s", msg_id, type(exc).__name__, exc)
             status, execution_id, note = "pending", None, f"{type(exc).__name__}: {exc}"
@@ -200,7 +255,7 @@ def send_with_send_message(delivery: dict[str, Any]) -> tuple[str, Optional[str]
         parent_agent=sender.get("agent_id"), chosen_agent=str(target.get("agent_id") or "main"),
         run_session=delivery["to"], target_tip=str(target.get("head_id") or ""),
         caller_authority=authority, messages=int(delivery.get("hop") or 0), generations=0,
-        job_id=job_id,
+        job_id=job_id, ancestors=list(delivery.get("ancestors") or []) or None,
     )
     found = _EXECUTION_ID.search(text)
     if found is None:
@@ -212,17 +267,73 @@ def send_with_send_message(delivery: dict[str, Any]) -> tuple[str, Optional[str]
     return "delivered", found.group(1), text.splitlines()[0][:200]
 
 
-def migrate_in_worker() -> None:
-    """At Worker start: move the waiting entries now, before the old replay
-    reads the file, and send them once each conversation's restart settled."""
-    report = migrate(apply=True, deliver=False)
-    if not report["messages"] and not report["replies"] and not report["pending"]:
-        return
-    from openprogram.runtime.conversation.always_on.handoff import _wait_for_restart_to_settle
+def _authority_of(session_id: str) -> dict[str, Any]:
+    from openprogram.runtime.context.session_db import default_db
+    from openprogram.runtime.permissions.authority import authority_from_message, local_owner_authority
+    head = str((default_db().get_session(session_id) or {}).get("head_id") or "")
+    return authority_from_message(session_id, head) or local_owner_authority()
 
-    threading.Thread(target=deliver_pending, kwargs={"settle": _wait_for_restart_to_settle},
+
+def watch_with_notices(delivery: dict[str, Any]) -> tuple[str, Optional[str], str]:
+    """A turn still running that owed its sender a reply: the sender gets
+    that conversation's latest reply once it is idle."""
+    from openprogram.runtime.context.session_db import default_db
+    from openprogram.runtime.jobs import notices
+    db = default_db()
+    sender, target = db.get_session(delivery["from"]), db.get_session(delivery["to"])
+    if sender is None or target is None:
+        gone = delivery["from"] if sender is None else delivery["to"]
+        return "failed", None, f"conversation {gone} no longer exists"
+    if not notices.watch(
+        sender_session_id=delivery["from"], target_session_id=delivery["to"],
+        target_head_id=str(target.get("head_id") or ""), label=str(target.get("title") or ""),
+        agent_id=str(sender.get("agent_id") or "main"), chain_messages=int(delivery.get("hop") or 0),
+        chain_generations=0, authority=_authority_of(delivery["from"]), watch_id=delivery["watch_id"],
+    ):
+        return "retry", None, "the sender cannot hold a watch now"
+    return "delivered", delivery["watch_id"], "watching"
+
+
+def hold_relays(delivery: dict[str, Any]) -> None:
+    """Each earlier conversation the entry owed gets the answer below it."""
+    from openprogram.runtime.context.session_db import default_db
+    from openprogram.runtime.jobs import notices
+    db = default_db()
+    for k, relay in enumerate(delivery.get("relays") or []):
+        if db.get_session(relay["to"]) is None:
+            continue
+        waits_on = list(relay["waits_on"])
+        if k == 0 and delivery["kind"] == "message":
+            # A refused attempt delivered later under a new Job id.
+            waits_on[1] = delivery["job_id"]
+        source = db.get_session(relay["from"]) or {}
+        notices.hold_reply(
+            sender_session_id=relay["to"], entry_id=relay["id"], from_session_id=relay["from"],
+            waits_on=waits_on, label=str(source.get("title") or ""),
+            agent_id=str(source.get("agent_id") or "main"), authority=_authority_of(relay["to"]),
+        )
+
+
+def wait_for_restart_to_settle(session_id: str) -> None:
+    """Let the restart continue this conversation's own turns first: a new
+    turn here would read as the user having moved on from them."""
+    from openprogram.runtime.conversation.owner_turn import WAKE_POLL_S, WAKE_WAIT_S
+    from openprogram.runtime.execution.restart import conversation_settling
+    from openprogram.runtime.execution.store import default_store
+    deadline = time.monotonic() + WAKE_WAIT_S
+    while conversation_settling(default_store(), session_id) and time.monotonic() < deadline:
+        time.sleep(WAKE_POLL_S)
+
+
+def migrate_in_worker() -> None:
+    """At Worker start: move every stored entry, and send the deliveries
+    once each conversation's restart settled."""
+    report = migrate(apply=True, deliver=False)
+    if not (report["messages"] or report["replies"] or report["watches"] or report["pending"]):
+        return
+    threading.Thread(target=deliver_pending, kwargs={"settle": wait_for_restart_to_settle},
                      name="handoff-migration", daemon=True).start()
 
 
-__all__ = ["deliver_pending", "job_id_for", "migrate", "migrate_in_worker", "plan",
-           "send_with_send_message"]
+__all__ = ["deliver_pending", "hold_relays", "job_id_for", "migrate", "migrate_in_worker", "plan",
+           "send_with_send_message", "watch_id_for", "watch_with_notices"]

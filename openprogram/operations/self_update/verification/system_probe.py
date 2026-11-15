@@ -16,7 +16,19 @@ from typing import Mapping
 from ..control.recovery import SYSTEM_CHECKS
 from ..types import UpdateRecord
 
-_PORT = 18100
+# A fixed port for tests; otherwise a target without a port is this profile's
+# own worker, on the port the profile settled on (worker/lifecycle.py).
+_PORT: int | None = None
+
+
+def _target_port(target: "ProbeTarget") -> int:
+    if target.port:
+        return target.port
+    if _PORT:
+        return _PORT
+    from openprogram.operations.worker.lifecycle import resolve_worker_port
+
+    return resolve_worker_port()
 OBSERVATION_ENTRIES = frozenset({"/api/commands", "/api/diagnostics", "/api/doctor", "/healthz", "/chat"})
 # A page of the served docs site, e.g. /docs/install/upgrade.html.
 DOCS_PAGE = "/docs/<path>.html"
@@ -111,7 +123,7 @@ def request_dispatch(record: UpdateRecord, *, timeout: float = 120, target: "Pro
     from openprogram.host.security.url_policy import OwnerURLException
 
     target = target or ProbeTarget()
-    port = target.port or _PORT
+    port = _target_port(target)
     origin = f"http://127.0.0.1:{port}"
     try:
         if target.state_dir is None and get_active_profile() is not None:
@@ -140,7 +152,7 @@ def post_worker(path: str, target: ProbeTarget, *, timeout: float = 120) -> dict
     from openprogram.host.security.safe_http import safe_client, OutboundSecurityConfig
     from openprogram.host.security.url_policy import OwnerURLException
 
-    origin = f"http://127.0.0.1:{target.port or _PORT}"
+    origin = f"http://127.0.0.1:{_target_port(target)}"
     try:
         token = target.token or read_web_token(target.state_dir)
         security = OutboundSecurityConfig(owner_exceptions=(OwnerURLException(consumer="runtime.local_probe", origin=origin),))
@@ -237,7 +249,7 @@ def probe_browser(target: ProbeTarget, *, python: str, browsers: Path | None, ti
     from openprogram.host.security.backend_endpoint import build_owner_auth_url
     from openprogram.host.security.backend_endpoint import read_active_web_access, read_web_token
 
-    origin = f"http://127.0.0.1:{target.port or _PORT}"
+    origin = f"http://127.0.0.1:{_target_port(target)}"
     try:
         access = read_active_web_access(target.state_dir)
         token = target.token or read_web_token(target.state_dir)
@@ -296,7 +308,7 @@ def _probe_system(record: UpdateRecord, revision: str | None, timeout: float, ob
     from websockets.sync.client import connect
 
     target = target or ProbeTarget()
-    port = target.port or _PORT
+    port = _target_port(target)
     deadline = time.monotonic() + timeout
     stage = "owner_auth"
     origin = f"http://127.0.0.1:{port}"

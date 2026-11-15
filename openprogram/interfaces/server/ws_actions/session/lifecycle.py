@@ -5,6 +5,8 @@ import logging
 import asyncio
 import json
 
+from openprogram.state.store.session.conversation_work import run_for_conversation
+
 from .listing import handle_list_sessions
 
 _log = logging.getLogger(__name__)
@@ -26,7 +28,7 @@ async def handle_delete_session(ws, cmd: dict):
     # the session; otherwise the turn keeps writing into a deleted repo and
     # its questions stay open in other tabs. Cancelling waits on the
     # execution owner, so it runs off the event loop.
-    await asyncio.to_thread(
+    await run_for_conversation(session_id, 
         _s._stop_session_work, session_id, reason="the target session was deleted",
     )
     with _s._sessions_lock:
@@ -36,7 +38,7 @@ async def handle_delete_session(ws, cmd: dict):
             conv["runtime"].close()
         _s._cleanup_session_resources(session_id, conv)
     try:
-        await asyncio.to_thread(default_db().delete_session, session_id)
+        await run_for_conversation(session_id, default_db().delete_session, session_id)
     except Exception as e:
         _s._log(f"[delete_session] {session_id}: {e}")
         # The sender already dropped the row; hand it the real list so a
@@ -86,7 +88,9 @@ async def handle_rename_session(ws, cmd: dict):
             _s._log(f"[rename_session] {session_id}: reply not delivered")
 
     db = default_db()
-    before = db.get_session(session_id) if isinstance(session_id, str) else None
+    # Every store call here takes the conversation's lock: off the loop.
+    before = (await run_for_conversation(session_id, db.get_session, session_id)
+              if isinstance(session_id, str) else None)
     if not before:
         await reply("failed")
         return
@@ -105,7 +109,7 @@ async def handle_rename_session(ws, cmd: dict):
                 _s._log(f"[rename_session] {session_id}: {type(exc).__name__}")
                 await reply("failed")
                 return
-            current = db.get_session(session_id)
+            current = await run_for_conversation(session_id, db.get_session, session_id)
             if (not current or current.get("title") != before.get("title")
                     or (current.get("extra_meta") or {}).get("_user_titled")
                     != (before.get("extra_meta") or {}).get("_user_titled")):
@@ -127,7 +131,7 @@ async def handle_rename_session(ws, cmd: dict):
             # never replaces it.
             fields = {"_user_titled": True}
         try:
-            db.update_session(session_id, title=title, **fields)
+            await run_for_conversation(session_id, lambda: db.update_session(session_id, title=title, **fields))
         except Exception as exc:
             _s._log(f"[rename_session] {session_id}: {type(exc).__name__}")
             await reply("failed")
@@ -243,23 +247,33 @@ async def handle_update_session_flags(ws, cmd: dict):
     if "group" in cmd:
         g = cmd.get("group")
         fields["group"] = "" if g is None else str(g)
+    sort_at = None
     if "sort_at" in cmd:
         try:
             sort_at = float(cmd.get("sort_at") or 0)
         except (TypeError, ValueError):
             sort_at = 0.0
-        row = default_db().get_session(session_id) or {}
         fields["sort_at"] = sort_at
-        fields["sort_since"] = float(row.get("updated_at") or 0) if sort_at else 0.0
     if not fields:
         return
-    was_archived = bool((default_db().get_session(session_id) or {}).get("archived"))
-    with _s._sessions_lock:
-        conv = _s._sessions.get(session_id)
-        if conv is not None:
-            conv.update(fields)
-    try:
+
+    def write() -> bool:
+        """Write the flags; whether the conversation was archived before.
+        Read and written under the conversation's lock: in its lane."""
+        row = default_db().get_session(session_id) or {}
+        # Read before the write: the row may be the live conversation's dict.
+        was_archived = bool(row.get("archived"))
+        if sort_at is not None:
+            fields["sort_since"] = float(row.get("updated_at") or 0) if sort_at else 0.0
+        with _s._sessions_lock:
+            conv = _s._sessions.get(session_id)
+            if conv is not None:
+                conv.update(fields)
         default_db().update_session(session_id, **fields)
+        return was_archived
+
+    try:
+        was_archived = await run_for_conversation(session_id, write)
     except Exception as e:
         _s._log(f"[update_session_flags] {session_id}: {e}")
     else:
@@ -267,7 +281,7 @@ async def handle_update_session_flags(ws, cmd: dict):
             _close_browser_tabs(session_id)
         if "archived" in fields and fields["archived"] != was_archived:
             from openprogram.runtime.conversation.always_on.runtime import archive_changed
-            await asyncio.to_thread(archive_changed, session_id, fields["archived"])
+            await run_for_conversation(session_id, archive_changed, session_id, fields["archived"])
     _s._broadcast(json.dumps({
         "type": "session_updated",
         "data": {"id": session_id, **fields},
@@ -324,7 +338,8 @@ async def handle_clear_sessions(ws, cmd: dict):
         with _s._running_tasks_lock:
             _s._running_tasks.pop(cid, None)
         try:
-            db.delete_session(cid)
+            # Deleted under the conversation's lock: in its lane.
+            await run_for_conversation(cid, db.delete_session, cid)
             _close_browser_tabs(cid)
         except Exception as e:
             _s._log(f"[clear_sessions] delete {cid}: {e}")
@@ -361,7 +376,8 @@ async def handle_mark_session_read(ws, cmd: dict):
         if conv is not None:
             conv["unread"] = False
     try:
-        default_db().update_session(sid, unread=False)
+        # Writing the flag takes the conversation's lock: off the loop.
+        await run_for_conversation(sid, default_db().update_session, sid, unread=False)
     except Exception as e:
         _s._log(f"[mark_session_read] {sid}: {e}")
     _s._broadcast(json.dumps({
@@ -370,7 +386,7 @@ async def handle_mark_session_read(ws, cmd: dict):
     }, default=str))
     try:
         from openprogram.runtime.conversation.always_on import pending
-        if pending.mark_seen(sid):
+        if await run_for_conversation(sid, pending.mark_seen, sid):
             # Its news left the pending inbox.
             _s._broadcast(json.dumps({"type": "always_on_update", "data": {"session_id": sid}}))
     except Exception as e:  # noqa: BLE001 - reading the conversation goes on

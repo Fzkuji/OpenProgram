@@ -3,14 +3,13 @@
 <h1>Getting started</h1>
 
 <h2 id="install">1. Install</h2>
-<pre translate="no"><code>curl -fsSL https://openprogram.io/install | sh        # macOS, Linux
-irm https://openprogram.io/install.ps1 | iex          # Windows x64 from v1.2.0, PowerShell</code></pre>
+<pre translate="no"><code>curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh        # macOS, Linux
+irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex          # Windows x64, PowerShell</code></pre>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Fact</th></tr></thead>
 <tbody>
-<tr><th scope="row">Included</th><td>Python and the Web UI; Node.js is not needed</td></tr>
-<tr><th scope="row">Git</th><td>Needed on v1.0.0 for session and Memory history; <code translate="no">openprogram doctor</code> reports it</td></tr>
-<tr><th scope="row">Apps</th><td>macOS is a DMG, Linux a deb or AppImage; Windows arrives in v1.2.0</td></tr>
+<tr><th scope="row">Included</th><td>Python, Node.js, Git and the Web UI; nothing else to install</td></tr>
+<tr><th scope="row">Apps</th><td>macOS is a DMG, Linux a deb or AppImage, Windows an installer: <a href="../install/install.html#choose">Install</a></td></tr>
 <tr><th scope="row">Windows sandbox</th><td>Execution is separate</td></tr>
 </tbody>
 </table>
@@ -18,8 +17,9 @@ irm https://openprogram.io/install.ps1 | iex          # Windows x64 from v1.2.0,
 
 <h2 id="connect-a-provider">2. Connect a provider</h2>
 <table class="stack fixed">
-<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Does</th></tr></thead>
+<thead class="sr"><tr><th scope="col">Where</th><th scope="col">Does</th></tr></thead>
 <tbody>
+<tr><th scope="row">App or Web: <strong>Settings → LLM Providers → Add provider</strong></th><td>Three steps: pick a provider, sign in or paste its key (a key already in your environment is offered), then pick its default model and <strong>Start chatting</strong></td></tr>
 <tr><th scope="row"><code translate="no">openprogram</code></th><td>First run opens a setup wizard: import a Claude Code, Codex or Gemini CLI login, or paste an API key. Ends in the terminal chat</td></tr>
 <tr><th scope="row"><code translate="no">openprogram setup</code></th><td>Re-runs the wizard</td></tr>
 </tbody>

@@ -3,6 +3,8 @@
 <h1>供应商额度</h1>
 
 <p>每个已连接供应商一份状态：健康、额度、30 天花费、默认模型和密钥健康。额度先从 OpenProgram 已经收到的回复里取；端点只在少数事件上读取，从不定时。</p>
+<p>供应商已启用或持有凭据时算已连接：凭据在 OpenProgram 的存储里、它的 CLI 在 <code translate="no">PATH</code> 上、有 Codex CLI 的登录文件，或云凭据链已满足。</p>
+<p>只能通过 OpenProgram 登录的供应商（例如 Grok Subscription）要在登录保存后才算，所以新安装一个都不列出：Providers 页显示<strong>连接一个模型 Provider</strong>，<code translate="no">openprogram providers status</code> 打印 "No connected providers"。</p>
 
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">部分</th><th scope="col">位置</th></tr></thead>
@@ -11,7 +13,7 @@
 <tr><th scope="row">端点读取</th><td><code translate="no">openprogram/models/usage/quota_fetchers/</code>，每个来源一个模块</td></tr>
 <tr><th scope="row">状态</th><td><code translate="no">openprogram/models/usage/provider_status.py</code>，线上类型生成到 <code translate="no">apps/web/lib/settings/provider-status.generated.ts</code></td></tr>
 <tr><th scope="row">路由</th><td><code translate="no">GET /api/providers/status</code>、<code translate="no">POST /api/providers/status/refresh</code>，WebSocket 帧 <code translate="no">provider_quota</code></td></tr>
-<tr><th scope="row">CLI</th><td><code translate="no">openprogram providers status [--refresh] [--json]</code></td></tr>
+<tr><th scope="row">CLI</th><td><code translate="no">openprogram providers status [--refresh] [--json]</code>：向正在运行的 Worker 要路由的结果（每把 key 的使用次数和上次使用只在它的内存里），没有 Worker 回应时自己构建</td></tr>
 </tbody>
 </table>
 
@@ -78,15 +80,16 @@
 <ul>
 <li>比状态新的 401 读取：<code translate="no">invalid_key</code>（"quota endpoint answered 401"），直到读取成功或用这个密钥的调用成功。</li>
 <li>在 <code translate="no">billing_blocked</code> 停用之后成功的读取推翻这个停用，由这次读取的余额决定。</li>
+<li>refresh token 被 token 端点拒绝（<code translate="no">invalid_grant</code>、已被使用）的登录是 <code translate="no">needs_reauth</code>，读作 <code translate="no">signed_out</code>，带“重新登录”修复按钮。已存的登录和委托给 Codex CLI 文件的登录都一样；委托的那个在文件换成另一个登录之前不再请求。</li>
 </ul>
-<p>健康取最好那个密钥的状态，被用尽的限制覆盖：<code translate="no">ready</code>、<code translate="no">rate_limited</code>（带重置时间）、<code translate="no">no_credit</code>、<code translate="no">invalid_key</code>、<code translate="no">signed_out</code> 或 <code translate="no">unknown</code>。</p>
+<p>健康取最好那个密钥的状态，被用尽的限制覆盖：<code translate="no">ready</code>、<code translate="no">rate_limited</code>（带重置时间）、<code translate="no">no_credit</code>、<code translate="no">invalid_key</code>、<code translate="no">signed_out</code> 或 <code translate="no">unknown</code>。没有密钥的供应商是 <code translate="no">not_configured</code>；不应答的本地服务是 <code translate="no">not_running</code>。每个需要处理的状态都带着它的修复动作，见<a href="provider-management.zh.html">供应商管理</a>。</p>
 <p>限流只持续到冷却结束。凭据池在下次成功前保留密钥的 <code translate="no">rate_limited</code> 状态，但冷却一过就会再选它，所以健康把这样的密钥读成 <code translate="no">ready</code>，不会显示“限流到一个已经过去的时间”。</p>
 <p>CLI 表格只打印将来的时间（<code translate="no">until 14:05</code>、<code translate="no">resets Nov 19 02:22</code>），已经过去的时间不打印。表格适应终端宽度：进度条先减少格数，最少 5 格，再把重置时间移到下一行。输出到管道且没有 <code translate="no">COLUMNS</code> 时不折行。</p>
 <p>失败的回复在错误原因旁带一个 cause，从供应商错误一路传到轮次结果、事件（<code translate="no">cause</code>）和保存的占位消息（<code translate="no">error_cause</code>）：</p>
 <table class="stack fixed">
 <thead><tr><th scope="col">原因</th><th scope="col">来自</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">quota_exhausted</code></th><td>402、<code translate="no">insufficient_quota</code>、<code translate="no">usage_limit_reached</code>；已知时写明用尽的限制和重置时间</td></tr>
+<tr><th scope="row"><code translate="no">quota_exhausted</code></th><td>402、<code translate="no">usage_limit_reached</code>，或任何状态码下的计费正文（<code translate="no">insufficient_quota</code>、401 <code translate="no">CreditsError</code> "Insufficient balance"）；已知时写明用尽的限制、重置时间、所用密钥（<code translate="no">account</code>）和这个密钥的其他窗口（<code translate="no">other_limits</code>）</td></tr>
 <tr><th scope="row"><code translate="no">invalid_key</code></th><td>401 或密钥被拒的消息</td></tr>
 <tr><th scope="row"><code translate="no">not_available</code></th><td>地区或套餐拒绝（403 JSON、套餐不含该模型）</td></tr>
 <tr><th scope="row"><code translate="no">unreachable</code></th><td>异常链中任何一处的 DNS 或连接失败</td></tr>
@@ -110,8 +113,8 @@
 
 <h2 id="implementation-status">实现状态</h2>
 <ul>
-<li>还没有网页界面读取状态路由。</li>
+<li>还没有网页界面读取状态路由；会读取它的页面见<a href="provider-management.zh.html">供应商管理</a>。</li>
 <li>没有 Kimi Coding（响应结构不稳定）、DeepSeek 或 Moonshot 余额、OpenRouter <code translate="no">/credits</code>（没有同类框架记录其响应）的读取器。</li>
 <li>上面未验证的读取器处于关闭。</li>
-<li>未做：单个供应商的用量路由、已检测供应商路由、REPL <code translate="no">/status</code>。顶层 <code translate="no">openprogram status</code> 别名做不了：这个名字属于后台服务。</li>
+<li>未做：REPL <code translate="no">/status</code>。顶层 <code translate="no">openprogram status</code> 别名做不了：这个名字属于后台服务。</li>
 </ul>

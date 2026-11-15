@@ -148,3 +148,25 @@ test("a frozen chat whose folder is missing offers only Locate folder…, which 
   assert.equal(closed, 1);
   await view.unmount();
 });
+
+test("an open menu re-lists in place when a project changes elsewhere, keeping its scroll", async () => {
+  setup();
+  const view = await render(h(ProjectMenu, { onClose() {}, pickFolder: async () => null }));
+  const list = view.container.querySelector(".project-menu-list");
+  list.scrollTop = 40;
+  globalThis.menuReplies.list_projects = () => ({
+    projects: [...PROJECTS.filter((p) => p.id !== "gone"), { id: "beta", name: "Beta", path: "/work/beta", is_default: false, session_count: 0 }],
+    current_project_id: null,
+    session_id: null,
+  });
+  await view.act(() => window.dispatchEvent(new Event("project-changed")));
+  assert.ok(item(view.container, "Beta"), "a project created elsewhere appears without reopening");
+  assert.equal(item(view.container, "Gone"), undefined, "a project removed elsewhere leaves the open menu");
+  assert.equal(view.container.querySelector(".project-menu-list"), list, "the same scrolling list stays mounted");
+  assert.equal(list.scrollTop, 40);
+
+  globalThis.menuReplies.list_projects = () => null;
+  await view.act(() => window.dispatchEvent(new Event("project-changed")));
+  assert.ok(item(view.container, "Beta"), "an unanswered re-list keeps what is shown");
+  await view.unmount();
+});

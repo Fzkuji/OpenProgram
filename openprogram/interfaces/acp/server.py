@@ -568,9 +568,10 @@ class ACPServer:
         etype = ev.get("type")
 
         if etype == "text":
+            from openprogram.state.reply_text import stream_text
             self._notify(sess.id, {
                 "sessionUpdate": "agent_message_chunk",
-                "content": {"type": "text", "text": ev.get("text") or ""},
+                "content": {"type": "text", "text": stream_text(ev)},
             })
         elif etype == "thinking":
             self._notify(sess.id, {

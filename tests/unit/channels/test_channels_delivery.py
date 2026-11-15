@@ -442,7 +442,8 @@ def test_appending_after_head_follows_a_message_that_landed_just_before(tmp_path
 
 def test_the_ticker_recovers_reports_once_per_worker_start(monkeypatch: pytest.MonkeyPatch) -> None:
     recovered, ticks = [], []
-    monkeypatch.setattr("openprogram.runtime.conversation.always_on.handoff.restore", lambda: None)
+    monkeypatch.setattr("openprogram.runtime.conversation.always_on.handoff_migration.migrate_in_worker",
+                        lambda: None)
     monkeypatch.setattr(runtime, "recover_reports", recovered.append)
 
     def tick() -> None:

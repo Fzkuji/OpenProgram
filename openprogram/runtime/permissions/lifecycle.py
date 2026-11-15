@@ -139,17 +139,19 @@ def spawn_question_route(store, parent, child, snapshot):
     fresh) in the caller's own conversation asks there, through the
     caller's existing approval card, named after the sub-agent: Claude
     Code's foreground subagents and its fork (``permissionMode: 'bubble'``)
-    bubble their prompts up to the leader the same way. Nobody waits on a
-    background sub-agent or a delivered message, and a sub-agent forked
-    into another conversation has no card in the one the person reads, so
-    those keep ``None`` and what would ask is refused at once
-    (``refusal.helper_cannot_ask``).
+    bubble their prompts up to the leader the same way. A foreground
+    sub-agent forked into another conversation (``start_from="SID:MSG"``)
+    asks in its caller's conversation too: its card is shown there
+    (``asked_in_session``, ``waits.list_open``). Nobody waits on a
+    background sub-agent or a delivered message, so those keep ``None`` and
+    what would ask is refused at once (``refusal.helper_cannot_ask``).
 
     Only a caller whose policy froze into ``snapshot`` (the live
     same-principal owner parent) and that can answer itself qualifies.
     """
     if (snapshot is None or parent is None or child.source != "agent_spawn" or not child.wait
-            or child.message_origin or child.parent_session_id != parent.session_id):
+            or child.message_origin
+            or (child.caller_session_id or child.parent_session_id) != parent.session_id):
         return None
     payload = store.get_job_agent_input(parent.execution_id)
     if payload is not None:

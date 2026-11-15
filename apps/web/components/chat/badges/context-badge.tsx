@@ -28,6 +28,7 @@ import { ContextBreakdownPanel } from "./context-breakdown-panel";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
+  hasContextBreakdown,
   readContextBreakdownCache,
   readDraftContextBreakdown,
   subscribeContextBreakdownCache,
@@ -36,6 +37,7 @@ import {
   writeContextBreakdownCache,
 } from "@/lib/chat/context-breakdown-cache";
 import { isCompacting } from "@/lib/chat/run/run-operation";
+import { contextTip, occupancyOf, occupancySnapshot, statsSnapshot } from "@/lib/chat/context-occupancy";
 
 interface ContextBadgeProps {
   /** Active conversation id. The component is keyed on this so a
@@ -84,9 +86,8 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
   // 当前分支头：切分支时 store.heads 会更新，弹窗据此重取该分支的上下文。
   const headId = useSessionStore((s) => (sid ? s.heads[sid] : undefined));
 
-  const ringUsed = useSessionStore((s) => (sid ? s.tokens[sid]?.total_used : undefined));
-  const ringBasis = useSessionStore((s) => (sid ? s.tokens[sid]?.basis : undefined));
-  const ringWindow = useSessionStore((s) => (sid ? s.contextWindow[sid] : undefined));
+  const sessionUsage = useSessionStore((s) => (sid ? s.tokens[sid] : undefined));
+  const sessionWindow = useSessionStore((s) => (sid ? s.contextWindow[sid] : undefined));
   const compacting = useSessionStore((s) =>
     Boolean(sid && isCompacting(s.runningTasks[sid])),
   );
@@ -95,20 +96,17 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
   // only fills category detail, and never blocks the click.
   useEffect(() => {
     if (!sid) return;
-    if (!readContextBreakdownCache(sid, headId ?? null)
-        && (ringUsed != null || ringWindow)) {
-      writeContextBreakdownCache(sid, headId ?? null, {
-        total_used: ringUsed,
-        window: ringWindow,
-        context_window: ringWindow,
-        basis: ringBasis ?? undefined,
-      });
+    const fromStats = statsSnapshot(sessionUsage, sessionWindow);
+    if (!readContextBreakdownCache(sid, headId ?? null) && fromStats) {
+      writeContextBreakdownCache(sid, headId ?? null, fromStats);
     }
-    if (!readContextBreakdownCache(sid, headId ?? null)
+    // Another branch's snapshot standing in (the session's latest) is
+    // counted against that branch's model: this branch reads its own.
+    if (!hasContextBreakdown(sid, headId ?? null)
         || readContextBreakdownCache(sid, headId ?? null)?.tools == null) {
       warmContextBreakdown(sid, headId ?? null, { focus: true });
     }
-  }, [sid, headId, ringUsed, ringWindow, ringBasis]);
+  }, [sid, headId, sessionUsage, sessionWindow]);
 
   // The shared Popover owns placement (above the ring, right edges aligned,
   // lifted 9px: the row's 10px band gap minus the 1px ring, so it sits on
@@ -134,58 +132,50 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
   const fallbackModel = useSessionStore((s) => s.agentSettings.chat?.model);
   const draftProjectId = useSessionStore((s) =>
     s.activeChatKey ? s.pendingProjectsByChat[s.activeChatKey] ?? null : null);
-  // No session yet: the ring and panel show what the first message would
-  // carry (system prompt, tools, memory) against the selected model.
-  const [draft, setDraft] = useState(() =>
-    sid ? null : readDraftContextBreakdown(fallbackProvider, fallbackModel, draftProjectId));
+  // The ring, its tip and the /context card read one snapshot
+  // (lib/chat/context-occupancy), so they always show the same number: the
+  // session's last context_stats, and before the first one the card's
+  // cached snapshot (a new chat's estimate); with no session yet, the
+  // draft estimate of what the first message would carry. When the first
+  // message's ack makes the draft a session, chat-stream copies that
+  // estimate into the session's snapshot (adoptDraftContextBreakdown), so
+  // the number and window hold until GET /context and context_stats
+  // replace them.
+  const readSnapshot = () => sid
+    ? readContextBreakdownCache(sid, headId ?? null)
+    : readDraftContextBreakdown(fallbackProvider, fallbackModel, draftProjectId);
+  const [cached, setCached] = useState(readSnapshot);
   useEffect(() => {
-    if (sid) return;
-    const sync = () => setDraft(readDraftContextBreakdown(fallbackProvider, fallbackModel, draftProjectId));
+    const sync = () => setCached(readSnapshot());
     sync();
-    warmDraftContextBreakdown(fallbackProvider, fallbackModel, draftProjectId);
+    if (!sid) warmDraftContextBreakdown(fallbackProvider, fallbackModel, draftProjectId);
     return subscribeContextBreakdownCache(sync);
-  }, [sid, fallbackProvider, fallbackModel, draftProjectId]);
-  const sessionUsage = useSessionStore((s) => (sid ? s.tokens[sid] : undefined));
-  const sessionWindow = useSessionStore((s) => (sid ? s.contextWindow[sid] : undefined));
-  const usage = sid ? sessionUsage
-    : draft ? { total_used: draft.total_used, basis: "estimated" as const } : undefined;
-  const ctxWindow = sid ? sessionWindow : draft?.window || draft?.context_window;
+    // readSnapshot reads only these.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sid, headId, fallbackProvider, fallbackModel, draftProjectId]);
+  const snapshot = sid ? occupancySnapshot(cached, sessionUsage, sessionWindow) : cached;
+  const occupancy = occupancyOf(snapshot);
 
   // 永远渲染圆环：还没有 usage 的会话（或还没有会话）显示 0 进度的空环，
   // 而不是整个消失（“圆环不见了”就是以前 return null 造成的）。
-  // tooltip: 详细 breakdown + 模型/provider 元信息. usage 里的 model 来自
-  // backend context_stats 事件, 比 agentSettings 更精确 (单 turn 内可能
-  // 切了 provider, agentSettings 是最终值).
-  const modelLabel = usage?.model || fallbackModel || "";
-  const providerLabel = usage?.provider || fallbackProvider || "";
+  // tooltip: 用量 + 模型/provider 元信息。context_stats 里的 model 比
+  // agentSettings 更精确（单 turn 内可能切了 provider，agentSettings 是最终值）。
+  const modelLabel = sessionUsage?.model || snapshot?.model || fallbackModel || "";
+  const providerLabel = sessionUsage?.provider || fallbackProvider || "";
   const metaLine = [providerLabel, modelLabel].filter(Boolean).join(" · ");
 
-  // 窗口和用量都取服务端算好的那一份（context_stats 的 window/total_used），
-  // 和 /context 面板同源 —— 两处永远显示同一个数。服务端在真实请求完成
-  // （measured）和图变化（compaction / 切模型 / 切分支，estimated）时各广播
-  // 一次，所以这个数始终描述"此刻"。窗口未知时退 200k 保守默认。
-  const win = ctxWindow && ctxWindow > 0 ? ctxWindow : 200_000;
-
-  // 旧事件（重连回放的历史 context_stats）没有 total_used，退回最后一次
-  // API 调用的 prompt 体积（input+cache_read）作近似。
-  const used =
-    usage?.total_used ??
-    (usage?.context || (usage?.input || 0) + (usage?.cache_read || 0));
-  const pct = Math.max(0, Math.min(1, used / win));
+  // 窗口未知（模型解析不到）时为 0：不编一个上限，圆环不填充，提示只写用量。
+  const win = occupancy.window;
+  const pct = win > 0 ? Math.max(0, Math.min(1, occupancy.used / win)) : 0;
 
   // 占用越高颜色越警示：<50% 绿，50–80% 黄，≥80% 红。
   const arcColor = pct >= 0.8 ? "var(--danger-soft)" : pct >= 0.5 ? "var(--warning-soft)" : "var(--success-soft)";
 
-  // tooltip 用 Claude Code 那种「Context 用了多少/共多少 (百分比)」格式
-  const fmtNum = (n: number) =>
-    n >= 1_000_000 ? (n / 1_000_000).toFixed(1) + "M" : n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n);
-  // basis 说明这个数从哪来：measured = 上一次真实请求实测，estimated =
-  // 那之后图变了（压缩/切模型/切分支）按当前图重估。
-  const basisLabel = usage?.basis === "estimated" ? " · est." : "";
+  // Claude Code 那种「Context 用了多少/共多少 (百分比)」；估算值标 est.
+  // （measured = 上一次真实请求实测，estimated = 之后图变了按当前图重估）。
   const ringTooltip = compacting
     ? translateText("Compacting context…", "正在压缩上下文…")
-    : `Context ${fmtNum(used)} / ${fmtNum(win)} (${(pct * 100).toFixed(0)}%)${basisLabel}` +
-      (metaLine ? ` · ${metaLine}` : "");
+    : contextTip(occupancy, metaLine);
 
   // 环形进度（Claude Code 实测：12px svg、描边 2、轨道 var(--border)、
   // 进度 var(--accent-orange)、-90° 起点）

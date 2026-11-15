@@ -3,11 +3,11 @@
 ``gh auth login`` stores per-host entries at ``~/.config/gh/hosts.yml``:
 
   github.com:
-    user: fzkuji
+    user: octocat
     oauth_token: gho_XXX…
     git_protocol: ssh
     users:
-      fzkuji:
+      octocat:
         oauth_token: gho_XXX…
 
 The ``gh`` token is a plain bearer — we produce an ``api_key`` credential

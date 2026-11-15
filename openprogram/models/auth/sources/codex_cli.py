@@ -21,10 +21,9 @@ Key shape in Codex's file (observed as of 2026-04):
     "last_refresh": "2026-04-21T15:13:02.1234Z"
   }
 
-Codex's access token doesn't carry an ``expires_at`` — the CLI refreshes
-opportunistically on 401. We encode that by leaving ``expires_key_path``
-empty; the manager then treats this as "trust the CLI, it'll refresh
-when needed".
+Codex's file carries no ``expires_at``; the access token's JWT ``exp`` is
+the expiry, which the Codex adapter reads before each request
+(``providers/adapters/openai_codex/credentials.oauth_view``).
 """
 from __future__ import annotations
 
@@ -102,9 +101,10 @@ class CodexCliSource:
         # actually around to maintain ~/.codex/auth.json:
         #
         #   * codex binary present → ``cli_delegated``. We just point at
-        #     the file. Codex CLI handles refresh; we re-read on every
-        #     use so rotations propagate. Read-only by design — only
-        #     ``codex logout`` should mutate the file.
+        #     the file and re-read it on every use so rotations propagate.
+        #     The store never copies it; when its token is near expiry or
+        #     rejected, the Codex adapter refreshes the login in the file
+        #     itself under the file's refresh lock, as the Codex CLI does.
         #
         #   * codex binary missing → ``oauth``. The file is a one-shot
         #     snapshot of an OAuth session; nobody else will refresh it

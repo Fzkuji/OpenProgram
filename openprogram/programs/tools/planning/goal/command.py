@@ -109,14 +109,14 @@ def _handle_goal_command(session_id: str, raw_args: str) -> dict:
         return {"text": "No active session.", "send_text": None}
     args = (raw_args or "").strip()
 
-    if not args:
+    if not args or args.lower() == "status":
         return {"text": _goal._status_text(_goal.load_goal(session_id), session_id),
                 "send_text": None}
 
     head = args.split()[0].lower()
     if args.lower() == "help":
         return {"text": (
-            "/goal — show objective, usage, limits and todos\n"
+            "/goal | /goal status — show objective, usage, limits and todos\n"
             "/goal pause | resume | verify | clear | stop (retry saved stop)\n/goal edit <objective>\n"
             "/goal budget max_tokens=10000 max_elapsed_s=3600 max_cost_usd=5\n"
             "Zero removes a limit."
@@ -169,7 +169,10 @@ def _handle_goal_command(session_id: str, raw_args: str) -> dict:
 
     from . import chat
     chat.create(session_id, args)
-    return {"text": "Goal saved; working in this conversation.", "send_text": args}
+    # ``starts_goal`` marks the message that carries the objective; a surface
+    # that draws that message labels it Goal and shows no ``text`` line.
+    return {"text": "Goal saved; working in this conversation.", "send_text": args,
+            "starts_goal": True}
 
 
 def _command_options(parts, allowed):
@@ -226,6 +229,7 @@ def _status_text(goal: Optional[dict], session_id: str = "") -> str:
 def goal_builtin_handler(session_ctx: dict, raw_args: str) -> dict:
     """``register_builtin`` handler contract: ``(session_ctx, raw_args)
     -> result dict``. Hosts read ``text`` for display and ``send_text``
-    to launch the first turn."""
+    to launch the first turn; ``starts_goal`` says that turn's message sets
+    the Goal."""
     return _goal.handle_goal_command(
         str((session_ctx or {}).get("session_id") or ""), raw_args or "")

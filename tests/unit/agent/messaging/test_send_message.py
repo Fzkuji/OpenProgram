@@ -380,3 +380,18 @@ def test_an_agent_named_with_spaces_is_reached_as_written_or_with_underscores(pa
         assert out.startswith("[delivered]"), (to, out)
         assert parent_turn.async_calls[-1]["branch_from"] == "a0"
         assert parent_turn.async_calls[-1]["label"] == "Spell the word harbor"
+
+
+def test_an_agent_named_with_two_spaces_keeps_them_and_answers_either_spelling(parent_turn):
+    """The name keeps the spacing its description had; it is reached as
+    written and with the spaces folded, and the reply names it as written."""
+    from openprogram.runtime.jobs.store import save_job
+    from openprogram.runtime.jobs.types import Job, JobStatus
+    save_job("p1", Job(id="j1", parent_session_id="p1", prompt="fix", agent_id="main",
+                       status=JobStatus.COMPLETED, head_id="a0", label="Fix  the  login",
+                       creates_agent=True))
+    for to in ("Fix  the  login", "Fix the login", "fix_the_login"):
+        out = _send_message_impl("again", to=to)
+        assert out.startswith("[delivered]"), (to, out)
+        assert parent_turn.async_calls[-1]["branch_from"] == "a0"
+        assert parent_turn.async_calls[-1]["label"] == "Fix  the  login"

@@ -19,6 +19,13 @@ export interface SlashContext {
    *  run, while a request waits or while disconnected it is queued for
    *  the next turn. */
   sendChat: (text: string) => boolean;
+  /** Send `text` as a backend-run command (/goal, /rename …) of this
+   *  composer's conversation. When idle it is that conversation's message:
+   *  a draft's first one carries the draft's own id and settings, so the
+   *  command runs in the draft and the tab becomes that conversation, and
+   *  its bubble shows at once. During a run or a waiting request it goes
+   *  at once beside the turn (the server runs it before reserving one). */
+  sendCommand: (text: string) => boolean;
   /** This conversation has a turn running or a request waiting. */
   busy: boolean;
   newConversation: () => void;

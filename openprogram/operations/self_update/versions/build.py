@@ -94,9 +94,19 @@ def _base_environment(layout: Layout) -> dict[str, str]:
     home = layout.toolchain / "build-home"
     home.mkdir(parents=True, exist_ok=True)
     environment = {name: os.environ[name] for name in _PASSED_THROUGH if name in os.environ}
+    # The build's own profile, all of it: Windows tools keep caches under
+    # LOCALAPPDATA and APPDATA, and without them PowerShell writes its module
+    # cache to Microsoft\Windows\PowerShell under the working directory, the
+    # worktree, which the next build then refuses as uncommitted changes.
+    # Only Windows reads the two; elsewhere they are inert.
+    local_app_data, app_data = home / "AppData" / "Local", home / "AppData" / "Roaming"
+    local_app_data.mkdir(parents=True, exist_ok=True)
+    app_data.mkdir(parents=True, exist_ok=True)
     environment.update({
         "HOME": str(home),
         "USERPROFILE": str(home),
+        "LOCALAPPDATA": str(local_app_data),
+        "APPDATA": str(app_data),
         "UV_CACHE_DIR": str(layout.toolchain / "cache" / "uv"),
         "npm_config_cache": str(layout.toolchain / "cache" / "npm"),
         "npm_config_update_notifier": "false",
@@ -190,7 +200,7 @@ def check_space(layout: Layout, *, new_base: bool) -> None:
     if available < required:
         raise NotEnoughSpace(
             f"not enough disk space: the update needs {required / GIB:.1f} GB and "
-            f"{available / GIB:.1f} GB is free"
+            f"{available / GIB:.1f} GB is free, {paths.disk_shortfall(required, available)} short"
         )
 
 

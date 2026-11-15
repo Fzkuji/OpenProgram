@@ -98,6 +98,7 @@ def _user_row(row: dict, row_id: str, timestamp: Any, db: Any) -> dict:
         "status": "done", "timestamp": timestamp, "agentId": row.get("agent_id") or None,
         "source": _string(row.get("source")), "notice": read_notice(row.get("notice")),
         "trigger": "restart" if row.get("trigger") == "restart" else None,
+        "startsGoal": True if row.get("starts_goal") is True else None,
         "speaker": read_speaker(row), "steering": row.get("steering") is True,
         "calledBy": _string(row.get("predecessor")), "pastedElements": read_pasted_elements(row),
         "spawnedFrom": _present({"callerId": spawned["caller_id"], "label": spawned.get("label") or None})
@@ -135,13 +136,18 @@ def _assistant_row(row: dict, row_id: str, timestamp: Any, running: bool) -> dic
     detail = row.get("error_detail")
     error_detail = detail if detail is not None else (row.get("content") if failed else None)
     if failed and (not detail or row.get("content") == detail):
-        content = "".join(block.get("text") or "" for block in blocks if block.get("type") == "text")
+        from openprogram.state.reply_text import reply_text
+        content = reply_text(blocks)
     else:
         content = row.get("content") or ""
     return _present({
         "id": row_id, "role": "assistant", "content": content, "errorDetail": error_detail,
         "errorReason": row.get("error_reason"), "errorRetryable": row.get("error_retryable"),
-        "errorRetryAfterS": row.get("error_retry_after_s"), "streamSeq": _number(row.get("stream_seq")),
+        "errorRetryAfterS": row.get("error_retry_after_s"),
+        # Which limit or refusal it was (``errors.failure_cause``): the chat's
+        # spent-quota card reads the provider, limit and reset from it.
+        "errorCause": row.get("error_cause") if failed and isinstance(row.get("error_cause"), dict) else None,
+        "streamSeq": _number(row.get("stream_seq")),
         "thinking": thinking, "tools": tools or None, "blocks": blocks or None,
         "function": row.get("function") or None,
         "display": "runtime" if row.get("display") == "runtime" else None,

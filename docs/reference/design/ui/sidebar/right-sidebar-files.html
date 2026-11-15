@@ -102,11 +102,11 @@
 <thead class="sr"><tr><th scope="col">Case</th><th scope="col">Shown</th></tr></thead>
 <tbody>
 <tr><th scope="row">File</th><td>Byte count.</td></tr>
-<tr><th scope="row">Visible folder</th><td>Bounded background statistics, in a shared queue running two jobs at once. States: cached, scanning, complete, partial, canceled, error. Search-excluded folders such as <code translate="no">.cache</code> and <code translate="no">node_modules</code> still have metadata and sizes.</td></tr>
+<tr><th scope="row">Visible folder</th><td>One <code translate="no">project_folder_size</code> request per folder (<code translate="no">measure</code>): the saved sample, or else one walk of at most a second that the server saves, finished or not. Asked again only after Refresh or a Files change, never chunk by chunk. A shared queue runs two at once. States: cached, scanning, complete, partial, canceled, error. Search-excluded folders such as <code translate="no">.cache</code> and <code translate="no">node_modules</code> still have metadata and sizes.</td></tr>
 <tr><th scope="row">In the list</th><td>The number alone, without <code translate="no">≈</code> or <code translate="no">≥</code>.</td></tr>
 <tr><th scope="row">Still counting</th><td>The existing number keeps updating and slowly varies in grey brightness; normal again when counting stops. No added text or icons.</td></tr>
 <tr><th scope="row">No value yet</th><td>Blank, no dash.</td></tr>
-<tr><th scope="row">Details</th><td>Estimates, lower bounds, timestamp and completeness; can continue the count.</td></tr>
+<tr><th scope="row">Details</th><td>Estimates, lower bounds, timestamp and completeness. Recalculate and Continue are the only chunked counts.</td></tr>
 </tbody>
 </table>
 
@@ -115,10 +115,10 @@
 <thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
 <tbody>
 <tr><th scope="row">Reuse</th><td>Finished samples survive view remounts and worker restarts and display without recursive I/O. At most 256, in the default profile state. Size sorting keeps the recent-complete-sample rule.</td></tr>
-<tr><th scope="row">New scan</th><td>Only Refresh and Recalculate.</td></tr>
+<tr><th scope="row">New scan</th><td>Only the first view of a folder without a sample, Refresh, a Files change and Recalculate.</td></tr>
 <tr><th scope="row">Invalidation</th><td>A successful Files change removes affected ancestor and subtree samples from memory and disk and cancels affected active scans, including overlapping project roots.</td></tr>
 <tr><th scope="row">Key</th><td>Validated absolute path. Device and inode must also match, so a rebound project or replaced directory cannot reuse another directory's bytes.</td></tr>
-<tr><th scope="row">Incomplete scans</th><td>Stay incomplete and keep their skipped-entry record. Active scan tokens are never saved.</td></tr>
+<tr><th scope="row">Incomplete scans</th><td>Stay incomplete and keep their skipped-entry record. A walk cut off by the time limit is saved as a lower bound, so the next view shows it without walking. Active scan tokens are never saved.</td></tr>
 <tr><th scope="row">Stale samples</th><td>Nested edits can outdate a sample; Details shows its time and completeness. No watcher, recursive freshness check, content read or new profile.</td></tr>
 <tr><th scope="row">Storage</th><td>The existing atomic JSON writer: private temporary file, atomic replace. A corrupt or unavailable cache falls back to scanning.</td></tr>
 </tbody>

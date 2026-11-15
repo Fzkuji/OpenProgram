@@ -157,6 +157,13 @@ def test_render_options_includes_answer_command():
     assert "/decline q9" in txt
 
 
+def test_render_names_the_sub_agent_that_asks():
+    txt = _render_question({"id": "qA", "kind": "approval", "prompt": "允许执行 bash？", "asked_by": "scout"})
+    assert txt.splitlines()[0].endswith("· scout")
+    own = _render_question({"id": "qB", "kind": "approval", "prompt": "允许执行 bash？"})
+    assert "·" not in own.splitlines()[0]
+
+
 def test_render_form_lists_fields():
     txt = _render_question({"id": "qF", "kind": "form", "prompt": "Config",
                             "schema": {"name": {"title": "名字"},

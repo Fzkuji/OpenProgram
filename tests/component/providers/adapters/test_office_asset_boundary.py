@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from starlette.testclient import TestClient
 
 from openprogram.interfaces.server.owner_auth import OwnerAuthMiddleware, OwnerAuthState
+from openprogram.programs.applications.office_editor.install import OFFICE_DOWNLOAD_BYTES
 
 
 def _pack(root: Path) -> None:
@@ -219,7 +220,7 @@ def test_missing_office_offers_install_without_downloading(boundary_app):
     with TestClient(app, base_url="http://127.0.0.1:18100", client=("127.0.0.1", 50000)) as client:
         response = client.get('/api/documents/office-host?session_id=abc', headers=auth)
         assert response.json()['installable'] is True
-        assert response.json()['downloadBytes'] == 732695641
+        assert response.json()['downloadBytes'] == OFFICE_DOWNLOAD_BYTES
         assert client.post('/api/documents/office-install').status_code == 401
 
 
@@ -247,6 +248,24 @@ def test_explicit_install_retries_and_activates_host_without_restart(boundary_ap
         assert len(calls) == 2
         assert client.get('/api/documents/office-host?session_id=abc', headers=auth).json()['available']
         assert client.get('/office-host.html', headers={'host':'host-abc.office.localhost:18100'}).status_code == 200
+
+
+def test_install_for_a_version_no_release_serves_says_which_update_brings_office(boundary_app, monkeypatch):
+    import openprogram.programs.applications.office_editor.install as installer
+    app, pack = boundary_app
+    pack.available = False
+    def download():
+        raise installer.OfficeArchiveUnpublished('1.2.0')
+    monkeypatch.setattr(installer, 'download_office_pack', download)
+    auth = {"authorization": "Bearer " + base64.urlsafe_b64encode(bytes(range(32))).decode().rstrip("="),
+            "origin": "http://127.0.0.1:18100"}
+    with TestClient(app, base_url="http://127.0.0.1:18100", client=("127.0.0.1", 50000)) as client:
+        response = client.post('/api/documents/office-install', headers=auth)
+    assert response.status_code == 503
+    body = response.json()
+    assert body['code'] == 'office_release_missing'
+    assert body['version'] == '1.2.0' and body['updateTo'] == '1.3.0'
+    assert 'Update OpenProgram to 1.3.0 or newer' in body['error']
 
 
 def test_concurrent_install_requests_download_once(boundary_app, monkeypatch):

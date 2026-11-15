@@ -5,6 +5,7 @@ values are saved once, in the turn's journal, and compared here before resuming.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any, Mapping
 
@@ -45,9 +46,19 @@ def json_safe(value: Any) -> Any:
 
 
 def system_prompt_sha256(text: str) -> str:
-    import hashlib
-
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def contract_sha256(value: Any) -> str:
+    """The digest a contract keeps in place of ``value``."""
+    return hashlib.sha256(canonical_json_bytes(value)).hexdigest()
+
+
+_TOOL_DIGESTS = ("declaration_sha256", "implementation_sha256")
+
+
+def _is_sha256(value: Any) -> bool:
+    return isinstance(value, str) and len(value) == 64 and all(c in "0123456789abcdef" for c in value)
 
 
 def _prompt_reference(digest: str) -> str:
@@ -103,7 +114,7 @@ def validate_runtime_contract(
             retained = {tool.get("name"): tool for tool in before if isinstance(tool, Mapping)}
             actual = dict(actual)
             actual["tools"] = [
-                {**tool, "implementation": retained[tool["name"]].get("implementation")}
+                {**tool, "implementation_sha256": retained[tool["name"]].get("implementation_sha256")}
                 if isinstance(tool, Mapping) and tool.get("name") in durable_function_names and tool.get("name") in retained
                 else tool for tool in after
             ]
@@ -131,25 +142,10 @@ def validate_runtime_contract(
         or not isinstance(expected["request_semantics"].get("execution_location"), Mapping)
         or any(
             not isinstance(tool, Mapping)
-            or set(tool) != {
-                "name", "description", "parameters", "cache_control",
-                "permission", "approval", "implementation",
-            }
+            or set(tool) != {"name", *_TOOL_DIGESTS}
             or not isinstance(tool.get("name"), str)
             or not tool.get("name")
-            or not isinstance(tool.get("description"), str)
-            or not isinstance(tool.get("parameters"), Mapping)
-            or not isinstance(tool.get("permission"), Mapping)
-            or set(tool["permission"]) != {"mode", "rules"}
-            or not isinstance(tool.get("approval"), Mapping)
-            or set(tool["approval"]) != {"requires", "accept_edits_safe"}
-            or not isinstance(tool["approval"].get("accept_edits_safe"), bool)
-            or not isinstance(tool.get("implementation"), Mapping)
-            or not all(
-                isinstance(tool["implementation"].get(key), str)
-                and tool["implementation"].get(key)
-                for key in ("module", "qualname", "code_sha256")
-            )
+            or not all(_is_sha256(tool.get(key)) for key in _TOOL_DIGESTS)
             for tool in expected["tools"]
         )
         or not isinstance(actual, Mapping)
@@ -190,10 +186,8 @@ def validate_runtime_contract(
                         continue
                     fields = (
                         ["added"] if old is None else ["removed"] if new is None else
-                        [key for key in (
-                            "description", "parameters", "cache_control", "permission",
-                            "approval", "implementation",
-                        ) if old.get(key) != new.get(key)]
+                        [key.removesuffix("_sha256") for key in _TOOL_DIGESTS
+                         if old.get(key) != new.get(key)]
                     )
                     tool_differences.append(f"{name!r}({','.join(fields) or 'schema'})")
                 if before != after and not tool_differences:

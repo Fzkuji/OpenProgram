@@ -167,6 +167,27 @@ def test_haiku_keeps_the_text_result_and_an_ordinary_entry(monkeypatch):
     assert result["content"][0]["type"] == "text"
 
 
+def test_what_a_loading_search_also_said_goes_beside_the_references(monkeypatch):
+    # ``select:cron,send_file``: cron is loaded and sent as a reference,
+    # which drops the result text; that send_file is already callable is
+    # the note, sent as the text beside the references.
+    note = "`send_file` is already callable: it is in your tools list with its full schema."
+    turn = _search_turn(details={"loads": [{"name": "cron", "definition": _CRON_RECORDED}],
+                                 "note": note})
+    params, _ = _send(monkeypatch, Context(messages=turn, tools=[_READ, _SEARCH]))
+    result, beside = params["messages"][-1]["content"]
+    assert result["content"] == [{"type": "tool_reference", "tool_name": "cron"}]
+    assert beside["type"] == "text" and beside["text"] == note
+
+
+def test_a_search_that_loaded_nothing_sends_its_text_once(monkeypatch):
+    text = "`send_file` is already callable: it is in your tools list with its full schema."
+    turn = _search_turn(details={"note": text}, text=text)
+    params, _ = _send(monkeypatch, Context(messages=turn, tools=[_READ, _SEARCH]))
+    (result,) = params["messages"][-1]["content"]
+    assert [block["text"] for block in result["content"]] == [text]
+
+
 def test_a_model_without_the_form_reads_the_search_back_as_text(monkeypatch):
     # A conversation that loaded the tool on Fable and moved to a provider
     # without the form: the result is the text the node kept.

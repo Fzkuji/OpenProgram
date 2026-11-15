@@ -33,8 +33,10 @@ from . import chat_tools as _chat_tools  # noqa: F401
 from openprogram.programs.tools.planning.goal.goal import ENTRY_OPTIONS, PROGRAM_ENTRIES, goal  # noqa: F401
 from openprogram.programs.tools.planning.goal.state import (  # noqa: F401
     GOAL_SCHEMA_VERSION,
+    GoalBusy,
     GoalConflictError,
     GoalStateUnavailable,
+    GoalVersionConflict,
     IDLE_ROUND_LIMIT,
     RESUMABLE_STATUSES,
     RUNNING_STATUSES,

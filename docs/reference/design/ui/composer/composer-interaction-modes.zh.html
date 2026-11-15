@@ -41,6 +41,7 @@
 </tbody>
 </table>
 <p>提交后的回执保留问答布局，用字段标题，显示可读的值而不是 JSON。表单提交字段对象。审批卡保留可用范围、操作详情和明确的允许或拒绝；提问不授权任何操作。</p>
+<p>子 Agent 发出的审批在标题行用一枚徽章写出它的名字；对话自己的 Agent 发出的没有。Worker 对工具审批只有一种写法，卡片按界面语言显示：英文界面下 shell 命令是“Run this command?”，其他工具是“Run <em>tool</em>?”。</p>
 <p>回执是内存中的展示状态，不是 Workflow 检查点：刷新后重新加载规范的待处理问题。切换标签时，请求仍绑定原 session、execution、generation 和 version。后端 Workflow 问题在原进程继续，预声明的 Agent 等待保持其续接约定。</p>
 
 <h2>讨论与事件</h2>

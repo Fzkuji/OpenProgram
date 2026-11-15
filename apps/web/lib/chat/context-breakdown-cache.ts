@@ -11,9 +11,10 @@ export interface ContextBreakdown {
   classified_estimate?: number;
   classification_scale?: number;
   input_used?: number;
-  free_space?: number;
+  free_space?: number | null;
   total_used?: number;
-  window?: number;
+  /** ``null`` when the model's window is not known. */
+  window?: number | null;
   basis?: string;
   tools?: Array<{ name: string; tokens: number; deferred: boolean; description?: string }>;
   skills_detail?: Array<{ name: string; source: string; tokens: number }>;
@@ -29,7 +30,7 @@ export interface ContextBreakdown {
     groups: Array<{ kind: string; tokens: number; count: number }>;
     top: Array<{ id: string; kind: string; tokens: number; preview: string }>;
   };
-  context_window?: number;
+  context_window?: number | null;
   model?: string;
   error?: string;
 }
@@ -80,6 +81,13 @@ export function readContextBreakdownCache(
   if (!sessionId) return null;
   const latest = cache.get(JSON.stringify([sessionId, null]));
   return latest ?? null;
+}
+
+/** Whether this branch has its own snapshot. ``readContextBreakdownCache``
+ *  also answers with the session's latest one, which may be another
+ *  branch's: counted against that branch's model and window. */
+export function hasContextBreakdown(sessionId: string, headId?: string | null): boolean {
+  return cache.has(JSON.stringify([sessionId, headId ?? null]));
 }
 
 export function writeContextBreakdownCache(
@@ -171,6 +179,25 @@ export function readDraftContextBreakdown(
   projectId?: string | null,
 ): ContextBreakdown | null {
   return cache.get(draftKey(provider, model, projectId)) ?? null;
+}
+
+/** A draft's first message was accepted and the draft became a session
+ *  (the server adopts the draft's key as the session id). The conversation
+ *  and its content are the same, so the draft's estimate stands for the
+ *  session until the session's own GET /context, started here, and then
+ *  its context_stats replace it: the ring never drops to 0 or loses its
+ *  window in between. A session that already has a snapshot keeps it. */
+export function adoptDraftContextBreakdown(
+  sessionId: string,
+  provider?: string,
+  model?: string,
+  projectId?: string | null,
+): void {
+  const draft = readDraftContextBreakdown(provider, model, projectId);
+  if (draft && !readContextBreakdownCache(sessionId)) {
+    writeContextBreakdownCache(sessionId, null, draft);
+  }
+  warmContextBreakdown(sessionId, null, { focus: true });
 }
 
 export function warmDraftContextBreakdown(

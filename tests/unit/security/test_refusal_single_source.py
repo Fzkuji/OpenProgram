@@ -27,8 +27,6 @@ _BROKER_WHY = "the GUI broker's own lifecycle: a revoked handle or a stale attem
 ALLOWED: dict[tuple[str, str], str] = {
     ("openprogram/programs/tools/agents/send_message/send_message/send_message.py", "[send_message refused]"):
         "argument error: the target is the caller's own turn",
-    ("openprogram/programs/tools/interaction/handoff.py", "[handoff refused]"):
-        "argument error: an unusable handoff target",
     (_BROKER, "raise PermissionError('GUI broker revoked')"): _BROKER_WHY,
     (_BROKER, "raise PermissionError('unknown GUI resource or denied method')"): _BROKER_WHY,
     (_BROKER, "raise PermissionError('GUI operation cancelled or revoked')"): _BROKER_WHY,

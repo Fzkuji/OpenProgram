@@ -20,13 +20,17 @@ class LocalOutcome:
     """What a local command did.
 
     ``text`` is its answer for the person. ``send_text`` replaces the typed
-    text and goes on as a model turn. ``invoke`` names an Agent method the
-    command asks the surface to run (``/goal``).
+    text and goes on as a model turn. ``starts_goal`` marks that turn's
+    message as the one that sets a Goal (``/goal <objective>``): it is written
+    on the user message, which then stands for ``text`` on a surface that
+    draws messages. ``invoke`` names an Agent method the command asks the
+    surface to run (``/goal``).
     """
 
     command: str
     text: str = ""
     send_text: str | None = None
+    starts_goal: bool = False
     invoke: dict | None = None
 
 
@@ -60,6 +64,7 @@ def run(resolved, session_id: str, *, branch_id: str | None = None) -> LocalOutc
         command=resolved.command_name,
         text=str(out.get("text") or ""),
         send_text=str(send_text) if send_text else None,
+        starts_goal=bool(send_text) and out.get("starts_goal") is True,
         invoke=invoke if isinstance(invoke, dict) else None,
     )
 

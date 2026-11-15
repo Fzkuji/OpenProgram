@@ -48,7 +48,7 @@
 <tr><th scope="row">汇报偏好</th><td><code translate="no">preferences.json</code></td><td>新增</td></tr>
 <tr><th scope="row">成本</th><td><code translate="no">last_wake.cost</code>、每日花费</td><td>用量账本</td></tr>
 <tr><th scope="row">渠道投递</th><td><code translate="no">delivery.py</code></td><td><code translate="no">runtime.channel_link</code>、绑定、渠道会话</td></tr>
-<tr><th scope="row">团队交接</th><td><code translate="no">handoff.py</code></td><td><code translate="no">owner_turn.start_owner_turn_when_free</code></td></tr>
+<tr><th scope="row">发给其他对话的消息</th><td><code translate="no">send_message</code></td><td>Job 运行器、通知</td></tr>
 <tr><th scope="row">学习</th><td>Agent 的记忆空间</td><td>记忆策略、会话结束提取</td></tr>
 <tr><th scope="row">规则</th><td>对话的权限模式和规则</td><td>权限规则、审批卡片</td></tr>
 <tr><th scope="row">状态、立即唤醒</th><td>活动面板</td><td>活动行和页面</td></tr>
@@ -287,7 +287,7 @@
 <tr><th scope="row"><code translate="no">tools_override</code></th><td><code translate="no">read</code>、<code translate="no">grep</code>、<code translate="no">glob</code>、<code translate="no">list</code>、<code translate="no">web_search</code>、<code translate="no">web_fetch</code>、<code translate="no">read_conversation</code>、<code translate="no">list_agents</code>、<code translate="no">memory_search</code>、<code translate="no">memory_get</code>、<code translate="no">todo_list</code>、<code translate="no">open_work</code>、<code translate="no">get_goal</code>、<code translate="no">always_on_report</code>、<code translate="no">always_on_schedule</code>。对话的网页搜索选择为关时，或对话没有选择而 Agent 的选择为关时（Agent 的指定工具里没有它也算关），去掉 <code translate="no">web_search</code>；<code translate="no">web_fetch</code> 保留，和普通回合一样。</td></tr>
 <tr><th scope="row">记忆回溯</th><td>查询常驻目标和主人最新一条消息，不查询检查提示本身（<code translate="no">recall_query</code>）；两者都没有时不回溯</td></tr>
 <tr><th scope="row">可达范围</th><td>沿用所有者权限，但没有私有地址访问：<code translate="no">web_fetch</code> 用严格客户端。危险路径检查列出的路径（不分大小写，符号链接按实际指向判断）和所有 profile 的数据目录在任何模式下都被拒绝，直接读取和搜索结果都一样；工作目录外的其他文件仍可读。</td></tr>
-<tr><th scope="row"><code translate="no">autonomy="act"</code> 增加</th><td><code translate="no">create_goal</code>、<code translate="no">todo_create</code>、<code translate="no">todo_update</code>、<code translate="no">handoff</code>。产生的 Goal 在主链用普通工具和权限运行。由唤醒启动：检查结束时把下次唤醒提前到现在；来源为 <code translate="no">always_on</code>、<code translate="no">check_in</code>、<code translate="no">handoff</code> 或 <code translate="no">scheduled</code> 且没有存活或已结算轮次的 Goal，通过 <code translate="no">chat.start_from_controls</code> 启动一次；冲突时按会话忙重试。除 <code translate="no">always_on</code> 外的来源走 <code translate="no">identity.outside_text</code>：与交接链轮次一样，拒绝页面脚本和破坏性删除。</td></tr>
+<tr><th scope="row"><code translate="no">autonomy="act"</code> 增加</th><td><code translate="no">create_goal</code>、<code translate="no">todo_create</code>、<code translate="no">todo_update</code>、<code translate="no">send_message</code>。产生的 Goal 在主链用普通工具和权限运行。由唤醒启动：检查结束时把下次唤醒提前到现在；来源为 <code translate="no">always_on</code>、<code translate="no">check_in</code>、<code translate="no">handoff</code> 或 <code translate="no">scheduled</code> 且没有存活或已结算轮次的 Goal，通过 <code translate="no">chat.start_from_controls</code> 启动一次；冲突时按会话忙重试。除 <code translate="no">always_on</code> 外的来源走 <code translate="no">identity.outside_text</code>：与消息启动的轮次一样，拒绝页面脚本和破坏性删除。</td></tr>
 <tr><th scope="row">排除</th><td>MCP 工具：无法凭名称判定只读。屏幕工具：会卡在无人回应的屏幕录制提示上。</td></tr>
 </tbody>
 </table>
@@ -366,40 +366,15 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
 <tbody>
-<tr><th scope="row">工具</th><td>模型不再看到 <code translate="no">handoff(to, message)</code>：<code translate="no">send_message</code> 接管了它的寻址和限制，消息是可追踪的 Job，答复以通知返回（<a href="collaboration/agent-collaboration.zh.html#tools">Agent 协作</a>）。Worker 启动时，仍在等待的已存记录转到 <code translate="no">send_message</code>（<a href="collaboration/agent-collaboration.zh.html#stored-handoffs">已存的交接</a>）；下面的链机制仍为运行中的回合和程序调用方运行。</td></tr>
-<tr><th scope="row"><code translate="no">to</code></th><td>依次尝试：对话 id、<code translate="no">SID:HEAD</code>、精确标题（不区分大小写）、Agent id 或名称（不区分大小写）。<code translate="no">HEAD</code> 必须在该对话下一轮接着走的那条线上。Agent 解析为它除发送方以外唯一的对话；有多个：拒绝并给出 id；没有：拒绝，说出该 Agent 并列出所有者的对话。标题歧义：拒绝并给出匹配 id。未知：列出所有者的对话，并提示 <code translate="no">list_agents scope="all"</code>。</td></tr>
-<tr><th scope="row">目标</th><td>任意 Agent</td></tr>
-<tr><th scope="row">审批</th><td>不在安全列表：Ask 等待，Auto 审查</td></tr>
-<tr><th scope="row">限制</th><td>消息不超过 8000 字符；回复截断到 8000</td></tr>
-<tr><th scope="row">拒绝</th><td>发送方或目标不是所有者对话；发送方的 Agent 不是常驻；目标是自己；目标已在链上游等待（<code translate="no">ancestors</code>）；第五跳（<code translate="no">MAX_HOPS = 4</code>）；同一发送方或同一条链一小时内第 21 条消息（<code translate="no">MAX_SENDS_PER_WINDOW</code>）</td></tr>
-<tr><th scope="row">跳数</th><td>每个链轮次的用户消息 id 映射到链和跳数；工具读取 <code translate="no">TurnRequest.user_msg_id</code>。由链轮次启动的 Goal 把链存为 <code translate="no">handoff_chain</code>，其 <code translate="no">goal_trigger</code> 轮次沿用该链，并同样标记 <code translate="no">automation="handoff"</code>。它保留跳数，但不保留 <code translate="no">ancestors</code>：没有人在等它之后的轮次。其他轮次开始新链。</td></tr>
-<tr><th scope="row">转交</th><td>欠回复的轮次交接时放弃回复义务：<code translate="no">reply_to</code> 移到新消息的 <code translate="no">owed_after</code> 栈，收到答复的轮次改为欠下一个会话。一个轮次只有第一次交接带走回复义务。中间会话无法运行该轮次时，会告知更早的会话收到了什么。</td></tr>
+<tr><th scope="row">工具</th><td><code translate="no">send_message</code>，所有 Agent 用它把工作交给已存在的对话（<a href="collaboration/agent-collaboration.zh.html#tools">Agent 协作</a>）。原来的 <code translate="no">handoff</code> 工具及其自己的回放已移除。</td></tr>
+<tr><th scope="row">提供给</th><td><code translate="no">autonomy="act"</code> 的检查（<code translate="no">runtime.ACT_TOOLS</code>）</td></tr>
+<tr><th scope="row">投递</th><td>可追踪的 Job；目标忙时排队；答复以没有超时的通知回到发送方（<a href="collaboration/agent-collaboration.zh.html#results">结果</a>、<a href="collaboration/agent-collaboration.zh.html#busy-targets">忙碌的目标</a>）</td></tr>
+<tr><th scope="row">限制</th><td>一条链最多四跳（<code translate="no">agent.max_hops</code>），每个对话每小时最多发送二十条（<code translate="no">agent.max_sends_per_hour</code>），不能发给已在链上游等待的对话（<a href="collaboration/agent-collaboration.zh.html#limits">限制</a>）</td></tr>
+<tr><th scope="row">已归档的目标</th><td>寻址时拒绝，什么也不发送</td></tr>
+<tr><th scope="row">已存的条目</th><td><code translate="no">ticker.start_in_worker()</code> 把旧工具留在 <code translate="no">handoffs.json</code> 里的条目转到 <code translate="no">send_message</code>（<code translate="no">handoff_migration.py</code>，<a href="collaboration/agent-collaboration.zh.html#stored-handoffs">已存的交接</a>）</td></tr>
+<tr><th scope="row">旧轮次</th><td>📨 和 ↩️ 行留在对话记录里。它们的标记 <code translate="no">automation="handoff_message"</code> 和 <code translate="no">"handoff"</code> 在这类轮次重启后继续时含义不变：<code translate="no">bound_reply.attach()</code> 对 📨 轮次不发送，两者都走 <code translate="no">identity.outside_text</code>，保存了 <code translate="no">handoff_chain</code> 的 Goal 仍把它的轮次标为 <code translate="no">handoff</code></td></tr>
 </tbody>
 </table>
-<ol>
-<li>目标通过 <code translate="no">start_owner_turn_when_free()</code> 获得唤醒轮次，最多等十分钟，用它自己的 Agent 和权限：<code translate="no">📨 Message from “&lt;sender title&gt;” (&lt;sender id&gt;):</code></li>
-<li>最终文本作为发送方轮次返回，无需再答：<code translate="no">↩️ Reply from “&lt;target title&gt;” (&lt;target id&gt;)</code></li>
-<li>停下等审批或在版本切换时被保存的轮次并未结束：条目变为 <code translate="no">paused</code>，继续欠着回复。真正结束它的那次运行按消息 id 调用 <code translate="no">handoff.turn_ended()</code> 发送：<code translate="no">execute_continuation</code>，或切换后的 <code translate="no">held_turns</code>。Worker 停机时什么也不发。</li>
-<li>激活器 <code translate="no">run_ended</code> 上的 <code translate="no">handoff.run_ended()</code> 收拾轮次自己做不到的：重新运行的第一次尝试（已经没有 <code translate="no">on_done</code>），以及轮次循环之外的异常。</li>
-<li>失败的轮次发送带原因的 <code translate="no">failure_answer()</code>。被停止的轮次发送已写出的内容，什么都没写时发送 <code translate="no">STOPPED_ANSWER</code>。暂停时被停止，经 <code translate="no">ownerless_run_closer</code> 钩子到 <code translate="no">handoff.execution_closed()</code>，发送 <code translate="no">STOPPED_ANSWER</code>。</li>
-<li>目标仍忙，或在等待期间被归档（<code translate="no">give_up_when</code> 每次轮询都读取）：未投递的消息以 <code translate="no">↩️</code> 轮次退回。</li>
-<li>📨 轮次标记为 <code translate="no">automation="handoff_message"</code>，<code translate="no">bound_reply.attach()</code> 对它不发送；<code translate="no">↩️</code> 轮次仍是 <code translate="no">handoff</code> 并会发送，渠道上的人靠它得知结果。📨 轮次启动的后续工作（进程通知、作业跟进）继承 <code translate="no">handoff</code>，其答复同样会发送。</li>
-</ol>
-<details>
-<summary>跨 Worker 重启</summary>
-<table class="stack fixed">
-<thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
-<tbody>
-<tr><th scope="row">记录</th><td>按用户消息 id：<code translate="no">chain</code>、<code translate="no">hop</code>、<code translate="no">origin</code>、<code translate="no">handoff_id</code>、<code translate="no">session_id</code>、<code translate="no">at</code>、<code translate="no">boot</code>、<code translate="no">phase</code>（<code translate="no">waiting</code>、<code translate="no">running</code>、<code translate="no">paused</code>、<code translate="no">done</code>），交接轮次还有 <code translate="no">reply_to</code>、<code translate="no">owed_after</code>、<code translate="no">sender</code>，以及 <code translate="no">ancestors</code>、<code translate="no">relay</code>；等待期间还有 <code translate="no">text</code> 和 <code translate="no">message</code></td></tr>
-<tr><th scope="row">保存</th><td>每次变更重写文件，丢弃超过一天的条目，最多 2000 条</td></tr>
-<tr><th scope="row">加载</th><td><code translate="no">ticker.start_in_worker()</code> 通过 <code translate="no">handoff.restore()</code>，然后 <code translate="no">handoff.deliver_waiting()</code>。惰性加载只读取。</td></tr>
-<tr><th scope="row">仍在等待</th><td>上一个 Worker 留下的 <code translate="no">waiting</code> 条目只认领一次，用保存的消息 id 投递，并等 <code translate="no">restart.conversation_settling()</code> 结束（最多十分钟），这样新轮次不会被当成主人已放弃重启将要继续的那一轮。Worker 正在退出时不再接收新轮次，条目保持保存，因为重启开始时的暂停恰好空出它等待的对话。轮次已被接收的条目只改为 <code translate="no">running</code>。对话已归档或发生异常时，向发送方发 <code translate="no">undelivered_text()</code>。</td></tr>
-<tr><th scope="row">被打断的轮次</th><td>以 <code translate="no">restart_resume</code> 和新 id 继续。<code translate="no">restart_turn</code> 把第一轮的消息 id 写入 <code translate="no">resumes_message_id</code>，之后的重启也保留，所以跳数延续，一轮只会结清自己的条目。主人恢复的轮次不带这个字段。</td></tr>
-<tr><th scope="row">结束</th><td><code translate="no">turn_runtime</code> 调用 <code translate="no">handoff.resumed_turn_ended()</code>：<code translate="no">resumes_message_id</code> 指向的条目标记 <code translate="no">done</code>，发送欠下的回复。回复在锁内先取出，最多发一次。</td></tr>
-<tr><th scope="row">不再继续</th><td><code translate="no">restart.reconcile()</code> 结清一个被中断却不继续的轮次时，或继续它的轮次启动失败时，<code translate="no">restart_abandoned</code> 钩子发送 <code translate="no">CUT_OFF_ANSWER</code>。被中断后又被主人停止的轮次由 <code translate="no">execution_closed()</code> 发送 <code translate="no">STOPPED_ANSWER</code>。<code translate="no">paused</code> 条目仍欠真实回答，不受影响。</td></tr>
-</tbody>
-</table>
-</details>
 
 <h2 id="built-in-agents">内置 Agent</h2>
 <p class="note"><code translate="no">agent_registry/builtin_agents.py</code>：普通的已存 Agent。没有目录、选择器、团队对象或类型字段；只有开关决定 Agents 页和输入框菜单的分组，用户自己的 Agent 也随之移动。新建 Agent 对话框创建空白记录。来源：<a href="agent-configuration/bot-template-references.zh.html">Bot 模板参考</a>。</p>
@@ -473,7 +448,7 @@
 <tr><th scope="row">会话目录 <code translate="no">always_on_wake_log.jsonl</code></th><td>每次触发一行，记最终结果：<code translate="no">at</code>、<code translate="no">reason</code>、<code translate="no">outcome</code>、<code translate="no">cost</code>、<code translate="no">error</code>。检查在结束时写入这一行。唤醒抛出异常时写入 <code translate="no">failed</code>，定时唤醒 5 分钟后重试。它在每次触发时都要写，所以是会话日志旁的普通文件。保留最新 500 行。</td></tr>
 <tr><th scope="row"><code translate="no">&lt;agent dir&gt;/always_on/state.json</code></th><td><code translate="no">enabled_at</code>（关闭时清除）、<code translate="no">spend</code>（<code translate="no">{date, usd}</code>）</td></tr>
 <tr><th scope="row"><code translate="no">&lt;agent dir&gt;/always_on/preferences.json</code></th><td>汇报偏好</td></tr>
-<tr><th scope="row"><code translate="no">&lt;state dir&gt;/always_on/handoffs.json</code></th><td><a href="#handoffs">交接链</a></td></tr>
+<tr><th scope="row"><code translate="no">&lt;state dir&gt;/always_on/handoffs.json</code></th><td>已移除的交接工具留下的条目，等 Worker 转走（<a href="#handoffs">交接</a>）</td></tr>
 </tbody>
 </table>
 </details>
@@ -494,7 +469,7 @@
 <tr><th scope="row">活动页</th><td>常驻目标、当前 Goal、唤醒日、安静时段、上次唤醒的结果和成本（中断时带错误和重试）、今日花费、偏好、带类型和投递的汇报、立即唤醒</td></tr>
 <tr><th scope="row">待处理</th><td>侧栏一行带数量，打开决策和消息页面。每个活动面板顶部的<strong>等你处理</strong>列出相同内容。</td></tr>
 <tr><th scope="row">WebSocket</th><td><code translate="no">always_on_report</code>、<code translate="no">always_on_update</code>、<code translate="no">transcript_update</code>，都带 <code translate="no">session_id</code></td></tr>
-<tr><th scope="row">Python</th><td><code translate="no">openprogram.runtime.conversation.always_on</code>：<code translate="no">wake()</code>、<code translate="no">status()</code>、<code translate="no">report()</code>、<code translate="no">join()</code>、<code translate="no">schedule_wake()</code>、<code translate="no">add_preference()</code>、<code translate="no">remove_preference()</code>、<code translate="no">agent_for_session()</code>、<code translate="no">channel_targets()</code>；<code translate="no">always_on.handoff.send()</code>；<code translate="no">always_on.schedule.is_quiet()</code>、<code translate="no">next_allowed()</code></td></tr>
+<tr><th scope="row">Python</th><td><code translate="no">openprogram.runtime.conversation.always_on</code>：<code translate="no">wake()</code>、<code translate="no">status()</code>、<code translate="no">report()</code>、<code translate="no">join()</code>、<code translate="no">schedule_wake()</code>、<code translate="no">add_preference()</code>、<code translate="no">remove_preference()</code>、<code translate="no">agent_for_session()</code>、<code translate="no">channel_targets()</code>；<code translate="no">always_on.handoff_migration.migrate()</code>；<code translate="no">always_on.schedule.is_quiet()</code>、<code translate="no">next_allowed()</code></td></tr>
 </tbody>
 </table>
 <details>
@@ -524,8 +499,8 @@
 <tr><th scope="row">查阅已知内容</th><td>未列出</td><td>记忆、历史聊天、连接的应用</td><td>检查的读取工具；不含 MCP</td></tr>
 <tr><th scope="row">主动开口</th><td>消息落在 Bot 的聊天；学习何时提醒</td><td>发消息给用户；按任务选通知</td><td><code translate="no">always_on_report</code>、未读圆点、按类型的去向、偏好</td></tr>
 <tr><th scope="row">否则保持安静</th><td>只在需要审批时回来</td><td>用户看不到的后台研究</td><td>隐藏侧分支、不调模型的跳过、引用旧汇报、每日预算</td></tr>
-<tr><th scope="row">助手协作</th><td>互发消息、交接工作</td><td>未列出</td><td><code translate="no">handoff</code>，有跳数上限</td></tr>
-<tr><th scope="row">少自作主张</th><td>外发邮件和 Slack 作为草稿等批准</td><td>只读默认</td><td><code translate="no">autonomy: "report"</code>、只读检查；<code translate="no">handoff</code> 和 <code translate="no">act</code> 保留权限模式和卡片</td></tr>
+<tr><th scope="row">助手协作</th><td>互发消息、交接工作</td><td>未列出</td><td><code translate="no">send_message</code>，有跳数上限</td></tr>
+<tr><th scope="row">少自作主张</th><td>外发邮件和 Slack 作为草稿等批准</td><td>只读默认</td><td><code translate="no">autonomy: "report"</code>、只读检查；<code translate="no">send_message</code> 和 <code translate="no">act</code> 保留权限模式和卡片</td></tr>
 </tbody>
 </table>
 <details>
@@ -651,7 +626,7 @@
 <tr><th scope="row">发送中超过一小时的投递行</th><td>汇报行</td><td>批次 39 之后必须为 0</td></tr>
 <tr><th scope="row">最长的定时运行和检查</th><td>执行记录</td><td>作为批次 41 时限的输入</td></tr>
 <tr><th scope="row">汇报和无新内容的比例</th><td>汇报行</td><td>汇报超过查看次数一半说明噪声偏多</td></tr>
-<tr><th scope="row">等待中的交接和暂停条目</th><td>交接状态</td><td>任何超过 24 小时的条目</td></tr>
+<tr><th scope="row">尚未转走的已存交接</th><td><code translate="no">handoffs.migrated.json</code></td><td>Worker 启动后仍待处理的任何条目</td></tr>
 <tr><th scope="row">观察清单触发条件</th><td>本页的观察清单</td><td>触发后把该项移入计划</td></tr>
 </tbody>
 </table>
@@ -765,7 +740,7 @@
 <tr><th scope="row">A04</th><td>模型写的附件标记能上传任意本地文件</td><td><code translate="no">channels/_conversation.py</code> <code translate="no">state/attachments.py</code> <code translate="no">channels/_transport.py</code> <code translate="no">conversation/bound_reply.py</code></td><td>只上传工具调用记录过的文件，不询问</td><td>指向 SSH 密钥的标记不上传任何内容；发送文件工具的结果照常上传</td><td>3</td></tr>
 <tr><th scope="row">A05</th><td>抓取的网页能写入 Agent 全局规则</td><td><code translate="no">always_on/runtime.py</code> <code translate="no">permissions/classifier.py</code> <code translate="no">always_on/store.py</code></td><td>把偏好工具从检查工具列表移除</td><td>轮次工具里没有这个名称</td><td>4</td></tr>
 <tr><th scope="row">A06</th><td>检查能读任意文件并访问私有地址</td><td><code translate="no">files/read.py</code> <code translate="no">web/_owner_fetch.py</code> <code translate="no">state/settings.py</code> <code translate="no">files/file_safety.py</code> <code translate="no">permissions/rule.py</code></td><td>检查说话者没有主人访问权；拆出危险路径检查，在无人值守返回之前运行，也覆盖 grep 和 glob 路径</td><td>localhost 和 SSH 密钥被拒，经 grep 也一样；未列入的外部文件可读；主人轮次不变</td><td>4</td></tr>
-<tr><th scope="row">A07</th><td>检查里的交接总被拒绝</td><td><code translate="no">always_on/runtime.py</code> <code translate="no">interaction/handoff.py</code> <code translate="no">always_on/handoff.py</code></td><td>只对检查说话者作为推进 head 的调用放行；和外来文字关卡一起交付</td><td>检查能发送；派生和定时轮次被拒绝</td><td>5</td></tr>
+<tr><th scope="row">A07</th><td>检查里的交接总被拒绝</td><td><code translate="no">always_on/runtime.py</code> <code translate="no">send_message/send_message.py</code></td><td><code translate="no">send_message</code> 在 act 工具列表里；它的轮次走外来文字关卡</td><td>检查能发送；派生和定时轮次被拒绝</td><td>5</td></tr>
 <tr><th scope="row">A08</th><td>检查启动的 Goal 能力受限并卡住唤醒。冲突、重启中断和定时运行都会留下无人运行的活动 Goal。修好后，其模型写的文字会进入全权限轮次</td><td><code translate="no">goal/chat.py</code> <code translate="no">always_on/runtime.py</code></td><td>后台收尾提前返回。唤醒时启动无人运行的自动 Goal，只启动一次并捕获冲突；会话忙时重试。检查收尾留下这种 Goal 时把下次唤醒设为现在。其轮次带外来文字关卡</td><td>下一请求是默认工具的主人轮次。中断、定时和冲突各启动一次。轮次之间不重复启动。用户 Goal 不启动。页面脚本和破坏性删除被拒</td><td>5</td></tr>
 <tr><th scope="row">A77</th><td>自动轮次启动的 Goal 没有花费上限</td><td><code translate="no">always_on/runtime.py</code> <code translate="no">goal/chat_tools.py</code> <code translate="no">goal/state.py</code></td><td>设了每日预算时，这些 Goal 以剩余预算为上限，为 0 时不启动；费用计入每日花费</td><td>预算 5、已花 3：上限 2。Goal 费用进入每日花费。预算花完：不启动</td><td>5</td></tr>
 <tr><th scope="row">A09</th><td>隐藏检查会压缩主对话，既因度量错误，也经溢出路径</td><td><code translate="no">always_on/runtime.py</code> <code translate="no">turn_runtime/prep.py</code> <code translate="no">context/usage.py</code> <code translate="no">turn_runtime/loop_runner.py</code> <code translate="no">context/engine.py</code> <code translate="no">turn_runtime/__init__.py</code></td><td>后台轮次永不压缩，和有界尾部一起交付；溢出时以中断结束</td><td>超限检查后没有摘要节点；溢出以中断结束</td><td>6</td></tr>
@@ -781,7 +756,7 @@
 <tr><th scope="row">A19</th><td>选择渠道会让该账号的所有对话失去绑定</td><td><code translate="no">chat/conversation_channel.py</code> <code translate="no">channel-choices.ts</code></td><td>双方都有聊天对象时按对象顶掉；否则保持账号级顶掉</td><td>两个对象：另一绑定保留。无对象绑定加新绑定：只有一个归属</td><td>25</td></tr>
 <tr><th scope="row">A20</th><td>渠道轮次和 App 输入轮次会重叠</td><td><code translate="no">channels/_conversation.py</code> <code translate="no">goal/chat.py</code> <code translate="no">foreground.py</code> <code translate="no">session_lifecycle.py</code> <code translate="no">run_control/turns.py</code></td><td>在会话锁内预留，有界等待后明确回复忙碌；环境事件不等待</td><td>App 轮次中的入站消息等待后回复忙碌；渠道轮次中的输入被拒绝</td><td>26</td></tr>
 <tr><th scope="row">A21</th><td>带附件消息被后来的文字超过</td><td><code translate="no">channels/base.py</code> <code translate="no">channels/_conversation.py</code></td><td>先进先出只用于下载和分发；所有房间命令绕过；新建会话命令有界等待并回复忙碌</td><td>下载慢、后到文字：顺序保留。新建会话命令在限时内回复忙碌</td><td>27</td></tr>
-<tr><th scope="row">A22</th><td>暂停的交接轮次发出空回复，真实回答再也不回来</td><td><code translate="no">turn_runtime/loop_runner.py</code> <code translate="no">turn_runtime/__init__.py</code> <code translate="no">always_on/handoff.py</code></td><td>遇到安全点标记提前返回；增加按消息 id 的轮次结束信号；暂停时停止也关闭</td><td>审批后回答：真实文字只返回一次。暂停时停止：发送退回说明</td><td>21</td></tr>
+<tr><th scope="row">A22</th><td>暂停的交接轮次发出空回复，真实回答再也不回来</td><td><code translate="no">turn_runtime/loop_runner.py</code> <code translate="no">turn_runtime/__init__.py</code> <code translate="no">always_on/handoff_migration.py</code></td><td>遇到安全点标记提前返回；消息是一个 Job，通知带回最终回复；已存的暂停轮次变为观察（<code translate="no">notices.watch</code>）</td><td>审批后回答：真实文字只返回一次</td><td>21</td></tr>
 </tbody>
 </table>
 <h4>中</h4>
@@ -789,8 +764,8 @@
 <thead><tr><th scope="col">ID</th><th scope="col">问题</th><th scope="col">位置</th><th scope="col">修复</th><th scope="col">测试</th><th scope="col">批次</th></tr></thead>
 <tbody>
 <tr><th scope="row">A23</th><td>失败或被中断的检查算作查看，也没人知道</td><td><code translate="no">always_on/runtime.py</code> <code translate="no">turn_runtime/__init__.py</code></td><td>保存之前的时间和阶梯，出错时恢复；第三次失败或认证错误时立即通知；重启中断不计数</td><td>失败的检查不计入；三次失败一条消息；通知后恢复退避</td><td>13</td></tr>
-<tr><th scope="row">A24</th><td>等待忙碌目标或发送方的交接在重启时丢失</td><td><code translate="no">always_on/handoff.py</code> <code translate="no">interaction/handoff.py</code></td><td>保存渲染文本和执行 id；只从 Worker 的 ticker 启动时重新派生；派生时删除旧条目</td><td>等待时重启：只投递一次；惰性恢复不投递</td><td>22</td></tr>
-<tr><th scope="row">A25</th><td>被中断且未恢复的交接丢失回复，并破坏另一条链</td><td><code translate="no">conversation/restart_turn.py</code> <code translate="no">turn_runtime/__init__.py</code> <code translate="no">always_on/handoff.py</code></td><td>保存执行 id，只关闭匹配的链，其余按结果结清</td><td>第二次重启、无关恢复：不发送欠的回复</td><td>22</td></tr>
+<tr><th scope="row">A24</th><td>等待忙碌目标或发送方的交接在重启时丢失</td><td><code translate="no">always_on/handoff_migration.py</code> <code translate="no">send_message/delivery.py</code></td><td>发给忙碌目标的消息在它的收件箱和 Job 上等待；已存的等待条目从 Worker 的 ticker 启动时投递，Job id 由条目决定</td><td>等待时重启：只投递一次</td><td>22</td></tr>
+<tr><th scope="row">A25</th><td>被中断且未恢复的交接丢失回复，并破坏另一条链</td><td><code translate="no">conversation/restart_turn.py</code> <code translate="no">turn_runtime/__init__.py</code> <code translate="no">always_on/handoff_migration.py</code></td><td>每次投递是自己的 Job，按自己的结果结清；已存的运行中条目变为对自己对话的观察</td><td>第二次重启、无关恢复：不发送欠的回复</td><td>22</td></tr>
 <tr><th scope="row">A26</th><td>定时运行和检查没有墙钟时限</td><td><code translate="no">cron/worker.py</code> <code translate="no">always_on/runtime.py</code></td><td>检查 15 分钟；定时和命令运行 2 小时；恢复的运行也算</td><td>假时钟：被停止且最近唤醒写明原因；恢复的运行也停止</td><td>41</td></tr>
 <tr><th scope="row">A27</th><td>循环任务在重启和夏令时跳变时丢失触发</td><td><code translate="no">cron/worker.py</code></td><td>补跑</td><td>见批次</td><td>42</td></tr>
 <tr><th scope="row">A28</th><td>轮次开始前的失败从不计数</td><td><code translate="no">cron/worker.py</code> <code translate="no">production_driver/shared.py</code></td><td>包住激活；只有未准入或执行已终止时才报失败；经运行收尾记录</td><td>租约抛错：一条失败记录，计数加一。激活前暂停胜出：不出现类型错误</td><td>16</td></tr>
@@ -798,9 +773,9 @@
 <tr><th scope="row">A30</th><td>重叠保护在重启时丢失</td><td><code translate="no">cron/worker.py</code> <code translate="no">scheduler/run_finish.py</code></td><td>读取执行存储</td><td>Worker 重载且子运行存活：跳过</td><td>17</td></tr>
 <tr><th scope="row">A31</th><td>定时结果记录了却从未告知</td><td><code translate="no">scheduler/run_finish.py</code> <code translate="no">cron/worker.py</code></td><td>先汇报；重试上限五次；在存储锁内检查并添加</td><td>汇报抛错：重试，到五次停止。竞争：只有一行</td><td>18</td></tr>
 <tr><th scope="row">A33</th><td>预算可被任意超出，未定价模型永远不触发</td><td><code translate="no">always_on/runtime.py</code> <code translate="no">always_on/ticker.py</code></td><td>设了预算时，该 Agent 还有未结束的检查就不启动，五分钟后重试；加未知成本提示</td><td>有预算时三个到期：启动一个。没有预算：三个</td><td>50</td></tr>
-<tr><th scope="row">A34</th><td>A 到 B 到 C 停在 B，A 收不到回复</td><td><code translate="no">always_on/handoff.py</code></td><td>投递轮次交接时把欠的回复移到新链</td><td>C 的回答经 B 到达 A</td><td>23</td></tr>
-<tr><th scope="row">A35</th><td>目标轮次失败却报告为没有回答文字</td><td><code translate="no">error_path.py</code> <code translate="no">always_on/handoff.py</code></td><td>失败文字带原因</td><td>目标失败：发送方看到原因</td><td>21</td></tr>
-<tr><th scope="row">A36</th><td>跳数限制可经 Goal 绕过；扇出没有上限</td><td><code translate="no">goal/chat.py</code> <code translate="no">always_on/handoff.py</code></td><td>发送方字段、滚动上限和祖先拒绝；链上加自动标记</td><td>超限后 Goal 跳转被拒</td><td>23</td></tr>
+<tr><th scope="row">A34</th><td>A 到 B 到 C 停在 B，A 收不到回复</td><td><code translate="no">always_on/handoff_migration.py</code> <code translate="no">jobs/notices.py</code></td><td>每个答复以通知回到各自的发送方；已存的欠回复变为转发（<code translate="no">notices.hold_reply</code>）</td><td>C 的回答经 B 到达 A</td><td>23</td></tr>
+<tr><th scope="row">A35</th><td>目标轮次失败却报告为没有回答文字</td><td><code translate="no">error_path.py</code> <code translate="no">runner/progress.py</code></td><td>通知带原因报告失败</td><td>目标失败：发送方看到原因</td><td>21</td></tr>
+<tr><th scope="row">A36</th><td>跳数限制可经 Goal 绕过；扇出没有上限</td><td><code translate="no">goal/chat.py</code> <code translate="no">send_message/depth.py</code></td><td>跳数计数、滚动发送上限，拒绝发给在链上游等待的对话</td><td>超限后 Goal 跳转被拒</td><td>23</td></tr>
 <tr><th scope="row">A37</th><td>在聊天软件里回复报告时那边没有上下文，待决定的报告也一直挂着</td><td><code translate="no">always_on/delivery.py</code> <code translate="no">always_on/pending.py</code></td><td>渠道已有会话时把报告复制过去；在那里回复算作答复</td><td>渠道会话显示一次副本</td><td>40</td></tr>
 <tr><th scope="row">A38</th><td>一条长汇报会把之前的汇报挤出提示，且没有围栏</td><td><code translate="no">always_on/runtime.py</code></td><td>每行限 100 字符，并作为数据加围栏</td><td>20 个标题都放得下，且不超预算</td><td>4</td></tr>
 <tr><th scope="row">A39</th><td>后台写入丢弃已付费的压缩</td><td><code translate="no">compaction/view.py</code> <code translate="no">context/engine.py</code></td><td>重新计算上下文，要求 id、节点和 head 一致</td><td>侧分支能生效；覆盖节点变化和并发摘要被拒</td><td>9</td></tr>
@@ -834,7 +809,7 @@
 <tr><th scope="row">A59</th><td>过时的文档字符串还写着一天</td><td><code translate="no">always_on/ticker.py</code> <code translate="no">always_on/runtime.py</code></td><td>修正</td><td>19</td></tr>
 <tr><th scope="row">A60</th><td>命令退出和监视失败不可见</td><td><code translate="no">cron/worker.py</code></td><td>经运行收尾记录</td><td>16</td></tr>
 <tr><th scope="row">A61</th><td>已触发的单次任务编辑后不再触发；启动前崩溃会丢失</td><td><code translate="no">cron/worker.py</code> <code translate="no">cron/cron.py</code></td><td>编辑时清除状态；尊重 starting 状态</td><td>17</td></tr>
-<tr><th scope="row">A62</th><td>归档对话可能被交接唤醒</td><td><code translate="no">always_on/handoff.py</code> <code translate="no">conversation/owner_turn.py</code></td><td>在轮询循环内检查</td><td>23</td></tr>
+<tr><th scope="row">A62</th><td>归档对话可能被交接唤醒</td><td><code translate="no">send_message/addressing.py</code></td><td>寻址时拒绝已归档的对话</td><td>23</td></tr>
 <tr><th scope="row">A63</th><td>半安装的内置 Agent 保持空白</td><td><code translate="no">agent_registry/builtin_agents.py</code></td><td>异常时删除</td><td>24</td></tr>
 <tr><th scope="row">A64</th><td>内置文案和行为矛盾</td><td><code translate="no">agent_registry/builtin_agents.py</code></td><td>重写</td><td>24</td></tr>
 <tr><th scope="row">A65</th><td>检查忽略网页选择</td><td><code translate="no">always_on/runtime.py</code> <code translate="no">model_tools.py</code></td><td>遵守，并更新设计表</td><td>24</td></tr>

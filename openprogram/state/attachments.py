@@ -28,6 +28,12 @@ attachment come from" is one question asked in two directions:
   workdir and the project it is bound to. Nothing else, because this
   direction lets a model name a path and have the system read it out.
 
+A conversation with no project works in the default project's folder,
+usually the home directory. Both sets add it as a :class:`WorkdirRoot`,
+which refuses dot-folders, secret-looking files and the state directory
+under it; ``sendable_roots`` adds it only while the conversation does not
+deliver to a chat platform.
+
 Both go through :func:`resolve_within`, which fully resolves symlinks
 BEFORE testing containment — a symlink inside an allowed root pointing
 at ``~/.ssh/id_rsa`` must not pass. Same guard the reference harnesses
@@ -119,11 +125,49 @@ def find_markers(text: str) -> list[tuple[str, str, str]]:
     return [(whole, name, path) for _, whole, name, path in found]
 
 
+def _marker_matches(text: str) -> list[re.Match]:
+    """Every path-bearing marker in ``text``, in order, none overlapping.
+
+    ``@json"/p"`` (no space) is both forms at once; the current one wins,
+    so the span is replaced once and the text after it survives.
+    """
+    matches = sorted([*JSON_MENTION_RE.finditer(text), *MENTION_RE.finditer(text)],
+                     key=lambda m: (m.start(), m.re is not JSON_MENTION_RE))
+    kept: list[re.Match] = []
+    for match in matches:
+        if not kept or match.start() >= kept[-1].end():
+            kept.append(match)
+    return kept
+
+
+def markers_as_names(text: str, keep: Iterable[str] = ()) -> str:
+    """``text`` with each marker whose file is not in ``keep`` replaced by
+    the file's name as plain text: the words stay, the card and the path go.
+
+    A marker stays only when every path it names is kept: the one it
+    attaches, and a ``@previewjson`` path, which is the file its card
+    opens. One whose path does not decode names nothing and goes too.
+    """
+    kept = set(keep)
+    text = text or ""
+    for match in reversed(_marker_matches(text)):
+        if match.re is JSON_MENTION_RE:
+            try:
+                paths = [json.loads(g) for g in match.groups()[4:6] if g is not None]
+            except (TypeError, json.JSONDecodeError):
+                paths = []
+        else:
+            paths = [match.group(5).strip()]
+        if paths and all(isinstance(p, str) and p in kept for p in paths):
+            continue
+        text = text[:match.start()] + match.group(1).strip() + text[match.end():]
+    return text
+
+
 def strip_markers(text: str) -> str:
     """Remove current and historical path-bearing attachment markers."""
-    matches = [*JSON_MENTION_RE.finditer(text or ""),
-               *MENTION_RE.finditer(text or "")]
-    for match in sorted(matches, key=lambda item: item.start(), reverse=True):
+    text = text or ""
+    for match in reversed(_marker_matches(text)):
         text = text[:match.start()] + text[match.end():]
     return text
 
@@ -162,6 +206,21 @@ def project_root() -> Path:
     return Path(os.getcwd()).resolve()
 
 
+def _session_project(session_id: str):
+    """The project record this session belongs to, or ``None``.
+
+    The registry's session list is a best-effort reverse index and can
+    miss a session; the session's own log is the record of which project
+    it belongs to.
+    """
+    from openprogram.state.store.project import project_store as _projects
+    proj = _projects.project_for_session(session_id)
+    if proj is None:
+        project_id = _session_meta(session_id).get("project_id")
+        proj = _projects.get_project(project_id) if isinstance(project_id, str) and project_id else None
+    return proj
+
+
 def _bound_project_dir(session_id: str | None) -> list[Path]:
     """The directory of the REAL project this session is bound to.
 
@@ -172,22 +231,15 @@ def _bound_project_dir(session_id: str | None) -> list[Path]:
       session is unbound, so it can never answer "is this bound".
     * Every session is auto-bound to the DEFAULT project, whose path is
       the user's home directory. Taking that binding at face value makes
-      ``$HOME`` an allowed root for every ad-hoc chat — in the outbound
-      direction that is the whole home tree readable out to a chat
-      platform. The default project is not a project the user pointed
-      the agent at; it is the absence of one.
+      ``$HOME`` a plain root for every ad-hoc chat. The default project
+      is not a project the user pointed the agent at; it is the absence
+      of one, and its folder is a :class:`WorkdirRoot` instead
+      (:func:`_conversation_workdir`).
     """
     if not session_id:
         return []
     try:
-        from openprogram.state.store.project import project_store as _projects
-        proj = _projects.project_for_session(session_id)
-        if proj is None:
-            # The registry's session list is a best-effort reverse index
-            # and can miss a session; the session's own log is
-            # the record of which project it belongs to.
-            project_id = _meta_project_id(session_id)
-            proj = _projects.get_project(project_id) if project_id else None
+        proj = _session_project(session_id)
     except Exception:  # noqa: BLE001
         return []
     if proj is None or getattr(proj, "is_default", False):
@@ -197,6 +249,97 @@ def _bound_project_dir(session_id: str | None) -> list[Path]:
         return []
     p = Path(os.path.expanduser(str(path)))
     return [p.resolve()] if p.is_dir() else []
+
+
+class WorkdirRoot(Path):
+    """The folder a conversation with no project works in, as a root.
+
+    That folder is the default project's, usually the home directory, so
+    containment alone would admit ``~/.ssh``. :func:`resolve_within`
+    asks :meth:`admits` as well: nothing under a dot-folder or a
+    dot-file (``~/.ssh``, ``~/.aws``, ``~/.openprogram*``, ``.env``),
+    nothing in the system's per-app data folder (``Library`` on macOS,
+    ``AppData`` on Windows: keychains, browser profiles and cookies live
+    there, and no deliverable does), no file whose name marks a secret,
+    and nothing in the state directory, whose conversation folders are
+    roots of their own.
+    """
+
+    _SECRET_SUFFIXES = frozenset({
+        ".key", ".pem", ".p12", ".pfx", ".jks", ".keystore", ".kdbx",
+        ".gpg", ".asc", ".ppk", ".ovpn",
+    })
+    _SECRET_NAMES = re.compile(
+        r"^(id_(rsa|dsa|ecdsa|ed25519)(_sk)?(\.pub)?|credentials?|secrets?"
+        r"|tokens?|passwords?)(\.[a-z0-9]+)?$",
+        re.IGNORECASE,
+    )
+    _APP_DATA = frozenset({"library", "appdata"})
+
+    def admits(self, target: Path) -> bool:
+        try:
+            parts = target.relative_to(self).parts
+        except ValueError:
+            return False
+        if any(part.startswith(".") or part.lower() in self._APP_DATA
+               for part in parts):
+            return False
+        name = target.name
+        if (target.suffix.lower() in self._SECRET_SUFFIXES
+                or self._SECRET_NAMES.match(name)):
+            return False
+        state = _state_dir()
+        if state is not None and (target == state or target.is_relative_to(state)):
+            return False
+        return True
+
+
+def _conversation_workdir(session_id: str | None) -> list[Path]:
+    """The folder a conversation with no project works in, guarded.
+
+    Only for a conversation that exists and is not bound to a real
+    project: a bound one already has its project as a root. Its folder is
+    the default project's path, where the turn's tools run
+    (``openprogram.runtime.conversation.workdir.apply_default_workdir``),
+    so a deck the agent built there can be opened and attached.
+    """
+    if not session_id or not _session_repo_candidates(session_id):
+        return []
+    try:
+        proj = _session_project(session_id)
+        if proj is not None and not getattr(proj, "is_default", False):
+            return []
+        if proj is None:
+            from openprogram.state.store.project import project_store as _projects
+            proj = _projects.get_default_project()
+    except Exception:  # noqa: BLE001
+        return []
+    path = getattr(proj, "path", None)
+    if not path:
+        return []
+    p = Path(os.path.expanduser(str(path))).resolve()
+    # A default folder set to the filesystem root (or a service account
+    # whose home is ``/``) would make the whole disk a root.
+    if p == Path(p.anchor) or not p.is_dir():
+        return []
+    return [WorkdirRoot(p)]
+
+
+def _delivers_to_channel(session_id: str) -> bool:
+    """Whether this conversation's replies also go to a chat platform:
+    an owner chat bound to one (``channel``), or one that arrived from a
+    platform contact (``peer_id``). The second stays true after its
+    binding is cleared, because the contact's next message is routed to
+    the same conversation and its reply, files included, goes back to
+    them. An unreadable record counts as delivering, so it gets the
+    narrow set."""
+    try:
+        if not _session_repo_candidates(session_id):
+            return True
+        meta = _session_meta(session_id)
+        return bool(meta.get("channel") or meta.get("peer_id"))
+    except Exception:  # noqa: BLE001
+        return True
 
 
 def _channel_attachment_dirs() -> list[Path]:
@@ -228,16 +371,15 @@ def _chats_roots(state: Path | None) -> list[Path]:
         return []
 
 
-def _meta_project_id(session_id: str) -> str:
-    """``project_id`` from the session's log, read from disk
-    without opening a SessionStore (see :func:`_session_repo_candidates`)."""
+def _session_meta(session_id: str) -> dict:
+    """The session log's meta, read from disk without opening a
+    SessionStore (see :func:`_session_repo_candidates`)."""
     from openprogram.state.store.session.session_log import SessionLog
     for repo in _session_repo_candidates(session_id):
         meta = SessionLog(repo).read_meta()
-        value = meta.get("project_id") if isinstance(meta, dict) else None
-        if isinstance(value, str) and value:
-            return value
-    return ""
+        if isinstance(meta, dict):
+            return meta
+    return {}
 
 
 def readable_roots(session_id: str | None = None) -> list[Path]:
@@ -246,6 +388,7 @@ def readable_roots(session_id: str | None = None) -> list[Path]:
     roots.extend(_chats_roots(_state_dir()))
     roots.extend(_channel_attachment_dirs())
     roots.extend(_bound_project_dir(session_id))
+    roots.extend(_conversation_workdir(session_id))
     return roots
 
 
@@ -382,9 +525,17 @@ def sendable_roots(session_id: str | None = None) -> list[Path]:
     ``write`` / ``image_generate`` / uploads put things) and the project
     the session is bound to. Not the OpenProgram checkout, not the
     inbound channel directories, not the rest of the state directory.
+
+    A conversation with no project also gets the folder it works in (a
+    :class:`WorkdirRoot`, so dot-folders and secrets stay out), but only
+    while its replies stay in the owner's App: a conversation that
+    delivers to a chat platform keeps the two places above, and the home
+    folder is never readable out to WeChat or Telegram.
     """
     roots: list[Path] = list(_chats_roots(_state_dir()))
     roots.extend(_bound_project_dir(session_id))
+    if session_id and not _delivers_to_channel(session_id):
+        roots.extend(_conversation_workdir(session_id))
     return roots
 
 
@@ -402,6 +553,8 @@ def resolve_within(path: str | os.PathLike, roots: Iterable[Path]) -> Optional[P
     for root in roots:
         try:
             if target == root or target.is_relative_to(root):
+                if isinstance(root, WorkdirRoot) and not root.admits(target):
+                    continue
                 return target
         except ValueError:
             continue

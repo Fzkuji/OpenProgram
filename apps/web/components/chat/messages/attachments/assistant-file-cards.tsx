@@ -1,15 +1,14 @@
 "use client";
 import { isLive } from "@/lib/chat/transcript/row-status";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactElement, type ReactNode } from "react";
 import { ArrowUpRight, Download, Folder } from "lucide-react";
 import { useTranslation } from "@/lib/i18n";
 import { useSessionStore, type ChatMsg } from "@/lib/session-store";
-import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import { useCurrentProject } from "@/lib/files/files-shared";
-import { collectFileOutputs, inlineMediaKind, previewTarget, type FileOutput, type InlineMediaKind } from "@/lib/chat/transcript/file-outputs";
+import { replyFiles, inlineMediaKind, type FileOutput, type InlineMediaKind } from "@/lib/chat/transcript/file-outputs";
 import { fileCapabilities, fileExtension } from "@/lib/documents/file-formats";
-import { canBrowseLocalFiles, isHtmlPath } from "@/lib/files/local-file-url";
-import { openHtmlPage } from "@/lib/files/open-html-page";
+import { isHtmlPath } from "@/lib/files/local-file-url";
+import { openLocalFile } from "@/lib/files/open-local-file";
 import { formatBytes, isArchivePath } from "@/lib/files/archive";
 import { canRevealFiles, revealAbsolutePath, revealLabel } from "@/lib/files/reveal-file";
 import { showToast } from "@/lib/format-utils/toast";
@@ -17,21 +16,18 @@ import { useEffectEvent } from "@/lib/hooks/use-effect-event";
 import { absRawFileUrl } from "@/lib/files/files-shared";
 import { Button } from "@/components/ui/button";
 import { FileTypeIcon } from "@/components/files/file-type-icon";
+import { FilePathContextMenu, type FileMenuProject } from "@/components/files/file-path-menu";
 import { MediaPlayer } from "@/components/files/preview/media-player";
 import type { ParsedAttachment } from "./user-attachments";
 import { ArchiveSummary, HtmlThumbnail, PdfFirstPage, TextHead, type PreviewInfo } from "./file-card-previews";
 import styles from "./assistant-file-cards.module.css";
 
-/** What a card shows above its name. Only files the agent sent with
- *  ``send_file`` get a preview; a file merely linked from the prose keeps
- *  the bare card, so a link never turns into a large embed the agent did
- *  not ask for. */
+/** What a card shows above its name. */
 type PreviewKind = InlineMediaKind | "pdf" | "page" | "archive" | "text" | null;
 
-function previewKind(file: FileOutput, attachments: ParsedAttachment[]): PreviewKind {
-  const media = inlineMediaKind(file, attachments);
+function previewKind(file: FileOutput): PreviewKind {
+  const media = inlineMediaKind(file.path);
   if (media) return media;
-  if (!attachments.some(item => item.path === file.path)) return null;
   if (isArchivePath(file.path)) return "archive";
   if (isHtmlPath(file.path)) return "page";
   const preview = fileCapabilities(file.path).preview;
@@ -60,7 +56,7 @@ export function cardMeta(meta: string, name: string): string {
  *  it in the file manager. A file nothing here can show offers a download
  *  in the open slot; without a local file manager (a browser on another
  *  machine) the second slot downloads instead. */
-function FileCard({ file, kind, meta, sessionId, open }: { file: FileOutput; kind: PreviewKind; meta: string; sessionId?: string; open(): void }) {
+function FileCard({ file, kind, meta, sessionId, project, open }: { file: FileOutput; kind: PreviewKind; meta: string; sessionId?: string; project?: FileMenuProject | null; open(): void }) {
   const { text } = useTranslation();
   const [info, setInfo] = useState<PreviewInfo>({});
   const [mediaFailed, setMediaFailed] = useState(false);
@@ -100,7 +96,9 @@ function FileCard({ file, kind, meta, sessionId, open }: { file: FileOutput; kin
     ? <button type="button" className={styles.preview} onClick={open} aria-label={`${file.name} ${text("Open", "打开")}`}>{preview}</button>
     : <div className={styles.preview}>{preview}</div>);
   const media = shown === "image" || shown === "video" || shown === "audio" ? "" : undefined;
-  if (overlay) return <figure className={`${styles.shown} m-0 grid w-full min-w-0 gap-[6px]`} data-kind={shown ?? "file"} data-media={media}>
+  // Right-click: the file menu every chat file shares (file-path-menu.tsx).
+  const menu = (card: ReactElement) => <FilePathContextMenu path={file.path} sessionId={sessionId} project={project} onOpen={openable ? open : undefined}>{card}</FilePathContextMenu>;
+  if (overlay) return menu(<figure className={`${styles.shown} m-0 grid w-full min-w-0 gap-[6px]`} data-kind={shown ?? "file"} data-media={media}>
     <div className={styles.frame}>
       {previewBox}
       <span className={styles.floating}>{actions}</span>
@@ -110,15 +108,15 @@ function FileCard({ file, kind, meta, sessionId, open }: { file: FileOutput; kin
       <strong className={styles.captionName}>{file.name}</strong>
       {details && <span className={styles.captionMeta}>{details}</span>}
     </figcaption>
-  </figure>;
-  return <figure className={styles.card} data-kind={shown ?? "file"} data-media={media}>
+  </figure>);
+  return menu(<figure className={styles.card} data-kind={shown ?? "file"} data-media={media}>
     {previewBox}
     <figcaption className={`${styles.footer} @max-[460px]:flex-wrap @max-[460px]:gap-y-[8px]`}>
       <span className={styles.icon}>{icon}</span>
       <span className={`${styles.label} grid min-w-0 flex-1 gap-[3px]`}><strong>{file.name}</strong>{details && <small>{details}</small>}</span>
       {actions}
     </figcaption>
-  </figure>;
+  </figure>);
 }
 
 /** A file ``send_file`` handed back, matched to the path the call asked
@@ -133,21 +131,19 @@ export function sentFilePath(input: string | undefined, attachments: ParsedAttac
   return hit?.path ?? null;
 }
 
-/** The reply's files. With ``only`` it draws just those, where the
- *  ``send_file`` call that sent them sits in the reply; the end-of-reply
- *  list passes ``skip`` so a file is drawn once, and only it opens a
- *  preview automatically. */
+/** The reply's files: the attachments the server put on it, never paths
+ *  linked from the prose (those stay links). With ``only`` it draws just
+ *  those, where the ``send_file`` call that sent them sits in the reply;
+ *  the end-of-reply list passes ``skip`` so a file is drawn once, and only
+ *  it opens the first deliverable automatically when the turn just
+ *  finished. */
 export function AssistantFileCards({ msg, sessionId, attachments, only, skip }: { msg: ChatMsg; sessionId?: string; attachments: ParsedAttachment[]; only?: string[]; skip?: string[] }) {
   const focusedSessionId = useSessionStore(state => state.currentSessionId);
   const project = useCurrentProject({ sessionId: sessionId ?? null, chatKey: null });
-  const allFiles = useMemo(() => collectFileOutputs(msg.content || "", attachments), [msg.content, attachments]);
+  const allFiles = useMemo(() => replyFiles(attachments), [attachments]);
   const files = useMemo(() => allFiles.filter(file => only ? only.includes(file.path) : !skip?.includes(file.path)), [allFiles, only, skip]);
-  const open = (file: FileOutput, automatic = false) => {
-    if (!sessionId) return false;
-    // A web page opens as a page; its source stays one click away there.
-    if (isHtmlPath(file.path) && file.path.startsWith("/") && canBrowseLocalFiles()) return openHtmlPage(file.path, sessionId, automatic);
-    return useCenterTabs.getState().openFilePreview(sessionId, previewTarget(file.path, project), automatic);
-  };
+  // A web page opens as a page; its source stays one click away there.
+  const open = (file: FileOutput, automatic = false) => !!sessionId && openLocalFile(file.path, sessionId, project, automatic);
   const openAutomatically = useEffectEvent((file: FileOutput) => open(file, true));
   useEffect(() => {
     if (only || !sessionId || !msg.autoPreviewFiles || project === undefined || isLive(msg.status)) return;
@@ -155,12 +151,12 @@ export function AssistantFileCards({ msg, sessionId, attachments, only, skip }: 
     useSessionStore.getState().applyLocalChange(sessionId, { kind: "local_patch", rowId: msg.id, fields: { autoPreviewFiles: false } });
     if (sessionId !== focusedSessionId || msg.status !== "done") return;
     // Media already plays in the reply; only open what is not shown here.
-    const file = allFiles.find(item => fileCapabilities(item.path).preview !== "download" && !inlineMediaKind(item, attachments));
+    const file = allFiles.find(item => fileCapabilities(item.path).preview !== "download" && !inlineMediaKind(item.path));
     if (file) openAutomatically(file);
-  }, [only, sessionId, focusedSessionId, msg.id, msg.status, msg.autoPreviewFiles, allFiles, attachments, project]);
+  }, [only, sessionId, focusedSessionId, msg.id, msg.status, msg.autoPreviewFiles, allFiles, project]);
   if (!files.length) return null;
   const meta = (path: string) => attachments.find(item => item.path === path)?.meta ?? "";
   return <div className="grid gap-[8px]" data-assistant-files>{files.map(file =>
-    <FileCard key={file.path} file={file} kind={sessionId ? previewKind(file, attachments) : null} meta={meta(file.path)} sessionId={sessionId} open={() => void open(file)} />,
+    <FileCard key={file.path} file={file} kind={sessionId ? previewKind(file) : null} meta={meta(file.path)} sessionId={sessionId} project={project} open={() => void open(file)} />,
   )}</div>;
 }

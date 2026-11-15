@@ -463,17 +463,30 @@ class DurableWaitStore:
         return self._record(row) if row is not None else None
 
     def list_open(self, *, session_id: str | None = None, execution_id: str | None = None) -> list[WaitRecord]:
+        """Open waits, of executions in ``session_id`` or shown there: a
+        foreground helper forked into another conversation asks in its
+        caller's (``request["asked_in_session"]``)."""
         scope = {} if execution_id is None else {"execution_id": execution_id}
         with self.executions._connect() as connection:
-            def in_session(wait: Mapping[str, Any]) -> bool:
-                execution = connection.get("executions", wait["execution_id"])
-                return execution is not None and (session_id is None or execution["session_id"] == session_id)
+            sessions: dict[str, Any] = {}
+
+            def session_of(wait: Mapping[str, Any]) -> Any:
+                key = wait["execution_id"]
+                if key not in sessions:
+                    execution = connection.get("executions", key)
+                    sessions[key] = None if execution is None else execution["session_id"]
+                return sessions[key]
 
             rows = connection.rows(
-                "execution_waits", where=in_session, order=("created_at", "wait_id"),
-                status=["open", "claimed"], **scope,
+                "execution_waits", where=lambda wait: session_of(wait) is not None,
+                order=("created_at", "wait_id"), status=["open", "claimed"], **scope,
             )
-        return [self._record(row) for row in rows]
+        records = [self._record(row) for row in rows]
+        if session_id is None:
+            return records
+        return [record for record in records
+                if sessions.get(record.execution_id) == session_id
+                or record.request.get("asked_in_session") == session_id]
 
     def list_outcomes(self) -> list[WaitRecord]:
         """Return durable non-cancel outcomes for recovery scheduling."""

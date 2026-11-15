@@ -230,7 +230,8 @@ class BoundReply:
         if kind == "text" and event.get("text"):
             delivery = self._open()
             if delivery is not None:
-                delivery.feed(event["text"])
+                from openprogram.state.reply_text import stream_text
+                delivery.feed(stream_text(event))
         elif kind == "tool_use" and self._delivery is not None:
             self._delivery.flush(response_ended=not event.get("provider_executed"))
         elif kind == "retry" and event.get("restart") and self._delivery is not None:

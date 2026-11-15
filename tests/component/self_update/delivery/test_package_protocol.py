@@ -202,18 +202,17 @@ def test_refresh_copies_installer_and_regenerates_packaged_protocol(package_fact
     # Execute the real archive/resource replacement statements over fixture files;
     # deliberately exclude worker stop/start and OS App opening from this check.
     source = (ROOT / "scripts/refresh-local-app.sh").read_text()
-    block = source[source.index('cp "$desktop_asar" "$installed_asar.incoming"'):source.index('revision="$build_revision"')]
+    block = source[source.index('cp "$desktop_asar" "$staged_app/Contents/Resources/app.asar"'):source.index('revision="$build_revision"')]
     assets = tmp_path / "runtime-assets"
     assets.mkdir()
     (assets / "icon.icns").write_bytes(b"staged App icon")
-    setup = ('app_path="$1"; installed_asar="$1/Contents/Resources/app.asar"; desktop_asar="$2"; '
+    setup = ('staged_app="$1"; desktop_asar="$2"; '
              'installer_stage="$3"; repo_root="$4"; runtime_assets_stage="$5";\n')
     result = subprocess.run(["bash", "-euc", setup + block, "fixture", str(app), str(archive),
                              str(staged_installer), str(ROOT), str(assets)],
                             capture_output=True, text=True, timeout=15)
     assert result.returncode == 0, result.stderr
     assert (resources / "app.asar").read_bytes() == archive.read_bytes()
-    assert not (resources / "app.asar.incoming").exists()
     assert installer.read_bytes() == staged_installer.read_bytes()
     assert (resources / "icon.icns").read_bytes() == b"staged App icon"
     validate_reopen_package(app)

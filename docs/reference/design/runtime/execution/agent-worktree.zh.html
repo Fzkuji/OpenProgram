@@ -141,9 +141,10 @@
 <h2 id="source">选择仓库</h2>
 <ol>
 <li><code translate="no">source_repo</code> 参数。</li>
-<li>会话的默认工作目录（选中的 Project）。</li>
-<li>从 worker 的 cwd 运行 <code translate="no">git rev-parse --show-toplevel</code>。</li>
+<li>对话的项目文件夹（选中的 Project）。</li>
+<li>配置的默认文件夹：<code translate="no">OPENPROGRAM_WORKDIR</code>，然后 <code translate="no">default_workdir</code>。</li>
 </ol>
+<p class="note">从不用 worker 自己的 cwd：那只是 worker 启动的位置，测试运行时是 OpenProgram 自己的检出，安装版则根本没有检出。<code translate="no">isolation="worktree"</code> 的子 Agent 在本轮自己的 worktree 之后走同一条链。</p>
 <p class="note">都找不到：<code translate="no">source_repo_not_resolved</code>。OpenProgram 不会替用户 <code translate="no">git init</code>。源仓库有未提交修改也没关系：工作树从 <code translate="no">base_ref</code> 创建。函数表单只含参数，Project 仍是源。</p>
 
 <h2 id="isolation">隔离与提交</h2>

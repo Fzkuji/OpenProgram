@@ -22,10 +22,17 @@ from typing import Any
 #: The ``details`` key of a load record.
 LOADS = "loads"
 
+#: The ``details`` key of a search's note: what a ``tool_search`` call says
+#: beyond the definitions it loaded (a requested tool is already callable, a
+#: name is unknown, nothing matched). A provider that sends a search's result
+#: as definitions alone sends the note beside it (``search_note``).
+NOTE = "note"
+
 #: The ``details`` keys a tool node keeps beside its result text: the load
-#: record, the attachment sent after the result (``shared.tool_attachments``)
-#: and where a bounded result's whole text is (``OUTPUT``).
-DURABLE_DETAIL_KEYS = (LOADS, "attachment", "output")
+#: record, a search's note, the attachment sent after the result
+#: (``shared.tool_attachments``) and where a bounded result's whole text is
+#: (``OUTPUT``).
+DURABLE_DETAIL_KEYS = (LOADS, NOTE, "attachment", "output")
 
 _TOOL_NAME_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
 
@@ -62,6 +69,14 @@ def load_records(details: Any) -> list[dict[str, Any]]:
             continue
         records.append(entry)
     return records
+
+
+def search_note(details: Any) -> str:
+    """The note of the search ``details`` belongs to, or ""."""
+    if not isinstance(details, dict) or details.get("stopped"):
+        return ""
+    note = details.get(NOTE)
+    return note.strip() if isinstance(note, str) else ""
 
 
 def loaded_names(details: Any) -> list[str]:

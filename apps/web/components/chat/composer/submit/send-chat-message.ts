@@ -106,6 +106,11 @@ interface SendMessageBridgeArgs {
   hasAttachments?: boolean;
   /** Submitting scroller. Defaults from sessionId + background. Drain must not pass live activeChatKey. */
   scrollerKey?: string;
+  /** False for a command the server runs (/goal, /rename …): no bubble
+   *  until the server says it is a message. One that goes on as a turn
+   *  gets its row from chat_ack; one that only answers leaves just its
+   *  reply line. */
+  bubble?: boolean;
 }
 
 function reservePendingChatSend(
@@ -193,6 +198,7 @@ export function sendChatMessage({
   onReject,
   hasAttachments = Boolean(attachments?.length),
   scrollerKey,
+  bubble = true,
 }: SendMessageBridgeArgs): boolean {
   const ws = getSocket();
   if (!ws || ws.readyState !== WebSocket.OPEN) return false;
@@ -369,7 +375,7 @@ export function sendChatMessage({
   traceThemeEvent("message-send");
   const acceptedAt = Date.now();
   const optimisticMessageId = getPendingUserMessageId(sessionId ?? "");
-  if (sessionId && optimisticMessageId) {
+  if (sessionId && optimisticMessageId && bubble) {
     appendLocalUserTurn(sessionId, optimisticMessageId, text, undefined, acceptedAt, "pending", textElements, requestId);
     noteTakeLatest({
       sessionId,

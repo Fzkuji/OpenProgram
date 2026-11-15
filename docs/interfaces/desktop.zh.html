@@ -16,6 +16,7 @@
 <tbody>
 <tr><th scope="row"><strong>Waiting for backend to start...</strong></th><td>App 正在启动 Worker，每秒检查一次</td></tr>
 <tr><th scope="row"><strong>Updating OpenProgram...</strong></th><td>安装程序正在替换 App 和运行时；不启动 Worker，完成后自动重连</td></tr>
+<tr><th scope="row"><strong>端口 18100 已被占用</strong></th><td>你设的端口（<code translate="no">ui.web_port</code>）被页面上写明的程序占着。退出它，App 会自动连上；或者换一个端口。OpenProgram 自己选的端口不会停在这里：App 会在下一个空闲端口上重新打开，共用电脑上的每个账户也因此各有自己的 Worker。<a href="../reference/design/cli/ports.zh.html#one-port-per-account">端口怎样选</a></td></tr>
 </tbody>
 </table>
 <h2>标签页</h2>

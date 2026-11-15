@@ -30,6 +30,9 @@ export interface DesktopBridge {
   getPathForFile?(file: File): string;
   /** shell.openExternal — http/https only. */
   openExternal(url: string): void;
+  /** Open a local file in the app the system opens it with; false for a
+   *  folder, a missing file or one the system would run. */
+  openFileInDefaultApp?(path: string): Promise<boolean>;
   /** Close this window (last tab closed → close window). */
   closeWindow?(): void;
   /** Move this window by a pixel delta (single-tab drag = move window). */

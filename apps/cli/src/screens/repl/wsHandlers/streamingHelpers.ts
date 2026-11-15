@@ -25,9 +25,15 @@ export const newAssistantTurn = (): Turn => ({
   streaming: true,
 });
 
+/** The flat text a text frame adds: on the frame that opens a passage after
+ *  a tool call the server names the blank line that goes before its delta. */
+export const streamText = (event: { text?: string; separator?: string }): string =>
+  (event.separator ?? '') + (event.text ?? '');
+
 export const upsertStreamingText = (
   setStreaming: SetStreaming,
   delta: string,
+  separator = '',
 ): void => {
   setStreaming((s) => {
     const base: Turn = s ?? newAssistantTurn();
@@ -40,7 +46,8 @@ export const upsertStreamingText = (
     }
     return {
       ...base,
-      text: (base.text ?? '') + delta,
+      // The blocks keep the model's own text; the separator is only in the flat text.
+      text: (base.text ?? '') + separator + delta,
       blocks,
       streaming: true,
     };

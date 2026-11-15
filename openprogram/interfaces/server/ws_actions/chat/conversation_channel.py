@@ -276,7 +276,11 @@ async def handle_set_conversation_channel(ws, cmd: dict):
         elif ch is None and (acct_id or peer):
             result.error = "channel must be set when account_id / peer is set"
         else:
-            result = bind_conversation_channel(
+            # Writes this conversation (and any it takes the binding from)
+            # under their locks: in its lane, off the loop.
+            from openprogram.state.store.session.conversation_work import run_for_conversation
+            result = await run_for_conversation(
+                session_id, bind_conversation_channel,
                 _s, session_id, ch, acct_id, peer, peer_display,
             )
             for oid in result.evicted:

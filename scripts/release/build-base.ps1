@@ -36,8 +36,15 @@ function Install-Packages {
 
     Invoke-Native $Uv export --project $RepoRoot --frozen --no-dev `
         --extra all --extra search --no-emit-project --output-file $Requirements
+    # Wheels only, picked for the target rather than this runner; runtime-wheels.py
+    # names the few packages this target builds from source (sourceBuilds).
+    $TargetArgs = @(& $Python -I (Join-Path $RepoRoot "scripts\release\runtime-wheels.py") uv-args)
+    if ($LASTEXITCODE -ne 0 -or $TargetArgs.Count -eq 0) { throw "no wheel target for this machine" }
+    # `uv pip sync` takes the file as an argument and refuses --requirements;
+    # `uv pip install` needs --requirements, since its arguments are packages.
+    $Source = @(if ($Verb -eq "sync") { $Requirements } else { "--requirements"; $Requirements })
     Invoke-Native $Uv pip $Verb --python $Python --strict --break-system-packages `
-        --require-hashes --requirements $Requirements
+        --require-hashes @TargetArgs @Source
 }
 
 function Install-Browsers {
@@ -56,14 +63,15 @@ $ProductConfig = Join-Path $RepoRoot "scripts\release\product-runtime.json"
 $Product = Get-Content -LiteralPath $ProductConfig -Raw -Encoding UTF8 | ConvertFrom-Json
 $GitPin = [string]$Product.git
 
-# A pinned Git, so a new machine needs none installed. The operating system's
-# own answer: a build's environment may not carry PROCESSOR_ARCHITECTURE, and
-# an emulated process is told the architecture it is emulating.
+# A pinned Git, so a new machine needs none installed, for the architecture of
+# the Python it ships beside rather than this machine's: an x64 base built on
+# Windows on Arm runs on x64 PCs, where an Arm Git cannot start.
 function Install-Git {
-    param([string]$Target)
+    param([string]$Target, [string]$Python)
 
-    $IsArm64 = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq [Runtime.InteropServices.Architecture]::Arm64
-    $GitPlatform = if ($IsArm64) { "windows-arm64" } else { "windows-x64" }
+    $PackagedTarget = (& $Python -I (Join-Path $RepoRoot "scripts\release\runtime-wheels.py") target)
+    if ($LASTEXITCODE -ne 0) { throw "could not read the architecture of $Python" }
+    $GitPlatform = if ($PackagedTarget -eq "windows-arm64") { "windows-arm64" } else { "windows-x64" }
     $GitAsset = "$($Product.gitAsset)-$GitPlatform.tar.gz"
     $GitArchive = "$Target.archive.tar.gz"
     Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/desktop/dugite-native/releases/download/$GitPin/$GitAsset" -OutFile $GitArchive
@@ -80,7 +88,7 @@ if ($EmbeddedRuntime) {
     if (-not $PythonBin) { throw "-EmbeddedRuntime needs -PythonBin" }
     Install-Packages install $PythonBin (Join-Path $EmbeddedRuntime "product-requirements.txt")
     Install-Browsers $PythonBin (Join-Path $EmbeddedRuntime "assets\playwright")
-    Install-Git (Join-Path $EmbeddedRuntime "git")
+    Install-Git (Join-Path $EmbeddedRuntime "git") $PythonBin
     exit 0
 }
 
@@ -166,7 +174,7 @@ Copy-Item -LiteralPath $(if (Test-Pin uv $UvPin) { Join-Path $CloneFrom "bin\uv.
 if (Test-Pin git $GitPin) {
     Copy-Item -LiteralPath (Join-Path $CloneFrom "git") -Destination (Join-Path $Dest "git") -Recurse
 } else {
-    Install-Git (Join-Path $Dest "git")
+    Install-Git (Join-Path $Dest "git") $BasePython
 }
 # The Git above is dugite-native. When its archive carries a bash, a machine
 # without Git for Windows runs commands in it rather than in PowerShell; the

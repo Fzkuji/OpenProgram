@@ -150,9 +150,14 @@ __all__ = [
 ]
 
 
-def claim_job(governor, *, owner_instance_id, excluded_sessions, only_job_id):
-    """Serialize maintenance entry with a durable resource claim."""
-    store = SelfUpdateStore()
+def claim_job(governor, *, owner_instance_id, excluded_sessions, only_job_id, store=None):
+    """Serialize maintenance entry with a durable resource claim.
+
+    ``store`` is the runner's own self-update store, fixed when the runner
+    started, as its governor and execution store are; without it the
+    profile's current one is used.
+    """
+    store = store if store is not None else SelfUpdateStore()
     with store._locked():
         marker = load_maintenance(store)
         if closes_admission(marker):

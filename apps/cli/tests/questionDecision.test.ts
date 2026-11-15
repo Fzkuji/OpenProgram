@@ -26,6 +26,11 @@ describe('decisionFromFrame', () => {
     });
   });
 
+  it('keeps the sub-agent a request is asked by', () => {
+    expect(decisionFromFrame({ id: 'q5', kind: 'approval', asked_by: 'scout' })?.askedBy).toBe('scout');
+    expect(decisionFromFrame({ id: 'q6', kind: 'approval' })?.askedBy).toBeUndefined();
+  });
+
   it('defaults kind to ask and allow_custom to true when absent', () => {
     const d = decisionFromFrame({ id: 'q2' });
     expect(d?.kind).toBe('ask');

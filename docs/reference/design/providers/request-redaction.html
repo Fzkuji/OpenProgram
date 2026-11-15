@@ -27,6 +27,7 @@
 <tr><th scope="row">Precision</th><td>High-precision shapes only: a false positive breaks the request</td></tr>
 <tr><th scope="row">Numbering</th><td>By first appearance, one value to one placeholder, so history redacts identically: prompt caches stay valid and reasoning blocks match</td></tr>
 <tr><th scope="row">Nothing to redact</th><td>The request passes through unchanged</td></tr>
+<tr><th scope="row">Other users</th><td><code translate="no">remove_secrets</code> applies the same shapes with a fixed <code translate="no">[secret removed]</code> and no vault, for <a href="../runtime/session/external-import.html">imported sessions</a>, which must never hold the value</td></tr>
 </tbody>
 </table>
 

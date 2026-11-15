@@ -64,8 +64,10 @@ class _Resolver:
     def exists(self, rel: str) -> bool:
         files = self.corpus.files
         rel = rel[:-len(".raw.html")] + ".html" if rel.endswith(".raw.html") else rel
+        # The build copies docs/_static_root/ to the site root (latest.html).
         return (rel in files or rel in self.redirects or loader.is_generated(rel)
-                or rel.startswith(_BUILT) or rel[:-len(".html")] + ".md" in files
+                or rel.startswith(_BUILT) or "_static_root/" + rel in files
+                or rel[:-len(".html")] + ".md" in files
                 or (rel.endswith(".md") and rel[:-len(".md")] + ".html" in files))
 
     def has_anchor(self, rel: str, fragment: str) -> bool:

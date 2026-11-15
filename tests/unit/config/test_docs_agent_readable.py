@@ -34,7 +34,7 @@ def test_html_shell_does_not_invent_markdown_source():
 
 
 def test_raw_visualization_uses_configured_origin_and_retains_readability(monkeypatch):
-    monkeypatch.setattr(build, 'SITE_ORIGIN', 'https://example.org/')
+    monkeypatch.setattr(build, 'SITE_URL', 'https://example.org/')
     text = build.add_raw_readability('<html><HEAD></HEAD><body>Figure</body></html>')
     assert {'rel': 'describedby', 'href': 'https://example.org/llms.txt'} in Links(text).links
     assert 'raw-readability.css' in text
@@ -52,7 +52,7 @@ def test_html_documents_publish_a_markdown_rendition_and_advertise_it(tmp_path, 
         '<title>主题</title><h1>主题</h1><p>正文</p>', encoding='utf-8')
     monkeypatch.setattr(build, 'DOCS_ROOT', tmp_path)
     monkeypatch.setattr(build, 'OUT_ROOT', tmp_path / '_site')
-    monkeypatch.setattr(build, 'SITE_ORIGIN', 'https://example.org')
+    monkeypatch.setattr(build, 'SITE_URL', 'https://example.org/')
     monkeypatch.setattr(generate_reference, 'generate_all', lambda: None)
     monkeypatch.setattr(build, 'format_gate', dict)  # the pages here are minimal on purpose
     assert build.build() == 0

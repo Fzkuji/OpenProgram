@@ -13,12 +13,23 @@ export function readSandboxEscalation(args?: Record<string, unknown>): SandboxEs
   };
 }
 
+/** Tools whose approval shows a command line. */
+export const COMMAND_TOOLS = ["bash", "shell", "exec_command"];
+
 /** Text shared by the approval card and its editable discussion draft. */
 export function approvalDisplayText(
   prompt: string, detail: string | undefined, escalation: SandboxEscalation | undefined,
   text: (en: string, zh: string) => string,
+  tool = "",
 ): { prompt: string; summary: string } {
-  if (!escalation) return { prompt, summary: detail ?? "" };
+  if (!escalation) {
+    // The Worker words a tool approval one way, in Chinese
+    // (permissions/approval.py); the card says it in the reader's language.
+    const worded = tool && prompt === `允许执行 ${tool}？`
+      ? text(COMMAND_TOOLS.includes(tool) ? "Run this command?" : `Run ${tool}?`, prompt)
+      : prompt;
+    return { prompt: worded, summary: detail ?? "" };
+  }
   return {
     prompt: text("Run this command outside the sandbox?", "允许这条命令在沙箱外执行？"),
     summary: [

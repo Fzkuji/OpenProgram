@@ -7,12 +7,13 @@
 <tbody>
 <tr><th scope="row"><code translate="no">/ws</code></th><td>Native WebSocket</td><td></td></tr>
 <tr><th scope="row"><code translate="no">/api/*</code></th><td>Native routers</td><td></td></tr>
+<tr><th scope="row"><code translate="no">/v1/*</code></th><td>OpenAI-compatible routers: <a href="../integrations/openai-compatible-endpoint.html">OpenAI-compatible endpoint</a></td><td></td></tr>
 <tr><th scope="row"><code translate="no">/files/raw</code>, <code translate="no">/docs/*</code></th><td>Static mounts</td><td></td></tr>
 <tr><th scope="row"><code translate="no">/_next/static</code></th><td><code translate="no">apps/web/out/</code></td><td>Immutable</td></tr>
 <tr><th scope="row"><code translate="no">/*</code></th><td>Files in <code translate="no">out/</code>; any other GET gets the shell <code translate="no">out/chat.html</code></td><td>No-cache for HTML</td></tr>
 </tbody>
 </table>
-<p class="note">The Electron shell loads the same origin. Ports and conflicts: <a href="ports.html">Web UI port</a>. Stable <code translate="no">18100</code>, development <code translate="no">18200</code>.</p>
+<p class="note">The Electron shell loads the same origin. Ports and conflicts: <a href="ports.html">Web UI port</a>. Stable: <code translate="no">18100</code>, or the next free port the account chose at its first start; development <code translate="no">18200</code>.</p>
 
 <h2 id="invariants">Invariants</h2>
 <ul>

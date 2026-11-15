@@ -40,10 +40,8 @@ def _agent_activator(executions: Any, service: Any):
 
 
 def _run_ended(executions: Any, execution: Any, result: Any) -> None:
-    from openprogram.runtime.conversation.always_on import handoff
     from openprogram.runtime.scheduler import run_finish
 
-    handoff.run_ended(executions, execution, result)
     run_finish.finish_resumed(executions, execution, result)
 
 
@@ -91,29 +89,31 @@ class _LiveOwnerSignals:
 
 
 def _settle_terminal(executions: Any, execution: Any) -> None:
+    import openprogram.programs.tools.planning.goal as goals
     from openprogram.programs.tools.planning.goal import chat
 
-    chat.after_terminal(executions, execution)
-    # However the run ended (finished, failed, stopped by the user, cut off): its own pages go with it.
-    from openprogram.runtime.scheduler import run_finish
+    try:
+        chat.after_terminal(executions, execution)
+    except (goals.GoalConflictError, goals.GoalStateUnavailable):
+        # The Goal's lock stayed held or its usage is not in yet. The turn is
+        # over either way, and whoever closes it (a Stop's cancelled reply,
+        # resource release) goes on. The accounting is not lost: the turn's
+        # owner retries it (``chat.settle_terminal``), and a Goal left on an
+        # ended turn is settled when it is next read (``chat.recover_unsettled``).
+        _log.info("Goal accounting of %s deferred", getattr(execution, "execution_id", ""), exc_info=True)
+    finally:
+        # However the run ended (finished, failed, stopped by the user, cut off): its own pages go with it.
+        from openprogram.runtime.scheduler import run_finish
 
-    run_finish.close_run_tabs(str(getattr(execution, "execution_id", "") or ""))
+        run_finish.close_run_tabs(str(getattr(execution, "execution_id", "") or ""))
 
 
 def _close_ownerless_run(executions: Any, execution: Any) -> None:
-    from openprogram.runtime.conversation.always_on import handoff
     from openprogram.runtime.execution.model import ExecutionStatus
     from openprogram.runtime.scheduler import run_finish
 
-    handoff.execution_closed(executions, execution)
     if execution.status is not ExecutionStatus.CANCELLED:
         run_finish.finish_resumed(executions, execution, None)
-
-
-def _restart_abandoned(executions: Any, execution: Any) -> None:
-    from openprogram.runtime.conversation.always_on import handoff
-
-    handoff.restart_abandoned(executions, execution)
 
 
 class _SessionGoals:
@@ -132,7 +132,6 @@ class _SessionGoals:
 
 hooks.register("agent_activator", _agent_activator)
 hooks.register("recovery_turn_starter", _start_recovery_turn)
-hooks.register("restart_abandoned", _restart_abandoned)
 hooks.register("permission_wait_reconciler", _reconcile_permission_waits)
 hooks.register("live_owner_signals", _LiveOwnerSignals())
 hooks.register("terminal_settler", _settle_terminal)

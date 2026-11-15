@@ -9,10 +9,11 @@ run-config and admission phases.
 from __future__ import annotations
 
 import logging
-import asyncio
 import json
 import time
 import uuid
+
+from openprogram.state.store.session.conversation_work import run_for_conversation
 
 from .session_agent import _db_agent_id
 from .context_usage import _record_context_usage
@@ -54,7 +55,8 @@ async def _handle_chat(ws, cmd: dict):
     from openprogram.interfaces.server.branch_settings import check_branch
     from openprogram.state.store.session.branch_config import BranchConfigConflict
     try:
-        check_branch(req.session_id, cmd)
+        # Reads the conversation's branch record under its lock: off the loop.
+        await run_for_conversation(req.session_id, check_branch, req.session_id, cmd)
     except BranchConfigConflict:
         await _send_chat_error(ws, req.session_id, "branch_config_conflict",
                                "The selected branch changed. Reload it before sending.")
@@ -64,7 +66,7 @@ async def _handle_chat(ws, cmd: dict):
     # Session open, run config, admission and the user-message commit read
     # and write the session repo and the execution store. They run off the
     # event loop so one send never stalls every other socket.
-    conv = await asyncio.to_thread(_open_session, _s, req)
+    conv = await run_for_conversation(req.session_id, _open_session, _s, req)
     if not await _resolve_side_branch(ws, req):
         return
     if not _is_skill_command(req.text) and not await _run_local_command(ws, req):
@@ -75,7 +77,7 @@ async def _handle_chat(ws, cmd: dict):
     if not await _admit_skill_command(ws, _s, req, msg_id):
         return
     try:
-        run_cfg, effective_permission = await asyncio.to_thread(
+        run_cfg, effective_permission = await run_for_conversation(req.session_id, 
             _save_run_config, _s, req, conv, msg_id,
         )
     except BranchConfigConflict:
@@ -85,7 +87,7 @@ async def _handle_chat(ws, cmd: dict):
     await _persist_turn_attachments(_s, req, msg_id)
     from openprogram.runtime.conversation.production_driver import AgentDriverError
     try:
-        turn, user_msg = await asyncio.to_thread(
+        turn, user_msg = await run_for_conversation(req.session_id, 
             _admit_and_commit, _s, ws, req, conv, msg_id, run_cfg, effective_permission,
         )
     except AgentDriverError as refused:
@@ -97,8 +99,11 @@ async def _handle_chat(ws, cmd: dict):
         return
     _broadcast_user_message(_s, ws, turn, user_msg)
     await _send_chat_ack(ws, req, turn, effective_permission)
-    _publish_running_task(_s, turn)
-    _start_run_thread(_s, turn)
+    # Its run-state broadcast reads the conversation's records: off the loop.
+    await run_for_conversation(req.session_id, _publish_running_task, _s, turn)
+    # A start that fails releases the slot, whose clear reads the selected
+    # branch under the conversation's lock: in its lane too.
+    await run_for_conversation(req.session_id, _start_run_thread, _s, turn)
 
 
 def _admit_and_commit(_s, ws, req: _ChatRequest, conv: dict, msg_id: str,
@@ -222,7 +227,7 @@ async def _resolve_side_branch(ws, req: _ChatRequest) -> bool:
     from openprogram.state.store.session.branch_config import BranchConfigConflict
     from openprogram.interfaces.server.server_runtime.session_lifecycle import side_branch_target
     try:
-        req.side_branch_id = await asyncio.to_thread(side_branch_target, req.session_id, req.cmd)
+        req.side_branch_id = await run_for_conversation(req.session_id, side_branch_target, req.session_id, req.cmd)
     except BranchConfigConflict:
         await _send_chat_error(ws, req.session_id, "branch_gone",
                                "The branch no longer exists; reload the conversation.")
@@ -254,11 +259,17 @@ async def _reserve_run(ws, _s, req: _ChatRequest) -> str | None:
     # that send, answered ``request_admitted``, never queued as a new one.
     request_id = client_request_id_of(req.cmd)
     key = {"key": f"send:{request_id}"} if request_id else {}
+    from openprogram.state.store.session.session_lock import SessionLockTimeout
     if req.side_branch_id:
         # A branch that is not selected has its own slot: one turn on it at
         # a time, whatever the selected branch is doing.
-        if not await asyncio.to_thread(lambda: _s._try_reserve_branch_run(
-                session_id, req.side_branch_id, msg_id, **key)):
+        try:
+            reserved = await run_for_conversation(session_id, lambda: _s._try_reserve_branch_run(
+                session_id, req.side_branch_id, msg_id, **key))
+        except SessionLockTimeout as exc:
+            await _send_locked_refusal(ws, _s, req, exc, branch_id=req.side_branch_id)
+            return None
+        if not reserved:
             if await _send_repeat_refusal(ws, _s, session_id, key):
                 return None
             await _send_chat_error(
@@ -268,7 +279,12 @@ async def _reserve_run(ws, _s, req: _ChatRequest) -> str | None:
             return None
         return msg_id
     from openprogram.programs.tools.planning.goal.chat import note_user_waiting
-    if not await asyncio.to_thread(lambda: _s._try_reserve_run(session_id, msg_id, **key)):
+    try:
+        reserved = await run_for_conversation(session_id, lambda: _s._try_reserve_run(session_id, msg_id, **key))
+    except SessionLockTimeout as exc:
+        await _send_locked_refusal(ws, _s, req, exc)
+        return None
+    if not reserved:
         if await _send_repeat_refusal(ws, _s, session_id, key):
             return None
         # The client re-queues this message; an automatic Goal turn yields to it.
@@ -281,9 +297,22 @@ async def _reserve_run(ws, _s, req: _ChatRequest) -> str | None:
     return msg_id
 
 
+async def _send_locked_refusal(ws, _s, req: _ChatRequest, exc, **extra) -> None:
+    """The conversation's lock was not had in time: nothing runs that the
+    message could queue behind, so it is not answered ``run_active``. The
+    client keeps the text to send again (``retry_query``)."""
+    from openprogram.interfaces.server.server_runtime.run_slots import locked_refusal
+    refusal = locked_refusal(exc.waited, exc.holder)
+    _log.warning("send to %s not started: %s", req.session_id, exc)
+    await _send_chat_error(
+        ws, req.session_id, refusal["code"], refusal["error"],
+        retry_query=req.text, display="chat", retryable=True, **extra,
+    )
+
+
 async def _send_repeat_refusal(ws, _s, session_id: str, key: dict) -> bool:
     """Answer a send whose own id holds the slot; ``False`` when it does not."""
-    refusal = await asyncio.to_thread(
+    refusal = await run_for_conversation(session_id, 
         _s.repeated_request_refusal, session_id, key.get("key"),
     ) if key else None
     if refusal is None:
@@ -302,13 +331,13 @@ async def _admit_skill_command(ws, _s, req: _ChatRequest, msg_id: str) -> bool:
     reply; it never becomes a model turn about the failure.
     """
     try:
-        refusal = await asyncio.to_thread(_expand_skill_command, req)
+        refusal = await run_for_conversation(req.session_id, _expand_skill_command, req)
     except BaseException:
-        _s._release_run_reservation(req.session_id, msg_id)
+        await run_for_conversation(req.session_id, _s._release_run_reservation, req.session_id, msg_id)
         raise
     if refusal is None:
         return True
-    _s._release_run_reservation(req.session_id, msg_id)
+    await run_for_conversation(req.session_id, _s._release_run_reservation, req.session_id, msg_id)
     code, content = refusal
     await ws.send_text(json.dumps({
         "type": "chat_response",
@@ -447,7 +476,8 @@ async def _persist_turn_attachments(_s, req: _ChatRequest, msg_id: str) -> None:
                 req.session_id, attachments, req.text,
             )
         except BaseException:
-            _s._release_run_reservation(req.session_id, msg_id)
+            await run_for_conversation(
+                req.session_id, _s._release_run_reservation, req.session_id, msg_id)
             raise
         attachments = _attachments_for_dispatch(attachments)
     req.user_attachments = attachments
@@ -536,6 +566,9 @@ def _build_user_msg(req: _ChatRequest, msg_id: str, parsed: dict,
         "origin": "person",
         **_local_authority,
     }
+    if getattr(req, "starts_goal", False):
+        # The chat labels this message Goal; its content stays the objective.
+        user_msg["starts_goal"] = True
     request_id = client_request_id_of(req.cmd)
     if request_id is not None:
         user_msg["client_request_id"] = request_id
@@ -623,6 +656,8 @@ def _agent_event_sink(_s, session_id: str, msg_id: str, conv: dict,
             try:
                 _record_context_usage(
                     session_id, msg_id, conv, data.get("usage") or {},
+                    model=data.get("model"),
+                    context_window=data.get("context_window"),
                 )
             except Exception:
                 import logging
@@ -886,6 +921,9 @@ async def _send_chat_ack(ws, req: _ChatRequest, turn: _AdmittedTurn,
                 "msg_id": turn.msg_id,
                 "reply_id": f"{turn.msg_id}_reply",
                 "text": req.text,
+                # The message that set a Goal: the sender's bubble takes the
+                # Goal label from here, before the transcript row arrives.
+                **({"starts_goal": True} if req.starts_goal else {}),
                 "execution_id": turn.execution_id,
                 "status_version": turn.admission.status_version,
                 # The mode the turn runs with: a turn-only override
@@ -921,10 +959,10 @@ async def _join_and_read(ws, session_id: str):
     publisher.hold(ws, session_id)
     try:
         db = default_db()
-        head = (db.get_session(session_id) or {}).get("head_id")
-        view = await asyncio.to_thread(turn_index.get_view, db, session_id, head)
+        head = await run_for_conversation(session_id, lambda: (db.get_session(session_id) or {}).get("head_id"))
+        view = await run_for_conversation(session_id, turn_index.get_view, db, session_id, head)
         publisher.read_view(session_id, view)
-        turns, window = await asyncio.to_thread(reader.first_read, db, view)
+        turns, window = await run_for_conversation(session_id, reader.first_read, db, view)
     except Exception:
         _log.warning("first read for session %s failed", session_id, exc_info=True)
         return {}, end_parking

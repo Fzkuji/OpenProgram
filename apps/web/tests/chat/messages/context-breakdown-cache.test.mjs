@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
 import {
+  hasContextBreakdown,
   readContextBreakdownCache,
   refreshContextBreakdown,
   warmContextBreakdown,
@@ -27,6 +28,17 @@ describe("context breakdown cache", () => {
     assert.deepEqual(readContextBreakdownCache("session-a", "head-a"), snapshot);
     assert.deepEqual(readContextBreakdownCache("session-a", "head-b"), snapshot);
     assert.equal(readContextBreakdownCache("session-b", "head-a"), null);
+  });
+
+  test("a snapshot standing in for another branch is not that branch's own", () => {
+    // The stand-in was counted against the other branch's model and window,
+    // so the ring still reads this branch's.
+    writeContextBreakdownCache("session-own", "head-a", { total_used: 5_000, window: 200_000 });
+    assert.equal(hasContextBreakdown("session-own", "head-a"), true);
+    assert.equal(hasContextBreakdown("session-own", "head-b"), false);
+    assert.ok(readContextBreakdownCache("session-own", "head-b"));
+    assert.equal(hasContextBreakdown("session-own", null), true);
+    assert.equal(hasContextBreakdown("session-none", "head-a"), false);
   });
 
   test("a failed background refresh returns the last successful value", async () => {

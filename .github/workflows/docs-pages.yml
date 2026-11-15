@@ -1,4 +1,4 @@
-name: Publish openprogram.io
+name: Publish the website
 
 # Runs only when started by hand: pushes, pull requests and schedules start
 # nothing, so publishing a version does not set off CI runs.
@@ -14,11 +14,9 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    # The landing page owns the domain root, so the documentation lives one
-    # level down and its links and sitemap entries carry the /docs/ prefix.
-    env:
-      OPENPROGRAM_DOCS_BASE: /docs/
-      OPENPROGRAM_DOCS_ORIGIN: https://openprogram.io
+    # The site address is openprogram.operations.project_site.SITE_URL. The
+    # landing page owns its root, so the documentation lives one level down,
+    # and the links the build writes carry the address's path plus docs/.
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -29,6 +27,9 @@ jobs:
       # from reading the real argparse tree and config schema.
       - name: Install package and docs build dependencies
         run: pip install -e . markdown-it-py mdit-py-plugins pygments
+
+      - name: Read the documentation mount path from the site address
+        run: echo "OPENPROGRAM_DOCS_BASE=$(python -m openprogram.operations.project_site docs-path)" >> "$GITHUB_ENV"
 
       - name: Generate reference pages
         run: python -m scripts.docs_site.generate_reference
@@ -42,8 +43,9 @@ jobs:
       - name: Check docs links
         run: python -m scripts.docs_site.checklinks
 
-      # Final layout: the landing page and the root-level files (CNAME,
-      # robots.txt, sitemap.xml) sit at /, the documentation under /docs/.
+      # Final layout: the landing page and the root-level files (robots.txt,
+      # sitemap.xml, and CNAME when the address is a custom domain) sit at the
+      # site root, the documentation under docs/.
       - name: Assemble the site
         run: |
           mkdir -p _publish/docs
@@ -66,7 +68,7 @@ jobs:
           external_repository: FuzzyKuji/openprogram-site
           publish_branch: main
           publish_dir: ./_publish
-          commit_message: "Publish openprogram.io (${{ github.sha }})"
+          commit_message: "Publish the website (${{ github.sha }})"
 
       - name: Submit sitemap to IndexNow
         continue-on-error: true

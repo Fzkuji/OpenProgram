@@ -232,3 +232,103 @@
   max-height: 96px;
   overflow: auto;
 }
+
+/* The agent's card: one row (character, name, state, what it was asked,
+   time and cost), opened to its reply, changed files and actions. */
+.attach-card[data-kind="agent"] {
+  padding: 6px 10px 6px 12px;
+  gap: 0;
+}
+.attach-card-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.attach-card-row:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+.attach-card-agent {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  color: var(--folder-color);
+}
+.attach-card-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--text-bright);
+}
+/* Always in the row, empty when no task was recorded: it is what pushes
+   the time, cost and chevron to the right edge. */
+.attach-card-task {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+.attach-card-facts {
+  flex: none;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.attach-card-chevron {
+  flex: none;
+  color: var(--text-muted);
+  transition: transform var(--motion-medium) var(--ease-standard);
+}
+.attach-card[data-expanded="1"] .attach-card-chevron { transform: rotate(90deg); }
+.attach-card-body {
+  margin: 6px 0 4px 28px;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.attach-card-files {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+.attach-card-files code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+}
+.attach-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* The card sits in a reply, whose own rules reach in: the reply's footer
+   margin would drop the time below the buttons, and its text column takes
+   the padding that keeps the preview off its rule. */
+.attach-card[data-kind="agent"] .attach-card-actions .message-actions-footer {
+  margin: 0 0 0 auto;
+}
+.attach-card[data-kind="agent"] .attach-card-preview {
+  padding-left: 10px;
+}

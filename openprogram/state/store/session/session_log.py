@@ -16,10 +16,26 @@ Record types:
     node.put     {payload}                a node's full content
     node.patch   {id, set, metadata}      changed fields of a node
     node.delete  {ids}                    nodes removed from the session
+    node.stream  {id, from, blocks, text, stream_seq, output, output_tail}
+                                          what a streaming reply added since
+                                          its last line (``apply_stream_changes``)
     meta.patch   {set, unset}             changed session-level fields
     file.put     {name, content}          a small state file's new content
 
 Unknown types are skipped by the fold, so runtime records can share the file.
+
+A reply's ``metadata.extra`` is folded lazily: a ``node.patch`` that replaced
+it (often stored compressed) and the ``node.stream`` lines after it are kept
+aside and turned into the one current value when the fold is handed out, so
+the versions a later line replaced are never decompressed or parsed. The
+text those lines add, to a block and to the reply's ``output``, is kept as
+pieces and joined once there, so a reply costs its length to fold however
+many lines it streamed in.
+
+A fold that read a lot of log writes a checkpoint (``checkpoint/``): the
+folded state with the offset it covers in each file. Opening the session
+again reads the checkpoint and only the lines after those offsets, so a
+cold open costs what the conversation holds, not how long its log is.
 """
 from __future__ import annotations
 
@@ -37,15 +53,25 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
-from openprogram.host._platform.filesystem import filesystem_path, remove_tree
+from openprogram.host._platform.filesystem import filesystem_path, remove_tree, replace_file
 
 _log = logging.getLogger(__name__)
 
 TURN_RECORD_PREFIX = "turn."
 RUN_ROWS_RECORD = "turn.rows"
 RUN_ROWS_MARKER = b'"turn.rows"'
+STATE_FILE_MARKER = b'"file.put"'
 MAIN_LOG = "main.jsonl"
 AGENT_LOG_DIRECTORY = "agents"
+CHECKPOINT_DIRECTORY = "checkpoint"
+FOLD_CHECKPOINT = "fold.json"
+RECORDS_CHECKPOINT = "records.json"
+#: A fold writes a checkpoint once it read at least this much log past the
+#: last one, and at least as much as that checkpoint weighs, so checkpoints
+#: never cost more than twice the log they cover.
+CHECKPOINT_MIN_BYTES = 4 * 1024 * 1024
+_CHECKPOINT_VERSION = 1
+_CHECKPOINT_TAIL = 32
 
 _CRC_FIELD = ',"crc":"'
 _CRC_SUFFIX_LENGTH = len(_CRC_FIELD) + 8 + len('"}')
@@ -88,24 +114,26 @@ def decode_line(line: bytes) -> Optional[dict]:
     if zlib.crc32(body) & 0xFFFFFFFF != expected:
         return None
     try:
-        record = json.loads(body + b"}")
-        data = record.get("data")
-        if record.get("type") == "node.patch" and isinstance(data, dict) and "extra_zlib" in data:
-            packed = base64.b64decode(data.pop("extra_zlib"), validate=True)
-            data.setdefault("metadata", {})["extra"] = zlib.decompress(packed).decode("utf-8")
-        return record
-    except (ValueError, TypeError, zlib.error):
+        return json.loads(body + b"}")
+    except (ValueError, TypeError):
         return None
 
 
-def read_appended(path: Path, start: int = 0, *, containing: bytes | None = None,
+def unpack_extra(packed: str) -> str:
+    """The ``metadata.extra`` a ``node.patch`` stored as ``extra_zlib``."""
+    return zlib.decompress(base64.b64decode(packed, validate=True)).decode("utf-8")
+
+
+def read_appended(path: Path, start: int = 0, *, containing: bytes | tuple[bytes, ...] | None = None,
                   ) -> tuple[list[dict], int, bool]:
     """Whole records in ``path`` after byte ``start``.
 
     Returns the records, the offset to continue from, and whether reading
     stopped at a damaged line. Bytes after the last newline are a write still
     in progress or cut short, and are never a record. ``containing`` skips,
-    undecoded, every line without those bytes.
+    undecoded, every line without those bytes (any of them, for a tuple).
+    A ``node.patch`` keeps a compressed ``extra_zlib`` as it is stored
+    (``unpack_extra``).
     """
     try:
         with open(filesystem_path(path), "rb") as handle:
@@ -116,9 +144,10 @@ def read_appended(path: Path, start: int = 0, *, containing: bytes | None = None
     end = content.rfind(b"\n")
     if end < 0:
         return [], start, False
+    markers = (containing,) if isinstance(containing, bytes) else containing
     records: list[dict] = []
     for line in content[:end].split(b"\n"):
-        if containing is not None and containing not in line:
+        if markers is not None and not any(marker in line for marker in markers):
             continue
         record = decode_line(line)
         if record is None:
@@ -138,16 +167,124 @@ def read_log_file(path: Path, *, containing: bytes | None = None) -> list[dict]:
 
 
 @dataclass
+class _PendingExtra:
+    """A node's ``metadata.extra`` not worked out yet: the compressed value
+    a patch stored (None: the node's own), then the stream changes after it."""
+
+    packed: Optional[str] = None
+    changes: list = field(default_factory=list)
+
+
+@dataclass
 class FoldedSession:
     """What a session's records add up to."""
 
     nodes: dict[str, dict] = field(default_factory=dict)
     meta: dict = field(default_factory=dict)
     files: dict[str, str] = field(default_factory=dict)
+    #: ``[ts, rows]`` of every ``turn.rows`` line, in the order folded.
+    run_rows: list = field(default_factory=list)
+    pending: dict[str, _PendingExtra] = field(default_factory=dict)
+    #: The ``output_tail`` pieces not yet joined onto each node's ``output``.
+    tails: dict[str, list[str]] = field(default_factory=dict)
+
+    def copy(self) -> "FoldedSession":
+        return FoldedSession(dict(self.nodes), dict(self.meta), dict(self.files),
+                             list(self.run_rows), dict(self.pending),
+                             {node_id: list(pieces) for node_id, pieces in self.tails.items()})
+
+
+def apply_stream_changes(extra: dict, changes: Iterable[dict]) -> None:
+    """Advance a reply's parsed ``extra`` by its ``node.stream`` changes, in order.
+
+    ``text: [i, s]`` appends ``s`` to block ``i``'s text; ``from: k`` with
+    ``blocks`` replaces every block from ``k`` on; ``stream_seq`` is the
+    stream frame the content now reflects. A block's added text is joined
+    once, after the last change.
+    """
+    blocks = extra.get("blocks")
+    if not isinstance(blocks, list):
+        blocks = extra["blocks"] = []
+    added: dict[int, list[str]] = {}
+    for change in changes:
+        text = change.get("text")
+        if isinstance(text, list) and len(text) == 2:
+            index, piece = text
+            if isinstance(index, int) and 0 <= index < len(blocks) and isinstance(blocks[index], dict):
+                added.setdefault(index, []).append(str(piece))
+        start = change.get("from")
+        if isinstance(start, int) and start >= 0:
+            for index in [index for index in added if index >= start]:
+                del added[index]
+            del blocks[start:]
+            blocks.extend(change.get("blocks") or [])
+        if "stream_seq" in change:
+            extra["stream_seq"] = change["stream_seq"]
+    for index, pieces in added.items():
+        blocks[index] = {**blocks[index], "text": join_text(blocks[index].get("text"), pieces)}
+
+
+def join_text(current: Any, pieces: list[str]) -> str:
+    """``current`` with ``pieces`` after it: the one place streamed text is put together."""
+    return "".join((str(current or ""), *pieces))
+
+
+def _settled_extra(current: Any, pending: _PendingExtra) -> Any:
+    value = unpack_extra(pending.packed) if pending.packed is not None else current
+    if not pending.changes:
+        return value
+    if isinstance(value, dict):
+        extra = copy.deepcopy(value)
+    else:
+        try:
+            extra = json.loads(value) if value else {}
+        except (TypeError, ValueError):
+            extra = {}
+        if not isinstance(extra, dict):
+            extra = {}
+    apply_stream_changes(extra, pending.changes)
+    return extra if isinstance(value, dict) else json.dumps(extra, default=str)
+
+
+def settle(state: FoldedSession) -> FoldedSession:
+    """Work out every pending ``extra`` and ``output``: once per node, whatever the log holds."""
+    for node_id, pieces in state.tails.items():
+        node = state.nodes.get(node_id)
+        if node is not None:
+            state.nodes[node_id] = {**node, "output": join_text(node.get("output"), pieces)}
+    state.tails = {}
+    for node_id, pending in state.pending.items():
+        node = state.nodes.get(node_id)
+        if node is None:
+            continue
+        current = node.get("metadata")
+        current = current if isinstance(current, dict) else {}
+        try:
+            extra = _settled_extra(current.get("extra"), pending)
+        except (ValueError, TypeError, zlib.error):
+            _log.error("a stored reply trace of node %s cannot be read; it keeps its earlier one", node_id)
+            continue
+        state.nodes[node_id] = {**node, "metadata": {**current, "extra": extra}}
+    state.pending = {}
+    return state
+
+
+def _patched(state: FoldedSession, node_id: str, fields: dict, metadata: Any) -> Optional[dict]:
+    """A new copy of the node with ``fields`` and ``metadata`` merged; earlier
+    folds handed the old payload out to readers."""
+    node = state.nodes.get(node_id)
+    if node is None:
+        return None
+    node = {**node, **fields}
+    if metadata:
+        current = node.get("metadata")
+        node["metadata"] = {**(current if isinstance(current, dict) else {}), **metadata}
+    state.nodes[node_id] = node
+    return node
 
 
 def apply_record(state: FoldedSession, record: dict) -> None:
-    """Advance ``state`` by one record."""
+    """Advance ``state`` by one record; ``settle`` before reading it."""
     record_type = record.get("type")
     data = record.get("data") or {}
     if record_type == "node.put":
@@ -155,20 +292,35 @@ def apply_record(state: FoldedSession, record: dict) -> None:
         node_id = payload.get("id")
         if node_id:
             state.nodes[node_id] = payload
+            state.pending.pop(node_id, None)
+            state.tails.pop(node_id, None)
     elif record_type == "node.patch":
-        node = state.nodes.get(data.get("id"))
-        if node is None:
-            return
-        # A new dict: earlier folds handed this payload out to readers.
-        node = {**node, **(data.get("set") or {})}
-        state.nodes[data["id"]] = node
+        node_id = data.get("id")
         metadata = data.get("metadata")
-        if metadata:
-            current = node.get("metadata")
-            node["metadata"] = {**(current if isinstance(current, dict) else {}), **metadata}
+        fields = data.get("set") or {}
+        if _patched(state, node_id, fields, metadata) is None:
+            return
+        if "output" in fields:
+            state.tails.pop(node_id, None)
+        if "extra_zlib" in data:
+            state.pending[node_id] = _PendingExtra(packed=data["extra_zlib"])
+        elif isinstance(metadata, dict) and "extra" in metadata:
+            state.pending.pop(node_id, None)
+    elif record_type == "node.stream":
+        node_id = data.get("id")
+        fields = {"output": data["output"]} if "output" in data else {}
+        if _patched(state, node_id, fields, data.get("metadata")) is None:
+            return
+        if "output" in data:
+            state.tails.pop(node_id, None)
+        elif "output_tail" in data:
+            state.tails.setdefault(node_id, []).append(str(data["output_tail"]))
+        state.pending.setdefault(node_id, _PendingExtra()).changes.append(data)
     elif record_type == "node.delete":
         for node_id in data.get("ids") or []:
             state.nodes.pop(node_id, None)
+            state.pending.pop(node_id, None)
+            state.tails.pop(node_id, None)
     elif record_type == "meta.patch":
         state.meta.update(data.get("set") or {})
         for key in data.get("unset") or []:
@@ -181,6 +333,8 @@ def apply_record(state: FoldedSession, record: dict) -> None:
             state.files.pop(name, None)
         else:
             state.files[name] = data["content"]
+    elif record_type == RUN_ROWS_RECORD:
+        state.run_rows.append([record.get("ts", 0), data.get("rows") or []])
 
 
 @dataclass
@@ -197,13 +351,106 @@ class _FoldProgress:
     positions: dict[str, _LogPosition] = field(default_factory=dict)
     folded: FoldedSession = field(default_factory=FoldedSession)
     newest: int = 0
+    #: Log bytes folded since the last checkpoint, and that checkpoint's size.
+    uncovered: int = 0
+    checkpoint_size: int = 0
 
 
 def fold_records(records: Iterable[dict]) -> FoldedSession:
     state = FoldedSession()
     for record in records:
         apply_record(state, record)
-    return state
+    return settle(state)
+
+
+# Checkpoints
+
+
+def _log_name(directory: Path, path: Path) -> str:
+    return path.relative_to(directory).as_posix()
+
+
+def _tail_of(path: Path, offset: int) -> Optional[str]:
+    """The bytes just before ``offset``: a copy or a rewrite of the file
+    under the same inode does not end its covered part the same way."""
+    if offset <= 0:
+        return ""
+    try:
+        with open(filesystem_path(path), "rb") as handle:
+            handle.seek(max(0, offset - _CHECKPOINT_TAIL))
+            return handle.read(min(offset, _CHECKPOINT_TAIL)).hex()
+    except OSError:
+        return None
+
+
+def _checkpoint_positions(directory: Path, positions: dict[str, _LogPosition]) -> Optional[dict]:
+    stored = {}
+    for key, position in positions.items():
+        tail = _tail_of(Path(key), position.offset)
+        if tail is None:
+            return None
+        stored[_log_name(directory, Path(key))] = [position.offset, position.inode, position.damaged, tail]
+    return stored
+
+
+def _restored_positions(directory: Path, stored: Any) -> Optional[dict[str, _LogPosition]]:
+    """The positions a checkpoint covers, or None when its files changed."""
+    if not isinstance(stored, dict):
+        return None
+    positions: dict[str, _LogPosition] = {}
+    for name, entry in stored.items():
+        path = directory / name
+        try:
+            offset, inode, damaged, tail = entry
+            info = os.stat(filesystem_path(path))
+        except (OSError, TypeError, ValueError):
+            return None
+        if info.st_ino != inode or info.st_size < offset or _tail_of(path, offset) != tail:
+            return None
+        positions[str(path)] = _LogPosition(offset=offset, inode=inode, damaged=bool(damaged))
+    return positions
+
+
+def _write_checkpoint(directory: Path, name: str, content: dict) -> int:
+    """Replace one checkpoint file whole; its size, or 0 when it was not written."""
+    target = directory / CHECKPOINT_DIRECTORY / name
+    temporary = target.with_name(f".{name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    body = json.dumps(content, ensure_ascii=False, default=str, separators=(",", ":")).encode("utf-8")
+    try:
+        target.parent.mkdir(exist_ok=True)
+        with open(filesystem_path(temporary), "wb") as handle:
+            handle.write(body)
+        replace_file(temporary, target)
+    except OSError:
+        _log.debug("checkpoint %s not written", target, exc_info=True)
+        try:
+            os.unlink(filesystem_path(temporary))
+        except OSError:
+            pass
+        return 0
+    return len(body)
+
+
+def _read_checkpoint(directory: Path, name: str) -> Optional[tuple[dict, dict[str, _LogPosition], int]]:
+    """A checkpoint whose files still hold what it covers: its content, positions and size."""
+    try:
+        with open(filesystem_path(directory / CHECKPOINT_DIRECTORY / name), "rb") as handle:
+            body = handle.read()
+        content = json.loads(body)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(content, dict) or content.get("version") != _CHECKPOINT_VERSION:
+        return None
+    positions = _restored_positions(directory, content.get("positions"))
+    if positions is None:
+        return None
+    return content, positions, len(body)
+
+
+def read_records_checkpoint(directory: Path) -> Optional[tuple[dict, dict[str, _LogPosition]]]:
+    """The state files and run rows a fold recorded, and the offsets they cover."""
+    found = _read_checkpoint(directory, RECORDS_CHECKPOINT)
+    return None if found is None else (found[0], found[1])
 
 
 def node_sort_key(payload: dict) -> tuple:
@@ -228,7 +475,7 @@ _meta_cache_lock = threading.Lock()
 _record_observer: Optional[Any] = None
 _record_observer_pid: Optional[int] = None
 _foreign_change_observer: Optional[Any] = None
-_OBSERVED_RECORDS = {"node.put", "node.patch", "node.delete", "meta.patch"}
+_OBSERVED_RECORDS = {"node.put", "node.patch", "node.stream", "node.delete", "meta.patch"}
 
 
 def set_record_observer(observer: Optional[Any]) -> None:
@@ -257,6 +504,11 @@ def _observed_change(record_type: str, data: dict) -> tuple[tuple[str, ...], fro
         return ((payload["id"],) if payload.get("id") else ()), frozenset(payload)
     if record_type == "node.patch":
         return (str(data.get("id") or ""),), frozenset((data.get("set") or {})) | frozenset((data.get("metadata") or {}))
+    if record_type == "node.stream":
+        changed = {"extra", *(data.get("metadata") or {})}
+        if "output" in data or "output_tail" in data:
+            changed.add("output")
+        return (str(data.get("id") or ""),), frozenset(changed)
     if record_type == "node.delete":
         return tuple(data.get("ids") or ()), frozenset()
     return (), frozenset((data.get("set") or {})) | frozenset(data.get("unset") or ())
@@ -442,10 +694,11 @@ class SessionLog:
         observer = _record_observer
         if observer is None or record_type not in _OBSERVED_RECORDS or os.getpid() != _record_observer_pid:
             return
-        if record_type == "node.patch" and not durable:
+        if record_type in ("node.patch", "node.stream") and not durable:
             return  # the quiet path: a reply's streaming text
         node_ids, keys = _observed_change(record_type, data)
-        observer(self.path.name, record_type, node_ids, keys)
+        # A stream line changes a node's fields as a patch does.
+        observer(self.path.name, "node.patch" if record_type == "node.stream" else record_type, node_ids, keys)
 
     def _ensure_parent(self, target: Path) -> None:
         if not self._initialized:
@@ -474,6 +727,13 @@ class SessionLog:
             data["metadata"] = metadata
         was_synced = not self.stale()
         self._append("node.patch", data, durable=not quiet)
+        self._mark_own_write(was_synced)
+
+    def stream_node(self, node_id: str, change: dict, *, quiet: bool = False) -> None:
+        """Record what a streaming reply added since its last line
+        (``apply_stream_change``), instead of its whole trace again."""
+        was_synced = not self.stale()
+        self._append("node.stream", {**change, "id": node_id}, durable=not quiet)
         self._mark_own_write(was_synced)
 
     def delete_nodes(self, node_ids: list[str]) -> None:
@@ -533,12 +793,8 @@ class SessionLog:
 
     def read_run_rows(self) -> list[list[dict]]:
         """The run-state rows of every committed change, in written order."""
-        records: list[dict] = []
-        for path in (self.main_path, *self._agent_files()):
-            records.extend(record for record in read_log_file(path, containing=RUN_ROWS_MARKER)
-                           if record.get("type") == RUN_ROWS_RECORD)
-        records.sort(key=lambda record: record["ts"])
-        return [(record.get("data") or {}).get("rows") or [] for record in records]
+        from .session_state_file import read_run_rows
+        return read_run_rows(self.path)
 
     def _fold(self) -> tuple[tuple, FoldedSession]:
         with self._fold_lock:
@@ -549,21 +805,57 @@ class SessionLog:
 
     def _catch_up(self) -> FoldedSession:
         """Apply what was appended since the last fold; start over only when
-        a file was replaced or a new line sorts before one already applied."""
+        a file was replaced or a new line sorts before one already applied.
+        A first fold starts from the checkpoint when its files still hold
+        what it covers."""
         progress = self._fold_progress
+        if not progress.positions:
+            progress = self._fold_progress = self._from_checkpoint() or progress
+        before = sum(position.offset for position in progress.positions.values())
         records = self._read_new(progress)
         if records is None or (records and records[0].get("ts", 0) <= progress.newest):
             progress = self._fold_progress = _FoldProgress()
+            before = 0
             records = self._read_new(progress) or []
         if not records:
             return progress.folded
-        base = progress.folded
-        folded = FoldedSession(dict(base.nodes), dict(base.meta), dict(base.files))
+        folded = progress.folded.copy()
         for record in records:
             apply_record(folded, record)
-        progress.folded = folded
+        progress.folded = settle(folded)
         progress.newest = records[-1].get("ts", 0)
-        return folded
+        progress.uncovered += sum(position.offset for position in progress.positions.values()) - before
+        if progress.uncovered >= max(CHECKPOINT_MIN_BYTES, progress.checkpoint_size):
+            self._checkpoint(progress)
+        return progress.folded
+
+    def _from_checkpoint(self) -> Optional[_FoldProgress]:
+        found = _read_checkpoint(self.path, FOLD_CHECKPOINT)
+        if found is None:
+            return None
+        content, positions, size = found
+        folded = FoldedSession(nodes=content.get("nodes") or {}, meta=content.get("meta") or {},
+                               files=content.get("files") or {}, run_rows=content.get("run_rows") or [])
+        return _FoldProgress(positions=positions, folded=folded, newest=int(content.get("newest") or 0),
+                             checkpoint_size=size)
+
+    def _checkpoint(self, progress: _FoldProgress) -> None:
+        """Record the fold so the next cold open reads it and the lines after it."""
+        positions = _checkpoint_positions(self.path, progress.positions)
+        if positions is None:
+            return
+        folded = progress.folded
+        common = {"version": _CHECKPOINT_VERSION, "positions": positions, "newest": progress.newest}
+        size = _write_checkpoint(self.path, FOLD_CHECKPOINT, {
+            **common, "nodes": folded.nodes, "meta": folded.meta,
+            "files": folded.files, "run_rows": folded.run_rows,
+        })
+        if size:
+            _write_checkpoint(self.path, RECORDS_CHECKPOINT, {
+                **common, "files": folded.files, "run_rows": folded.run_rows,
+            })
+            progress.uncovered = 0
+            progress.checkpoint_size = size
 
     def _read_new(self, progress: _FoldProgress) -> Optional[list[dict]]:
         """New records in time order, or None when a known file was replaced."""

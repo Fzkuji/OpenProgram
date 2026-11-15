@@ -61,7 +61,7 @@
 <tr><th scope="row"><code translate="no">openprogram dev open</code></th><td>Opens it in the default browser, signed in. Each deploy signs browsers out again; OpenProgram Dev signs itself back in.</td></tr>
 <tr><th scope="row"><code translate="no">openprogram dev copy-models</code></th><td>Copies stable provider settings, API keys and CLI-delegated logins. OAuth logins are signed in separately.</td></tr>
 <tr><th scope="row"><code translate="no">openprogram dev status</code></th><td>What each instance runs and which commits promoting would bring</td></tr>
-<tr><th scope="row"><code translate="no">openprogram dev promote</code></th><td>Runs <code translate="no">scripts/refresh-local-app.sh</code>, which installs only <code translate="no">refs/heads/stable</code> and refuses any other commit</td></tr>
+<tr><th scope="row"><code translate="no">openprogram dev promote</code></th><td>Runs <code translate="no">scripts/refresh-local-app.sh</code> for that commit, which moves <code translate="no">stable</code> to it once the new version is healthy. Run by hand, the script installs only <code translate="no">refs/heads/stable</code></td></tr>
 </tbody>
 </table>
 <p>An Agent does the same with <code translate="no">self_update(action="prepare")</code> from a worktree of the source repository. After the turn ends, a detached controller waits for the stable App's running tasks, then promotes exactly that commit and reports in the conversation that asked. If promotion fails, it lands a revert on <code translate="no">dev</code> and promotes that.</p>
@@ -81,7 +81,7 @@ openprogram upgrade</code></pre>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
 <tbody>
-<tr><th scope="row">Build</th><td>Rebuilds the wheel and Desktop assets before quitting the App, so a failed build changes nothing.</td></tr>
+<tr><th scope="row">Build</th><td>Builds, verifies and signs the new App beside the installed one before quitting it, so a failure there changes nothing. A failure after the switch puts the previous App and worker back, and the script says which step failed.</td></tr>
 <tr><th scope="row">Updates</th><td>PATH and embedded Python installations, bundled Node and Ink resources, the App icon.</td></tr>
 <tr><th scope="row">Probe</th><td>The complete embedded runtime, before regenerating its capability manifest and restarting the default worker. Also upgrades older manifests; a failed probe stops the refresh.</td></tr>
 <tr><th scope="row">Worker interpreter</th><td>Embedded Python with <code translate="no">-I -B</code>; an existing launchd service is rebound to it, and detached startup uses it too. After the health check the script checks the real process's executable and flags: a matching package revision does not prove the interpreter.</td></tr>

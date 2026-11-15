@@ -30,6 +30,7 @@ from openprogram.models.providers.adapters.openai_codex.catalog import (
 )
 from openprogram.models.providers.adapters.openai_codex.credentials import (
     account_id_for,
+    acquire as acquire_credential,
     ensure_credential,
     oauth_view,
 )
@@ -73,7 +74,7 @@ class OpenAICodexRuntime(Runtime):
         self._account_id = profile or get_active_account(auth_adapter.PROVIDER_ID)
         self._cached_access_token: str = ""
 
-        cred = oauth_view(ensure_credential(self._manager, self._account_id))
+        cred = oauth_view(ensure_credential(self._manager, self._account_id), self._manager)
         if cred.kind != "oauth":
             # OpenAICodexRuntime targets the ChatGPT Responses backend
             # (requires a chatgpt-account-id header minted from the JWT).
@@ -129,7 +130,7 @@ class OpenAICodexRuntime(Runtime):
         # the access token is close to expiry, dedup'ing concurrent
         # refreshes. If the cred pointer is unchanged we skip the header
         # update to keep this cheap.
-        cred = oauth_view(self._manager.acquire_sync(auth_adapter.PROVIDER_ID, self._account_id))
+        cred = acquire_credential(self._manager, self._account_id)
         access = cred.payload.auth_value
         if access != self._cached_access_token:
             self.api_key = access

@@ -326,7 +326,8 @@ def test_a_search_that_loads_nothing_writes_no_record(_fresh_loader):
 
     result = asyncio.run(_tool_search_execute(
         "c1", {"select": "zzzzqqqxyzzy"}, None, None))
-    assert result.details is None
+    assert "loads" not in result.details
+    assert result.details == {"note": result.content[0].text}
 
 
 def test_rendered_history_carries_the_load_record_back():
@@ -349,13 +350,128 @@ def test_rendered_history_carries_the_load_record_back():
 
 # Deferred-tools A3, A5 ---------------------------------------------------
 
-def test_an_unknown_name_sends_an_empty_output():
+def test_an_unknown_name_sends_an_empty_output_and_says_why(_fresh_loader):
     """No match or an unknown name: an empty ``tools`` list, as Codex itself
-    sends for any failed search; the catalog beside the message names what
-    exists."""
-    body = _body(_loaded_conversation(text="Loaded 0 tools.\n[warning] unknown tool name(s): nope",
-                                      details={}), [READ, SEARCH])
+    sends for any failed search, then the search's note as its own item."""
+    from openprogram.programs._host.runtime import _tool_search_execute
+
+    result = asyncio.run(_tool_search_execute("c1", {"select": "select:nope"}, None, None))
+    body = _body(_loaded_conversation(text=result.content[0].text, details=result.details),
+                 [READ, SEARCH])
     assert body["input"][2]["tools"] == []
+    (part,) = body["input"][3]["content"]
+    assert body["input"][3]["role"] == "user"
+    assert "No tool named nope is offered in this conversation" in part["text"]
+    assert len(body["input"]) == 4
+
+
+def _search_for(select: str) -> tuple[list, object]:
+    """A turn that asks for a file to be sent and searches ``select`` first."""
+    from openprogram.programs._host.runtime import _tool_search_execute
+
+    result = asyncio.run(_tool_search_execute("call_1", {"select": select}, None, None))
+    return [
+        UserMessage(content="Write hello.txt and send it to me.", timestamp=0),
+        _assistant(ToolCall(id="call_1|tsc_1", name="tool_search", arguments={"select": select})),
+        ToolResultMessage(tool_call_id="call_1|tsc_1", tool_name="tool_search",
+                          content=result.content, details=result.details, timestamp=0),
+    ], result
+
+
+@pytest.mark.parametrize("select", ["select:send_file", "send_file", "select:Send_File"])
+def test_searching_a_tool_already_in_the_array_says_it_is_callable(_fresh_loader, select):
+    """The model searched for ``send_file``, which the array already holds.
+    An empty ``tool_search_output`` alone reads as "no such tool" and the
+    reply says the file cannot be sent; the note says to call it."""
+    from openprogram.programs import get_agent_tool
+    from openprogram.programs._host.runtime import _allowed_tool_names, install_turn_tools
+
+    send_file = get_agent_tool("send_file")
+    token = install_turn_tools([send_file, get_agent_tool("tool_search")])
+    try:
+        messages, result = _search_for(select)
+    finally:
+        _allowed_tool_names.reset(token)
+    spec = Tool(name="send_file", description=send_file.description, parameters=send_file.parameters)
+    before = _body(messages[:1], [READ, SEARCH, spec])
+    body = _body(messages, [READ, SEARCH, spec])
+
+    # Still a function of the array, which the search did not change.
+    assert body["tools"] == before["tools"]
+    assert [t.get("name") or t["type"] for t in body["tools"]] == ["read", "tool_search", "send_file"]
+    assert result.details == {"note": result.content[0].text}
+    call, output, note = body["input"][1:]
+    assert call["type"] == "tool_search_call"
+    assert output["type"] == "tool_search_output" and output["tools"] == []
+    text = note["content"][0]["text"]
+    assert note["role"] == "user" and note["content"][0]["type"] == "input_text"
+    assert text.startswith("<tool-search-result>\n`send_file` is already callable")
+    assert "Call it now" in text
+    for wrong in ("not available", "unavailable", "Loaded 0", "not found", "No deferred"):
+        assert wrong not in text
+
+
+def test_the_note_is_the_same_bytes_whatever_the_result_text_becomes(_fresh_loader):
+    messages, result = _search_for("select:send_file")
+    aged = [*messages[:2], messages[2].model_copy(update={
+        "content": [TextContent(text="[aged] tool_search → nothing loaded")]})]
+    assert _body(aged, [READ, SEARCH])["input"] == _body(messages, [READ, SEARCH])["input"]
+
+
+def test_a_load_with_a_tool_already_callable_sends_both(_fresh_loader):
+    messages, result = _search_for("select:send_file,scheduler")
+    assert [entry["name"] for entry in result.details["loads"]] == ["scheduler"]
+    body = _body(messages, [READ, SEARCH, SCHEDULER])
+    assert [t["name"] for t in body["input"][2]["tools"]] == ["scheduler"]
+    assert "`send_file` is already callable" in body["input"][3]["content"][0]["text"]
+    assert "scheduler" not in body["input"][3]["content"][0]["text"]
+
+
+def test_a_search_that_loads_everything_asked_sends_no_note(_fresh_loader):
+    messages, result = _search_for("select:scheduler")
+    assert "note" not in result.details
+    assert len(_body(messages, [READ, SEARCH, SCHEDULER])["input"]) == 3
+
+
+def test_a_tool_the_turn_made_resident_is_not_loaded_a_second_time(_fresh_loader):
+    """A deferred tool the turn sends with its schema (``as_resident``) is in
+    the array: a search for it must not record a load, which would move it
+    out of the array and re-read the prefix."""
+    from openprogram.programs import as_resident, get_agent_tool
+    from openprogram.programs._host.runtime import (
+        _allowed_tool_names, _tool_search_execute, install_turn_tools,
+    )
+
+    token = install_turn_tools([as_resident(get_agent_tool("scheduler")),
+                                get_agent_tool("tool_search")])
+    try:
+        by_name = asyncio.run(_tool_search_execute("c1", {"select": "select:scheduler"}, None, None))
+        by_keyword = asyncio.run(_tool_search_execute("c2", {"select": "scheduled jobs"}, None, None))
+    finally:
+        _allowed_tool_names.reset(token)
+    assert by_name.details == {"note": by_name.content[0].text}
+    assert by_name.content[0].text.startswith("`scheduler` is already callable")
+    assert "scheduler" not in [e["name"] for e in (by_keyword.details or {}).get("loads", [])]
+
+
+def test_a_later_scope_does_not_inherit_the_tools_a_turn_made_resident(_fresh_loader):
+    """The names a turn made resident belong to that turn's allowed set: a
+    scope installed afterwards loads the tool, it is not told it is callable."""
+    from openprogram.programs import as_resident, get_agent_tool
+    from openprogram.programs._host.runtime import (
+        _allowed_tool_names, _tool_search_execute, install_turn_tools,
+    )
+
+    token = install_turn_tools([as_resident(get_agent_tool("scheduler")),
+                                get_agent_tool("tool_search")])
+    _allowed_tool_names.reset(token)
+    token = _allowed_tool_names.set({"scheduler", "tool_search"})
+    try:
+        result = asyncio.run(_tool_search_execute("c1", {"select": "select:scheduler"}, None, None))
+    finally:
+        _allowed_tool_names.reset(token)
+    assert [entry["name"] for entry in result.details["loads"]] == ["scheduler"]
+    assert "note" not in result.details
 
 
 def test_selecting_a_loaded_tool_again_returns_its_definition(_fresh_loader):

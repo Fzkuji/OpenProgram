@@ -123,6 +123,26 @@ def test_every_result_has_reply_and_usage(monkeypatch):
     assert out.endswith("</agent>")
 
 
+def test_a_card_names_what_an_isolated_helper_changed(monkeypatch):
+    from types import SimpleNamespace
+
+    changed = {"files": ["a.py", "b.py"], "dirty": True}
+
+    class _Manager:
+        def get_worktree(self, worktree_id):
+            return SimpleNamespace(branch_name="scout-7f2a") if worktree_id == "wt1" else None
+
+        def summarize(self, worktree):
+            return changed
+
+    monkeypatch.setattr("openprogram.state.worktree.manager.get_manager", lambda: _Manager())
+    assert agent_result.files_of(_job("j1", worktree_id="wt1")) == {"count": 2, "branch": "scout-7f2a", "dirty": True}
+    assert agent_result.files_of(_job("j2")) is None
+    assert agent_result.files_of(_job("j3", worktree_id="gone")) is None
+    changed["files"] = []
+    assert agent_result.files_of(_job("j4", worktree_id="wt1")) is None
+
+
 def test_an_unknown_price_shows_no_made_up_cost():
     job = _job("j1", status=JobStatus.COMPLETED, started_at=0.0, completed_at=1.0)
     usage = agent_result.usage_of(job, ledger=_Ledger({}, unknown={"j1"}))
@@ -296,3 +316,121 @@ def test_close_agent_archives_a_helper_stopped_mid_turn(monkeypatch):
     out = module._close_agent_impl("j1")
     assert calls == ["p1:j1_user_reply"]
     assert out.startswith("[close_agent] scout: stopped and archived.")
+
+
+# ---- the roster in the agent tool's prompt ------------------------------------
+
+def test_roster_render_is_stable():
+    from openprogram.programs.tools.agents.agent.agent.prompt import roster_text
+    from openprogram.runtime.agent_registry import delegation
+    rows = delegation.roster([
+        _spec(id="explorer", name="Explorer", description="Read-only scout.\n  Changes nothing."),
+        _spec(id="main", name="Assistant", description="x" * 200),
+        _spec(id="same", name="same", description=""),
+    ])
+    assert roster_text(rows) == (
+        "\n\nAgents you can start with agent=…:\n"
+        "- Explorer (explorer) — Read-only scout. Changes nothing.\n"
+        "- Assistant (main) — " + "x" * 159 + "…\n"
+        "- same"
+    )
+    assert roster_text([]) == ""
+
+
+@pytest.mark.parametrize("change", [
+    {"name": "Renamed"},
+    {"description": "now does b"},
+    {"delegation": "off"},
+])
+def test_a_roster_edit_announces_the_prefix_break(monkeypatch, change):
+    from openprogram.runtime.agent_registry import manager
+    breaks: list[str] = []
+    monkeypatch.setattr("openprogram.models.usage.prefix_fingerprint.expect_break_everywhere",
+                        lambda reason: breaks.append(reason))
+    manager._roster_changed(_spec(), _spec(**change))
+    assert breaks == ["agent_roster"]
+
+
+def test_an_edit_outside_the_roster_breaks_nothing(monkeypatch):
+    from openprogram.runtime.agent_registry import manager
+    breaks: list[str] = []
+    monkeypatch.setattr("openprogram.models.usage.prefix_fingerprint.expect_break_everywhere",
+                        lambda reason: breaks.append(reason))
+    manager._roster_changed(_spec(), _spec(system_prompt="other", thinking_effort="high"))
+    assert breaks == []
+
+
+# ---- the utility model tier ---------------------------------------------------
+
+def test_explorer_runs_on_the_lightweight_helpers_model(monkeypatch):
+    from openprogram.runtime.agent_registry import builtin_agents, manager
+    from openprogram.runtime.conversation import session_model
+    helper = _spec(id="utility", model=manager.AgentModelRef(provider="p", id="small"))
+    explorer = _spec(id="explorer")
+    rows = {"utility": helper, "explorer": explorer}
+    monkeypatch.setattr(manager, "get", lambda agent_id: rows.get(agent_id))
+    assert builtin_agents.utility_tier_model(explorer) == ("p", "small")
+    assert session_model.new_session_chat_model("explorer") == ("p", "small")
+    # An Explorer given its own model keeps it; other Agents are not in the tier.
+    rows["explorer"] = _spec(id="explorer", model=manager.AgentModelRef(provider="q", id="big"))
+    assert session_model.new_session_chat_model("explorer") == ("q", "big")
+    assert builtin_agents.utility_tier_model(_spec(id="main")) is None
+    # No helper model: the usual fallback (the model run last).
+    rows["explorer"] = explorer
+    rows["utility"] = _spec(id="utility")
+    monkeypatch.setattr("openprogram.models.providers.catalog.last_used.read_last_used_model",
+                        lambda: ("last", "used"))
+    assert session_model.new_session_chat_model("explorer") == ("last", "used")
+
+
+def test_usage_counts_the_helpers_a_helper_started(monkeypatch):
+    """C2: a helper's tokens and cost include the helpers under it."""
+    root = _job("j1", status=JobStatus.COMPLETED, started_at=0.0, completed_at=1.0)
+    child = _job("j2", parent_job_id="j1")
+    grandchild = _job("j3", parent_job_id="j2")
+    stranger = _job("j9", parent_job_id="other")
+    by_session = {"p1": [root, child, grandchild, stranger]}
+    monkeypatch.setattr("openprogram.runtime.jobs.store.list_jobs", lambda sid: by_session.get(sid, []))
+    monkeypatch.setattr(agent_result, "_tool_calls", lambda job: 0)
+    assert agent_result.subtree_job_ids(root) == ["j1", "j2", "j3"]
+    usage = agent_result.usage_of(root, ledger=_Ledger({"j1": ["0.01"], "j2": ["0.02"], "j3": ["0.005"],
+                                                         "j9": ["9"]}))
+    assert usage["tokens"] == 3600 and usage["cost_usd"] == "0.035000"
+
+
+# ---- a fork sends its caller's recorded prompt --------------------------------
+
+def test_a_forked_helper_sends_the_prompt_its_caller_recorded(monkeypatch):
+    """C1: the same bytes as the caller's prompt, so the prompt cache is shared;
+    a fresh helper or the conversation's own turn builds its own."""
+    import hashlib
+    from types import SimpleNamespace
+    from openprogram.programs.tools.agents.send_message.send_message import depth
+    from openprogram.runtime.conversation.turn_runtime import loop_runner
+
+    caller_prompt = "You are Assistant.\n\n# Environment\ncwd: /repo"
+    seen: list = []
+
+    def recorded(store, session_id, head_id=None):
+        seen.append((session_id, head_id))
+        return caller_prompt
+
+    monkeypatch.setattr("openprogram.runtime.context.system_prompt_node.latest_recorded_prompt", recorded)
+    monkeypatch.setattr("openprogram.runtime.context.Context.turn_store", staticmethod(lambda sid: object()))
+    req = SimpleNamespace(session_id="p1", branch_from="a1")
+
+    tokens = [depth.set_helper_turn(True), depth.set_forked_turn(True)]
+    try:
+        sent = loop_runner.forked_prompt(req)
+    finally:
+        depth._forked.reset(tokens[1])
+        depth._helper.reset(tokens[0])
+    assert hashlib.sha256(sent.encode()).digest() == hashlib.sha256(caller_prompt.encode()).digest()
+    assert seen == [("p1", "a1")]
+
+    token = depth.set_helper_turn(True)
+    try:
+        assert loop_runner.forked_prompt(req) is None  # fresh: built for the helper
+    finally:
+        depth._helper.reset(token)
+    assert loop_runner.forked_prompt(req) is None  # the conversation's own turn

@@ -14,43 +14,29 @@ from openprogram.programs._host.runtime import function
 from openprogram.programs.tools.files.worktree.shared import _current_session_id
 from openprogram.state.worktree.context import set_worktree
 from openprogram.state.worktree.manager import WorktreeError, get_manager
-import logging
-
-_log = logging.getLogger(__name__)
 
 
-def _resolve_source_repo(source_repo: str) -> Optional[str]:
+def _resolve_source_repo(source_repo: str, session_id: Optional[str] = None) -> Optional[str]:
     """Source-repo fallback chain (D5):
 
       1. Explicit ``source_repo`` parameter wins.
-      2. ``OPENPROGRAM_WORKDIR`` env / selected Project config.
-      3. ``git rev-parse --show-toplevel`` from the worker's cwd.
+      2. The conversation's project folder.
+      3. The configured default folder (``OPENPROGRAM_WORKDIR`` env /
+         ``default_workdir`` config).
 
-    Returns the absolute path of a candidate git repo (caller is
-    responsible for verifying it's a real git repo via the manager).
-    Returns None if all three fail.
+    Never the worker's own working directory: that is wherever the
+    worker started (a checkout of OpenProgram, under a test run), not
+    a folder the person chose. Returns the absolute path of a candidate
+    git repo (the manager verifies it), or None.
     """
     if source_repo and source_repo.strip():
         return os.path.abspath(os.path.expanduser(source_repo.strip()))
-    try:
-        from openprogram.state.paths import get_default_workdir
-        wd = get_default_workdir()
-        if wd:
-            return os.path.abspath(os.path.expanduser(wd))
-    except Exception:
-        # No default workdir configured; try the cwd's repo next.
-        _log.debug("default workdir unavailable", exc_info=True)
-    try:
-        import subprocess
-        proc = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, timeout=5,
-        )
-        if proc.returncode == 0 and proc.stdout.strip():
-            return proc.stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        # git missing or too slow: no repo found here.
-        _log.debug("git rev-parse failed", exc_info=True)
+    from openprogram.runtime.conversation.workdir import project_workdir_for
+    from openprogram.state.paths import configured_workdir
+    folder = project_workdir_for(session_id) if session_id else None
+    wd = str(folder) if folder is not None else configured_workdir()
+    if wd:
+        return os.path.abspath(os.path.expanduser(wd))
     return None
 
 
@@ -67,8 +53,8 @@ def _resolve_source_repo(source_repo: str) -> Optional[str]:
         "\n"
         "Args:\n"
         "  source_repo: absolute path of the source git repo. If "
-        "omitted, falls back to the session's default workdir, then "
-        "to git rev-parse --show-toplevel from the worker cwd.\n"
+        "omitted, uses the conversation's project folder, then the "
+        "configured default folder.\n"
         "  branch_name: branch to create the worktree on. Defaults "
         "to op/wt/<slug>-<id6>. Must not already exist in the source "
         "repo. Ignored when pr is set.\n"
@@ -124,7 +110,7 @@ def worktree_create(
                 f"first."
             )
 
-    repo = _resolve_source_repo(source_repo)
+    repo = _resolve_source_repo(source_repo, sid)
     if not repo:
         return (
             "[worktree_create error] source_repo_not_resolved: pass an "

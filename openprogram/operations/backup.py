@@ -108,6 +108,7 @@ REGENERATED: tuple[str, ...] = (
     "web", "web.lock", "mcp_server_token", "browser-cdp-port", "browser-cdp.lock",
     "worker.lock", "worker.log", "worker.pid", "worker.port", "worker.stop",
     "worker-service.cmd",
+    "web-port",  # the free port this machine had at the first start; chosen again
     ".restore.lock", ".restore-journal.d", ".restore-journal.json", ".write-test",
 )
 

@@ -65,10 +65,8 @@ _SETUP_HINTS: dict[str, str] = {
         "`openprogram web`. Either source works; the field takes\n"
         "precedence when both are set.\n"
         "\n"
-        "This is the metered pay-per-token path. If you have an\n"
-        "Anthropic Pro / Team subscription and want to route through\n"
-        "your existing Claude session instead, use the **Claude Code**\n"
-        "provider (no API key needed)."
+        "OpenProgram uses Anthropic only through this official API with an\n"
+        "API key, billed per token to the API account."
     ),
     "xai-subscription": (
         "This is the SuperGrok / X Premium+ card — not the xAI API-key row.\n"

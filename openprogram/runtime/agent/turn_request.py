@@ -232,6 +232,9 @@ class TurnRequest:
     # "label"}``, frozen at admission (permissions/lifecycle.py
     # ``spawn_question_route``). None: nobody waits on this turn's questions.
     asks_through: Optional[dict[str, Any]] = None
+    # The message sets a Goal (``/goal <objective>``): written on the turn's
+    # user message as ``starts_goal``, which the chat labels Goal.
+    starts_goal: bool = False
 
     def __post_init__(self) -> None:
         if self.profile_snapshot is not None:

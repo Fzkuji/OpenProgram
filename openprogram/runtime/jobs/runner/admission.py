@@ -405,6 +405,8 @@ class AdmissionOperations:
         profile_snapshot: shared.Optional[dict[str, shared.Any]] = None,
         response_format: shared.Optional[dict[str, shared.Any]] = None,
         message_origin: shared.Optional[str] = None,
+        tool_call_id: shared.Optional[str] = None,
+        chain_ancestors: shared.Optional[list[str]] = None,
     ) -> str:
         """Create a Job entity, persist it, queue it on the pool.
 
@@ -502,6 +504,9 @@ class AdmissionOperations:
             response_format=response_format,
             message_origin=message_origin,
             deferred_inbox=deferred_inbox,
+            tool_call_id=tool_call_id or (existing.tool_call_id if existing is not None else None),
+            chain_ancestors=(list(chain_ancestors) if chain_ancestors
+                             else existing.chain_ancestors if existing is not None else None),
             status=shared.JobStatus.PENDING,
             created_at=existing.created_at if existing is not None else time.time(),
             submitter=(existing.submitter if existing is not None else handoff.this_process()),

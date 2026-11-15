@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import os
 import signal as _signal
-import socket
 import threading
 import time
 
@@ -27,30 +26,36 @@ from .lock import WorkerLock
 from .startup_log import worker_print
 
 
-def _find_free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return int(s.getsockname()[1])
+def _settle_web_port() -> int | None:
+    """The port this worker will listen on, or None when it cannot have one.
 
-
-def _port_available(port: int) -> bool:
-    """True iff we can bind ``127.0.0.1:port`` right now.
-
-    Sets ``SO_REUSEADDR`` before ``bind()`` so a port that only sits
-    in ``TIME_WAIT`` (left by a worker we just stopped) is reported
-    as available. Without this, every quick restart shifts the
-    worker off its fixed port to a random port for ~60s, which forces a
-    Next.js bundle rebuild + makes every open browser tab lose its
-    WebSocket. ``uvicorn`` also sets ``SO_REUSEADDR`` on its server
-    socket, so the actual subsequent bind succeeds too.
+    Runs right after the lock is taken, so this worker is the profile's only
+    one and a holder of the port is somebody else: another program, or
+    another account's worker. A port the profile chose moves to the next free
+    one (the App follows the record); a port the user set is refused with the
+    holder named, never swapped silently for another.
     """
+    from .lifecycle import claim_worker_port
+    from .ports import describe_port_owner, port_bindable
+
     try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            s.bind(("127.0.0.1", port))
-        return True
-    except OSError:
-        return False
+        port, setting = claim_worker_port()
+        if port_bindable(port):
+            return port
+        owner = describe_port_owner(port)
+        holder = owner.detail if owner is not None else "another program or account"
+        if setting is not None:
+            worker_print(
+                f"port {port} (set by {setting}) is in use by {holder}. "
+                f"Exiting: quit that program or set another port."
+            )
+            return None
+        moved, _ = claim_worker_port(held=port)
+    except OSError as exc:
+        worker_print(f"no port to listen on: {exc}. Exiting.")
+        return None
+    worker_print(f"port {port} is in use by {holder}; this profile now uses port {moved}.")
+    return moved
 
 
 class _ChannelSupervisor:
@@ -402,6 +407,13 @@ def run_foreground() -> int:
         _forget_refused_start()
         return 1
 
+    web_port = _settle_web_port()
+    if web_port is None:
+        # A held port is not this version's failure to start.
+        _forget_refused_start()
+        lock.release()
+        return 1
+
     _remember_worker_environment()
     _register_install()
     # A request left for an earlier worker with this PID is not for this one.
@@ -471,26 +483,7 @@ def run_foreground() -> int:
     # Bring up the webui first — that's the worker's primary job. Single
     # port: this process serves the API, /ws AND the frontend export.
     from openprogram.interfaces.server import start_web
-    from .lifecycle import resolve_worker_port
-
-    fixed_port = resolve_worker_port()
-    port = fixed_port
-    if not _port_available(port):
-        # The fixed port is genuinely held by another live listener
-        # (SO_REUSEADDR already lets us reclaim a TIME_WAIT port, so this
-        # isn't a recent self-restart). Name who holds it before falling
-        # back — a silent drift to a random port hides the real cause and
-        # breaks the fixed-port URL. (openclaw's describePortOwner.)
-        from openprogram.operations.worker.ports import describe_port_owner
-        owner = describe_port_owner(fixed_port)
-        port = _find_free_port()
-        if owner is not None:
-            who = "another openprogram instance" if owner.is_ours else "a foreign process"
-            worker_print(f"port {fixed_port} is held by {who} — {owner.detail}")
-            if not owner.is_ours:
-                worker_print(f"  free it (`lsof -ti:{fixed_port} | xargs kill`) "
-                      f"or set OPENPROGRAM_WEB_PORT to keep the fixed port.")
-        worker_print(f"falling back to free port {port} (UI URL will track this port).")
+    port = web_port
     start_web(port=port, open_browser=False)
     write_port_file(port)
     write_pid_file()

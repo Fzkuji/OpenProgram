@@ -190,18 +190,29 @@ def real_context_window(model: Any) -> int:
     mistake — that's ~10-30% of the real window for most modern models,
     so compaction fired at ~10-30% of true utilization. The correct
     field on our :class:`Model` registry is ``context_window``.
+
+    A model with no window falls back to the conservative default, which
+    is right for compaction (it fires early) and wrong for display; the
+    occupancy display reads :func:`known_context_window` instead.
+    """
+    return known_context_window(model) or _DEFAULT_WINDOW
+
+
+def known_context_window(model: Any) -> int | None:
+    """The model's context window, or ``None`` when it is not known.
+
+    The same number :func:`real_context_window` gives compaction, minus
+    the default: occupancy shows no limit rather than a made-up one.
     """
     if model is None:
-        return _DEFAULT_WINDOW
+        return None
     win = getattr(model, "context_window", None)
     if win and int(win) > 0:
         return int(win)
     # Some hand-curated entries (older Codex registry) only have
-    # ``max_tokens`` filled in. Treat that as an under-estimate so we
-    # don't crash, but log a warning the first time we hit it.
+    # ``max_tokens`` filled in. If it is at least 32K, the entry
+    # plausibly conflated the two fields; trust it.
     cap = getattr(model, "max_tokens", None)
     if cap and int(cap) >= 32_000:
-        # If max_tokens is at least 32K, the entry plausibly conflated
-        # the two fields; trust it.
         return int(cap)
-    return _DEFAULT_WINDOW
+    return None

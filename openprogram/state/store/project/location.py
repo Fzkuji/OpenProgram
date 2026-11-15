@@ -44,8 +44,12 @@ def evaluate_project_location(project) -> str:
     return MISSING
 
 
-def refresh_project_location(project_id: str, *, roots=None, max_directories: int = 4000) -> str:
-    """Reconcile on startup/access, with bounded portable marker lookup."""
+def refresh_project_location(project_id: str, *, roots=None, max_directories: int = 4000,
+                             scan=None) -> str:
+    """Reconcile on startup/access, with bounded portable marker lookup.
+
+    ``scan`` is the walk a pass over many projects shares (``MarkerScan``).
+    """
     project = projects.get_project(project_id)
     if project is None or getattr(project, "is_default", False):
         return AVAILABLE
@@ -103,7 +107,8 @@ def refresh_project_location(project_id: str, *, roots=None, max_directories: in
         return AVAILABLE
     if identity.is_portable(project):
         from .discovery import find_project_folder
-        resolved = find_project_folder(project, roots=roots, max_directories=max_directories)
+        resolved = find_project_folder(project, roots=roots, max_directories=max_directories,
+                                       scan=scan)
         if resolved is not None:
             try:
                 projects.relocate_project(project.id, resolved, expected_path=project.path,
@@ -131,14 +136,24 @@ def _project_has_live_writers(project) -> bool:
         return True
 
 
-def reconcile_registered_projects() -> list[str]:
-    """Resolve portable markers for registered projects only."""
+def reconcile_registered_projects(*, roots=None, max_directories: int = 4000) -> list[str]:
+    """Resolve portable markers for registered projects only.
+
+    Runs behind a reply or at start-up, never on a path somebody waits on.
+    A project whose folder is where the registry says costs one folder
+    check and one marker read; every missing one shares a single bounded
+    walk, so a registry full of deleted folders walks once, not once each.
+    It holds the registry only for the moment a changed state is written.
+    """
+    from .discovery import MarkerScan
+    scan = MarkerScan(roots, max_directories=max_directories)
     moved = []
     for project in projects.list_projects():
         if getattr(project, "is_default", False) or not project.path:
             continue
         before = project.path
-        state = refresh_project_location(project.id)
+        state = refresh_project_location(project.id, roots=roots,
+                                         max_directories=max_directories, scan=scan)
         current = projects.get_project(project.id)
         if current and current.path != before and state == AVAILABLE:
             moved.append(project.id)

@@ -154,3 +154,49 @@ def test_the_launcher_starts_python_in_utf8_mode_whatever_the_environment_says(w
     )
     assert done.returncode == 0, done.stderr
     assert done.stdout.split() == ["1", "utf-8", "页面"]
+
+
+def test_the_launcher_closes_handles_it_inherited_before_starting_anything():
+    """The App's DevTools socket arrives inherited and must not outlive the App."""
+    body = _windows_function("close_inherited_handles")
+    assert "OP_PROCESS_HANDLE_INFORMATION" in body and "OP_OBJ_INHERIT" in body
+    for handle in ("STD_INPUT_HANDLE", "STD_OUTPUT_HANDLE", "STD_ERROR_HANDLE"):
+        assert f"GetStdHandle({handle})" in body, "the standard handles carry the worker log"
+    assert "CloseHandle(handle)" in body
+    text = SOURCE.read_text(encoding="utf-8")
+    main = text[text.index("int main(int argc, char **argv)"):]
+    closed = main.index("close_inherited_handles();")
+    assert closed < main.index('strcmp(argv[1], "--root")'), "handles are closed before anything starts"
+
+
+@pytest.mark.skipif(not WINDOWS, reason="needs Windows")
+def test_a_listening_socket_the_launcher_inherits_is_not_held_by_it_or_its_python(windows_launcher, tmp_path):
+    import socket
+
+    root = _developer_root(tmp_path)
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen()
+    port = listener.getsockname()[1]
+    listener.set_inheritable(True)
+    child = subprocess.Popen(
+        [str(windows_launcher), "--root", str(root), "-c", "import time; time.sleep(30)"],
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        close_fds=False,
+    )
+    try:
+        import time
+
+        time.sleep(5)  # the launcher has started its Python by now
+        assert child.poll() is None
+        listener.close()
+        # With the App's socket gone, nothing may still be listening on its port.
+        probe = socket.socket()
+        probe.settimeout(1)
+        try:
+            assert probe.connect_ex(("127.0.0.1", port)) != 0
+        finally:
+            probe.close()
+    finally:
+        child.kill()
+        child.wait(timeout=30)

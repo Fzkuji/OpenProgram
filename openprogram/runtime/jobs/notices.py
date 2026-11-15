@@ -16,6 +16,13 @@ automated event, never a message from the user.
 same queue: a watch entry that turns into one notice, carrying the
 target's latest reply, once the target branch or session goes idle.
 
+A message passed on is answered at the end of the chain (``hold``): when
+A asks B and B, in that turn, asks C, A's notice waits until C's reply
+has reached B and B's turn on it has ended, and then carries B's answer
+from that turn, not B's "I asked C" (the always-on hand-off's
+``owed_after`` chain). Each conversation's notices file records which
+results its notice turns have answered (``answered``).
+
 Pending notices live in ``<caller-session-dir>/notices.json`` so a worker
 restart does not lose them; the worker loop (``run_job_notices``) delivers
 them.
@@ -70,8 +77,68 @@ def _load(path) -> tuple[list[dict[str, Any]], list[str]]:
             done if isinstance(done, list) else [])
 
 
-def _write(path, entries: list[dict[str, Any]], done: list[str]) -> None:
-    path.write_text(json.dumps({"version": 1, "entries": entries, "done": done[-_DONE_KEPT:]}), encoding="utf-8")
+def _answered(path) -> list[str]:
+    try:
+        blob = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    answered = blob.get("answered") if isinstance(blob, dict) else None
+    return answered if isinstance(answered, list) else []
+
+
+def _write(path, entries: list[dict[str, Any]], done: list[str],
+           answered: Optional[list[str]] = None) -> None:
+    if answered is None:
+        answered = _answered(path) if path.exists() else []
+    blob: dict[str, Any] = {"version": 1, "entries": entries, "done": done[-_DONE_KEPT:]}
+    if answered:
+        blob["answered"] = answered[-_DONE_KEPT:]
+    path.write_text(json.dumps(blob), encoding="utf-8")
+
+
+def answered(session_id: str, job_ids: list[str]) -> None:
+    """A notice turn in ``session_id`` about these jobs has ended: a reply
+    held for them (``hold``) can go on now."""
+    path = _path(session_id)
+    if path is None or not job_ids:
+        return
+    with _lock:
+        entries, done = _load(path) if path.exists() else ([], [])
+        seen = _answered(path) if path.exists() else []
+        _write(path, entries, done, seen + [j for j in job_ids if j not in seen])
+
+
+def hold(passing_on: Job, *, waits_on: Job) -> bool:
+    """Hold the answer ``passing_on``'s sender gets until ``waits_on`` (a
+    message ``passing_on``'s turn sent on) has been answered and the
+    conversation that sent it has replied in turn. Stands in for the
+    ordinary notice of ``passing_on``."""
+    session_id = deliver_session_of(passing_on)
+    path = _path(session_id) if session_id else None
+    if path is None:
+        return False
+    entry_id = f"relay:{passing_on.id}"
+    wait = [deliver_session_of(waits_on), waits_on.id, waits_on.parent_session_id]
+    with _lock:
+        entries, done = _load(path) if path.exists() else ([], [])
+        if passing_on.id in done:
+            return False
+        for e in entries:
+            if e.get("id") == entry_id:
+                if wait not in e.setdefault("waits_on", []):
+                    e["waits_on"].append(wait)
+                break
+            if e.get("job_id") == passing_on.id:
+                # Queued already (it ended first): wait on this send too.
+                e.update(kind="relay", id=entry_id, waits_on=[*e.get("waits_on", []), wait])
+                break
+        else:
+            entries.append({"kind": "relay", "id": entry_id, "job_id": passing_on.id,
+                            "job_session_id": passing_on.parent_session_id,
+                            "waits_on": [wait], "queued_at": time.time()})
+        _write(path, entries, done)
+        _due.add(session_id)
+    return True
 
 
 def _settle(path, ids: set[str]) -> None:
@@ -91,11 +158,7 @@ def queue(job: Job) -> bool:
     the turn that started it (``cancel.parent``) has nobody left waiting.
     A waited-on job whose waiter died with its process (a Worker crash)
     returned nothing, so it is told like a background one."""
-    from openprogram.runtime.jobs.handoff import waiter_gone
-    if job.wait and not waiter_gone(job):
-        return False
-    if (job.status not in (JobStatus.COMPLETED, JobStatus.ERRORED)
-            and not stopped_by_user(job) and not stopped_by_limit(job)):
+    if not qualifies(job):
         return False
     session_id = deliver_session_of(job)
     path = _path(session_id) if session_id else None
@@ -111,6 +174,15 @@ def queue(job: Job) -> bool:
         _write(path, entries, done)
         _due.add(session_id)
     return True
+
+
+def qualifies(job: Job) -> bool:
+    """Whether ``job``'s end is told to its sender by a notice (``queue``)."""
+    from openprogram.runtime.jobs.handoff import waiter_gone
+    if job.wait and not waiter_gone(job):
+        return False
+    return (job.status in (JobStatus.COMPLETED, JobStatus.ERRORED)
+            or stopped_by_user(job) or stopped_by_limit(job))
 
 
 def stopped_by_user(job: Job) -> bool:
@@ -145,13 +217,26 @@ def queue_stalled(job: Job, *, minutes: int) -> bool:
     return True
 
 
+def stalled_told(job: Job) -> bool:
+    """Whether ``job``'s sender was told it stalled (``queue_stalled``)."""
+    session_id = deliver_session_of(job)
+    path = _path(session_id) if session_id else None
+    if path is None or not path.exists():
+        return False
+    entry_id = f"stalled:{job.id}"
+    with _lock:
+        entries, done = _load(path)
+    return entry_id in done or any(e.get("id") == entry_id for e in entries)
+
+
 def watch(
     *, sender_session_id: str, target_session_id: str, target_head_id: str,
     label: str, agent_id: str, chain_messages: int, chain_generations: int,
-    authority: dict[str, Any],
+    authority: dict[str, Any], watch_id: Optional[str] = None,
 ) -> bool:
     """Tell the sender once when ``target_session_id:target_head_id`` goes
-    idle. False when the sender's session cannot hold the watch."""
+    idle. False when the sender's session cannot hold the watch.
+    ``watch_id``: a fixed id (a migrated hand-off), so a repeat adds none."""
     import uuid
     from openprogram.state.authority import normalize_authority
     path = _path(sender_session_id)
@@ -162,8 +247,10 @@ def watch(
         if any(e.get("kind") == "watch" and e.get("target_session_id") == target_session_id
                and e.get("target_head_id") == target_head_id for e in entries):
             return True
+        if watch_id and (watch_id in done or any(e.get("id") == watch_id for e in entries)):
+            return True
         entries.append({
-            "kind": "watch", "id": f"watch_{uuid.uuid4().hex[:12]}",
+            "kind": "watch", "id": watch_id or f"watch_{uuid.uuid4().hex[:12]}",
             "target_session_id": target_session_id, "target_head_id": target_head_id,
             "label": label, "agent_id": agent_id,
             "chain_messages": int(chain_messages), "chain_generations": int(chain_generations),
@@ -202,6 +289,93 @@ def _idle_watch_job(session_id: str, entry: dict[str, Any]) -> Optional[Job]:
         caller_chain_generations=int(entry.get("chain_generations") or 0),
         **normalize_authority(entry),
     )
+
+
+def hold_reply(*, sender_session_id: str, entry_id: str, from_session_id: str,
+               waits_on: list[str], label: str, agent_id: str = "main",
+               authority: Optional[dict[str, Any]] = None) -> bool:
+    """One notice for ``sender_session_id`` carrying ``from_session_id``'s
+    latest reply, once ``waits_on`` (``[passer, id, run_session]``, the
+    run session empty for a notice of its own) was answered there. A
+    stored hand-off that owed earlier conversations an answer becomes this
+    (handoff_migration). Idempotent by ``entry_id``."""
+    from openprogram.state.authority import normalize_authority
+    path = _path(sender_session_id)
+    if path is None:
+        return False
+    with _lock:
+        entries, done = _load(path) if path.exists() else ([], [])
+        if entry_id in done or any(e.get("id") == entry_id for e in entries):
+            return True
+        entries.append({"kind": "relay", "id": entry_id, "target_session_id": from_session_id,
+                        "label": label, "agent_id": agent_id, "waits_on": [list(waits_on)],
+                        "queued_at": time.time(), **normalize_authority(authority or {})})
+        _write(path, entries, done)
+        _due.add(sender_session_id)
+    return True
+
+
+def _relayed_job(session_id: str, entry: dict[str, Any]) -> tuple[bool, Optional[Job]]:
+    """``(ready, job)`` for a held answer: ready once the job and every
+    message it passed on ended and each reply was answered by a turn of the
+    conversation that passed it on; the job then carries that
+    conversation's latest reply. ``job`` is None when nothing is told."""
+    from openprogram.runtime.conversation import inbox
+    from openprogram.runtime.jobs.store import load_job
+    from openprogram.runtime.jobs.types import is_terminal
+    from openprogram.state.authority import normalize_authority
+    if entry.get("job_id"):
+        job = load_job(str(entry.get("job_session_id") or session_id), str(entry["job_id"]))
+        if job is None:
+            return True, None
+        if not is_terminal(job.status):
+            return False, None
+    else:
+        # A held reply with no Job of its own (a migrated hand-off): it
+        # reads the conversation's latest reply once the wait is over.
+        target = str(entry.get("target_session_id") or "")
+        job = Job(id=str(entry["id"]), parent_session_id=target,
+                  caller_session_id=session_id if target != session_id else None,
+                  prompt="", agent_id=str(entry.get("agent_id") or "main"),
+                  status=JobStatus.COMPLETED, wait=False,
+                  head_id=_session_head(target), label=str(entry.get("label") or "") or None,
+                  source="relay", message_origin="agent_delivery", **normalize_authority(entry))
+    relayed = False
+    for item in entry.get("waits_on") or []:
+        try:
+            passer, wait_id, run_session = (str(v or "") for v in item)
+        except (TypeError, ValueError):
+            continue
+        if run_session:
+            waited = load_job(run_session, wait_id)
+            if waited is None:
+                continue
+            if not is_terminal(waited.status):
+                return False, None
+            if not qualifies(waited):
+                continue  # no notice reaches the passer; nothing to wait for
+        path = _path(passer)
+        if path is None or wait_id not in (_answered(path) if path.exists() else []):
+            return False, None
+        relayed = True
+    if not qualifies(job):
+        return True, None
+    if (relayed or not entry.get("job_id")) and job.status == JobStatus.COMPLETED:
+        tip = inbox._branch_tip(job.parent_session_id, job.head_id)  # noqa: SLF001
+        if tip and inbox.target_busy(job.parent_session_id, tip, session_id):
+            return False, None
+        if tip:
+            job.head_id = tip
+            job.result_text = tip_reply(job.parent_session_id, tip) or job.result_text
+    return True, job
+
+
+def _session_head(session_id: str) -> Optional[str]:
+    try:
+        from openprogram.runtime.context.session_db import default_db
+        return (default_db().get_session(session_id) or {}).get("head_id")
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def consume(job: Job) -> None:
@@ -255,6 +429,14 @@ def _pending_jobs(session_id: str, entries: list[dict[str, Any]]) -> tuple[list[
             if job is not None:
                 jobs.append(job)
                 settled.add(job.id)
+            continue
+        if e.get("kind") == "relay":
+            ready, job = _relayed_job(session_id, e)
+            if ready:
+                settled.add(str(e.get("id")))
+                if job is not None:
+                    settled.add(job.id)
+                    jobs.append(job)
             continue
         settled.add(str(e.get("job_id")))
         job = load_job(str(e.get("job_session_id") or session_id), str(e.get("job_id") or ""))
@@ -328,6 +510,32 @@ def _kind(job: Job) -> str:
     # a waited-on spawn's: its card stays out of context, kept for the tool
     # result its dead waiter never returned.
     return "report" if job.attach_pointer_id and not job.wait else "reply"
+
+
+def _card_leaves_result_to_notice(job: Job) -> bool:
+    """Whether ``job``'s attach card is one whose prompt text never carries
+    the result (``attach.result_in == "notice"``, render._attach_report).
+    A card that cannot be read counts as one: the result then travels in
+    the notice rather than nowhere."""
+    try:
+        from openprogram.runtime.context.session_db import default_db
+        node = default_db().read_index(
+            deliver_session_of(job), lambda index: index.nodes_by_id.get(job.attach_pointer_id))
+    except Exception:  # noqa: BLE001
+        return True
+    if node is None:
+        return True
+    md = node.metadata or {}
+    attach = md.get("attach")
+    if not isinstance(attach, dict):
+        try:
+            extra = md.get("extra")
+            attach = (json.loads(extra) if isinstance(extra, str) else dict(extra or {})).get("attach")
+        except Exception:  # noqa: BLE001
+            attach = None
+    if not isinstance(attach, dict):
+        return True
+    return attach.get("result_in") == "notice"
 
 
 def _address(job: Job) -> str:
@@ -405,8 +613,15 @@ def notice_text(jobs: list[Job]) -> str:
             # No result is coming; whatever it wrote stays on its branch.
             lines.append(render(job, body=f"(no reply) Its work so far: read_conversation(\"{job.id}\")."))
             continue
-        if kind == "report":
+        if kind == "report" and not _card_leaves_result_to_notice(job):
+            # A card written before results moved into the notice renders
+            # the report itself.
             lines.append(render(job, body="(its report is attached above)"))
+        elif kind == "report":
+            # Its card stays as it was written (the caller's prompt only
+            # grows by appending), so the result travels here.
+            lines.append(render(job))
+            lines.append(f"Its steps: read_conversation(\"{job.id}\").")
         else:
             lines.append(f"Reply from branch {address}:")
             lines.append(render(job))
@@ -430,11 +645,32 @@ def _seed() -> None:
     sessions = default_store()
     root = sessions.root_path
     if root.exists():
-        found = {sid for sid, sdir in iter_session_dirs(root)
-                 if _load(sessions.state_file_at(sdir, "notices.json"))[0]}
+        found = set()
+        for sid, sdir in iter_session_dirs(root):
+            path = sessions.state_file_at(sdir, "notices.json")
+            with _lock:
+                _answer_interrupted(path)
+            if _load(path)[0]:
+                found.add(sid)
         with _lock:
             _due.update(found)
     _seeded = True
+
+
+def _answer_interrupted(path) -> None:
+    """At this process's first sweep no notice turn runs yet, so a notice
+    taken for delivery (``done``) whose turn never recorded its end
+    (``answered``) was cut off by a restart. Its turn is over: count it
+    answered, so a reply held on it (``hold``) is not held for ever. The
+    held reply then carries the conversation's latest reply. Caller holds
+    ``_lock``."""
+    if not path.exists():
+        return
+    entries, done = _load(path)
+    seen = _answered(path)
+    missing = [i for i in done if i not in seen]
+    if missing:
+        _write(path, entries, done, seen + missing)
 
 
 def sweep() -> None:

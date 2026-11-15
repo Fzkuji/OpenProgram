@@ -14,6 +14,8 @@ registerHooks({
     if (specifier === "@/lib/execution/use-managed-processes") return { url: "data:text/javascript,export const useManagedProcesses = () => globalThis.activityProcesses", shortCircuit: true };
     if (specifier === "../debugger/debugger-panel") return { url: "data:text/javascript,export const DebuggerPanel = () => 'DEBUGGER'", shortCircuit: true };
     if (specifier === "@/lib/net/execution/activity-runs-client") return { url: "data:text/javascript,export const getActivityRuns = (...a) => globalThis.activityRuns(...a); export const getActivityRunEvents = (...a) => globalThis.activityEvents(...a)", shortCircuit: true };
+    if (specifier === "@/lib/net/execution/activity-roster-client") return { url: "data:text/javascript,export const getActivityRoster = async () => globalThis.activityRoster ?? { agents: {}, outgoing: [] }", shortCircuit: true };
+    if (specifier === "@/lib/nav/navigate") return { url: "data:text/javascript,export const navigate = (path) => { (globalThis.navigated ||= []).push(path); }", shortCircuit: true };
     if (specifier === "./agent-page") return { url: new URL("./fixtures/list-agent-page.tsx", import.meta.url).href, shortCircuit: true };
     if (specifier === "./program-page") return { url: "data:text/javascript,export const ProgramPage = () => 'PROGRAM PAGE'", shortCircuit: true };
     if (specifier === "./command-page") return { url: "data:text/javascript,export const CommandPage = () => 'COMMAND PAGE'", shortCircuit: true };
@@ -127,19 +129,178 @@ const row = (host, text) => [...host.querySelectorAll("[data-row-id]")].find(ite
 
 test.afterEach(() => { globalThis.activityRuns = undefined; globalThis.runEvents = undefined; });
 
-test("the overview sums the sub-agents up under the main agent", async () => {
-  await mounted([
-    run("turn", "reconciliation_required", now - 3 * DAY, { task_label: "check and fix it" }), spawned,
-    run("live", "running", now - 120, { task_label: "fill the form" }),
-    run("j_live", "running", now - 100, { parent_execution_id: "live", display: { kind: "job_agent", label: "Form_filler" } }),
-    run("done", "completed", now - 60, { task_label: "what happened" }),
-    run("j_done", "completed", now - 50, { parent_execution_id: "done", display: { kind: "job_agent", label: "Research" } }),
-  ], async host => {
-    const text = host.textContent;
-    assert.match(text, /AgentsMain agentRunning · 2 min · 3 sub-agents$/);
-    assert.doesNotMatch(text, /Research|Form filler|Fix page close/);
-    assert.doesNotMatch(text, /check and fix it|fill the form|what happened/);
-  }, [], {}, { calls: [agentCall] });
+const usage = (cost_usd, tokens = 1000, tool_calls = 1) => ({ tokens, cost_usd, tool_calls });
+const helper = (id, status, label, extra = {}) => run(id, status, now - 100, { parent_execution_id: "live", display: { kind: "job_agent", label }, ...extra });
+const rosterButton = (host, text) => [...host.querySelectorAll("[data-roster-row]")].find(item => item.textContent.includes(text));
+const disclose = host => act(async () => host.querySelector("[data-disclosure]").dispatchEvent(new Event("click", { bubbles: true })));
+
+test("the main agent lists the helpers still going and folds the finished ones into one row", async () => {
+  globalThis.activityRoster = { agents: {
+    j_live: { agent_status: "running", queued: false, usage: usage("0.020000", 18400, 12) },
+    j_done: { agent_status: "idle", queued: false, usage: usage("0.030000") },
+    j_fix: { agent_status: "idle", queued: false, usage: usage(null) },
+  }, outgoing: [] };
+  const posted = [];
+  const fetchBefore = globalThis.fetch;
+  globalThis.fetch = async (url, init) => { if (String(url).startsWith("/api/execution/")) posted.push([String(url), JSON.parse(init?.body ?? "{}")]); return { ok: true, status: 200, async json() { return { status: "accepted" }; } }; };
+  try {
+    await mounted([
+      run("turn", "reconciliation_required", now - 3 * DAY, { task_label: "check and fix it" }), spawned,
+      run("live", "running", now - 120, { task_label: "fill the form" }),
+      run("j_live", "running", now - 100, { parent_execution_id: "live", display: { kind: "job_agent", label: "Form_filler" } }),
+      run("done", "completed", now - 60, { task_label: "what happened" }),
+      run("j_done", "completed", now - 50, { parent_execution_id: "done", display: { kind: "job_agent", label: "Research" } }),
+    ], async (host, click) => {
+      await settle();
+      // The header adds up what the helpers cost; an unknown price is left out.
+      assert.match(host.textContent, /^Agents · \$0\.05Stop allMain agentRunning · 2 minForm fillerRunning\$0\.022 finished$/);
+      assert.doesNotMatch(host.textContent, /Research|Fix page close|sub-agents/);
+      assert.doesNotMatch(host.textContent, /check and fix it|fill the form|what happened/);
+      await click("2 finished");
+      assert.match(host.textContent, /2 finishedResearchIdle\$0\.03Fix page closeIdle$/);
+      assert.equal(rosterButton(host, "2 finished").getAttribute("aria-expanded"), "true");
+      await click("2 finished");
+      assert.doesNotMatch(host.textContent, /Research/);
+      // Stop all reaches the helper still going, and only that one.
+      await click("Stop all");
+      await settle();
+      assert.deepEqual(posted.map(([url, body]) => [url, body.action, body.execution_id]), [["/api/execution/cancel", "execution.cancel", "j_live"]]);
+    }, [], {}, { calls: [agentCall] });
+  } finally { globalThis.fetch = fetchBefore; globalThis.activityRoster = undefined; }
+});
+
+test("each helper wears one status badge, a message still unanswered is its own row, and a row opens where its card's Switch goes", async () => {
+  globalThis.activityRoster = { agents: {
+    j_run: { agent_status: "running", queued: false, usage: usage("0.020000") },
+    j_stall: { agent_status: "stalled", queued: false, usage: usage("0.030000") },
+    j_queue: { agent_status: "running", queued: true, usage: usage("0.000000", 0, 0) },
+    j_limit: { agent_status: "failed", queued: false, usage: usage("0.010000") },
+  }, outgoing: [{ kind: "outgoing", job_id: "d1", sender: "session", to_session: "butler", to: "Butler", status: "waiting", sent_at: now - 30 }] };
+  useSessionStore.setState({ pendingDecisions: [{ id: "decision", sessionId: "session", executionId: "j_ask", waitGeneration: 1, expectedVersion: 1, kind: "approval", prompt: "[PR Verifier] Run the tests?", options: ["Allow", "Deny"], multi: false, allow_custom: false }] });
+  globalThis.agentTip = "j_run_reply"; globalThis.navigated = [];
+  try {
+    await mounted([
+      run("live", "running", now - 120),
+      helper("j_run", "running", "Explorer"), helper("j_ask", "paused", "PR_Verifier"), helper("j_stall", "running", "Test_Runner"),
+      helper("j_queue", "queued", "Linter"), helper("j_failed", "failed", "Scout"), helper("j_limit", "cancelled", "Budget_Hog"),
+    ], async (host, click) => {
+      await settle();
+      const badge = name => rosterButton(host, name).querySelector("[data-slot=badge]");
+      assert.deepEqual(["Explorer", "PR Verifier", "Test Runner", "Linter", "Scout", "Budget Hog", "Butler"].map(name => badge(name).textContent),
+        ["Running", "Needs approval", "Stalled", "Waiting", "Failed", "Failed", "Waiting"]);
+      // Waiting on the reader and stalled: the outlined badge with the yellow dot.
+      for (const name of ["PR Verifier", "Test Runner"]) {
+        assert.equal(badge(name).getAttribute("data-variant"), "outline");
+        assert.ok(badge(name).querySelector(".indicator-dot.--warn"), name);
+      }
+      assert.equal(badge("Scout").getAttribute("data-variant"), "destructive");
+      assert.match(rosterButton(host, "Butler").textContent, /^→ ButlerWaiting$/);
+      // The request for approval is the red count on the agent's own row.
+      const main = [...host.querySelectorAll("button")].find(button => button.textContent.includes("Main agent"));
+      assert.match(main.textContent, /^1Main agent/);
+
+      await act(async () => rosterButton(host, "Explorer").click());
+      await settle();
+      assert.deepEqual(globalThis.sentCommands.map(command => [command.action, command.head_msg_id]), [["checkout_branch", "j_run_reply"], ["load_session", undefined]]);
+      await act(async () => rosterButton(host, "Butler").click());
+      assert.deepEqual(globalThis.navigated, ["/s/butler"]);
+    });
+  } finally { useSessionStore.setState({ pendingDecisions: [] }); globalThis.activityRoster = undefined; globalThis.agentTip = undefined; }
+});
+
+test("an agent's helpers fold under its row and it keeps saying what goes on beneath", async () => {
+  const { setActivityView } = await import("../../lib/prefs/activity-view.ts");
+  useSessionStore.setState({ pendingDecisions: [{ id: "decision", sessionId: "session", executionId: "j_ask", waitGeneration: 1, expectedVersion: 1, kind: "approval", prompt: "Run the tests?", options: ["Allow", "Deny"], multi: false, allow_custom: false }] });
+  try {
+    await mounted([run("live", "running", now - 120), helper("j_run", "running", "Explorer"), helper("j_ask", "paused", "PR_Verifier"), helper("j_done", "completed", "Research")], async host => {
+      const main = () => [...host.querySelectorAll("button")].find(button => button.textContent.includes("Main agent"));
+      assert.equal(main().getAttribute("aria-expanded"), "true");
+      assert.ok(rosterButton(host, "Explorer"));
+      await disclose(host);
+      // Folded: no helper rows, the count of those still going, the red count stays.
+      assert.equal(main().getAttribute("aria-expanded"), "false");
+      assert.equal(host.querySelectorAll("[data-roster-row]").length, 0);
+      assert.match(main().textContent, /^1Main agent.* · 2 active sub-agents$/);
+      // The page under the row still opens from anywhere else on it.
+      await key(main(), "ArrowRight");
+      assert.equal(main().getAttribute("aria-expanded"), "true");
+      assert.ok(rosterButton(host, "PR Verifier"));
+      // Left on a helper folds its group and hands the focus to the agent's row.
+      rosterButton(host, "Explorer").focus();
+      await key(rosterButton(host, "Explorer"), "ArrowLeft");
+      assert.equal(host.querySelectorAll("[data-roster-row]").length, 0);
+      assert.equal(document.activeElement, main());
+      await key(main(), "ArrowLeft");
+      assert.equal(main().getAttribute("aria-expanded"), "false");
+      await key(main(), "ArrowRight");
+      assert.equal(host.querySelectorAll("[data-roster-row]").length, 3);
+    });
+  } finally { useSessionStore.setState({ pendingDecisions: [] }); setActivityView({ foldedAgents: [] }); }
+});
+
+test("a helper's tip says what it used, with whatever is known", async () => {
+  const { usageTip } = await import("../../components/right-sidebar/running/agent-roster.tsx");
+  const english = value => value;
+  assert.equal(usageTip({ agent_status: "running", queued: false, usage: usage("0.02", 18400, 12) }, english), "18.4k tokens · 12 tool calls");
+  assert.equal(usageTip({ agent_status: "running", queued: false, usage: usage(null, null, 1) }, english), "1 tool call");
+  assert.equal(usageTip(null, english), "");
+});
+
+test("an agent with no helpers is the row it always was", async () => {
+  await mounted([run("live", "running", now - 120)], async host => {
+    await settle();
+    assert.equal(host.textContent, "AgentsMain agentRunning · 2 min");
+    assert.equal(host.querySelector("[data-disclosure]"), null);
+    assert.equal(host.querySelector("[role=group]"), null);
+    const main = [...host.querySelectorAll("button")].find(button => button.textContent.includes("Main agent"));
+    assert.equal(main.hasAttribute("aria-expanded"), false);
+  });
+});
+
+test("forty helpers stay one bounded list: the live ones, then one fold that pages what finished", async () => {
+  const agents = {};
+  const helpers = Array.from({ length: 65 }, (_, i) => {
+    agents[`h${i}`] = { agent_status: i < 5 ? "running" : "idle", queued: false, usage: usage("0.004000") };
+    return helper(`h${i}`, i < 5 ? "running" : "completed", i === 0 ? "一个名字特别长的子代理用来检查它不会把徽章和花费挤出这一行" : `Helper_${i}`);
+  });
+  globalThis.activityRoster = { agents, outgoing: [{ kind: "outgoing", job_id: "d1", sender: "session", to_session: "butler", to: "Butler", status: "waiting", sent_at: now - 30 }] };
+  try {
+    await mounted([run("live", "running", now - 120), ...helpers], async (host, click) => {
+      await settle();
+      const list = host.querySelector("[role=group]");
+      assert.equal(list.getAttribute("aria-label"), "Sub-agents of Main agent");
+      // Five live, the message still out, and the fold: every row is inside the one scroller.
+      assert.equal(list.querySelectorAll("[data-roster-row]").length, 7);
+      assert.equal(host.querySelectorAll("[data-roster-row]").length, 7);
+      assert.match(list.textContent, /60 finished$/);
+      // A long name shares one group with its badge, and the cost follows that
+      // group: a row short of room gives up the cost, never the name.
+      const long = rosterButton(host, "一个名字特别长");
+      const [lead, cost] = long.children[1].children;
+      assert.equal(long.children.length, 2);
+      assert.deepEqual([...lead.children].map(child => child.textContent), ["一个名字特别长的子代理用来检查它不会把徽章和花费挤出这一行", "Running"]);
+      assert.equal(cost.textContent, "<$0.01");
+      // A message to another agent says so to a screen reader; the arrow is decoration.
+      assert.equal(rosterButton(host, "Butler").getAttribute("aria-label"), "Message sent to Butler, Waiting");
+      await click("60 finished");
+      assert.equal(list.querySelectorAll("[data-roster-row]").length, 57);
+      await click("Show 10 earlier");
+      assert.equal(list.querySelectorAll("[data-roster-row]").length, 67);
+      assert.doesNotMatch(host.textContent, /Show \d+ earlier/);
+    });
+  } finally { globalThis.activityRoster = undefined; }
+});
+
+test("a helper that waits for approval under one that finished is listed with it, never folded", async () => {
+  useSessionStore.setState({ pendingDecisions: [{ id: "decision", sessionId: "session", executionId: "j_deep", waitGeneration: 1, expectedVersion: 1, kind: "approval", prompt: "Run the tests?", options: ["Allow", "Deny"], multi: false, allow_custom: false }] });
+  globalThis.activityRoster = { agents: { j_top: { agent_status: "idle", queued: false, usage: usage("0.01") }, j_other: { agent_status: "idle", queued: false, usage: usage("0.01") } }, outgoing: [] };
+  try {
+    await mounted([run("live", "running", now - 120), helper("j_top", "completed", "Planner"), helper("j_deep", "paused", "PR_Verifier", { parent_execution_id: "j_top" }), helper("j_other", "completed", "Research")], async host => {
+      await settle();
+      assert.deepEqual([...host.querySelectorAll("[data-roster-row]")].map(item => item.textContent.replace(/\$.*$/, "")), ["PlannerNeeds approval", "PR VerifierNeeds approval", "1 finished"]);
+      assert.equal(rosterButton(host, "PR Verifier").style.getPropertyValue("--indent"), "32px");
+    });
+  } finally { useSessionStore.setState({ pendingDecisions: [] }); globalThis.activityRoster = undefined; }
 });
 
 test("a conversation whose turns left no execution record still lists its main agent, and empty groups are not shown", async () => {

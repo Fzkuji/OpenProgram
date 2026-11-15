@@ -294,10 +294,13 @@ def _cmd_skills_doctor(override_dirs) -> int:
 
 
 def _cmd_install_skills(target=None):
-    """Install skills to Claude Code or Gemini CLI."""
+    """Copy a source checkout's ``skills/`` folder into Claude Code or Gemini CLI.
+
+    OpenProgram ships no bundled skills, so this only does something in a
+    checkout that has its own ``skills/`` folder; skills by name come from
+    ``openprogram skills install <slug>``.
+    """
     import shutil
-    import tempfile
-    import subprocess
 
     home = os.path.expanduser("~")
     targets = {}
@@ -313,39 +316,19 @@ def _cmd_install_skills(target=None):
         targets = {target: targets[target]}
 
     if not targets:
-        print("No CLI tools found. Install Codex CLI or Gemini CLI first:")
-        print("  npm i -g @openai/codex && codex auth")
+        print("No CLI tools found. Install Claude Code or Gemini CLI first:")
+        print("  npm i -g @anthropic-ai/claude-code")
         print("  npm i -g @google/gemini-cli")
         sys.exit(1)
 
     import openprogram
     pkg_dir = os.path.dirname(os.path.dirname(openprogram.__file__))
-    local_skills = os.path.join(pkg_dir, "skills")
-
-    if os.path.isdir(local_skills):
-        skills_dir = local_skills
-    else:
-        print("Downloading skills from GitHub...")
-        tmp = tempfile.mkdtemp()
-        try:
-            subprocess.run(
-                ["git", "clone", "--depth=1", "--filter=blob:none", "--sparse",
-                 "https://github.com/Fzkuji/Agentic-Programming.git", tmp],
-                check=True, capture_output=True,
-            )
-            subprocess.run(
-                ["git", "sparse-checkout", "set", "skills"],
-                cwd=tmp, check=True, capture_output=True,
-            )
-            skills_dir = os.path.join(tmp, "skills")
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            print("Error: Failed to download skills. Install git or clone the repo manually:")
-            print("  git clone https://github.com/Fzkuji/Agentic-Programming.git")
-            print("  cp -r Agentic-Programming/skills/* ~/.claude/skills/")
-            sys.exit(1)
+    skills_dir = os.path.join(pkg_dir, "skills")
 
     if not os.path.isdir(skills_dir):
-        print("Error: skills/ directory not found.")
+        print("Error: this installation has no skills/ folder to copy; OpenProgram ships no bundled skills.")
+        print("Install a skill by name instead:")
+        print("  openprogram skills install <slug>")
         sys.exit(1)
 
     for name, dest in targets.items():

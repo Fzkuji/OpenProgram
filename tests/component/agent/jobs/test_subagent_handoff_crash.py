@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import multiprocessing
 import os
+import threading
 import traceback
 from pathlib import Path
 from types import SimpleNamespace
@@ -94,6 +95,10 @@ def _open(world, *, busy: bool) -> Any:
     session_store.default_store = lambda: store
     store_pkg.default_store = lambda: store
     shared._broadcast = lambda *a, **k: None
+    # A new Worker has no runner yet. A forked child inherits the parent's
+    # runner object, if an earlier test on this pytest worker left one, but
+    # none of its threads, so it would never dispatch.
+    shared._runner, shared._runner_lock = None, threading.Lock()
     notices._due, notices._seeded = set(), True
     run_control.is_turn_running = lambda sid: busy and sid == "p2"
     return store
@@ -345,3 +350,59 @@ def test_a_waited_spawn_answered_in_time_sends_no_notice(world):
 
     found = _in_a_process(body).answer
     assert found == {"text": "found it", "notices": [], "pending": [None]}
+
+
+# ── what the recovered card and message keep ────────────────────────
+
+
+def _card_tool_call_ids(world) -> list:
+    def body() -> list:
+        import json
+        store = _open(world, busy=False)
+        out = []
+        for node in store._open("p1")[1].all_nodes():  # noqa: SLF001 - runtime rows too
+            extra = node.metadata or {}
+            attach = extra.get("attach") if isinstance(extra.get("attach"), dict) else None
+            if attach is None and isinstance(extra.get("extra"), str):
+                attach = json.loads(extra["extra"]).get("attach")
+            if isinstance(attach, dict):
+                out.append(attach.get("tool_call_id"))
+        return out
+    return _in_a_process(body).answer
+
+
+def test_a_card_written_by_recovery_keeps_the_calls_tool_call_id(world):
+    def act() -> None:
+        from openprogram.programs._host import runtime as host_runtime
+        from openprogram.runtime.conversation import sub_agent_run
+        _die_before(sub_agent_run, "write_attach_placeholder_for_spawn")
+        host_runtime._current_tool_call_id.set("call_abc")
+        _spawn_in_background()
+
+    _dies(world, act, busy=False)
+    found = _next_worker(world, "p1")
+    assert [row[1] for row in found["jobs"]] == ["completed"] and found["runs"] == 1
+    # The recovered card still answers the agent call that started it.
+    assert _card_tool_call_ids(world) == ["call_abc"]
+
+
+def test_a_message_to_an_agent_by_name_survives_a_kill_after_the_inbox_write(world):
+    def act() -> None:
+        from openprogram.programs.tools.agents.send_message.send_message.send_message import (
+            _send_message_impl,
+        )
+        from openprogram.runtime.agent_registry import manager
+        from openprogram.runtime.conversation import inbox
+        from openprogram.runtime.jobs import get_runner
+
+        manager.list_all = lambda: []
+        get_runner()
+        _die_after(inbox, "enqueue")
+        # By the conversation's title, the way an Agent's name finds its conversation.
+        result = _send_message_impl("audit the config", to="OTHER")
+        assert result.startswith("[queued]"), result
+
+    _dies(world, act)
+    found = _next_worker(world, "p2", then=_drain)
+    assert found["after_recovery"] == [("queued", None)]
+    assert [row[1] for row in found["jobs"]] == ["completed"] and found["runs"] == 1

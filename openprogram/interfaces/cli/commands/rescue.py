@@ -55,18 +55,44 @@ def _probe_python() -> Finding:
     )
 
 
+def _source_root() -> Path | None:
+    """The repository root when this runs from a source checkout, else ``None``.
+
+    Only a checkout has the ``apps/`` workspaces; an installed runtime (a
+    terminal release or the App) ships Node.js, the terminal UI and the web
+    export itself, so its users are never told to install Node or run npm.
+    """
+    import openprogram
+    root = Path(openprogram.__file__).resolve().parent.parent
+    return root if (root / "apps" / "web" / "package.json").is_file() else None
+
+
+_REINSTALL = "Reinstall the complete OpenProgram release."
+
+
 def _probe_node() -> Finding:
+    from openprogram.interfaces.cli.ink import packaged_tui
+    packaged = packaged_tui()
+    if packaged is not None:
+        if packaged[1].is_file():
+            return Finding("OK", "Node.js", f"bundled: {packaged[1]}")
+        return Finding("FAIL", "Node.js", f"bundled runtime missing ({packaged[1]})", fix=_REINSTALL)
+    if _source_root() is None:
+        return Finding("OK", "Node.js", "not needed by this install")
     n = shutil.which("node")
     if not n:
         return Finding(
-            "WARN", "node on PATH", "not found",
-            fix="Install Node.js 20+ from https://nodejs.org/ "
-                "(needed for the Ink TUI and Next.js web UI).",
+            "WARN", "Node.js", "not on PATH",
+            fix="Install Node.js 22.12 or newer from https://nodejs.org/ "
+                "(this source checkout builds the terminal and web UI with it).",
         )
-    return Finding("OK", "node on PATH", n)
+    return Finding("OK", "Node.js", n)
 
 
-def _probe_npm() -> Finding:
+def _probe_npm() -> Finding | None:
+    """Only a source checkout builds anything with npm."""
+    if _source_root() is None:
+        return None
     n = shutil.which("npm")
     if not n:
         return Finding(
@@ -88,40 +114,41 @@ def _probe_git() -> Finding:
 
 
 def _probe_tui_bundle() -> Finding:
-    """``apps/cli/dist/index.js`` — the Ink TUI's pre-built Node bundle."""
-    try:
-        import openprogram
-        root = Path(openprogram.__file__).resolve().parent.parent
-    except Exception as e:  # noqa: BLE001
-        return Finding("FAIL", "TUI bundle",
-                       f"can't locate repo root: {e}",
-                       fix=None)
+    """The Ink terminal UI the ``openprogram`` command launches."""
+    from openprogram.interfaces.cli.ink import packaged_tui
+    packaged = packaged_tui()
+    if packaged is not None:
+        if packaged[0].is_file():
+            return Finding("OK", "Terminal UI (Ink)", str(packaged[0]))
+        return Finding("FAIL", "Terminal UI (Ink)", f"missing ({packaged[0]})", fix=_REINSTALL)
+    root = _source_root()
+    if root is None:
+        return Finding("FAIL", "Terminal UI (Ink)", "this install has none", fix=_REINSTALL)
     bundle = root / "apps" / "cli" / "dist" / "index.js"
     if bundle.exists():
-        return Finding("OK", "TUI bundle (Ink)", str(bundle))
-    # Auto-built on first launch, so missing is not fatal — just informative.
+        return Finding("OK", "Terminal UI (Ink)", str(bundle))
+    # The first `openprogram` launch builds it, so missing is not fatal.
     return Finding(
-        "WARN", "TUI bundle (Ink)", f"not built yet ({bundle})",
-        fix="Auto-built on first `openprogram` launch on POSIX. "
-            "Or build manually: npm install && npm run build --workspace apps/cli",
+        "WARN", "Terminal UI (Ink)", f"not built yet ({bundle})",
+        fix="Built on the first `openprogram` launch. "
+            "Or build it now: npm install && npm run build --workspace apps/cli",
     )
 
 
 def _probe_web_bundle() -> Finding:
-    """``apps/web/.next/BUILD_ID`` — the Next.js webui production build."""
-    try:
-        import openprogram
-        root = Path(openprogram.__file__).resolve().parent.parent
-    except Exception:  # noqa: BLE001
-        return Finding("FAIL", "Web bundle", "can't locate repo root", fix=None)
-    build_id = root / "apps" / "web" / ".next" / "BUILD_ID"
-    if build_id.exists():
-        return Finding("OK", "Web bundle (Next.js)",
-                       f"built at {build_id.parent}")
+    """The web export the worker serves (the same file it checks)."""
+    from openprogram.interfaces.server.frontend import out_dir, packaged_out_dir
+    marker = out_dir() / "index.html"
+    if marker.is_file():
+        return Finding("OK", "Web UI", str(marker.parent))
+    if _source_root() is None:
+        # Name the export the install ships, not the source-checkout path
+        # out_dir() falls back to when it is missing.
+        return Finding("FAIL", "Web UI", f"missing ({packaged_out_dir()})", fix=_REINSTALL)
     return Finding(
-        "WARN", "Web bundle (Next.js)", f"not built ({root / 'apps' / 'web' / '.next'})",
-        fix="Auto-built on first `openprogram web` launch. Or manually: "
-            "npm install && npm run build --workspace apps/web",
+        "WARN", "Web UI", f"not built yet ({marker.parent})",
+        fix="Built when the worker starts. "
+            "Or build it now: npm install && npm run build --workspace apps/web",
     )
 
 
@@ -316,7 +343,9 @@ def _cmd_rescue() -> int:
     findings: list[Finding] = []
     for probe in PROBES:
         try:
-            findings.append(probe())
+            finding = probe()
+            if finding is not None:
+                findings.append(finding)
         except Exception as e:  # noqa: BLE001 — probe must never throw
             findings.append(Finding(
                 "FAIL", probe.__name__,

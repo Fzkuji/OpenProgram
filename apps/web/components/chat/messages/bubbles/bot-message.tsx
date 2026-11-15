@@ -14,6 +14,7 @@ import { continuedRows, joinedReply } from "@/lib/chat/transcript/restart-contin
 import { BotViewContext, useRowSessionId } from "../list/transcript-view-scope";
 import { useMarkdownReady } from "./markdown";
 import { MarkdownText, errorHeadline, useReplyLive } from "./assistant-bubble";
+import { ProseFileLinks } from "./prose-file-links";
 import { CitationSources } from "./web-sources";
 import { UserBubble } from "./user-bubble";
 
@@ -40,7 +41,7 @@ function Reply({ msg, attachments, sessionId, streaming, working }: { msg: ChatM
   useMarkdownReady();
   const { text: written } = parseAttachments(botReplyText(msg));
   const bubbles = useMemo(() => splitBubbles(written, { streaming }), [written, streaming]);
-  return <div className="bot-row" data-msg-id={msg.id} role="article">
+  return <ProseFileLinks sessionId={sessionId} settled={!streaming}><div className="bot-row" data-msg-id={msg.id} role="article">
     {bubbles.map((bubble, index) => <div key={index} className="bot-bubble">
       <MarkdownText text={bubble} streaming={streaming && index === bubbles.length - 1} />
     </div>)}
@@ -48,7 +49,7 @@ function Reply({ msg, attachments, sessionId, streaming, working }: { msg: ChatM
     {!streaming && attachments.length ? <AssistantFileCards msg={msg} sessionId={sessionId} attachments={attachments} /> : null}
     {working ? <BotTyping /> : null}
     <FailureLine msg={msg} />
-  </div>;
+  </div></ProseFileLinks>;
 }
 
 export function BotMessage({ msg, sessionIdOverride }: { msg: ChatMsg; sessionIdOverride?: string }) {

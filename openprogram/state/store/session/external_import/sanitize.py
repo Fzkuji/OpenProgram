@@ -5,10 +5,21 @@ reminders, environment context, AGENTS.md, slash-command stdout, task
 notifications. None of it is the user's words, and replaying it would
 show up as a wall of tags in the chat and as stale instructions to the
 model, so it is removed before a turn is built.
+
+:func:`remove_secrets` then strips credential-shaped values from what is
+left — a key pasted into a prompt, a token echoed by ``cat .env`` — so
+an import never copies a credential into OpenProgram's own store, where
+later turns would replay it to whichever model runs them.
 """
 from __future__ import annotations
 
 import re
+from typing import Any
+
+from openprogram.models.providers.recording.recording import SECRET_FIELD_NAMES
+from openprogram.models.providers.utils.redaction import remove_secrets as _remove_secret_text
+
+SECRET_PLACEHOLDER = "[secret removed]"
 
 # Elements that are always host scaffolding, wherever they appear.
 _INJECTED_TAGS = (
@@ -78,3 +89,53 @@ def image_label(text: str) -> str | None:
     """``[Image #1]`` for a Codex ``<image name=[Image #1] …>`` opener."""
     m = _IMAGE_OPEN_RE.match(text or "")
     return f"[{m.group(1)}]" if m else None
+
+
+
+def remove_secret_values(value: Any) -> Any:
+    """``value`` with credentials replaced; dicts and lists are walked.
+
+    Strings lose the high-precision secret shapes requests are redacted
+    for (provider keys, GitHub / Slack / AWS / Google tokens, JWTs,
+    private keys, ``Bearer …``, ``password=…``); a dict entry named like a
+    credential (``api_key``, ``token``, ``authorization`` …) loses its
+    whole value. Ordinary prose that only mentions a key or a token is
+    left alone, so the conversation still reads as it did.
+    """
+    if isinstance(value, str):
+        return _remove_secret_text(value, SECRET_PLACEHOLDER)
+    if isinstance(value, dict):
+        return {
+            k: SECRET_PLACEHOLDER if (str(k).lower() in SECRET_FIELD_NAMES
+                                      and isinstance(v, str) and v)
+            else remove_secret_values(v)
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [remove_secret_values(v) for v in value]
+    return value
+
+
+def remove_secrets(session: Any) -> Any:
+    """Redact credentials in a parsed session, in place.
+
+    Covers the title, every user message, reply and thinking text, and
+    each tool call's arguments and result. A turn keeps the fingerprint
+    of its text as read, so whether a source grew or was rewound is
+    judged on the transcript itself; the reply digest is taken after
+    redaction, so a turn written with a secret in it is rewritten clean.
+    """
+    from .model import ToolBlock
+
+    session.title = remove_secret_values(session.title or "")
+    for turn in session.turns:
+        turn.source_fingerprint = turn.fingerprint()
+        turn.user_text = remove_secret_values(turn.user_text)
+        for block in turn.blocks:
+            if isinstance(block, ToolBlock):
+                block.arguments = remove_secret_values(block.arguments)
+                if block.result is not None:
+                    block.result = remove_secret_values(block.result)
+            elif isinstance(block.get("text"), str):
+                block["text"] = remove_secret_values(block["text"])
+    return session

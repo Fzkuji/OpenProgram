@@ -36,6 +36,7 @@ sessions. One workspace profile can hold many credential accounts.
 - **`pool.py`** — Auth v2
 - **`provider_contract.py`** — ProviderAuthContract
 - **`provider_policy.py`** — Anthropic credential requirements
+- **`refresh_lock.py`** — Cross-process lock held while one OAuth refresh token is spent
 - **`resolver.py`** — Single entry point callers use to resolve "the right credential, now"
 - **`rotation.py`** — Per-provider rotation setting, and per-account membership in that rotation
 - **`store.py`** — Auth v2

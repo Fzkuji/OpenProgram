@@ -42,6 +42,9 @@ class Turn:
     ended_at: Optional[float] = None
     # The user line was a slash command (``/review …``), not prose.
     command: bool = False
+    # Fingerprint of the turn as read, kept when its text is redacted so
+    # the turn's identity does not depend on what redaction removed.
+    source_fingerprint: Optional[str] = None
 
     def reply_text(self) -> str:
         parts = [b["text"].strip() for b in self.blocks
@@ -63,6 +66,8 @@ class Turn:
 
     def fingerprint(self) -> str:
         """Stable identity of this turn, for detecting a grown source."""
+        if self.source_fingerprint:
+            return self.source_fingerprint
         key = f"{self.timestamp or 0:.3f}\0{self.user_text}"
         return hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
 

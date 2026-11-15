@@ -7,7 +7,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import platform
 import shutil
 import subprocess
 import sys
@@ -18,6 +17,7 @@ from ..control.supervisor import _tree_digest
 from ..store import SelfUpdateStore
 from openprogram.state.store.session.atomic_file import atomic_write_text
 from openprogram.host._platform import filesystem
+from openprogram.host._platform.architecture import interpreter_architecture
 
 
 # Official release hashes (electron's checksums.json); a package.json bump must
@@ -104,8 +104,7 @@ def _electron_archive_spec(candidate: Path) -> tuple[str, str]:
         raise ValueError("candidate Electron package metadata is unavailable")
     data = json.loads(package.read_text(encoding="utf-8"))
     version = (data.get("devDependencies") or {}).get("electron")
-    machine = platform.machine()
-    arch = "arm64" if machine == "arm64" else "x64" if machine == "x86_64" else machine
+    arch = {"arm64": "arm64", "x86_64": "x64"}[interpreter_architecture()]
     try:
         return _ELECTRON_ARCHIVES[(version, arch)]
     except KeyError:

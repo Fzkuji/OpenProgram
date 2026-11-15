@@ -90,6 +90,8 @@ jobs:
           python-version: "3.12"
       - uses: astral-sh/setup-uv@v7
         with:
+          # The base-build tests run the release's own uv (product-runtime.json).
+          version: "0.11.16"
           enable-cache: true
       - name: Install and enable bubblewrap
         run: |
@@ -236,6 +238,8 @@ jobs:
           python-version: "3.12"
       - uses: astral-sh/setup-uv@v7
         with:
+          # The base-build tests run the release's own uv (product-runtime.json).
+          version: "0.11.16"
           enable-cache: true
       - name: Prepare native ARM64 OpenSSL
         if: matrix.arch == 'arm64'
@@ -256,6 +260,7 @@ jobs:
           tests/component/config/test_windows_refresh_publication.py
           tests/component/config/test_windows_build_environment.py
           tests/component/config/test_windows_release_version.py
+          tests/component/config/test_distribution_release/test_build_base_packages.py
           tests/component/runtime/test_process_liveness.py
           tests/component/runtime/test_local_backend_process_tree.py
           tests/component/runtime/test_git_bash_source_transport.py

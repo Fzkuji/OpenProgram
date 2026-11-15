@@ -32,6 +32,9 @@ VALID = "valid"
 INVALID_CREDENTIAL = "invalid_credential"
 VALID_NO_BALANCE = "valid_no_balance"
 VALID_MODEL_UNAVAILABLE = "valid_model_unavailable"
+# A 403 that names the region or plan: the key may be fine, but it cannot be
+# used from here or on this plan (``errors._NOT_AVAILABLE_MARKERS``).
+NOT_AVAILABLE = "not_available"
 MISSING = "missing"
 NOT_APPLICABLE = "not_applicable"
 UNKNOWN = "unknown"
@@ -155,15 +158,27 @@ def _is_model_unavailable(status: int, body: str) -> bool:
     return False
 
 
+def _is_not_available(status: int, body: str) -> bool:
+    """A 403 whose body says the region or the plan is not served."""
+    if status != 403:
+        return False
+    from openprogram.models.providers.utils.errors import _NOT_AVAILABLE_MARKERS
+    low = (body or "").lower()
+    return any(marker in low for marker in _NOT_AVAILABLE_MARKERS if marker not in (
+        "permission_denied", "permission_error"))
+
+
+_NOT_AVAILABLE_DETAIL = "Not available in your region or plan (HTTP 403)."
+
+
 def _is_no_balance(status: int, body: str) -> bool:
+    """402, or any 4xx whose body says the credit is spent — checked before
+    401/403 because some providers (OpenCode Zen) answer a zero balance
+    with 401 ``CreditsError``."""
     if status == 402:
         return True
-    low = (body or "").lower()
-    return (
-        "insufficient_quota" in low
-        or "insufficient balance" in low
-        or "exceeded your current quota" in low
-    )
+    from openprogram.models.providers.utils.errors import is_billing_exhausted
+    return is_billing_exhausted(body)
 
 
 # auth-only HTTP probe
@@ -275,14 +290,17 @@ def _interpret(
         # this is OpenRouter ``GET /key`` (``balance_body=True``, remaining > 0)
         # or a later layer-2 ping / live chat proves the key can complete.
         return _result(provider_id, VALID, kind=kind, via=via, http_status=200, latency_ms=latency)
-    if status in (401, 403):
-        return _result(provider_id, INVALID_CREDENTIAL, kind=kind, via=via,
-                       http_status=status, latency_ms=latency,
-                       detail=f"Key rejected (HTTP {status}). Re-check the key or re-login.")
     if _is_no_balance(status, body):
         return _result(provider_id, VALID_NO_BALANCE, kind=kind, via=via,
                        http_status=status, latency_ms=latency,
                        detail="Key works — account has no balance/credits. Add funds to use it.")
+    if _is_not_available(status, body):
+        return _result(provider_id, NOT_AVAILABLE, kind=kind, via=via, http_status=status,
+                       latency_ms=latency, detail=_NOT_AVAILABLE_DETAIL)
+    if status in (401, 403):
+        return _result(provider_id, INVALID_CREDENTIAL, kind=kind, via=via,
+                       http_status=status, latency_ms=latency,
+                       detail=f"Key rejected (HTTP {status}). Re-check the key or re-login.")
     # 404/400/5xx on the *auth* endpoint is ambiguous for key validity — don't
     # brand the key bad; report unknown so a save still succeeds.
     return _result(provider_id, UNKNOWN, kind=kind, via=via, http_status=status,
@@ -344,20 +362,23 @@ def _layer2_response(
     if status == 200:
         return _result(provider_id, VALID, kind=kind, via=via,
                        http_status=200, latency_ms=latency, model=model)
+    if _is_no_balance(status, text):
+        return _result(provider_id, VALID_NO_BALANCE, kind=kind, via=via,
+                       http_status=status, latency_ms=latency, model=model,
+                       detail="Key works — account has no balance/credits.")
     if _is_model_unavailable(status, text):
         return _result(provider_id, VALID_MODEL_UNAVAILABLE, kind=kind,
                        via=via, http_status=status, latency_ms=latency,
                        model=model,
                        detail=(f"Key authenticated. Model {model} is unavailable right now "
                                f"(HTTP {status})."))
+    if _is_not_available(status, text):
+        return _result(provider_id, NOT_AVAILABLE, kind=kind, via=via, http_status=status,
+                       latency_ms=latency, model=model, detail=_NOT_AVAILABLE_DETAIL)
     if status in (401, 403):
         return _result(provider_id, INVALID_CREDENTIAL, kind=kind, via=via,
                        http_status=status, latency_ms=latency, model=model,
                        detail=f"HTTP {status}.")
-    if _is_no_balance(status, text):
-        return _result(provider_id, VALID_NO_BALANCE, kind=kind, via=via,
-                       http_status=status, latency_ms=latency, model=model,
-                       detail="Key works — account has no balance/credits.")
     return _result(provider_id, UNKNOWN, kind=kind, via=via, http_status=status,
                    latency_ms=latency, model=model, detail=f"HTTP {status}.")
 

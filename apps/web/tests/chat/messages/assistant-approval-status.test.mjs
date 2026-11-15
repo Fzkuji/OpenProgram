@@ -31,6 +31,7 @@ await build({
       a.path.includes('user-attachments') ? 'export const parseAttachments=text=>({attachments:[],text}), AttachmentChips=()=>null;' :
       a.path.includes('turn-files-presentation') ? 'export const shouldRenderTurnFiles=()=>false;' :
       a.path.includes('assistant-file-cards') ? 'export const AssistantFileCards=()=>null; export const sentFilePath=()=>null;' :
+      a.path.includes('prose-file-links') ? 'export const ProseFileLinks=({children})=>children;' :
       // Provider-run web searches and their citations are not part of these renders.
       a.path.includes('web-sources') ? 'export const CitationSources=()=>null, isProviderSearch=()=>false;' :
       // A restart's continuation: these tests render single replies with no predecessor.

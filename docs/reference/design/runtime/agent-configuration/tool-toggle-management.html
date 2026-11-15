@@ -41,7 +41,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Group</th><th scope="col">Members</th></tr></thead>
 <tbody>
-<tr><th scope="row">Resident</th><td><code translate="no">DEFAULT_TOOLS</code> minus <code translate="no">DEFERRED_DEFAULT_TOOLS</code>, plus <code translate="no">tool_search</code> and <code translate="no">job_output</code>. <code translate="no">tool_search</code> never defers: it is the only loader.</td></tr>
+<tr><th scope="row">Resident</th><td><code translate="no">DEFAULT_TOOLS</code> minus <code translate="no">DEFERRED_DEFAULT_TOOLS</code>, plus <code translate="no">read_conversation</code>. <code translate="no">DEFAULT_TOOLS</code> holds <code translate="no">tool_search</code>, which never defers: it is the only loader, so a set that names deferred tools carries it.</td></tr>
 <tr><th scope="row"><code translate="no">DEFERRED_DEFAULT_TOOLS</code></th><td>Memory tools, <code translate="no">scheduler</code>, <code translate="no">exit_plan_mode</code> (the plan-mode prompt names it), <code translate="no">send_message</code>, <code translate="no">skill</code>, <code translate="no">save_routine</code>. Available by default, large and rarely called.</td></tr>
 <tr><th scope="row">Other exposed tools</th><td>Everything in <code translate="no">full</code> outside <code translate="no">DEFAULT_TOOLS</code></td></tr>
 <tr><th scope="row">Application entries</th><td>Deferred, also while their application is open in a window: opening it loads nothing</td></tr>

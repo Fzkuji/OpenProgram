@@ -75,3 +75,17 @@ test("highlights register under the find names and clear together", () => {
     delete globalThis.Highlight;
   }
 });
+
+test("a folded row opens for a match and stops answering once it is gone", () => {
+  let opened = 0;
+  assert.equal(find.revealForFind("m1"), false);
+  const forget = find.onFindReveal("m1", () => { opened += 1; });
+  const forgetOther = find.onFindReveal("m1", () => { opened += 10; });
+  assert.equal(find.revealForFind("m1"), true);
+  assert.equal(opened, 11);
+  assert.equal(find.revealForFind("m2"), false);
+  forget();
+  forgetOther();
+  assert.equal(find.revealForFind("m1"), false);
+  assert.equal(opened, 11);
+});

@@ -107,7 +107,7 @@
 <table class="stack">
 <thead><tr><th scope="col">层级</th><th scope="col">模型看到</th><th scope="col">分配给</th></tr></thead>
 <tbody>
-<tr><th scope="row">resident</th><td>schema 在每个 tools 数组里</td><td><code translate="no">RESIDENT_TOOLS</code> 里的工具：默认集减去冷门大 schema，加 <code translate="no">tool_search</code>、<code translate="no">job_output</code></td></tr>
+<tr><th scope="row">resident</th><td>schema 在每个 tools 数组里</td><td><code translate="no">RESIDENT_TOOLS</code> 里的工具：默认集（其中带着加载器 <code translate="no">tool_search</code>）减去冷门大 schema，加 <code translate="no">read_conversation</code></td></tr>
 <tr><th scope="row">deferred</th><td>只有名称；<code translate="no">tool_search</code> 加载 schema</td><td>其他工具、以 <code translate="no">defer=True</code> 注册的工具、应用入口（<code translate="no">ProgramContext._adopt_tools</code>）：内置、已安装、外部 harness、用户包</td></tr>
 <tr><th scope="row">hidden</th><td>什么都看不到；只供 Python</td><td><code translate="no">expose=False</code></td></tr>
 </tbody>

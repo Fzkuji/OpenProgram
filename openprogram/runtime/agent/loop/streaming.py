@@ -61,11 +61,15 @@ def _instant_steer_enabled() -> bool:
         return True
 
 
-def _steered_partial(partial: AssistantMessage) -> AssistantMessage:
+def _steered_partial(partial: AssistantMessage, sent: dict[int, int] | None = None) -> AssistantMessage:
     """The part of a response a steer cut off that the history keeps.
 
     Calls the steer cut off were never dispatched, so they are dropped; only
-    the text and thinking the user already saw remain. Mid-stream, providers
+    the text and thinking the user already saw remain. ``sent`` is how much
+    of each block went on as deltas: a provider adds a delta to its partial
+    before the loop reads the delta's event, so at a steer the partial can
+    be ahead of the stream, and each block is cut back to what was sent
+    (None: the response ended, all of it was). Mid-stream, providers
     hold blocks as plain dicts until the response finishes, and a dict call
     would otherwise slip past an ``isinstance`` check, be validated into a
     real call when the next request is built, and go out without a result
@@ -73,7 +77,7 @@ def _steered_partial(partial: AssistantMessage) -> AssistantMessage:
     """
     message = partial.model_copy(deep=True)
     kept: list = []
-    for block in message.content:
+    for index, block in enumerate(message.content):
         if isinstance(block, dict):
             if block.get("type") == "toolCall":
                 continue
@@ -87,9 +91,22 @@ def _steered_partial(partial: AssistantMessage) -> AssistantMessage:
                 pass
         elif getattr(block, "type", None) == "toolCall":
             continue
-        kept.append(block)
+        kept.append(block if sent is None else _cut_to_sent(block, sent.get(index, 0)))
     message.content = kept
     return message
+
+
+def _cut_to_sent(block: Any, length: int) -> Any:
+    """A text or thinking block holding only its first ``length`` characters."""
+    kind = block.get("type") if isinstance(block, dict) else getattr(block, "type", None)
+    if kind not in ("text", "thinking"):
+        return block
+    value = block.get(kind) if isinstance(block, dict) else getattr(block, kind, None)
+    if not isinstance(value, str) or len(value) <= length:
+        return block
+    if isinstance(block, dict):
+        return {**block, kind: value[:length]}
+    return block.model_copy(update={kind: value[:length]})
 
 
 async def _cancel_response_stream(response_stream: Any, iterator: Any, *, cleanup_timeout: float | None = None) -> None:
@@ -549,6 +566,9 @@ async def _stream_in_conversation(
         iterator = response_stream.__aiter__()
         reader_left = False
         next_steer_check = 0.0
+        # Characters of each content block's text and reasoning sent on as
+        # deltas, for a steer that cuts this response (``_steered_partial``).
+        sent: dict[int, int] = {}
         instant_steer = _instant_steer_enabled()
         while True:
             if structured_plan is not None and cancel_event and cancel_event.is_set():
@@ -628,7 +648,7 @@ async def _stream_in_conversation(
                             if not cleanup.done():
                                 cleanup.cancel()
                             leave_unwinding(cleanup)
-                        message = (_steered_partial(partial_message) if partial_message is not None else AssistantMessage(
+                        message = (_steered_partial(partial_message, sent) if partial_message is not None else AssistantMessage(
                             content=[], api=config.model.api, provider=config.model.provider, model=config.model.id,
                         ))
                         # Preserve the real response outcome so request projection
@@ -705,6 +725,8 @@ async def _stream_in_conversation(
                     partial_message = event.partial
                     if added_partial:
                         context.messages[-1] = partial_message
+                    if event.type in ("text_delta", "thinking_delta"):
+                        sent[event.content_index] = sent.get(event.content_index, 0) + len(event.delta)
                     ev_stream.push(AgentEventMessageUpdate(
                         message=partial_message,
                         assistant_message_event=event,
@@ -716,6 +738,7 @@ async def _stream_in_conversation(
                     # a steer before the new response's first content must not
                     # commit the failed response's partial.
                     partial_message = partial_message.model_copy(update={"content": []})
+                    sent.clear()
                     if added_partial:
                         context.messages[-1] = partial_message
                     if repetition_guard is not None:

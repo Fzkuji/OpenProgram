@@ -401,3 +401,30 @@ def test_spawn_job_does_not_resurrect_terminal_precreated(parent_turn):
         session_id="p2", prompt="x", agent_id="main", job_id="t_gone1")
     assert tid == "t_gone1"
     assert load_job("p2", "t_gone1").status == JobStatus.CANCELLED
+
+
+# --- the specialist's model -----------------------------------------------------
+
+def test_a_specialist_runs_on_its_own_model_not_the_conversations(parent_turn, monkeypatch):
+    """The helper runs in the caller's conversation, whose model would win;
+    a saved Agent's own model (Explorer: the utility tier) goes with the call.
+    The caller's own Agent keeps the conversation's model."""
+    from openprogram.runtime.agent_registry import builtin_agents, delegation, manager
+
+    explorer = manager.AgentSpec(id="explorer", name="Explorer", description="scout",
+                                 tools=builtin_agents.builtin("explorer")["tools"])
+    utility = manager.AgentSpec(id="utility", name="Lightweight helper",
+                                model=manager.AgentModelRef(provider="p", id="small"))
+    reviewer = manager.AgentSpec(id="rev", name="Reviewer", description="reviews",
+                                 tools={"mode": "selected", "allowed": ["read"]},
+                                 model=manager.AgentModelRef(provider="q", id="big"))
+    main = manager.AgentSpec(id="main", name="Assistant", model=manager.AgentModelRef(provider="q", id="big"))
+    rows = {spec.id: spec for spec in (explorer, utility, reviewer, main)}
+    monkeypatch.setattr(manager, "get", lambda agent_id: rows.get(agent_id))
+    monkeypatch.setattr(delegation, "delegatable", lambda: list(rows.values()))
+
+    for ref, expected in (("Explorer", "p/small"), ("Reviewer", "q/big"), ("", None)):
+        out = _agent_impl("find the config loader", description="look", agent=ref,
+                          run_in_background=True)
+        assert out.startswith("[agent started in background]"), (ref, out)
+        assert parent_turn.async_calls[-1]["model_override"] == expected, ref

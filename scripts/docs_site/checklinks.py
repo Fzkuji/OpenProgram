@@ -13,6 +13,8 @@ import sys
 from pathlib import Path
 from urllib.parse import unquote
 
+from .build import DEPLOY_BASE
+
 SITE = Path(__file__).resolve().parents[2] / "docs" / "_site"
 _LINK = re.compile(r'(?:href|src)="([^"?#]*)(?:\?[^"#]*)?(?:#([^"]*))?"')
 _ID = re.compile(r'\b(?:id|name)=["\']([^"\']+)["\']')
@@ -40,8 +42,8 @@ def main() -> int:
                 continue
             if not url:
                 target = page
-            elif url.startswith("/docs/"):
-                target = SITE / url[len("/docs/"):]
+            elif url.startswith(DEPLOY_BASE):
+                target = SITE / url[len(DEPLOY_BASE):]
             elif url.startswith("/"):
                 continue  # outside the docs mount (web UI routes etc.)
             else:

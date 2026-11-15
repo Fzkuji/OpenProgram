@@ -32,9 +32,18 @@ export function ProjectLocationNotice({ projectId, onRepaired }: { projectId: st
       "list_projects", { session_id: sessionId ?? "" }, "projects_list",
       d => (d.session_id ?? null) === (sessionId || null),
     );
-    setProject(data?.projects?.find(p => p.id === projectId) ?? null);
+    // No answer (or an unreadable registry): keep the notice and its
+    // repair buttons as shown rather than blanking them.
+    if (!data || !Array.isArray(data.projects)) return;
+    setProject(data.projects.find(p => p.id === projectId) ?? null);
   }, [projectId, sessionId]);
-  useEffect(() => { void read(); }, [read]);
+  useEffect(() => {
+    void read();
+    // A repair made elsewhere (another tab, the project menu) re-reads here.
+    const onChanged = () => void read();
+    window.addEventListener("project-changed", onChanged);
+    return () => window.removeEventListener("project-changed", onChanged);
+  }, [read]);
 
   async function repair(run: () => Promise<RelocateReply>) {
     setBusy(true);

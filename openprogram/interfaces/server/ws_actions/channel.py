@@ -170,7 +170,6 @@ async def handle_attach_session(ws, cmd: dict):
     from openprogram.interfaces.server import server as _s
     from openprogram.runtime.agent_registry import session_aliases as _sa
     from openprogram.interfaces.server import persistence as _p
-    from openprogram.operations.worker import current_worker_pid, spawn_detached
     session_id = cmd.get("session_id") or ""
     if not session_id:
         await ws.send_text(json.dumps({
@@ -178,6 +177,13 @@ async def handle_attach_session(ws, cmd: dict):
             "data": {"message": "session_id required"},
         }, default=str))
         return
+    # The owner and the session row are read under the conversation's
+    # lock: off the event loop, so a held conversation delays only this.
+    await asyncio.to_thread(_attach_session, _s, _sa, _p, cmd, session_id)
+
+
+def _attach_session(_s, _sa, _p, cmd: dict, session_id: str) -> None:
+    from openprogram.operations.worker import current_worker_pid, spawn_detached
     owner = _p.resolve_agent_for_conv(session_id)
     if owner is None:
         owner = _s._default_agent_id()

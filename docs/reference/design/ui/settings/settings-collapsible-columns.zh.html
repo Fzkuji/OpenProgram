@@ -1,5 +1,5 @@
 <title>设置导航</title>
-<meta name="description" content="设置页头、可收起的分类栏、Provider 列表和凭据卡片。">
+<meta name="description" content="设置页头和可收起的分类栏。">
 <h1>设置导航</h1>
 
 <p>设置使用所有带列表列的页面共用的页头和<a href="../sidebar/secondary-rail.zh.html">二级导航栏</a>。列宽沿用现有侧栏，不支持拖动调整。</p>
@@ -8,8 +8,7 @@
 <thead><tr><th scope="col">列</th><th scope="col">展开</th><th scope="col">收起</th><th scope="col">保存于</th><th scope="col">页头</th></tr></thead>
 <tbody>
 <tr><th scope="row">分类</th><td><code translate="no">--sidebar-width</code> − 1px</td><td>49px</td><td><code translate="no">settingsNavOpen</code></td><td><code translate="no">ManagePageHeader</code>：导航栏切换按钮，然后是“设置”</td></tr>
-<tr><th scope="row">Provider 列表</th><td>不超过 <code translate="no">--sidebar-width</code> − 1px 和内容区的 42%；760px 及以下时位于详情上方，高度不超过 38vh</td><td>从不收起</td><td>不保存</td><td>全宽搜索、已启用和未启用分组、添加自定义 Provider</td></tr>
-<tr><th scope="row">内容</th><td>剩余宽度；控件换行</td><td>相同</td><td>不保存</td><td>Provider 在列表和详情上方有完整页面标题；记忆不加重复标题</td></tr>
+<tr><th scope="row">内容</th><td>剩余宽度；控件换行</td><td>相同</td><td>不保存</td><td>一个页面标题；记忆不加重复标题</td></tr>
 </tbody>
 </table>
 
@@ -22,30 +21,7 @@
 <dt>标题</dt><dd>“设置”和内容标题使用 <code translate="no">--fs-title</code>（18px），行高 1.2，避免下伸部被裁切</dd>
 </dl>
 
-<h2>Provider 详情</h2>
-<table class="stack fixed">
-<thead class="sr"><tr><th scope="col">详情宽度</th><th scope="col">布局</th></tr></thead>
-<tbody>
-<tr><th scope="row">宽</th><td>左右内边距 20px，保持原固定列</td></tr>
-<tr><th scope="row">680px 及以下</th><td>内边距 12px；页头、账号操作、密钥编辑、表单和模型信息重排</td></tr>
-<tr><th scope="row">420px 及以下</th><td>模型卡片：名称和 ID 在左上，开关在右上，能力标签从名称列开始占下一行并换行</td></tr>
-<tr><th scope="row">300px 及以下</th><td>内边距 8px，紧凑页头</td></tr>
-</tbody>
-</table>
-<p class="note">窄详情只做重排：不自动收起分类，不缩小字号，不改数据和交互，也没有横向溢出。</p>
-
-<h3>凭据卡片</h3>
-<table class="stack fixed">
-<thead class="sr"><tr><th scope="col">部分</th><th scope="col">内容</th></tr></thead>
-<tbody>
-<tr><th scope="row">头部</th><td>账号名称；验证结果本身就是重新验证控件</td></tr>
-<tr><th scope="row">主体</th><td>API 密钥卡片显示掩码密钥</td></tr>
-<tr><th scope="row">底部</th><td>用此账号发送请求（开关）</td></tr>
-<tr><th scope="row">操作</th><td>重命名、替换、删除、取消：带无障碍名称、尺寸一致的图标按钮。状态文字按钮只按内容变宽。</td></tr>
-<tr><th scope="row">添加</th><td>已有凭据时表单收在“添加 API 密钥”之后；关闭时清除草稿。密钥名称和原生登录名称状态独立。</td></tr>
-<tr><th scope="row">Provider 开关</th><td>在标题行，不单占一行</td></tr>
-</tbody>
-</table>
+<p>LLM Provider 是单列页面，没有自己的列表列：它的列表、添加供应商和每个供应商的页面见<a href="../../providers/provider-management.zh.html">供应商管理</a>。</p>
 
 <details>
 <summary>参考与不做的事</summary>
@@ -65,10 +41,7 @@
 <li>没有单独的全局设置顶栏。</li>
 <li>分类行与主侧栏前几行对齐；收起时第一个图标的 y 不变。</li>
 <li>分类顺序、URL、图标、选中状态和键盘顺序一致。</li>
-<li>Provider 列表没有命名页头和收起按钮；搜索占满列宽；分组标签和添加自定义 Provider 保持可见。</li>
-<li>路由加载保留 Provider 的完整标题结构；记忆没有重复标题。</li>
-<li>窄详情无重叠和溢出；账号名、密钥、状态和操作都可用。</li>
-<li>没有单独的验证按钮。添加 API 密钥可展开和取消。</li>
+<li>记忆没有重复标题。</li>
 <li>图标操作带 <code translate="no">aria-label</code>。</li>
 </ul>
 </details>

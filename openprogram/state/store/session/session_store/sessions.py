@@ -577,6 +577,11 @@ class SessionsOperations:
                 session_id, root=self.root_path if self._explicit_root else None,
             ):
                 self._delete_session_locked(session_id)
+                # Still under the conversation's lock: the lock files go
+                # last, after the delete mark that turns away whoever takes
+                # the lock next.
+                shared.remove_session_lock_files(
+                    session_id, self.root_path if self._explicit_root else None)
 
 
     def _delete_session_locked(self, session_id: str) -> None:
@@ -598,6 +603,14 @@ class SessionsOperations:
             recovery = sdir.parent / ".file-recovery" / session_id
             if recovery.is_dir():
                 shared.remove_tree(recovery, ignore_errors=True)
+            if not self._explicit_root:
+                # The shadow repositories live beside the default store only.
+                try:
+                    from openprogram.state.store.shadow_git.store import release_session
+                    release_session(session_id)
+                except Exception:  # noqa: BLE001 — the start-up sweep takes it
+                    shared._log.warning("file history of %s not released", session_id,
+                                        exc_info=True)
             with self._index_lock:
                 if self._index.pop(session_id, None) is not None:
                     self._index_generation += 1

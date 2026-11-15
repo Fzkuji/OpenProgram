@@ -104,6 +104,7 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
   // the user; it does not expose general filesystem access to the renderer.
   getPathForFile: (file) => webUtils.getPathForFile(file),
   openExternal: (url) => ipcRenderer.send("desktop:open-external", url),
+  openFileInDefaultApp: (filePath) => ipcRenderer.invoke("files:open-default", filePath),
   // Close this window (Chrome parity: closing the last tab closes the window).
   closeWindow: () => ipcRenderer.send("window:close-self"),
   // Move this window by a pixel delta (single-tab drag = move the window).

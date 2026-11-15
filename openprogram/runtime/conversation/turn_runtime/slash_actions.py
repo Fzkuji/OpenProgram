@@ -279,54 +279,44 @@ def run_spawn_async(
         })
         return
 
-    # Stitch job_id into the attach card's extra blob (re-write).
+    # Stitch job_id into the attach card. The runner settles the same card
+    # when the job ends, which can come first: merge into the card as it is
+    # at the write, so a finished card keeps its outcome.
     try:
         from openprogram.runtime.context.session_db import default_db
         from openprogram.state.store import SessionNodeWriter
         db = default_db()
-        pair = db._open(session_id)  # noqa: SLF001
-        if pair is not None:
-            _, idx = pair
-            node = idx.nodes_by_id.get(attach_node_id)
-            if node:
-                md = dict(node.metadata or {})
-                # Prefer the top-level metadata.attach dict — the
-                # _msg_adapter promotes the placeholder's extra.attach
-                # blob to metadata.attach on the way in (and pops the
-                # original `extra` field), so by the time we stitch
-                # here the only source of truth for label / status /
-                # session_id is metadata.attach. Falling back to
-                # extra_json.attach was bug city: it returned {} and
-                # blew away every field except job_id.
-                if isinstance(md.get("attach"), dict):
-                    attach = dict(md["attach"])
-                else:
-                    extra_raw = md.get("extra")
-                    try:
-                        extra_json = (
-                            json.loads(extra_raw)
-                            if isinstance(extra_raw, str)
-                            else (extra_raw or {})
-                        )
-                    except Exception:
-                        extra_json = {}
-                    attach = dict(extra_json.get("attach") or {})
-                attach["job_id"] = job_id
-                # Keep extra in sync for any consumer that reads from
-                # that path too (Backend round-trip drops the field,
-                # but downstream callers may still inspect it).
-                md["extra"] = json.dumps({"attach": attach}, default=str)
-                # Mirror onto the top-level metadata.attach the same
-                # way the runner does in _update_attach_card — the
-                # frontend's _readAttach reads the top-level first
-                # and only falls back to extra-json, so without this
-                # the UI sees job_id missing on the placeholder
-                # card and can't render the Cancel button while the
-                # job is still running.
-                md["attach"] = attach
-                shim = SessionNodeWriter(db, session_id)
-                shim.update(attach_node_id, output="(running)", metadata=md)
-                db.commit_turn(session_id, f"job: stitch {job_id}")
+
+        def stitch(node) -> dict:
+            md = node.metadata or {}
+            # The top-level metadata.attach is the card's record (the
+            # _msg_adapter promotes the placeholder's extra.attach to it);
+            # extra.attach is the older place.
+            if isinstance(md.get("attach"), dict):
+                attach = dict(md["attach"])
+            else:
+                extra_raw = md.get("extra")
+                try:
+                    extra_json = (
+                        json.loads(extra_raw)
+                        if isinstance(extra_raw, str)
+                        else (extra_raw or {})
+                    )
+                except Exception:
+                    extra_json = {}
+                attach = dict(extra_json.get("attach") or {}) if isinstance(extra_json, dict) else {}
+            attach["job_id"] = job_id
+            # The frontend reads the top-level attach first; extra stays in
+            # step for any consumer that reads that path. Without job_id the
+            # card cannot show its Cancel button while the job runs.
+            fields: dict = {"metadata": {"extra": json.dumps({"attach": attach}, default=str),
+                                         "attach": attach}}
+            if attach.get("status") in (None, "running"):
+                fields["output"] = "(running)"
+            return fields
+
+        if SessionNodeWriter(db, session_id).merge(attach_node_id, stitch):
+            db.commit_turn(session_id, f"job: stitch {job_id}")
     except Exception:
         # The job runs; the placeholder card just lacks its job id (no Cancel).
         _log.warning("job id not stitched onto placeholder in session %s", session_id, exc_info=True)

@@ -105,8 +105,10 @@ async def _run_local_invocation(ws, _invoke: dict, session_id: str,
     _request_id = _client_request_id.get()
     if _request_id:
         _run_options["client_request_id"] = _request_id
-    _run = run_agent_method_call(
-        _name, _kwargs, session_id, **_run_options,
+    # The run slot and the call's records take the conversation's lock:
+    # off the event loop, so a held conversation delays this only.
+    _run = await asyncio.to_thread(
+        run_agent_method_call, _name, _kwargs, session_id, **_run_options,
     )
     if "error" in _run:
         await _send_local_error(
@@ -161,6 +163,11 @@ async def _run_local_command(ws, req: _ChatRequest) -> bool:
                                        branch_id=req.side_branch_id)
     _out = {"text": _outcome.text, "invoke": _outcome.invoke, "send_text": _outcome.send_text}
     _reply_text = str(_out.get("text") or "")
+    if _outcome.starts_goal:
+        # The message that sets a Goal is labelled Goal in the transcript;
+        # it says what a reply line would, so none is sent.
+        req.starts_goal = True
+        _reply_text = ""
     if _reply_text:
         await ws.send_text(json.dumps({
             "type": "chat_response",

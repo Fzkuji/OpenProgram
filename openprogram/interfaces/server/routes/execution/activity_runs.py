@@ -135,6 +135,27 @@ def register(app) -> None:
             return JSONResponse(_NOT_FOUND, status_code=404)
         return JSONResponse(page, headers=_NO_STORE)
 
+    @app.get("/api/session/{session_id}/activity/roster")
+    def activity_roster(session_id: str, request: Request):
+        """What the overview's Agents rows add to the executions: each
+        helper's status, subtree usage and tool calls, and the messages
+        still unanswered in other conversations."""
+        from openprogram.runtime.context.session_db import default_db
+        from openprogram.runtime.execution import default_store, hooks
+
+        if not _may_read(request, session_id):
+            return JSONResponse(_NOT_FOUND, status_code=404)
+        if default_db().read_index(session_id, lambda _index: True) is None:
+            return JSONResponse(_NOT_FOUND, status_code=404)
+        facts = hooks.registered("agent_roster_facts")
+        body = {"agents": {}, "outgoing": []}
+        if facts is not None:
+            try:
+                body = facts.roster(session_id, _conversation_jobs(default_store(), session_id))
+            except Exception:  # noqa: BLE001 - the rows still show without their facts
+                pass
+        return JSONResponse(body, headers=_NO_STORE)
+
     @app.get("/api/session/{session_id}/activity/runs/{run_id}/events")
     def activity_run_events(session_id: str, run_id: str, request: Request):
         from openprogram.runtime.context.session_db import default_db

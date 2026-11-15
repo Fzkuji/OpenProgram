@@ -23,15 +23,21 @@ Design: docs/reference/design/runtime/collaboration/agent-collaboration.html.
 """
 from __future__ import annotations
 
+import logging
+
 from openprogram.programs._host.runtime import function
 
 from .addressing import (
+    AddressRefused,
     _parse_to,
+    resolve_conversation,
     resolve_existing_target,
 )
 from .delivery import target_label
 from .depth import (
     claim_send,
+    closes_cycle,
+    current_chain_ancestors,
     current_chain_generations,
     current_chain_messages,
     hops_left,
@@ -41,6 +47,8 @@ from .depth import (
     release_send,
 )
 from .prompt import DESCRIPTION
+
+_log = logging.getLogger(__name__)
 
 
 def _resolve_parent() -> tuple[str | None, str | None, str | None]:
@@ -81,19 +89,17 @@ def _resolve_parent() -> tuple[str | None, str | None, str | None]:
 def _resolve_target(to: str, sid: str) -> tuple[str, object]:
     """``to`` as a branch (``SID:HEAD``, a branch or helper name), else as a
     conversation (its id or exact title), else as a saved Agent's name or
-    id, which reaches that Agent's one conversation (the always-on
-    handoff's addressing, now everyone's)."""
+    id, which reaches that Agent's one conversation."""
     status, payload = resolve_existing_target(to, sid)
     if status == "ok":
         return status, payload
     try:
-        from openprogram.runtime.conversation.always_on import handoff as conversations
-        target = conversations.resolve_target(sid, to)
-    except Exception as exc:  # noqa: BLE001 — HandoffRefused names the choices
-        from openprogram.runtime.conversation.always_on.handoff import HandoffRefused
-        if isinstance(exc, HandoffRefused):
-            return "error", (f"{payload} As a conversation or Agent: {exc} To start a "
-                             "saved Agent that has no conversation, use agent(agent=…).")
+        target = resolve_conversation(sid, to)
+    except AddressRefused as exc:
+        return "error", (f"{payload} As a conversation or Agent: {exc} To start a "
+                         "saved Agent that has no conversation, use agent(agent=…).")
+    except Exception:  # noqa: BLE001 — an unreadable store leaves the branch answer
+        _log.debug("conversation addressing failed for %r", to, exc_info=True)
         return "error", payload
     head = target.get("head_id")
     if not head:
@@ -169,6 +175,14 @@ def _send_message_impl(
             "that's a direct loop. Pick a different agent, or use the "
             "`agent` tool to start a new one."
         )
+    if run_session != sid and closes_cycle(run_session, branch_from):
+        # A→B→A: the conversation is already waiting on this chain, and
+        # its answer reaches it on its own (the hand-off's cycle rule).
+        return (
+            f"[send_message refused] {to!r} is already waiting on this chain of "
+            "messages; your final reply goes back to it on its own. Answer "
+            "there instead of sending it a new message."
+        )
     if run_session != sid and not (agent_id or "").strip():
         # Another conversation answers as its own Agent, as a handoff did.
         try:
@@ -186,10 +200,16 @@ def _send_message_impl(
         raise refusal.agent_budget("send_message", "sends this hour", max_sends_per_hour(),
                                    "wait, or finish the work here")
     from .dispatch import deliver
+    # Who waits on the message from here on: this chain's waiters and,
+    # across conversations, this one.
+    ancestors = [*current_chain_ancestors()]
+    if run_session != sid and sid not in ancestors:
+        ancestors.append(sid)
     out = deliver(
         message=message, sid=sid, aid=aid, parent_agent=parent_agent,
         chosen_agent=chosen_agent, run_session=run_session, target_tip=branch_from,
         caller_authority=caller_authority, messages=messages, generations=generations,
+        ancestors=ancestors,
     )
     if out.startswith("[send_message error]") or out.startswith("[send_message] duplicate"):
         release_send(sid)

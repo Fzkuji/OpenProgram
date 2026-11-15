@@ -15,8 +15,8 @@ import { useSessionStore } from "@/lib/session-store";
 import { captureHistoryAnchor } from "@/lib/chat/history/history-viewport";
 import { loadSessionHistoryWindow } from "@/lib/runtime-bridge/session/session-history-loader";
 import {
-  chatOwnsFind, clearHighlights, locate, messageRow, normalizeMatches, paintHighlights, step, textRanges,
-  totalOccurrences, type FindMatch,
+  chatOwnsFind, clearHighlights, locate, messageRow, normalizeMatches, paintHighlights, revealForFind, step,
+  textRanges, totalOccurrences, type FindMatch,
 } from "@/lib/chat/transcript/conversation-find";
 import pill from "../../../center-tabs/browser/browser.module.css";
 import styles from "./conversation-find.module.css";
@@ -118,6 +118,12 @@ export function ConversationFind({ sessionId, onTarget }: {
     if (current.current?.messageId !== match.message_id) return;
     const row = messageRow(container, match.message_id);
     if (!row) return;
+    // A row that keeps its text folded (an agent's card, a message between
+    // agents) opens, so the match is on screen before it is measured.
+    if (revealForFind(match.message_id)) {
+      await nextFrame();
+      if (current.current?.messageId !== match.message_id) return;
+    }
     const ranges = textRanges(row, shownQuery.current);
     const range = ranges[Math.min(occurrence, ranges.length - 1)];
     const box = (range ?? row).getBoundingClientRect();

@@ -8,12 +8,19 @@ pages all read and write the same validated settings.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 
 
 async def handle_get_settings(ws, cmd: dict):
-    from openprogram.state.settings import get_settings
     session_id = (cmd.get("session_id") or "").strip() or None
+    # A conversation's own limits are read under its lock: off the loop.
+    rows = await asyncio.to_thread(_settings_rows, session_id)
+    await ws.send_text(json.dumps({"type": "settings", "data": rows}, default=str))
+
+
+def _settings_rows(session_id: str | None):
+    from openprogram.state.settings import get_settings
     resolved = None
     if session_id:
         from openprogram.runtime.jobs.resource_governance import (
@@ -25,8 +32,7 @@ async def handle_get_settings(ws, cmd: dict):
             global_resource_limits(),
             session=session_resource_limits(session_id),
         )
-    rows = get_settings(resolved_resources=resolved)
-    await ws.send_text(json.dumps({"type": "settings", "data": rows}, default=str))
+    return get_settings(resolved_resources=resolved)
 
 
 async def handle_set_setting(ws, cmd: dict):

@@ -77,7 +77,10 @@ from ..placement import (  # noqa: F401
     session_looks_present,
     target_dir_for_project,
 )
-from ..session_lock import conversation_lock, registry_file_lock, session_interprocess_lock  # noqa: F401
+from ..session_lock import (  # noqa: F401
+    conversation_lock, registry_file_lock, remove_session_lock_files,
+    session_interprocess_lock, stale_lock_files, sweep_lock_files,
+)
 
 if TYPE_CHECKING:
     from .service import SessionStore

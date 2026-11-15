@@ -58,6 +58,46 @@
 
 <p class="note"><code translate="no">error_path.py</code> picks the head after a failure and delegates the write to <code translate="no">TurnWriter.record_failure</code>. No other module originates a <code translate="no">head_id</code>.</p>
 
+<h2 id="reply-text">A reply's text</h2>
+
+<p>A reply is a list of blocks: text, reasoning, tool calls, steering messages. The chat draws the blocks. The stored <code translate="no">content</code>, <code translate="no">TurnResult.final_text</code>, <code translate="no">--print</code>, a channel message, a search hit, a title and a copied message read one string, built by <code translate="no">reply_text</code> in <code translate="no">state/reply_text.py</code> and nowhere else.</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Between two text blocks</th><th scope="col">In the text</th></tr></thead>
+<tbody>
+<tr><th scope="row">Nothing</th><td>Joined byte for byte. A provider cuts one stream of text into blocks for citations, and a response continued after its output limit goes on mid-sentence.</td></tr>
+<tr><th scope="row">A tool call, a steering message, or reasoning with text</th><td>A blank line, however many blocks came between. Nothing is added when either side of the boundary already has whitespace there.</td></tr>
+<tr><th scope="row">Reasoning with only a signature</th><td>Nothing. It is never drawn, and no stream frame names it.</td></tr>
+</tbody>
+</table>
+
+<table class="stack">
+<thead><tr><th scope="col">Reader</th><th scope="col">Gets the text from</th></tr></thead>
+<tbody>
+<tr><th scope="row">Result frame, stored row, <code translate="no">final_text</code></th><td><code translate="no">loop_runner</code> feeds every response's blocks, a delivered steer and the text a Stop kept into one <code translate="no">ReplyText</code>.</td></tr>
+<tr><th scope="row">A reply resumed after a pause</th><td>The same row goes on. <code translate="no">loop_runner</code> seeds the <code translate="no">ReplyText</code> with the whole trace shown before the pause, so the text is every passage of the reply, and the first passage after the pause opens with one blank line.</td></tr>
+<tr><th scope="row">Row while streaming</th><td><code translate="no">stream_tap</code> reads its blocks. The separator is part of the appended <code translate="no">output_tail</code>, so the log only adds to the text and a cold fold equals the live row.</td></tr>
+<tr><th scope="row">Clients that add up deltas</th><td>The text frame that opens a passage carries <code translate="no">separator</code>; <code translate="no">stream_text</code> puts it before the delta. The page, channels, the OpenAI-compatible stream, <code translate="no">--print</code> partial messages and ACP use it.</td></tr>
+<tr><th scope="row">Transcript rows</th><td>A row with no <code translate="no">content</code>, and a failed row, read <code translate="no">reply_text</code> of its blocks.</td></tr>
+<tr><th scope="row">Next model request</th><td>The blocks, one response at a time (<code translate="no">context/render.py</code>). The separator is in no block, so the provider is sent what it wrote.</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Why a blank line</summary>
+<table class="stack">
+<thead><tr><th scope="col">Harness</th><th scope="col">Text of a reply with a tool call in the middle</th></tr></thead>
+<tbody>
+<tr><th scope="row">openclaw</th><td>Every assistant text of the run, joined with a blank line</td></tr>
+<tr><th scope="row">opencode</th><td><code translate="no">run</code> prints each finished text part trimmed, on its own lines</td></tr>
+<tr><th scope="row">pi-mono</th><td>Print mode writes the last message's text blocks, one newline after each</td></tr>
+<tr><th scope="row">codex-cli</th><td><code translate="no">exec</code> keeps only the last agent message</td></tr>
+</tbody>
+</table>
+<p class="note">OpenProgram follows openclaw: a blank line is a paragraph break in Markdown and in a chat app, and a single newline is not. It keeps every passage, since the sentence before a tool call is often the only place a reply says what it did.</p>
+<p class="note">Consecutive text blocks stay as they are. None of the four needs this rule, because none stores one text stream as several blocks.</p>
+</details>
+
 <h2 id="seam">Test seam</h2>
 
 <p>Tests patch <code translate="no">_resolve_model</code>, <code translate="no">_load_agent_profile</code>, <code translate="no">_run_loop_blocking</code> and <code translate="no">process_user_turn</code> on the package object.</p>

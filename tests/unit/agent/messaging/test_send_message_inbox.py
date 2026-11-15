@@ -354,3 +354,130 @@ def test_a_queued_cross_session_message_continues_the_branch_it_was_sent_to(
     run_control.unregister_cancel_event("t1", busy_target)
     assert inbox.drain("t1") == 1
     assert calls[0]["branch_from"] == "b1"
+
+
+# ---- addressing, limits that outlive a restart, loops ------------------------
+
+def test_an_agent_name_reaches_its_one_conversation(two_sessions, monkeypatch):
+    from openprogram.runtime.agent_registry import manager
+    two_sessions.create_session("butler1", "butler", title="Morning watch")
+    two_sessions.append_message("butler1", {"id": "u9", "role": "user", "content": "watch",
+                                            "timestamp": 0, "predecessor": None})
+    two_sessions.commit_turn("butler1", "init")
+    monkeypatch.setattr(manager, "list_all", lambda: [manager.AgentSpec(id="butler", name="Butler")])
+    calls = _capture_async(monkeypatch)
+    out = _send_message_impl("check the build", to="BUTLER")
+    assert out.startswith("[delivered]"), out
+    assert calls[-1]["session_id"] == "butler1"
+
+
+def test_the_hourly_send_window_survives_a_worker_restart(two_sessions, monkeypatch):
+    from openprogram.programs.tools.agents.send_message.send_message import depth
+    monkeypatch.setattr(depth, "max_sends_per_hour", lambda: 1)
+    _capture_async(monkeypatch)
+    assert _send_message_impl("one", to="t1:b1").startswith("[delivered]")
+    # A new Worker: nothing in memory, the window is read from the session.
+    depth._sends.clear()
+    from openprogram.runtime.permissions.refusal import Refused
+    with pytest.raises(Refused, match="sends this hour"):
+        _send_message_impl("two", to="t1:b1")
+
+
+def test_a_message_back_to_a_conversation_waiting_on_this_chain_is_refused(two_sessions, monkeypatch):
+    from openprogram.programs.tools.agents.send_message.send_message import depth
+    calls = _capture_async(monkeypatch)
+    token = depth.set_chain_ancestors(("t1",))
+    try:
+        out = _send_message_impl("and you?", to="t1:b1")
+    finally:
+        depth._chain_ancestors.reset(token)
+    assert out.startswith("[send_message refused]") and "already waiting" in out
+    assert calls == []
+
+
+def test_a_cross_conversation_send_carries_who_waits_above_it(two_sessions, monkeypatch):
+    calls = _capture_async(monkeypatch)
+    _send_message_impl("relay this", to="t1:b1")
+    assert "p1" in calls[-1]["chain_ancestors"]
+
+
+# ---- a message to one's own running helper is a steer ------------------------
+
+def test_a_message_to_ones_running_helper_steers_it(two_sessions, busy_target, monkeypatch):
+    from types import SimpleNamespace
+    from openprogram.programs.tools.agents.send_message.send_message import steer
+    monkeypatch.setattr(steer, "spawned_running_job", lambda run_session, tip, sid: SimpleNamespace(id="j_help"))
+    submitted = []
+    monkeypatch.setattr(steer, "submit", lambda execution_id, text, **kw: submitted.append(
+        (execution_id, text, kw["sender_session_id"])) or "send_cmd1")
+    calls = _capture_async(monkeypatch)
+    out = _send_message_impl("also check the tests", to="t1:b1")
+    assert out.startswith("[steering] execution_id=j_help"), out
+    assert submitted[0][0] == "j_help" and "also check the tests" in submitted[0][1]
+    assert calls == []
+    # The fallback entry waits for the turn's end; a steer the turn took is
+    # dropped there, not delivered twice.
+    (entry,) = inbox._load(inbox._inbox_path("t1"))
+    assert entry["steer"] == {"command_id": "send_cmd1", "execution_id": "j_help"}
+    monkeypatch.setattr(steer, "taken", lambda command_id: command_id == "send_cmd1")
+    monkeypatch.setattr(inbox, "_ready", lambda sid, e: True)
+    inbox.drain("t1")
+    assert inbox.pending_count("t1") == 0 and calls == []
+
+
+def test_a_steer_that_cannot_be_taken_queues_as_before(two_sessions, busy_target, monkeypatch):
+    from types import SimpleNamespace
+    from openprogram.programs.tools.agents.send_message.send_message import steer
+    monkeypatch.setattr(steer, "spawned_running_job", lambda *a: SimpleNamespace(id="j_help"))
+    monkeypatch.setattr(steer, "submit", lambda *a, **k: None)
+    _capture_async(monkeypatch)
+    assert _send_message_impl("later", to="t1:b1").startswith("[queued]")
+
+
+def test_only_the_spawner_finds_its_helper(monkeypatch):
+    from openprogram.programs.tools.agents.send_message.send_message import steer
+    from openprogram.runtime.jobs.runner import _current_job_id
+    from openprogram.runtime.jobs.types import Job, JobStatus
+    helper = Job(id="j_help", parent_session_id="t1", prompt="x", agent_id="main", status=JobStatus.RUNNING,
+                 creates_agent=True, wait=False, caller_session_id="p1", head_id="h1")
+    monkeypatch.setattr("openprogram.runtime.jobs.store.list_jobs", lambda sid: [helper])
+    assert steer.spawned_running_job("t1", "h1", "p1") is helper
+    assert steer.spawned_running_job("t1", "h1", "other") is None
+    assert steer.spawned_running_job("t1", "other-tip", "p1") is None
+    token = _current_job_id.set("j_someone")
+    try:
+        assert steer.spawned_running_job("t1", "h1", "p1") is None
+    finally:
+        _current_job_id.reset(token)
+
+
+def test_a_running_helper_addressed_by_its_reply_is_steered_not_run_twice(two_sessions, monkeypatch):
+    """While a background helper runs, its name resolves to the reply it is
+    writing (``<job>_user_reply``) and its Job has no head yet. A message
+    from its spawner reaches it at its next tool step; it used to find the
+    branch idle and start a second turn of the helper beside the first."""
+    from openprogram.programs.tools.agents.send_message.send_message import steer
+    from openprogram.runtime.jobs.store import save_job
+    from openprogram.runtime.jobs.types import Job, JobStatus
+    s = two_sessions
+    s.append_message("p1", {"id": "j_help_user", "role": "user", "content": "find it",
+                            "timestamp": 0, "predecessor": "a1"})
+    s.append_message("p1", {"id": "j_help_user_reply", "role": "assistant", "content": "",
+                            "timestamp": 0, "predecessor": "j_help_user"})
+    s.set_head("p1", "a1")
+    s.commit_turn("p1", "helper started")
+    helper = Job(id="j_help", parent_session_id="p1", prompt="find it", agent_id="explorer",
+                 status=JobStatus.RUNNING, creates_agent=True, wait=False, caller_session_id="p1")
+    save_job("p1", helper)
+    assert inbox.branch_busy("p1", "j_help_user_reply")
+    assert steer.spawned_running_job("p1", "j_help_user_reply", "p1").id == "j_help"
+
+    submitted = []
+    monkeypatch.setattr(steer, "submit", lambda execution_id, text, **kw: submitted.append(execution_id) or "cmd1")
+    calls = _capture_async(monkeypatch)
+    out = _send_message_impl("also give the line number", to="p1:j_help_user_reply")
+    assert out.startswith("[steering] execution_id=j_help"), out
+    assert submitted == ["j_help"] and calls == []
+    helper.status, helper.head_id = JobStatus.COMPLETED, "j_help_user_reply"
+    save_job("p1", helper)
+    assert not inbox.branch_busy("p1", "j_help_user_reply")

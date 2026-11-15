@@ -59,10 +59,10 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
     monkeypatch.setattr("openprogram.interfaces.server.server._default_agent_id", lambda: "main")
 
-    async def _direct_to_thread(func, /, *args, **kwargs):
+    async def _direct_to_thread(_session_id, func, /, *args, **kwargs):
         return func(*args, **kwargs)
 
-    monkeypatch.setattr(ws_session.load.asyncio, "to_thread", _direct_to_thread)
+    monkeypatch.setattr(ws_session.load, "run_for_conversation", _direct_to_thread)
     broadcasts: list[dict] = []
 
     def _collect(text: str) -> None:
@@ -166,14 +166,14 @@ def test_session_loaded_precedes_async_context_stats(
 
     ws = FakeWS()
 
-    async def _after_session_loaded(func, /, *args, **kwargs):
+    async def _after_session_loaded(_session_id, func, /, *args, **kwargs):
         # Graph construction also runs off the event loop before hydration.
         # Only the context-stat refresh must follow the session_loaded frame.
         if func is _s.refresh_context_stats:
             assert any(frame.get("type") == "session_loaded" for frame in ws.sent)
         return func(*args, **kwargs)
 
-    monkeypatch.setattr(ws_session.load.asyncio, "to_thread", _after_session_loaded)
+    monkeypatch.setattr(ws_session.load, "run_for_conversation", _after_session_loaded)
     try:
         asyncio.run(ws_session.handle_load_session(ws, {"session_id": sid}))
     finally:

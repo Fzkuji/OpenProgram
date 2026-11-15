@@ -196,10 +196,18 @@ class MessagesOperations:
 
 
     def update_stream_progress(
-        self, session_id: str, node_id: str, **fields: shared.Any,
+        self, session_id: str, node_id: str, *, change: shared.Optional[dict] = None,
+        quiet: bool = True, **fields: shared.Any,
     ) -> None:
-        """Record a reply's streaming text through the quiet path."""
-        self._update_node(session_id, node_id, fields, quiet=True)
+        """Record a streaming reply's progress.
+
+        ``fields`` are the reply as it now stands, for this process's index.
+        ``change`` is what was added since the last write
+        (``session_log.apply_stream_changes``) and is all the log records;
+        without it the fields are recorded whole. ``quiet`` writes without
+        fsync and tells no observer: a reply's streaming text.
+        """
+        self._update_node(session_id, node_id, fields, quiet=quiet, stream=change)
 
     def update_node(
         self, session_id: str, node_id: str, **fields: shared.Any,
@@ -207,8 +215,39 @@ class MessagesOperations:
         """Update one current node and record the changed fields."""
         self._update_node(session_id, node_id, fields, quiet=False)
 
+    def merge_node(
+        self,
+        session_id: str,
+        node_id: str,
+        change: shared.Callable[[shared.Any], shared.Optional[dict[str, shared.Any]]],
+    ) -> bool:
+        """Update one node from the node as it is inside the conversation's
+        write lock, never from a copy read earlier.
+
+        Two writers that each own part of a node (a synchronous sub-agent's
+        caller and the job runner both settle its attach card) keep each
+        other's fields this way. ``change(node)`` returns the fields to
+        write, as :meth:`update_node` takes them, or None to leave the node
+        alone. Returns whether the node was written.
+        """
+        pair = self._open(session_id)
+        if pair is None:
+            return False
+        with self._head_file_lock(pair[0]):
+            # Reopened inside the lock: another process's write is read in.
+            pair = self._open(session_id)
+            node = pair[1].nodes_by_id.get(node_id) if pair is not None else None
+            if node is None:
+                return False
+            fields = change(node)
+            if fields is None:
+                return False
+            self._update_node(session_id, node_id, dict(fields), quiet=False)
+            return True
+
     def _update_node(
         self, session_id: str, node_id: str, fields: dict[str, shared.Any], *, quiet: bool,
+        stream: shared.Optional[dict] = None,
     ) -> None:
         pair = self._open(session_id)
         if pair is None:
@@ -249,7 +288,11 @@ class MessagesOperations:
             stamped = dict(metadata) if isinstance(metadata, dict) else {}
             if "output" in fields and isinstance(node.metadata, dict) and "spilled" in node.metadata:
                 stamped["spilled"] = node.metadata["spilled"]
-            session_log.patch_node(node_id, changed, stamped, quiet=quiet)
+            if stream is not None:
+                spilled = {"metadata": {"spilled": stamped["spilled"]}} if "spilled" in stamped else {}
+                session_log.stream_node(node_id, {**stream, **spilled}, quiet=quiet)
+            else:
+                session_log.patch_node(node_id, changed, stamped, quiet=quiet)
 
 
     def merge_node_metadata_batch(

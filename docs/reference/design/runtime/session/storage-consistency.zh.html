@@ -153,6 +153,48 @@
 </ul>
 </details>
 
+<h2 id="off-the-event-loop">不在事件循环上等锁</h2>
+<p>Worker 的事件循环服务所有连接，所以没有请求应在它上面等会话锁：读写会话的工作放到工作线程里做，所以一个会话被轮次、冷启动的首次加载或别的进程占着时，只拖慢需要它的那个请求。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">位置</th><th scope="col">做法</th></tr></thead>
+<tbody>
+<tr><th scope="row">WebSocket 动作</th><td>处理器仍是协程，负责发帧；帧之间的存储工作在该会话的通道里执行（<code translate="no">run_for_conversation</code>），一帧要读很多次时合成一个普通函数（<code translate="no">_session_loaded_data</code>、<code translate="no">run_state_data</code>、<code translate="no">_checkout_branch</code>、<code translate="no">_attach_branch</code>）。</td></tr>
+<tr><th scope="row">HTTP 路由</th><td>没有要 await 的路由写成普通函数，由 FastAPI 放进线程池；要 await 的路由把存储调用放进该会话的通道。</td></tr>
+<tr><th scope="row">执行控制</th><td><code translate="no">submit_execution_control</code>（停止、暂停、继续、单步、引导、回答）在工作线程里读写执行记录，按命令一直以来的顺序逐步进行，命令 id 不变；只有通知执行方、激活和引导的附件在循环上 await。停止一写入命令就送到正在运行的执行方，且只送一次。Agent 驱动的激活在工作线程里读（日志、节点、模型固定）并在那里启动执行线程。</td></tr>
+<tr><th scope="row">大量等待</th><td>一条通道最多占通道共用线程池（<code translate="no">POOL_SIZE</code>，64）的 <code translate="no">LANE_WIDTH</code>（2）个线程，不用循环的默认线程池。超出的请求在循环上按到达顺序等，不占线程，所以一个被占住的会话不会占掉其他会话的线程，别处在 <code translate="no">asyncio.to_thread</code> 里等的工作也挡不住通道。已持有某个会话锁的线程就地执行。</td></tr>
+<tr><th scope="row">函数运行</th><td><code translate="no">POST /api/function/{name}</code>、函数运行的 Retry 和输入的本地命令在工作线程里调用 <code translate="no">run_agent_method_call</code>（会话、运行槽位、执行记录、代码节点）。</td></tr>
+<tr><th scope="row">漏掉的位置</th><td>服务器把自己的循环交给锁（<code translate="no">watch_event_loop</code>；存储层从不导入服务器）。锁在这个循环上被获取时记一条警告，每个调用位置一次，带调用栈（<code translate="no">_note_event_loop_acquisition</code>），据此找到并移走。</td></tr>
+</tbody>
+</table>
+<p>占用运行槽位时按存储自己的时限等锁（<code translate="no">admission_lock_wait</code>，60 秒），而不是四分之一秒：持锁者只做文件工作，大会话的首次加载可能超过这个时间。</p>
+<p>到时仍拿不到锁，回答 <code translate="no">conversation_locked</code>（可重试，什么都没开始，文本留给下次发送）；只有槽位确实被占才是 <code translate="no">run_active</code>，客户端据此把消息排在一轮之后。</p>
+<p>不是用户输入的轮次经 <code translate="no">run_slot.reserve</code> 占槽位，<code translate="no">lock_wait</code> 限定等锁时间（<code translate="no">0</code> 表示完全不等）。拿不到锁时各调用方的做法：</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">调用方</th><th scope="col">拿不到锁</th></tr></thead>
+<tbody>
+<tr><th scope="row">群聊房间事件（ambient）</th><td>什么都不等：会话锁、正在收尾的轮次、会话里正在跑的渠道轮次都不等。直接跳过，和槽位被占时一样。</td></tr>
+<tr><th scope="row">渠道消息</th><td>在槽位的 30 秒内等锁；超过后告诉发送者这条没有送达，可以再发一次。</td></tr>
+<tr><th scope="row">提醒唤醒、转交的消息</th><td>当作忙：<code translate="no">start_owner_turn_when_free</code> 在等待时间内继续重试。</td></tr>
+<tr><th scope="row">OpenAI 兼容 API</th><td>503 <code translate="no">conversation_locked</code>；有轮次在运行仍是 409 <code translate="no">conversation_busy</code>。</td></tr>
+</tbody>
+</table>
+<details>
+<summary>原因与验收</summary>
+<p>页面加载、运行状态查询、切换分支、改名和设置都在 <code translate="no">async def</code> 处理器里读会话。一轮占着会话，或别的进程在写它，所有连接都会冻结，最长到锁的 60 秒等待。</p>
+<p>槽位准入只等 0.25 秒，并把超时当成有轮次在运行，于是发往冷启动的大会话的消息被拒绝为 <code translate="no">run_active</code>，排到一个并不存在的轮次后面。</p>
+<p>Codex 每个线程一个写入锁文件（<code translate="no">~/.codex/thread-writer-locks</code>），由异步运行时服务客户端；等线程写入者的请求在自己的任务里等。这里是同一条规则：循环从不等会话。</p>
+<ul>
+<li>另一线程持有会话锁时，加载、运行状态、切换分支、改名、完整工具输出、Sandbox 和标为已读都等它，循环上 10 毫秒的心跳从不停顿超过四分之一秒；同样的读取放在循环上会让它停顿整段持锁时间。</li>
+<li>页面打开会话时调用的路由也一样：上下文覆盖、上下文明细、分支 token 和会话 token。</li>
+<li>attach 分支、流重新订阅、项目绑定与移动、额外文件夹、标记、上下文 commit、删除节点、渠道绑定、压缩、原地分叉、导出和回退点也一样；记录排队消息（<code translate="no">goal_queue</code>）完全不等。</li>
+<li>会话被占时，停止一个还没开始的轮次会写入它的已取消回复，循环心跳低于四分之一秒；同一个停止向运行中的执行方并发发五次，只有一条命令、只送达一次，用时不到一秒；执行方要 50 ms 才回应时也一样。</li>
+<li>四十个请求等同一个被占的会话时，另一个会话的运行状态在半秒内回答；换成循环的默认线程池会超时。</li>
+<li>房间事件遇到被锁的会话或忙的渠道轮次时不等；会话一直被锁的渠道消息回答为没有送达。</li>
+<li>锁被占 0.6 秒期间提出的槽位请求，在锁释放后被准入。</li>
+<li>超过等待时间后，发送、发往分支的发送、操作和多分支操作都回答 <code translate="no">conversation_locked</code>，不占用任何东西；被占的槽位仍是 <code translate="no">run_active</code>。</li>
+</ul>
+</details>
+
 <h2 id="cache-snapshot">缓存快照新鲜度</h2>
 <ol>
 <li>缓存重建和首次加载在读取历史与元数据之前获取磁盘指纹。</li>
@@ -188,5 +230,13 @@
 <tr><th scope="row"><code translate="no">openprogram/state/store/session/session_lock.py</code></th><td>会话锁：进程锁、flock 持有记录、有界等待</td></tr>
 <tr><th scope="row"><code translate="no">tests/component/store/test_session_lock_stress.py</code></th><td>多线程操作同一会话；卡住的会话返回错误</td></tr>
 <tr><th scope="row"><code translate="no">tests/component/store/test_session_lock_processes.py</code></th><td>两个进程操作同一会话；持有者被杀；缓存失效的撤销</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/server/ws_actions/</code>、<code translate="no">openprogram/interfaces/server/routes/</code></th><td>处理器的存储工作放在工作线程</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/server/server_runtime/session_lifecycle.py</code></th><td>槽位准入等锁；<code translate="no">conversation_locked</code> 与 <code translate="no">run_active</code> 分开</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/state/store/session/conversation_work.py</code></th><td>会话的通道，在通道自己的线程池里</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/execution/control/</code></th><td>控制命令的存储工作放在执行的通道里（<code translate="no">off_loop</code>）</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/channels/_conversation.py</code>、<code translate="no">openprogram/runtime/conversation/owner_turn.py</code></th><td>拿不到锁：房间事件跳过，渠道消息不送达，唤醒重试</td></tr>
+<tr><th scope="row"><code translate="no">tests/component/webui/chat/test_conversation_lock_off_loop.py</code></th><td>每个处理器在被占会话下的循环心跳；停止；四十个等待者；慢锁被准入；拿不到锁报告为锁住</td></tr>
+<tr><th scope="row"><code translate="no">tests/component/store/test_conversation_work.py</code></th><td>通道宽度与顺序、取消、上下文、已持锁、fork、默认线程池占满</td></tr>
 </tbody>
 </table>
+<p>还没进通道的：不属于单个会话的处理器（设置、目录、录音）的存储工作仍经 <code translate="no">asyncio.to_thread</code> 在循环的默认线程池执行，不在循环上但没有上限；Job 的等待恢复调度在调用方的循环上调用。</p>

@@ -42,6 +42,7 @@
 </tbody>
 </table>
 <p>Submitted receipts keep the question-and-answer layout, use field titles and show readable values, not JSON. Forms submit field objects. Approval cards keep their scopes, operation details and explicit allow or deny; asking a question does not authorize an operation.</p>
+<p>A sub-agent's approval names it in a badge in the title row; the conversation's own agent's has none. The Worker's one wording for a tool approval is shown in the reader's language: "Run this command?" for a shell command, "Run <em>tool</em>?" otherwise.</p>
 <p>Receipts are in-memory presentation state, not Workflow checkpoints: a refresh reloads canonical pending questions. Requests stay bound to their session, execution, generation and version across tabs. Backend Workflow questions continue in the original process, and predeclared Agent waits keep their continuation contract.</p>
 
 <h2>Discussion and events</h2>

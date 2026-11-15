@@ -95,3 +95,36 @@ def test_a_mid_stream_break_is_none_of_them():
 def test_a_reraised_failure_keeps_its_cause(cause):
     err = LLMError(message="provider returned an error", reason=ErrorReason.AUTHORIZATION, failure=cause)
     assert failure_cause(err) == cause
+
+
+def test_a_spent_window_names_its_key_and_the_other_windows(monkeypatch):
+    from openprogram.models.usage import quota
+
+    store = quota.QuotaStore(ledger=type("NoDisk", (), {
+        "quota_rows": lambda self: [], "put_quota_rows": lambda self, rows: None,
+        "drop_quota_rows": lambda self, *a: None})())
+    monkeypatch.setattr(quota, "default_store", store)
+    store.observe("openai-codex", "cred-7", quota.header_limits({
+        "x-codex-primary-used-percent": "100", "x-codex-primary-window-minutes": "300",
+        "x-codex-primary-reset-at": str(int(NOW + 900)),
+        "x-codex-secondary-used-percent": "29", "x-codex-secondary-window-minutes": "10080",
+        "x-codex-secondary-reset-at": str(int(NOW + 86400)),
+    }, now=NOW))
+    cause = failure_cause(_http(429, '{"error": {"type": "usage_limit_reached"}}'), now=NOW)
+    assert cause["limit"] == "5h" and cause["account"] == "cred-7"
+    assert cause["other_limits"] == [{"label": "Weekly", "left_fraction": 0.71, "resets_at": NOW + 86400}]
+
+
+def test_a_401_credits_error_is_a_spent_quota_not_a_rejected_key():
+    """OpenCode Zen answers a zero balance with 401 CreditsError: the reply card is QUOTA."""
+    from openprogram.models.providers.utils.errors import classify_error
+    from openprogram.models.providers.utils.failover import should_failover
+
+    body = ('{"type": "error", "error": {"type": "CreditsError", '
+            '"message": "Insufficient balance. Manage your billing here: https://opencode.ai/billing"}}')
+    exc = _http(401, body)
+    assert failure_cause(exc)["cause"] == CAUSE_QUOTA
+    assert classify_error(exc, http_status=401, error_text=body) == (ErrorReason.AUTHORIZATION, False)
+    assert should_failover(exc) is False
+    assert classify_error(RuntimeError("Unauthorized: insufficient balance")) == (ErrorReason.AUTHORIZATION, False)
+    assert classify_error(_http(401, "Unauthorized"), http_status=401) == (ErrorReason.AUTHENTICATION, False)

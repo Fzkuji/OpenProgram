@@ -126,6 +126,8 @@ def enqueue(
     sender_name: str = "",
     label: str = "",
     dedup: bool = True,
+    chain_ancestors: Optional[list[str]] = None,
+    steer: Optional[dict[str, Any]] = None,
 ) -> str:
     """Queue a message for a busy target session.
 
@@ -149,6 +151,14 @@ def enqueue(
     ``sender_name`` goes into the receipt header (who sent it);
     ``label`` names the delivery's job after the target branch, so the
     reply notice back at the sender says which branch answered.
+
+    ``chain_ancestors``: who waits above this message (send_message's
+    cycle check); the delivery's Job carries them on.
+
+    ``steer``: ``{"command_id", "execution_id"}`` of a steer the sender
+    also stored on the running helper it started (send_message/steer.py).
+    The entry is the fallback: drain drops it when the helper's turn took
+    the steer, and delivers it as a queued message when it did not.
 
     Returns ``"queued"`` or ``"duplicate"`` (identical message from the
     same sender session already queued within DEDUP_WINDOW_SECS).
@@ -190,6 +200,8 @@ def enqueue(
             "scope": scope,
             "sender_name": sender_name,
             "label": label,
+            **({"chain_ancestors": list(chain_ancestors)} if chain_ancestors else {}),
+            **({"steer": dict(steer)} if steer else {}),
             **normalize_authority(authority or {}),
         })
         dropped = None
@@ -335,6 +347,12 @@ def drain(session_id: str) -> int:
             continue
         if not _ready(session_id, entry):
             continue
+        if _steer_taken(entry):
+            # The helper's turn took it at a tool boundary: delivered.
+            with _session_lock(session_id):
+                remaining = [e for e in _load(path) if e.get("id") != entry.get("id")]
+                _write(path, remaining)
+            continue
         try:
             _deliver(session_id, entry)
         except Exception:
@@ -346,6 +364,14 @@ def drain(session_id: str) -> int:
     return delivered
 
 
+def _steer_taken(entry: dict[str, Any]) -> bool:
+    steer = entry.get("steer")
+    if not isinstance(steer, dict) or not steer.get("command_id"):
+        return False
+    from openprogram.programs.tools.agents.send_message.send_message.steer import taken
+    return taken(str(steer["command_id"]))
+
+
 def branch_busy(session_id: str, head_id: Optional[str], *, ignore: Optional[str] = None) -> bool:
     """True while an unfinished job runs on, or is about to extend, the
     branch whose tip is ``head_id``. ``ignore`` is a queued entry's own
@@ -353,11 +379,9 @@ def branch_busy(session_id: str, head_id: Optional[str], *, ignore: Optional[str
     if not head_id:
         return False
     from openprogram.runtime.jobs.store import list_jobs
-    from openprogram.runtime.jobs.types import is_terminal
+    from openprogram.runtime.jobs.types import branch_nodes, is_terminal
     for job in list_jobs(session_id):
-        if job.id != ignore and not is_terminal(job.status) and head_id in (
-            job.target_branch_head_id, job.head_id, job.parent_msg_id,
-        ):
+        if job.id != ignore and not is_terminal(job.status) and head_id in branch_nodes(job):
             return True
     return False
 
@@ -495,6 +519,7 @@ def _deliver(session_id: str, entry: dict[str, Any]) -> None:
         creates_agent=False,
         resume_deferred=bool(tid),
         message_origin="agent_delivery",
+        chain_ancestors=list(entry.get("chain_ancestors") or []) or None,
     )
 
 

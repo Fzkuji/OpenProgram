@@ -27,6 +27,7 @@ export function decisionFromFrame(
     detail: data.detail ? String(data.detail) : undefined,
     tool: data.tool ? String(data.tool) : undefined,
     args: (data.args as Record<string, unknown>) || undefined,
+    askedBy: typeof data.asked_by === 'string' && data.asked_by ? data.asked_by : undefined,
     schema:
       data.schema && typeof data.schema === 'object' && Object.keys(data.schema).length
         ? (data.schema as PendingDecision['schema'])

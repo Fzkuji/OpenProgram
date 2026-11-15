@@ -36,6 +36,7 @@
 <thead class="sr"><tr><th scope="col">Line type</th><th scope="col">Records</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">node.put</code>, <code translate="no">node.patch</code>, <code translate="no">node.delete</code></th><td>A DAG node written, changed or removed</td></tr>
+<tr><th scope="row"><code translate="no">node.stream</code></th><td>What a streaming reply added since its last line: the open block's new text, or the blocks from the first one that changed, and the output's new tail</td></tr>
 <tr><th scope="row"><code translate="no">meta.patch</code></th><td>Title, settings and other session metadata</td></tr>
 <tr><th scope="row"><code translate="no">file.put</code></th><td>A whole small document: <code translate="no">jobs.json</code>, <code translate="no">notices.json</code>, <code translate="no">inbox.json</code>, <code translate="no">todos.json</code>, <code translate="no">open_work.json</code>, <code translate="no">always_on.json</code>, <code translate="no">always_on_reports.jsonl</code></td></tr>
 <tr><th scope="row"><code translate="no">turn.*</code></th><td>Agent journal: snapshot, model decisions, tools started and their results</td></tr>
@@ -47,15 +48,34 @@
 <li>One writer per file: the Worker writes <code translate="no">main.jsonl</code>, any other process its own file under <code translate="no">agents/</code>.</li>
 <li>Reading folds every file in timestamp order and skips a line whose <code translate="no">crc</code> fails, which only a stopped writer's last line can be.</li>
 <li>A process keeps its fold and reads what was appended since. It refolds from the start if a known file was replaced or shrank, or a new line sorts before what it has.</li>
+<li>A reply's trace (<code translate="no">metadata.extra</code>) is worked out once, when the fold is handed out: from the last line that stored it whole (compressed when large) and the <code translate="no">node.stream</code> lines after it. A version a later line replaced is never decompressed or parsed.</li>
+<li>Text that <code translate="no">node.stream</code> lines add to a block or to the output is kept as pieces and joined once, there. Folding a reply costs its length, however many lines it streamed in.</li>
+<li>A fold that read at least 4 MB, and at least as much as the last checkpoint weighs, writes <code translate="no">checkpoint/fold.json</code> (folded nodes, metadata, state files, run rows) and <code translate="no">checkpoint/records.json</code> (state files and run rows). Each records, per file, the offset it covers and the bytes that end there. Checkpoints never cost more than twice the log they cover.</li>
+<li>A cold open reads the checkpoint and only the lines after it. A file whose inode, length or covered end no longer matches is read from the start.</li>
+<li>State files and run rows are read together, in one pass over only their lines, from the records checkpoint on.</li>
 <li>Only realtime push fragments are not kept.</li>
 </ul>
+<p>Streaming once rewrote the reply's whole trace on every delta: one log reached 731 MB, 675 MB of it rewrites, and a cold open took 8 s. Now a line holds what was added. pi-mono, Claude Code and Codex write one line per finished entry and opencode updates a part in place; none rewrites a message per delta.</p>
+
+<h3 id="turn-weight">What a turn adds besides its reply</h3>
+<p>A line holds what cannot be worked out again, once.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Line</th><th scope="col">Holds</th><th scope="col">Left out, and where it comes from</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">turn.snapshot</code></th><td>Once per turn: model, request settings, the prompt or its hash, and per tool its name with two digests, <code translate="no">declaration_sha256</code> (description, parameters, cache control, permission, approval) and <code translate="no">implementation_sha256</code> (the code that runs)</td><td>Tool descriptions and schemas. A resume resolves the live tools again and compares digests; a mismatch names the tool and which of the two changed</td></tr>
+<tr><th scope="row"><code translate="no">meta.patch</code> <code translate="no">_last_context_stats</code></th><td>After each provider request: the measured total, its basis, the estimate and the calibration</td><td>The per-category breakdown with its tool and prompt rows. It is counted from the conversation's nodes, prompt and tools; a first open counts it again and the panel fetches it</td></tr>
+</tbody>
+</table>
+<p>Measured on a turn of six provider requests with 81 tools: 27 KB beyond the reply and its journal, 18 KB of it the snapshot and 4 KB the context stats. With tool schemas and the breakdown copied into these lines the same turn writes 224 KB (127 KB and 97 KB).</p>
+<p>Codex writes a small <code translate="no">turn_context</code> line per turn (model, working directory, policies) and its instructions once per session; Claude Code's transcript lines carry a message and its usage, and <code translate="no">/context</code> is counted when asked. Neither records tool schemas or a context breakdown per request, so neither does this log.</p>
+<p>Digests per tool are kept, not one digest for the catalog, because a refused resume has to say which tool changed, and a durable function's code may change while its declaration may not.</p>
 
 <h2 id="run-state">Run state</h2>
 <p>Executions, attempts, effects, waits and commands are folded from the same logs into plain Python tables in the Worker's memory, with their own transactions, undo and uniqueness rules. No database. A committed change is a <code translate="no">turn.rows</code> line.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Item</th><th scope="col">Role</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">~/.openprogram/active/&lt;session&gt;</code></th><td>Marks unfinished runs; folded at startup. Others fold when first asked for. Deleting a conversation removes its marker, and startup drops one that names a deleted conversation</td></tr>
+<tr><th scope="row"><code translate="no">~/.openprogram/active/&lt;session&gt;</code></th><td>Marks unfinished runs; folded at startup. Others fold when first asked for: startup reads no conversation, and a conversation is read the first time it is opened. Deleting a conversation removes its marker, and startup drops one that names a deleted conversation</td></tr>
 <tr><th scope="row"><code translate="no">run_index.jsonl</code></th><td>Execution → session</td></tr>
 <tr><th scope="row"><code translate="no">revisions.jsonl</code></th><td>Workflow versions and approvals, and global budgets</td></tr>
 <tr><th scope="row">Idle session</th><td>Leaves memory an hour after its last change, returns from its log</td></tr>

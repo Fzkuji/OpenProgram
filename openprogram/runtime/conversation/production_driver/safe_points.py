@@ -311,8 +311,12 @@ class _AgentSafePointHook:
                 sink = emit_ws_frame
             frame_type = "system_access.waiting" if wait_kind == "system_access" else "question.asked"
             from openprogram.runtime.execution.waits import question_frame_data
+            # A foreground helper forked into another conversation asks in
+            # its caller's (approval._asker_metadata).
+            shown_in = (wait_request.get("asked_in_session")
+                        if isinstance(wait_request, shared.Mapping) else None)
             data = question_frame_data(
-                suspension.wait, session_id=self.request.session_id,
+                suspension.wait, session_id=shown_in or self.request.session_id,
                 expected_version=suspension.execution.status_version,
             )
             if wait_kind == "system_access":

@@ -79,15 +79,17 @@ def register(app):
         ).hexdigest()
         return view
 
+    # Plain functions: FastAPI runs them in its thread pool, so reading a
+    # conversation under its lock never holds the event loop.
     @app.get("/api/sessions/{session_id}/resource-limits")
-    async def get_session_resource_limits_api(session_id: str):
+    def get_session_resource_limits_api(session_id: str):
         try:
             return JSONResponse(content=resource_limits_view(session_id))
         except KeyError:
             return JSONResponse(content={"error": "session not found"}, status_code=404)
 
     @app.put("/api/sessions/{session_id}/resource-limits")
-    async def put_session_resource_limits_api(session_id: str, request: Request, body: Any = Body(default=None)):
+    def put_session_resource_limits_api(session_id: str, request: Request, body: Any = Body(default=None)):
         if not isinstance(body, dict) or "limits" not in body:
             return JSONResponse(content={"error": "body must contain limits and base_revision"}, status_code=400)
         try:

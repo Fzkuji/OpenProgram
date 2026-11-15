@@ -619,19 +619,9 @@ def test_a_check_in_that_died_before_a_safe_point_is_not_started_over(world, tmp
     assert started == [] and _unanswered(store, active.execution_id) == []
 
 
-def test_a_handoff_turn_already_admitted_is_recognised_in_the_real_store(world, tmp_path, monkeypatch):
-    from openprogram.runtime.conversation.always_on import handoff
-    from openprogram.runtime.execution import store as execution_store
-    _driver, active, store = _ran_turn(tmp_path, scheduled_task=None, source="web")
-    monkeypatch.setattr(execution_store, "default_store", lambda: store)
-    session_id = store.get_execution(active.execution_id).session_id
-    assert handoff._already_admitted(session_id, "user")
-    assert not handoff._already_admitted(session_id, "not-admitted")
-
-
-def test_a_saved_handoff_waits_while_the_restart_settles_its_conversation(world, tmp_path, monkeypatch):
+def test_a_migrated_handoff_waits_while_the_restart_settles_its_conversation(world, tmp_path, monkeypatch):
     from openprogram.runtime.conversation import owner_turn
-    from openprogram.runtime.conversation.always_on import handoff
+    from openprogram.runtime.conversation.always_on import handoff_migration
     from openprogram.runtime.execution import store as execution_store
     driver, active, store = _ran_turn(tmp_path, scheduled_task=None, source="web")
     _die_before_the_safe_point(driver, active, store, monkeypatch)
@@ -650,7 +640,7 @@ def test_a_saved_handoff_waits_while_the_restart_settles_its_conversation(world,
         return checks[-1]
 
     monkeypatch.setattr(restart, "conversation_settling", settling)
-    handoff._wait_for_restart_to_settle(session_id)
+    handoff_migration.wait_for_restart_to_settle(session_id)
     assert checks[:2] == [True, True] and checks[-1] is False
 
 

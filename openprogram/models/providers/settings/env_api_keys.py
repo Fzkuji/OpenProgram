@@ -161,6 +161,9 @@ _PROVIDER_ENV_VARS: dict[str, list[str]] = {
     "kimi-coding": ["KIMI_API_KEY", "MOONSHOT_API_KEY"],
     "kimi": ["KIMI_API_KEY"],
     "moonshot": ["MOONSHOT_API_KEY"],
+    # The catalogue's id for the same service: known here so its key is
+    # recognised even before the catalogue has been read.
+    "moonshotai": ["MOONSHOT_API_KEY"],
     "deepseek": ["DEEPSEEK_API_KEY"],
     "atlascloud": ["ATLASCLOUD_API_KEY"],
 }

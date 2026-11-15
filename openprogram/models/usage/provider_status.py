@@ -26,11 +26,23 @@ SUBSCRIPTION_PROVIDERS = frozenset({
     "gemini-subscription", "google-gemini-cli", "alibaba-token-plan-cn",
 })
 
+#: Plan names that bill by plan, not per token, in a provider id.
+_PLAN_MARKERS = ("coding-plan", "token-plan", "-coding")
+
+
+def is_subscription(provider_id: str) -> bool:
+    """A provider billed by a plan: its calls are included, not charged per token."""
+    return provider_id in SUBSCRIPTION_PROVIDERS or any(m in provider_id for m in _PLAN_MARKERS)
+
+
 HealthState = Literal[
     "ready", "rate_limited", "signed_out", "no_credit", "invalid_key", "unknown",
+    "not_configured", "not_running",
 ]
 QuotaKind = Literal["windowed", "balance", "rate_limit", "none"]
 Billing = Literal["api_key", "subscription", "local"]
+FixAction = Literal["sign_in", "top_up", "replace_key", "connect", "start_server"]
+Tone = Literal["normal", "warning", "danger"]
 
 
 class QuotaLimitWire(TypedDict):
@@ -104,6 +116,14 @@ class KeyHealth(TypedDict):
     status_at: Optional[float]
 
 
+class FixWire(TypedDict):
+    """The one action that clears a provider's state, and the provider page it opens."""
+
+    action: FixAction
+    #: The provider's own keys or billing page (``catalog/consoles.py``), or null.
+    url: Optional[str]
+
+
 class ProviderStatus(TypedDict):
     id: str
     label: str
@@ -114,6 +134,14 @@ class ProviderStatus(TypedDict):
     spend: SpendWire
     default_model: Optional[str]
     keys: list[KeyHealth]
+    #: What clears ``health`` (null when nothing needs doing).
+    fix: Optional[FixWire]
+    #: The provider's page for creating a key ("Get a key"), or null.
+    console_url: Optional[str]
+    #: A subscription's plan as the sign-in or its replies name it ("plus", "pro"); null when unknown.
+    plan: Optional[str]
+    #: When Refresh last read this provider's login, quota and health again (this process); null before.
+    checked_at: Optional[float]
 
 
 class ProviderQuotaFrame(TypedDict):
@@ -252,7 +280,7 @@ def spend_of(provider: str, rows: list[dict], now: float) -> SpendWire:
               "unpriced_calls")}
     price = round(sum(float(row.get("cost") or 0.0) for row in rows), 6)
     prompt = total["input_tokens"] + total["cache_read_tokens"] + total["cache_write_tokens"]
-    included = provider in SUBSCRIPTION_PROVIDERS
+    included = is_subscription(provider)
     return {
         "days": DAYS,
         "calls": total["calls"],
@@ -295,6 +323,51 @@ def quota_of(reports: list[QuotaReport], keys: list[KeyHealth], now: float,
             "read_error": read.get("error"), "read_at": read.get("read_at")}
 
 
+# Plan, and reading a provider again
+
+def plan_of(provider: str, keys: list[KeyHealth]) -> Optional[str]:
+    """A subscription's plan name: what its replies last named for a stored
+    key, else what its sign-in carries. Never a request; ``None`` when
+    neither says."""
+    try:
+        seen = default_store.plan(provider, [k["credential_id"] for k in keys] + [""])
+        if seen:
+            return seen
+        from openprogram.models.auth.credential_provider import get_provider_config
+        read = get_provider_config(provider).plan
+        plan = read() if read is not None else None
+    except Exception:
+        return None
+    return plan.strip().lower() if isinstance(plan, str) and plan.strip() else None
+
+
+#: When Refresh last read each provider again, in this process.
+_checked: dict[str, float] = {}
+
+
+def refresh_providers(ids: list[str], *, now: Optional[float] = None) -> None:
+    """Read these providers again, as Refresh does: each one's login where
+    it lives (``ProviderAuthConfig.reread_login``: refresh what is about to
+    expire, mark what needs sign-in, take back what was signed in again),
+    then every quota endpoint that is sent. Health follows from both when
+    the status is built next."""
+    now = time.time() if now is None else now
+    from openprogram.models.auth.credential_provider import get_provider_config
+    for pid in ids:
+        try:
+            reread = get_provider_config(pid).reread_login
+            if reread is not None:
+                reread()
+        except Exception:
+            import logging
+            logging.getLogger(__name__).warning("login of %s was not re-read", pid, exc_info=True)
+        _checked[pid] = now
+    from .quota import forget_accounts
+    from .quota_fetchers import refresh as read_quota
+    forget_accounts()
+    read_quota(ids, reason="manual")
+
+
 # Providers
 
 def connected_providers() -> list[dict]:
@@ -331,16 +404,19 @@ def build_status(*, refresh: str = "none", providers: Optional[list[dict]] = Non
 
     ``refresh`` is ``"none"`` (stored values only), ``"stale"`` (read the
     quota endpoints whose value is older than ten minutes, as a page opening
-    does) or ``"force"`` (read them all now, as Refresh does).
+    does) or ``"force"`` (read every login and quota endpoint now, as
+    Refresh does: :func:`refresh_providers`).
     """
     now = time.time() if now is None else now
     if ledger is None:
         from .ledger import default_ledger as ledger
     rows = connected_providers() if providers is None else providers
     ids = [row["id"] for row in rows]
-    if refresh in ("stale", "force"):
+    if refresh == "force":
+        refresh_providers(ids, now=now)
+    elif refresh == "stale":
         from .quota_fetchers import refresh as read_quota
-        read_quota(ids, reason="open" if refresh == "stale" else "manual")
+        read_quota(ids, reason="open")
     from .quota_fetchers import last_reads
     days = ledger.provider_days(since=(int(now // 86400) - DAYS + 1) * 86400)
     defaults = _default_models(now, ledger)
@@ -353,20 +429,66 @@ def build_status(*, refresh: str = "none", providers: Optional[list[dict]] = Non
         stored = {k["credential_id"] for k in keys} | {""}
         reports = [r for r in reports if r.account in stored]
         reads = {a: r for a, r in last_reads(pid).items() if a in stored}
-        billing: Billing = "local" if is_local_provider(pid) else (
-            "subscription" if pid in SUBSCRIPTION_PROVIDERS else "api_key")
+        local = is_local_provider(pid)
+        billing: Billing = "local" if local else (
+            "subscription" if is_subscription(pid) else "api_key")
+        health = health_of(keys, reports, now, reads)
+        if local:
+            health = local_health(pid, row)
+        elif not keys and health["state"] == "unknown" and row.get("configured") is False:
+            health = {"state": "not_configured", "until": None, "detail": None}
         out.append({
             "id": pid,
             "label": str(row.get("label") or pid),
             "billing": billing,
             "enabled": bool(row.get("enabled")),
-            "health": health_of(keys, reports, now, reads),
+            "health": health,
             "quota": quota_of(reports, keys, now, reads),
             "spend": spend_of(pid, [d for d in days if d["provider"] == pid], now),
             "default_model": defaults.get(pid),
             "keys": keys,
+            "fix": fix_for(pid, health["state"]),
+            "console_url": console_url(pid, "keys"),
+            "plan": plan_of(pid, keys) if billing == "subscription" else None,
+            "checked_at": _checked.get(pid),
         })
     return {"generated_at": now, "stale_after_s": STALE_AFTER_S, "providers": out}
+
+
+# Fix action, local servers
+
+_FIX_OF: dict[str, tuple[str, Optional[str]]] = {
+    "signed_out": ("sign_in", None),
+    "no_credit": ("top_up", "billing"),
+    "invalid_key": ("replace_key", "keys"),
+    "not_configured": ("connect", "keys"),
+    "not_running": ("start_server", None),
+}
+
+
+def console_url(provider_id: str, page: str = "keys") -> Optional[str]:
+    from openprogram.models.providers.catalog.consoles import console_url as _url
+    return _url(provider_id, page)
+
+
+def fix_for(provider_id: str, state: str) -> Optional[FixWire]:
+    """The fix button of a state: sign in, top up, replace the key, connect or start the server."""
+    fix = _FIX_OF.get(state)
+    if fix is None:
+        return None
+    action, page = fix
+    return {"action": action, "url": console_url(provider_id, page) if page else None}  # type: ignore[typeddict-item]
+
+
+def local_health(provider_id: str, row: Optional[dict] = None, *, max_age: float = 0.0) -> HealthWire:
+    """A local server is ready when it accepts a connection, else not running
+    (a loopback probe without a key; ``max_age`` reuses a recent one)."""
+    from openprogram.models.listing.detected import local_server_running
+    base = (row or {}).get("base_url") or None
+    running = local_server_running(provider_id, base, max_age=max_age)
+    if running is None:
+        return {"state": "unknown", "until": None, "detail": None}
+    return {"state": "ready" if running else "not_running", "until": None, "detail": None}
 
 
 __all__ = [
@@ -385,6 +507,8 @@ __all__ = [
     "connected_providers",
     "health_of",
     "keys_of",
+    "plan_of",
     "quota_of",
+    "refresh_providers",
     "spend_of",
 ]

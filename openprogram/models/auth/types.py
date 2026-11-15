@@ -197,12 +197,13 @@ class Credential:
             raise AuthCorruptCredentialError(
                 f"credential schema v={d.get('v')!r} not understood"
             )
+        status, last_error = _reread_billing_stop(d.get("status", "valid"), d.get("last_error"))
         return cls(
             provider_id=d["provider_id"],
             account_id=d["account_id"],
             kind=d["kind"],
             payload=_payload_from_dict(d["kind"], d["payload"]),
-            status=d.get("status", "valid"),
+            status=status,
             created_at_ms=d.get("created_at_ms", 0),
             updated_at_ms=d.get("updated_at_ms", 0),
             source=d.get("source", "manual"),
@@ -210,10 +211,31 @@ class Credential:
             cooldown_until_ms=d.get("cooldown_until_ms", 0),
             last_used_at_ms=d.get("last_used_at_ms", 0),
             use_count=d.get("use_count", 0),
-            last_error=d.get("last_error"),
+            last_error=last_error,
             read_only=d.get("read_only", False),
             credential_id=d.get("credential_id", _new_id("cred")),
         )
+
+
+def _reread_billing_stop(status: str, last_error: Optional[str]) -> tuple[str, Optional[str]]:
+    """A stop written as a rejected key whose stored error says the balance is
+    spent is read as ``billing_blocked``.
+
+    Before the error body decided ahead of the status code, a 401 carrying
+    "Insufficient balance" (OpenCode Zen's ``CreditsError``) was filed as
+    ``needs_reauth``; reading it again here shows such a key as out of
+    credit without a new failing call."""
+    if status not in ("needs_reauth", "revoked") or not last_error:
+        return status, last_error
+    try:
+        from openprogram.models.providers.utils.errors import is_billing_exhausted
+    except Exception:
+        return status, last_error
+    if not is_billing_exhausted(last_error):
+        return status, last_error
+    prefix = f"{status}: "
+    detail = last_error[len(prefix):] if last_error.startswith(prefix) else last_error
+    return "billing_blocked", f"billing_blocked: {detail}"
 
 
 def _payload_to_dict(p: CredentialData) -> dict:

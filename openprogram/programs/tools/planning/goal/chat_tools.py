@@ -19,19 +19,15 @@ def create_goal(objective: str, token_budget: int | None = None) -> dict:
 def _create_goal_impl(objective: str, token_budget: int | None = None) -> dict:
     from . import chat
     from openprogram.runtime.agent.turn_request import get_turn_request
-    from openprogram.runtime.permissions.identity import automatic_goal_origin, in_handoff_chain
+    from openprogram.runtime.permissions.identity import automatic_goal_origin
     session_id = _session()
     request = get_turn_request()
     origin = automatic_goal_origin(request)
     if not origin:
         return chat.create(session_id, objective, token_budget)
     from openprogram.runtime.conversation.always_on.runtime import automatic_goal_limit
-    from openprogram.runtime.conversation.always_on import handoff
-    # The hop count stays; nobody waits on the Goal's later turns, so who waited on this one does not.
-    chain = handoff.chain_of(request.user_msg_id, resumes=getattr(request, "resumes_message_id", None)) \
-        if in_handoff_chain(request) else None
     return chat.create(session_id, objective, token_budget, origin=origin,
-                       max_cost_usd=automatic_goal_limit(session_id), handoff_chain=chain)
+                       max_cost_usd=automatic_goal_limit(session_id))
 
 
 @function(name="get_goal", toolset=["core"],

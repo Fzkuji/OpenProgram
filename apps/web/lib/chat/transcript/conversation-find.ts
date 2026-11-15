@@ -124,6 +124,28 @@ export function messageRow(container: ParentNode, messageId: string): HTMLElemen
   return container.querySelector<HTMLElement>(`[data-msg-id="${esc}"]`);
 }
 
+const openers = new Map<string, Set<() => void>>();
+
+/** A row that folds its text away registers how to open it, so a match
+ *  inside can be shown. Returns the function that takes it back. */
+export function onFindReveal(messageId: string, open: () => void): () => void {
+  const set = openers.get(messageId) ?? new Set();
+  openers.set(messageId, set);
+  set.add(open);
+  return () => {
+    set.delete(open);
+    if (!set.size && openers.get(messageId) === set) openers.delete(messageId);
+  };
+}
+
+/** Opens the folded rows of a message; false when none is folded. */
+export function revealForFind(messageId: string): boolean {
+  const set = openers.get(messageId);
+  if (!set?.size) return false;
+  for (const open of [...set]) open();
+  return true;
+}
+
 /** Cmd/Ctrl+F belongs to the chat only while the chat is showing and focus
  *  is not in something with its own find (web page, terminal, editor). */
 export function chatOwnsFind(target: EventTarget | null, chatArea: Element | null): boolean {

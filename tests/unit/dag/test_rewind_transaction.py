@@ -460,7 +460,10 @@ def test_idempotent_replay_is_bound_to_original_target(store, tmp_path):
     assert first["status"] == "committed"
     assert replay["status"] == "committed"
     assert replay["replayed"] is True
-    assert replay["head_changed"] is False
+    # A repeat reports the outcome the first answer reported.
+    assert first["head_changed"] is True and first["new_head_id"] == "a1"
+    assert {key: replay[key] for key in ("head_changed", "new_head_id", "turns_reverted", "user_text")} == {
+        key: first[key] for key in ("head_changed", "new_head_id", "turns_reverted", "user_text")}
     assert conflict["status"] == "idempotency_conflict"
     assert store.get_session("s-idempotent")["head_id"] == "a1"
     assert target.read_text(encoding="utf-8") == "v1\n"

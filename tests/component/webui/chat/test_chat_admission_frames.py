@@ -510,3 +510,117 @@ def test_a_refused_admission_ends_the_turn_with_its_reason(monkeypatch, chat_env
     assert (data["session_id"], data["client_request_id"]) == (session_id, "req-9")
     assert data["msg_id"]
     _clear_slot(session_id)
+
+
+def _local_request(text: str):
+    from openprogram.interfaces.server.ws_actions.chat.turn_request import _ChatRequest
+
+    return _ChatRequest(
+        cmd={}, text=text, session_id="s-goal", agent_id=None, thinking_effort=None,
+        tools_flag=None, web_search_flag=None, permission_mode=None, sandbox_flag=None,
+        surface_ref=None, service_tier=None, response_format=None, attachments=None,
+    )
+
+
+def _run_goal_command(monkeypatch, out: dict):
+    from openprogram.interfaces.server.ws_actions.chat import turn_local_command
+
+    resolved = types.SimpleNamespace(command_name="goal", raw_args="ship it",
+                                     local_handler=lambda _ctx, _args: out)
+    monkeypatch.setattr(turn_local_command, "_resolve_local_command", lambda _t, _s: resolved)
+    ws, req = _FakeWS(), _local_request("/goal ship it")
+    goes_on = asyncio.run(turn_local_command._run_local_command(ws, req))
+    return ws, req, goes_on
+
+
+def test_a_goal_is_set_by_its_labelled_message_with_no_reply_line(monkeypatch):
+    from openprogram.interfaces.server.ws_actions.chat.turn import _build_user_msg
+
+    ws, req, goes_on = _run_goal_command(monkeypatch, {
+        "text": "Goal saved; working in this conversation.", "send_text": "ship it", "starts_goal": True})
+    assert goes_on and ws.sent == []
+    assert (req.text, req.starts_goal) == ("ship it", True)
+    user_msg = _build_user_msg(req, "m1", {"action": None}, {})
+    assert (user_msg["content"], user_msg["starts_goal"]) == ("ship it", True)
+
+
+def test_a_goal_that_was_not_set_still_answers_in_text(monkeypatch):
+    from openprogram.interfaces.server.ws_actions.chat.turn import _build_user_msg
+
+    ws, req, goes_on = _run_goal_command(monkeypatch, {
+        "text": "An unfinished Goal exists; resume or cancel it first", "send_text": None})
+    assert not goes_on
+    assert [(f["data"]["type"], f["data"]["content"]) for f in ws.sent] == [
+        ("local_command", "An unfinished Goal exists; resume or cancel it first")]
+    assert "starts_goal" not in _build_user_msg(_local_request("hi"), "m2", {"action": None}, {})
+
+
+def _draft_command(monkeypatch, out: dict, cmd: dict):
+    """``handle_chat`` for a local command sent from a draft tab: the turn
+    phases after run config are stubbed, and what reached them recorded."""
+    from openprogram.interfaces.server.ws_actions.chat import handle_chat, turn, turn_local_command
+    from openprogram.runtime.conversation.production_driver import AgentDriverError
+
+    resolved = types.SimpleNamespace(command_name="goal", raw_args="",
+                                     local_handler=lambda _ctx, _args: out)
+    monkeypatch.setattr(turn_local_command, "_resolve_local_command", lambda _t, _s: resolved)
+    seen: dict = {}
+
+    def save(_s, req, conv, msg_id):
+        seen.update(session_id=req.session_id, conv_id=conv["id"], text=req.text,
+                    permission_mode=req.permission_mode, starts_goal=req.starts_goal)
+        return types.SimpleNamespace(), "plan"
+
+    def stop_before_commit(*_a, **_k):
+        raise AgentDriverError("stub", "stopped before commit")
+
+    monkeypatch.setattr(turn, "_save_run_config", save)
+    monkeypatch.setattr(turn, "_admit_and_commit", stop_before_commit)
+    _clear_slot(cmd["session_id"])
+    ws = _FakeWS()
+    asyncio.run(handle_chat(ws, cmd))
+    _clear_slot(cmd["session_id"])
+    return ws, seen
+
+
+def test_a_goal_from_a_draft_starts_the_drafts_own_conversation(monkeypatch, chat_env):
+    """A /goal sent as a draft's first message goes on as that draft's first
+    turn: the conversation is opened and its run config saved under the
+    draft's id, with the draft's settings, exactly as a typed message."""
+    ws, seen = _draft_command(monkeypatch, {
+        "text": "Goal saved; working in this conversation.", "send_text": "ship it",
+        "starts_goal": True,
+    }, {"text": "/goal ship it", "session_id": "local_draft1", "permission_mode": "plan",
+        "client_request_id": "req-g"})
+    assert seen == {"session_id": "local_draft1", "conv_id": "local_draft1", "text": "ship it",
+                    "permission_mode": "plan", "starts_goal": True}
+    assert all(f["data"]["session_id"] == "local_draft1" for f in ws.sent)
+
+
+def test_a_reply_only_command_from_a_draft_answers_in_the_draft(monkeypatch, chat_env):
+    ws, seen = _draft_command(monkeypatch, {"text": "No goal set.", "send_text": None},
+                              {"text": "/goal status", "session_id": "local_draft2",
+                               "client_request_id": "req-s"})
+    assert seen == {}, "no turn and no run config: nothing to create"
+    assert [(f["data"]["type"], f["data"]["session_id"], f["data"]["content"],
+             f["data"]["client_request_id"]) for f in ws.sent] == [
+        ("local_command", "local_draft2", "No goal set.", "req-s")]
+
+
+def test_the_ack_of_a_goal_message_says_it_set_the_goal(monkeypatch):
+    from openprogram.interfaces.server.ws_actions.chat import turn
+
+    async def no_read(_ws, _sid):
+        return {}, lambda: None
+
+    monkeypatch.setattr(turn, "_join_and_read", no_read)
+    adm = types.SimpleNamespace(
+        session_id="local_d", msg_id="m1", execution_id="e1", side_branch_id=None,
+        admission=types.SimpleNamespace(status_version=1), conv={})
+    for starts, expected in ((True, True), (False, None)):
+        req = _local_request("ship it")
+        req.starts_goal = starts
+        req.turn_permission_mode = None
+        ws = _FakeWS()
+        asyncio.run(turn._send_chat_ack(ws, req, adm, "ask"))
+        assert ws.sent[0]["data"].get("starts_goal") is expected

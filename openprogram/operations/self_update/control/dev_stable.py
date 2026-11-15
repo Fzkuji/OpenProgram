@@ -13,8 +13,9 @@ Phases, each resumable from the journal after a crash:
 - ``activating``: promote exactly that commit to ``stable``.
 - ``verifying``: observe the stable instance on the new commit.
 
-``stable`` only ever moves forward, so a failed promotion is repaired with a
-revert commit on ``dev`` that is deployed and promoted like any other.
+``stable`` only ever moves forward. A failed promotion leaves it, and the
+App, where they were; the commit is then reverted on ``dev`` with a commit
+that is deployed and promoted like any other, so ``dev`` stays promotable.
 """
 from __future__ import annotations
 
@@ -467,9 +468,10 @@ class _Controller:
                     self._move(UpdatePhase.SUCCEEDED, landed_sha=sha, committed_system_gate=gate)
                     return
                 problem = "the stable instance is not serving the promoted commit"
-            # Another session's refresh moves ``stable`` first, installs for
-            # minutes, and restarts the worker last, so neither the old worker
-            # answering nor no worker answering says this commit is bad yet.
+            # Another session's promotion moved ``stable`` once its worker
+            # was healthy, but that worker may still be settling, so neither
+            # the old worker answering nor no worker answering says this
+            # commit is bad yet.
             limit = PROMOTED_REFRESH_SECONDS if self._promoted_past(sha) else HEALTH_WAIT_SECONDS
             if time.monotonic() - started >= limit:
                 break

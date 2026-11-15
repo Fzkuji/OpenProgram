@@ -1,0 +1,76 @@
+<title>Importing other agents' sessions</title>
+<meta name="description" content="How Claude Code and Codex transcripts become native OpenProgram sessions, idempotently and without credentials.">
+<meta name="covers" content="openprogram/state/store/session/external_import/">
+<h1>Importing other agents' sessions</h1>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 200" role="img" aria-label="A listing summarises each transcript cheaply. An import parses the chosen ones into a neutral shape, removes credentials, compares with the ledger, and writes native nodes with ids derived from the source, then records the result in the ledger.">
+  <defs><marker id="ei-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="30">Transcript</text>
+  <text class="t-soft" x="0" y="52">.jsonl, read only</text>
+  <line class="ln" x1="120" y1="24" x2="182" y2="24" marker-end="url(#ei-a)"/>
+  <text class="t-big" x="192" y="30">Parse</text>
+  <text class="t-soft" x="192" y="52">ExternalSession</text>
+  <line class="ln" x1="306" y1="24" x2="368" y2="24" marker-end="url(#ei-a)"/>
+  <text class="t-big" x="378" y="30">Sanitize</text>
+  <text class="t-soft" x="378" y="52">host context, secrets</text>
+  <line class="ln" x1="524" y1="24" x2="560" y2="24" marker-end="url(#ei-a)"/>
+  <text class="t-big" x="570" y="30">Compare</text>
+  <text class="t-soft" x="570" y="52">with ledger</text>
+  <path class="ln" d="M610 64V100H60V128" marker-end="url(#ei-a)"/>
+  <rect class="tile" x="0" y="134" width="680" height="62" rx="8"/>
+  <text class="t-big" x="16" y="160">Write nodes</text>
+  <text class="t-soft" x="16" y="182">ids from agent + source id + turn</text>
+  <line class="ln" x1="290" y1="160" x2="360" y2="160" marker-end="url(#ei-a)"/>
+  <text class="t-big" x="372" y="160">Ledger entry</text>
+  <text class="t-soft" x="372" y="182">session, turns, last fingerprint, head</text>
+</svg>
+</figure>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Module</th><th scope="col">Job</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">claude_code.py</code>, <code translate="no">codex.py</code></th><td>Find, summarise and parse each format</td></tr>
+<tr><th scope="row"><code translate="no">model.py</code></th><td>Neutral shape: turns of user text and ordered reply blocks</td></tr>
+<tr><th scope="row"><code translate="no">sanitize.py</code></th><td>Drop host scaffolding, remove credentials</td></tr>
+<tr><th scope="row"><code translate="no">writer.py</code></th><td>Write turns as the DAG a native turn produces</td></tr>
+<tr><th scope="row"><code translate="no">ledger.py</code></th><td>What was imported where</td></tr>
+<tr><th scope="row"><code translate="no">service.py</code></th><td><code translate="no">list_candidates</code>, <code translate="no">plan_imports</code>, <code translate="no">import_transcripts</code></td></tr>
+</tbody>
+</table>
+<p class="note">Entry points: <code translate="no">openprogram sessions import</code>, <code translate="no">/api/sessions/import</code>, the Import settings tab. The CLI sends batches to a running Worker, else writes the store directly. Product page: <a href="../../../session-import.html">Session import</a>.</p>
+
+<h2 id="formats">Reading the formats</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Claude Code</th><th scope="col">Codex</th></tr></thead>
+<tbody>
+<tr><th scope="row">Files</th><td><code translate="no">projects/&lt;slug&gt;/&lt;id&gt;.jsonl</code></td><td><code translate="no">sessions/YYYY/MM/DD/rollout-*.jsonl</code></td></tr>
+<tr><th scope="row">Source id</th><td>File name; <code translate="no">sessionId</code> is copied into forks</td><td><code translate="no">session_meta.id</code></td></tr>
+<tr><th scope="row">Conversation order</th><td>Chain walked back from the newest record through <code translate="no">parentUuid</code> / <code translate="no">logicalParentUuid</code></td><td>File order; compaction and forks do not rewrite it</td></tr>
+<tr><th scope="row">Title</th><td><code translate="no">custom-title</code>, then <code translate="no">ai-title</code>, then <code translate="no">summary</code></td><td><code translate="no">session_index.jsonl</code>, latest rename</td></tr>
+<tr><th scope="row">Model, cwd</th><td><code translate="no">message.model</code>, record <code translate="no">cwd</code></td><td><code translate="no">turn_context.model</code>, <code translate="no">session_meta.cwd</code></td></tr>
+<tr><th scope="row">Skipped</th><td><code translate="no">isMeta</code>, <code translate="no">isSidechain</code>, compact summaries, API error records</td><td>Sub-agent rollouts, injected context blocks, encrypted reasoning</td></tr>
+</tbody>
+</table>
+<p>A line that is not a JSON object, or a record still being written, is skipped; the rest of the file still imports.</p>
+
+<h2 id="decisions">Decisions</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Choice</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">Read the conversation the way its own agent resumes it</th><td>Claude Code's resume follows the parent chain from the newest record; Codex replays the rollout in order. The imported conversation is then the one the user last saw there, not abandoned branches.</td></tr>
+<tr><th scope="row">Write native nodes, not an attachment</th><td>Search, export, rewind and continuing the conversation work unchanged. Tool calls whose tools do not exist here are replayed to the model as text.</td></tr>
+<tr><th scope="row">Ids derived from agent, source id and turn index</th><td>Writing a turn twice is a no-op, so a grown source appends in place. Same principle as OpenCode's import, which keys an imported session by its original id.</td></tr>
+<tr><th scope="row">Ledger with last fingerprint and head</th><td>Unchanged sources are skipped without a parse. A rewound source, or a session continued here, becomes a new session, so nothing already here is rewritten.</td></tr>
+<tr><th scope="row">Recency from the last message, not file size or mtime</th><td>A running agent keeps appending bookkeeping records to a transcript whose conversation has not moved.</td></tr>
+<tr><th scope="row">Credentials removed with the request-redaction shapes</th><td>An imported turn is replayed to whichever model continues it. The high-precision shapes from <code translate="no">models/providers/utils/redaction.py</code> catch keys and tokens without rewriting prose that only mentions a key or a token; export's broader rules would. A title is cleaned before it is cut to length, since a key cut short no longer matches its shape; the listing's scan cache keeps its first message and titles cleaned too. Sign-in files are never opened.</td></tr>
+<tr><th scope="row">Placed in the folder's project</th><td>Same as opening that folder here; the original cwd stays in <code translate="no">imported_from.cwd</code>.</td></tr>
+<tr><th scope="row"><code translate="no">--dry-run</code> beside <code translate="no">--list</code></th><td><code translate="no">--list</code> shows every transcript and its state; <code translate="no">--dry-run</code> shows only what the same command would create or append to. It runs <code translate="no">plan_imports</code>, the same decision the import makes, so a rewound source shows as a new conversation, not an append.</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">Implementation status</h2>
+<ul>
+<li>Only the default homes (or <code translate="no">$CLAUDE_CONFIG_DIR</code>, <code translate="no">$CODEX_HOME</code>) are scanned; a copied folder from another machine cannot be named on the command line.</li>
+<li>A session imported before credentials were removed keeps what it holds until its source grows; then only the last imported turn is rewritten clean. A turn's fingerprint is taken from its text as read, so redaction never turns such a source into a duplicate session.</li>
+</ul>

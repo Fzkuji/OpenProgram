@@ -20,7 +20,9 @@
 <thead><tr><th scope="col">入口</th><th scope="col">行为</th><th scope="col">边界</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">_websocket_handler</code>（<code translate="no">server_runtime/websocket_dispatch.py</code>）</th><td>隔离 JSON 解析和处理器异常；处理器失败返回 <code translate="no">operation_error</code> 并继续接收</td><td><code translate="no">WebSocketDisconnect</code> 和发送错误帧失败会结束连接；写连接不无限重试</td></tr>
-<tr><th scope="row"><code translate="no">_handle_ws_command</code></th><td>未知动作返回 <code translate="no">unknown_action</code>；已注册处理器的异常传到循环</td><td>传输响应只含受限的动作、会话、请求元数据和注册的错误类别</td></tr>
+<tr><th scope="row"><code translate="no">_handle_ws_command</code></th><td>同一连接上的动作按顺序执行，慢的会拖住其后所有帧。耗时 2 秒以上的动作按名称和会话记日志，并注明其后的帧是否等过。未知动作返回 <code translate="no">unknown_action</code>；已注册处理器的异常传到循环</td><td>传输响应只含受限的动作、会话、请求元数据和注册的错误类别</td></tr>
+<tr><th scope="row"><code translate="no">CONCURRENT_ACTIONS</code></th><td>客户端按自己的请求 id 认回复的只读动作（<code translate="no">load_session</code>、<code translate="no">project_folder_size</code>、<code translate="no">project_file_info</code>、<code translate="no">project_file_tree</code>、<code translate="no">project_file_search</code>）各自作为任务在有序通道旁执行：排在它之前的帧和同一动作的上一帧之后。慢的文件夹遍历、搜索或长对话的首次读取不会拖住 <code translate="no">chat</code> 或 <code translate="no">stop</code>。<code translate="no">list_projects</code> 仍按顺序执行：网页按类型认 <code translate="no">projects_list</code>，在后发的 <code translate="no">create_project</code> 之后才回的列表会被当成最新列表</td><td>同一动作的回复保持顺序；每个连接同时最多 32 个旁路读取，再来的在接收循环里等；连接结束时取消这些任务</td></tr>
+<tr><th scope="row"><code translate="no">load_session</code> 与回合并行</th><td>网页按请求 id 认 <code translate="no">session_loaded</code> 和历史分页；这个对话的行帧停放到读取的帧入队之后；运行帧带 <code translate="no">run_seq</code>。帧发出后先发运行中的任务和未答的问题，再统计上下文</td><td>首次读取期间发的 chat 或 stop 立即开始</td></tr>
 <tr><th scope="row"><code translate="no">_web_follow_up</code>（<code translate="no">server_runtime/session_persistence.py</code>）</th><td>等待会话队列；最后观察者断开或取消时返回 <code translate="no">None</code></td><td>进程内状态；跨 worker 重启不持久恢复</td></tr>
 <tr><th scope="row">停止、删除</th><td>取消对象和哨兵都不算回答；持有者的 <code translate="no">finally</code> 清理队列</td><td>分发器绝不按会话清理。获取资源的动作用自己的持有者 token 回滚，如 <code translate="no">_release_run_reservation(session_id, msg_id)</code></td></tr>
 </tbody>
@@ -50,7 +52,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">时刻</th><th scope="col">规则</th></tr></thead>
 <tbody>
-<tr><th scope="row">连接写入成功后</th><td>只清除捕获的草稿，并在所属对话里显示本地待确认用户消息。预留保留文字和附件直到确认。这不代表执行已开始。</td></tr>
+<tr><th scope="row">连接写入成功后</th><td>只清除捕获的草稿，并在所属对话里显示本地待确认用户消息。新对话在 <code translate="no">chat_ack</code> 之前没有对话 id，消息列表这段时间按它的临时 <code translate="no">local_*</code> 键显示，确认来得再晚，消息和等待中的回复也都在。预留保留文字和附件直到确认。这不代表执行已开始。</td></tr>
 <tr><th scope="row">服务端确认</th><td>对齐本地身份，不重复</td></tr>
 <tr><th scope="row">拒绝</th><td>保留可恢复消息，不覆盖更新的草稿</td></tr>
 <tr><th scope="row">无关工作</th><td>资源投影和会话或侧栏工作不能延迟接受，也不能阻塞事件循环</td></tr>

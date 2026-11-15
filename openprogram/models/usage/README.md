@@ -23,6 +23,7 @@ See docs/design/usage-metering.md.
 - **`ledger.py`** — UsageLedger
 - **`prefix_fingerprint.py`** — Where a request's cached prefix broke, and why
 - **`provider_status.py`** — One status per connected provider: health, quota, 30-day spend, keys
+- **`provider_views.py`** — Provider state where the chat and the detail page need it
 - **`quota.py`** — Provider quota: how much of a provider's limits is left, per key
 - **`recorder.py`** — UsageRecorder
 - **`request.py`** — Durable Goal request identity and replayable terminal usage receipts

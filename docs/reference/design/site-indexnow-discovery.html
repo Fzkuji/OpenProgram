@@ -7,7 +7,7 @@
 <figure>
 <ol class="flow">
 <li><strong>Build</strong><small>trusted docs builder writes <code translate="no">_publish/sitemap.xml</code></small></li>
-<li><strong>Validate</strong><small>exact sitemap 0.9 <code translate="no">loc</code> elements; HTTPS on exactly <code translate="no">openprogram.io</code>; empty or foreign-host input fails before any network call</small></li>
+<li><strong>Validate</strong><small>exact sitemap 0.9 <code translate="no">loc</code> elements; HTTPS under exactly the configured site address; empty or foreign-host input fails before any network call</small></li>
 <li><strong>Batch</strong><small>deduplicated, 10,000 URLs per request, written to an ephemeral runner directory; stale batches removed</small></li>
 <li class="flow-end"><strong>Submit</strong><small>standard-library client, bounded timeout and retries; a failed batch does not skip later ones, and the step fails only after all are attempted</small></li>
 </ol>

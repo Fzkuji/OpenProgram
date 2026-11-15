@@ -20,8 +20,10 @@ from openprogram.operations.worker.ports import (
 
 _log = logging.getLogger(__name__)
 
-# The default single-port Web server address.
-_FRONTEND_PORT = 18100
+# ``web auth-url`` exits with this when the port it was asked about is held
+# by something that is not this profile's worker (another program, or another
+# account's worker). The App reads it to say so instead of waiting.
+EXIT_PORT_HELD = 3
 
 
 def _browser_url(port: int) -> str:
@@ -78,11 +80,32 @@ def _active_owner_auth_url(base_url: str, port: int) -> str:
 
 
 def _cmd_web_auth_url(base_url: str) -> int:
-    """Print a fragment-bootstrap URL for the active Web server."""
-    from openprogram.operations.worker.lifecycle import read_worker_port
+    """Print a fragment-bootstrap URL for the active Web server.
+
+    Exits with :data:`EXIT_PORT_HELD` and names the holder on stderr when
+    this profile has no worker but something listens on ``base_url``'s port.
+    """
+    from urllib.parse import urlsplit
+
+    from openprogram.operations.worker.lifecycle import current_worker_pid, read_worker_port
     from openprogram.host.security.backend_endpoint import OwnerAuthError
 
     port = read_worker_port()
+    # This profile's worker between binding its port and naming it in
+    # worker.port is starting, not another holder of the port.
+    if port is None and current_worker_pid() is None:
+        try:
+            asked = urlsplit(base_url).port
+        except ValueError:
+            asked = None
+        if asked is not None and _port_in_use(asked):
+            owner = port_owner_hint(asked).strip().removeprefix("Held by — ")
+            print(
+                f"port {asked} is in use by "
+                f"{owner or 'another program or account'}",
+                file=sys.stderr,
+            )
+            return EXIT_PORT_HELD
     if port is None:
         print("error: no active OpenProgram Web server", file=sys.stderr)
         return 1
@@ -123,14 +146,23 @@ def _cmd_web(web_port: int | None, open_browser: bool | None) -> None:
     if open_browser is None:
         open_browser = True
 
-    from openprogram.operations.worker.lifecycle import resolve_worker_port
-    port = web_port = int(web_port) if web_port else resolve_worker_port()
+    from openprogram.operations.worker.lifecycle import (
+        explicit_web_port,
+        read_worker_port,
+        resolve_worker_port,
+    )
 
-    # Backend port already held? Binding again raises a bare errno-48
-    # traceback, so detect it up front — but distinguish OUR backend
-    # already running from an unrelated program squatting the port. A
-    # bare ``connect`` can't tell them apart and would mislabel a
-    # squatter as "already running", then open a browser at it.
+    if web_port:
+        # An explicit --web-port is this run's setting; the worker resolves
+        # its port from this env (lifecycle.claim_worker_port).
+        os.environ["OPENPROGRAM_WEB_PORT"] = str(int(web_port))
+    running = read_worker_port()
+    port = running if running is not None else resolve_worker_port()
+
+    # A listener on the port is ours only if this profile's worker proves
+    # it; anything else (another program, another account's worker) is never
+    # opened. A port the profile chose for itself moves when the worker
+    # starts; a port the user set is refused with the holder named.
     if _port_in_use(port):
         ours = _backend_is_ours(port)
         if ours is True:
@@ -148,17 +180,14 @@ def _cmd_web(web_port: int | None, open_browser: bool | None) -> None:
                 except OwnerAuthError as exc:
                     print(f"  Browser not opened: {exc}")
             return
-        # Held by something that is NOT an openprogram backend. The port is
-        # pinned on purpose (a stable UI URL), so refuse with an actionable
-        # message rather than silently drifting to another port or opening
-        # a browser at a foreign service.
-        print(f"Port {port} is in use by another process (not openprogram).")
-        hint = port_owner_hint(port)
-        if hint:
-            print(hint)
-        print(f"  Free it (e.g. `lsof -ti:{port} | xargs kill`), or pick a")
-        print("  different backend port:  openprogram setup ui")
-        sys.exit(1)
+        explicit = explicit_web_port()
+        if explicit is not None:
+            print(f"Port {port} (set by {explicit[1]}) is in use by another program or account.")
+            hint = port_owner_hint(port)
+            if hint:
+                print(hint)
+            print("  Quit that program, or set another port:  openprogram setup ui")
+            sys.exit(1)
 
     # Start the worker as a DETACHED background service, then free the
     # terminal — same machinery the TUI path already uses
@@ -170,15 +199,6 @@ def _cmd_web(web_port: int | None, open_browser: bool | None) -> None:
     # with ``openprogram stop``.
     from openprogram.operations.worker import spawn_detached
 
-    # Honour an explicit --port / --web-port on the detached path: the
-    # worker resolves its port from this env (lifecycle.resolve_worker_port),
-    # not from function args.
-    # Publish the already-resolved effective port unconditionally.  In
-    # particular, an explicit CLI flag must override a stale inherited env
-    # value; otherwise the parent waits on one port while the worker binds
-    # another.
-    os.environ["OPENPROGRAM_WEB_PORT"] = str(web_port)
-
     rc = spawn_detached()
     if rc != 0:
         print("openprogram: couldn't start the background service "
@@ -189,16 +209,27 @@ def _cmd_web(web_port: int | None, open_browser: bool | None) -> None:
     # link can only be minted once it answers, and a page opened without
     # it loads nothing. A first start can take well over a minute on
     # Windows (Defender scans the runtime), so wait as long as the TUI does.
+    # The worker settles its port as it starts (it may move off a held one),
+    # so wait for the port it names, not the one guessed here.
     print("Starting the background service…")
     listening = False
     try:
+        import time
+
         from openprogram.host._platform.environment import tui_worker_ready_timeout_seconds
         from openprogram.interfaces.cli.ink import _wait_until_listening
-        listening = _wait_until_listening(web_port, timeout=tui_worker_ready_timeout_seconds())
+        deadline = time.monotonic() + tui_worker_ready_timeout_seconds()
+        named = read_worker_port()
+        while named is None and time.monotonic() < deadline:
+            time.sleep(0.2)
+            named = read_worker_port()
+        if named is not None:
+            web_port = named
+            listening = _wait_until_listening(named, timeout=max(0.0, deadline - time.monotonic()))
     except Exception:
-        _log.debug("wait for web port %s failed", web_port, exc_info=True)
+        _log.debug("wait for the worker's port failed", exc_info=True)
     if not listening:
-        print(f"The background service is still starting on port {web_port}.")
+        print("The background service is still starting.")
         print("Run `openprogram web` again in a moment to open the page signed in.")
         print("Stop it with:  openprogram stop")
         return

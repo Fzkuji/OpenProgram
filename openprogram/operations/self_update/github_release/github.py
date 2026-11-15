@@ -11,7 +11,8 @@ Where the latest release is found, in order:
 Update source
 -------------
 
-``https://openprogram.io/update-source.json`` is optional, and exists so that
+``update-source.json`` on the project website (``UPDATE_SOURCE_URL`` in
+``openprogram.operations.project_site``) is optional, and exists so that
 versions already installed can still find releases if the repository moves::
 
     {"schema": 1, "repository": "Owner/Name", "hosts": ["github.com", "..."]}
@@ -43,6 +44,7 @@ from urllib.parse import urljoin, urlparse
 import urllib.request
 
 from openprogram.host.security import safe_http
+from openprogram.operations import project_site
 from openprogram.host.security.url_policy import URLPolicyError
 from openprogram.host._platform import filesystem
 
@@ -53,7 +55,7 @@ DEFAULT_REPO = "OpenProgram"
 API_ROOT = "https://api.github.com"
 WEB_ROOT = "https://github.com"
 RAW_ROOT = "https://raw.githubusercontent.com"
-UPDATE_SOURCE_URL = "https://openprogram.io/update-source.json"
+UPDATE_SOURCE_URL = project_site.UPDATE_SOURCE_URL
 UPDATE_SOURCE_SCHEMA = 1
 VIA_API = "github-api"
 VIA_REDIRECT = "github-redirect"
@@ -70,7 +72,8 @@ _RELEASE_HOSTS = {
     "github.com",
     "raw.githubusercontent.com",
     "release-assets.githubusercontent.com",
-    "openprogram.io",
+    # Serves update-source.json, which is read through the same fetcher.
+    project_site.SITE_HOST,
 }
 _URL_SCHEMES = {"https"}
 _CURL_PROTOCOLS = "=https"

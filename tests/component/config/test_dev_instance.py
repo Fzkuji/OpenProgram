@@ -32,9 +32,17 @@ def world(tmp_path, monkeypatch):
     monkeypatch.setattr(instances.Path, "home", lambda: home)
     monkeypatch.setenv("OPENPROGRAM_SOURCE_REPO", str(repo))
     monkeypatch.setattr(instances, "healthy", lambda port: True)
-    runs, backups = [], []
-    monkeypatch.setattr(instances, "_managed_worktree", lambda repo, path, rev: path)
-    monkeypatch.setattr(instances, "_run", lambda script, cwd, env=None: runs.append(script.name))
+    runs, backups, checked_out = [], [], []
+    monkeypatch.setattr(instances, "_managed_worktree",
+                        lambda repo, path, rev: checked_out.append(rev) or path)
+
+    def refresh(script, cwd, env=None):
+        # The refresh moves stable, compare-and-swap, once the new version is healthy.
+        runs.append(script.name)
+        _git(repo, "update-ref", "refs/heads/stable", checked_out[-1],
+             env["OPENPROGRAM_PROMOTE_FROM"] or "0" * 40)
+
+    monkeypatch.setattr(instances, "_run", refresh)
     import openprogram.operations.backup as backup
     monkeypatch.setattr(backup, "create_backup", lambda **kw: backups.append(kw))
     monkeypatch.setattr(supervisor, "active_work", lambda: [])
@@ -58,42 +66,70 @@ def test_promotes_the_served_commit(world):
     assert runs == ["refresh-local-app.sh"]
 
 
-def test_promotion_reuses_the_dev_build(world, monkeypatch):
+def test_promotion_hands_the_refresh_the_commit_and_the_stable_tip(world, monkeypatch):
     _, shas, serve, _, _ = world
     serve(shas[2])
     envs = []
     monkeypatch.setattr(instances, "_run", lambda script, cwd, env=None: envs.append(env))
     instances.promote()
-    assert envs == [{"OPENPROGRAM_PREBUILT_DIR": str(instances.dev_artifacts_dir())}]
+    # The dev build is reused, stable moves from the tip read here, and the
+    # refresh is waited for even from inside a conversation.
+    assert envs == [{"OPENPROGRAM_PREBUILT_DIR": str(instances.dev_artifacts_dir()),
+                     "OPENPROGRAM_PROMOTE_FROM": shas[0],
+                     "OPENPROGRAM_SESSION_ID": None}]
 
 
-def test_a_failed_refresh_runs_once_more(world, monkeypatch):
-    _, shas, serve, _, _ = world
+def test_the_first_promotion_moves_stable_from_nothing(world):
+    repo, shas, serve, runs, _ = world
+    _git(repo, "branch", "-D", "stable")
     serve(shas[2])
+    assert instances.promote() == shas[2]
+    assert _git(repo, "rev-parse", "stable") == shas[2]
+
+
+def test_a_failed_refresh_is_not_retried_and_says_what_runs(world, monkeypatch):
+    repo, shas, serve, _, _ = world
+    serve(shas[1])
+    monkeypatch.setattr(instances, "stable_revision", lambda: shas[0])
     attempts = []
 
-    def flaky(script, cwd, env=None):
-        attempts.append(script.name)
-        if len(attempts) == 1:
-            raise instances.InstanceError("refresh-local-app.sh failed (exit 1)")
-
-    monkeypatch.setattr(instances, "_run", flaky)
-    assert instances.promote(shas[2]) == shas[2]
-    assert attempts == ["refresh-local-app.sh", "refresh-local-app.sh"]
-
-
-def test_a_refresh_that_fails_twice_is_reported_apart_from_a_refusal(world, monkeypatch):
-    repo, shas, serve, _, _ = world
-    serve(shas[2])
-
     def broken(script, cwd, env=None):
+        attempts.append(script.name)
         raise instances.InstanceError("refresh-local-app.sh failed (exit 1)")
 
     monkeypatch.setattr(instances, "_run", broken)
-    with pytest.raises(instances.RefreshFailedError, match="failed twice"):
-        instances.promote(shas[2])
-    # stable has moved; the controller repairs it forward, never backward.
-    assert _git(repo, "rev-parse", "stable") == shas[2]
+    with pytest.raises(instances.RefreshFailedError) as failed:
+        instances.promote(shas[1])
+    message = str(failed.value)
+    assert attempts == ["refresh-local-app.sh"]
+    # The refresh restored the previous version, and stable never moved.
+    assert _git(repo, "rev-parse", "stable") == shas[0]
+    assert "\n" not in message and message.startswith(f"{shas[1][:10]} was not promoted")
+    assert f"now stable is {shas[0][:10]} and the App runs {shas[0][:10]}, healthy" in message
+
+
+def test_a_failure_after_stable_moved_is_a_promotion(world, monkeypatch, capsys):
+    repo, shas, serve, _, _ = world
+    serve(shas[1])
+    monkeypatch.setattr(instances, "stable_revision", lambda: shas[1])
+
+    def reopen_failed(script, cwd, env=None):
+        # The new worker was healthy and stable moved; then the App did not reopen.
+        _git(repo, "update-ref", "refs/heads/stable", shas[1], env["OPENPROGRAM_PROMOTE_FROM"])
+        raise instances.InstanceError("refresh-local-app.sh failed (exit 1)")
+
+    monkeypatch.setattr(instances, "_run", reopen_failed)
+    assert instances.promote(shas[1]) == shas[1]
+    assert f"promoted {shas[1][:10]}, but the refresh then failed" in capsys.readouterr().err
+
+
+def test_a_session_variable_is_removed_from_the_refresh(tmp_path, monkeypatch):
+    script = tmp_path / "show.sh"
+    out = tmp_path / "out"
+    script.write_text(f'printf "%s|%s" "${{OPENPROGRAM_SESSION_ID-unset}}" "$KEPT" > "{out}"\n')
+    monkeypatch.setenv("OPENPROGRAM_SESSION_ID", "s1")
+    instances._run(script, tmp_path, {"OPENPROGRAM_SESSION_ID": None, "KEPT": "yes"})
+    assert out.read_text() == "unset|yes"
 
 
 def test_refuses_a_commit_dev_does_not_serve(world):

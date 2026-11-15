@@ -40,8 +40,9 @@ class TurnResult:
     user_msg_id: str
     assistant_msg_id: str
     tool_calls: list[dict] = field(default_factory=list)
-    # Files this turn's ``send_file`` calls attached: the only files a
-    # chat channel uploads for it, whatever markers the reply text holds.
+    # Files this turn attached (its ``send_file`` calls, then the
+    # deliverables it produced): the only files a chat channel uploads
+    # for it, whatever markers the reply text holds.
     attached_files: list[str] = field(default_factory=list)
     # What the last model round said; final_text joins every round.
     last_round_text: str = ""

@@ -353,6 +353,7 @@ def reset_registry() -> None:
         _unexposed.clear()
         _unsafe_in_channel.clear()
     _allowed_tool_names.set(None)
+    _turn_resident_names.set((None, frozenset()))
 
 
 def snapshot_registry() -> dict:
@@ -1355,9 +1356,43 @@ def schema_not_sent_hint(name: str) -> str:
             "then retry.")
 
 
-def install_allowed_tool_names(names: set[str]) -> Any:
-    """Limit deferred discovery to the resolver's current allowed set."""
-    return _allowed_tool_names.set(set(names))
+#: The tools this turn sends with their schema whatever their registered
+#: tier (a deferred tool the turn made resident, ``as_resident``): the allowed
+#: set they were installed with and their names. Read only while that set is
+#: the one in force, so a scope installed any other way never inherits them.
+_turn_resident_names: contextvars.ContextVar[tuple[Any, frozenset[str]]] = contextvars.ContextVar(
+    "_turn_resident_names", default=(None, frozenset()),
+)
+
+
+def install_allowed_tool_names(names: set[str], resident: Any = ()) -> Any:
+    """Limit deferred discovery to the resolver's current allowed set.
+
+    ``resident`` names the tools of that set the turn's tools array holds
+    with their schema; a search for one answers that it is callable
+    (``callable_now``) instead of loading it a second time."""
+    allowed = set(names)
+    _turn_resident_names.set((allowed, frozenset(resident or ())))
+    return _allowed_tool_names.set(allowed)
+
+
+def install_turn_tools(tools: Any) -> Any:
+    """``install_allowed_tool_names`` for a turn's resolved tool list."""
+    tools = list(tools or ())
+    return install_allowed_tool_names(
+        {t.name for t in tools},
+        resident={t.name for t in tools if tool_tier(t) is Tier.RESIDENT},
+    )
+
+
+def callable_now(t: Any) -> bool:
+    """Whether the model can call ``t`` without a search: it is resident,
+    by its registered tier or as this turn sends it."""
+    if tool_tier(t) is Tier.RESIDENT:
+        return True
+    allowed, resident = _turn_resident_names.get()
+    return (allowed is not None and allowed is _allowed_tool_names.get()
+            and getattr(t, "name", None) in resident)
 
 
 def split_tools_for_dispatch(
@@ -1430,6 +1465,14 @@ def _tool_search_impl(select: str, *, max_results: int = _TOOL_SEARCH_MAX_RESULT
 def _tool_search_run(
     select: str, *, max_results: int = _TOOL_SEARCH_MAX_RESULTS,
 ) -> tuple[str, list[AgentTool]]:
+    """The text of a ``tool_search`` call and the tools it loaded."""
+    text, loaded, _note = _tool_search(select, max_results=max_results)
+    return text, loaded
+
+
+def _tool_search(
+    select: str, *, max_results: int = _TOOL_SEARCH_MAX_RESULTS,
+) -> tuple[str, list[AgentTool], str]:
     """Argument format mirrors Claude Code's ``ToolSearch``:
 
       ``select:name1,name2,name3``  — explicit names, comma-separated
@@ -1440,8 +1483,12 @@ def _tool_search_run(
       ``+slack send``                — require ``slack`` in the tool
                                      name, rank remaining terms.
 
-    Returns the result text and the tools the call loaded; the caller
-    records those as the result's load record (``record_loads``).
+    Returns the result text, the tools the call loaded and the note: what
+    the call has to say beyond the definitions it loaded (a requested tool
+    is already callable, a name is unknown, nothing matched). The caller
+    records the loads and the note on the result (``record_loads``,
+    ``record_note``), because a provider that sends a search's result as
+    definitions alone never sends its text.
 
     After this call the matched tools' full schemas appear in the
     provider tools array on the next provider request. Calling a deferred tool
@@ -1450,7 +1497,8 @@ def _tool_search_run(
     """
     payload = select.strip()
     if not payload:
-        return "Error: pass tool names like `select:name1,name2` or a keyword query.", []
+        text = "Error: pass tool names like `select:name1,name2` or a keyword query."
+        return text, [], text
 
     # Explicit-name path: select: prefix, or input looks like a pure
     # comma-list of identifiers ("foo, bar, baz" with no whitespace
@@ -1475,6 +1523,15 @@ def _tool_search_run(
     return _tool_search_by_keyword(payload, max_results=max_results)
 
 
+def record_note(details: Optional[dict[str, Any]], note: str) -> Optional[dict[str, Any]]:
+    """``details`` with a search's note (``shared.tool_loads.NOTE``)."""
+    if not note:
+        return details
+    from openprogram.models.providers.shared.tool_loads import NOTE
+
+    return {**(details or {}), NOTE: note}
+
+
 def _tool_schema_line(t: AgentTool) -> str:
     """Render one loaded tool as a callable definition.
 
@@ -1497,62 +1554,68 @@ _SCHEMA_PREAMBLE = (
 )
 
 
-def _already_callable_hint(query: str) -> str:
-    """Point the model at a tool it already has instead of 'no match'."""
-    q = query.strip()
-    if not q:
-        return ""
-    t = get(q)
-    if t is None or tool_tier(t) is not Tier.RESIDENT:
-        return ""
-    return (
-        f"Tool '{t.name}' is already in this turn's tool list — "
-        "call it directly instead of searching again."
-    )
+def already_callable_text(name: str) -> str:
+    """What a search for a tool the model already has answers.
+
+    Claude Code answers such a ``select:`` with the tool itself, "a harmless
+    no-op that lets the model proceed"; the sentence says the same and
+    starts with the fact, so it cannot be read as a failed search."""
+    return (f"`{name}` is already callable: it is in your tools list with its full "
+            "schema. Call it now; it never needs tool_search.")
 
 
-def _tool_search_by_name(payload: str) -> tuple[str, list[AgentTool]]:
+#: Added to a search that found nothing, so "no match" is not read as
+#: "no such tool" for a tool the model already has.
+_NO_SEARCH_NEEDED = (
+    "Only the tools named in the deferred tools list are loaded by a search; "
+    "a tool in your tools list is callable as it is."
+)
+
+
+def _in_scope(name: str) -> Optional[AgentTool]:
+    """The tool ``name`` names inside this turn's allowed set, or None.
+
+    A Claude-style ToolSearch request may capitalize built-in names.
+    Resolve only inside this turn's allowed set; never broaden scope."""
+    allowed = _allowed_tool_names.get()
+    if (allowed is not None and name not in allowed and get(name) is None
+            and name.lower() in allowed):
+        name = name.lower()
+    return get(name) if allowed is None or name in allowed else None
+
+
+def _tool_search_by_name(payload: str) -> tuple[str, list[AgentTool], str]:
     requested = [n.strip() for n in payload.split(",") if n.strip()]
     if not requested:
-        return "Error: pass tool names like `select:name1,name2`.", []
+        text = "Error: pass tool names like `select:name1,name2`."
+        return text, [], text
 
     loaded: list[AgentTool] = []
     missing: list[str] = []
-    lines: list[str] = []
+    notes: list[str] = []
     for name in requested:
-        allowed = _allowed_tool_names.get()
-        # A Claude-style ToolSearch request may capitalize built-in names.
-        # Resolve only inside this turn's allowed set; never broaden scope.
-        if (allowed is not None and name not in allowed and get(name) is None
-                and name.lower() in allowed):
-            name = name.lower()
-        t = get(name) if allowed is None or name in allowed else None
+        t = _in_scope(name)
         if t is None:
             missing.append(name)
-            continue
-        if tool_tier(t) is Tier.RESIDENT:
-            lines.append(
-                f"Tool '{name}' is already in this turn's tool list — "
-                "call it directly instead of searching again."
-            )
-            continue
-        # A tool the request already loaded is loaded again: its definition
-        # comes back and is recorded (Claude Code returns the reference).
-        loaded.append(t)
+        elif callable_now(t):
+            notes.append(already_callable_text(t.name))
+        elif t not in loaded:
+            # A tool the request already loaded is loaded again: its
+            # definition comes back and is recorded (Claude Code returns
+            # the reference).
+            loaded.append(t)
 
-    if loaded:
-        lines.append("<functions>")
-        lines.extend(f"<function>{_tool_schema_line(t)}</function>" for t in loaded)
-        lines.append("</functions>")
-
-    head = (
-        f"Loaded {len(loaded)} deferred tool"
-        f"{'s' if len(loaded) != 1 else ''}. {_SCHEMA_PREAMBLE}"
-        if loaded else "Loaded 0 tools."
-    )
     if missing:
-        lines.append(f"\n[warning] unknown tool name(s): {', '.join(missing)}")
-    return head + "\n" + "\n".join(lines), loaded
+        notes.append(f"No tool named {', '.join(missing)} is offered in this conversation. "
+                     + _NO_SEARCH_NEEDED)
+    parts = list(notes)
+    if loaded:
+        parts.append(f"Loaded {len(loaded)} deferred tool"
+                     f"{'s' if len(loaded) != 1 else ''}. {_SCHEMA_PREAMBLE}")
+        parts.append("<functions>")
+        parts.extend(f"<function>{_tool_schema_line(t)}</function>" for t in loaded)
+        parts.append("</functions>")
+    return "\n".join(parts), loaded, "\n".join(notes)
 
 
 def _namespace_of(t: Any) -> str:
@@ -1560,7 +1623,7 @@ def _namespace_of(t: Any) -> str:
     return str(getattr(t, "_mcp_server", None) or application_of(tool_owner(t)) or "")
 
 
-def _tool_search_by_keyword(query: str, *, max_results: int) -> tuple[str, list[AgentTool]]:
+def _tool_search_by_keyword(query: str, *, max_results: int) -> tuple[str, list[AgentTool], str]:
     """Rank the deferred tools in scope against ``query`` and load the top
     hits (``tool_rank``: Pi's BM25 over name, description, search hint,
     schema and namespace).
@@ -1568,7 +1631,10 @@ def _tool_search_by_keyword(query: str, *, max_results: int) -> tuple[str, list[
     A ``+term`` is a hard filter on the tool name, applied first; the other
     terms rank what is left. A query of ``+term`` alone loads every tool
     whose name has it, in name order. A tool the request already loaded is
-    ranked and loaded like the others.
+    ranked and loaded like the others. A query that is exactly the name of
+    a tool in scope is that tool alone, never a ranking (Claude Code's
+    exact-name fast path): a deferred one is loaded, one the model already
+    has is answered as callable.
     """
     from openprogram.programs._host.tool_rank import document, rank
 
@@ -1576,16 +1642,18 @@ def _tool_search_by_keyword(query: str, *, max_results: int) -> tuple[str, list[
     required = [t[1:].lower() for t in raw_terms if t.startswith("+") and len(t) > 1]
     weighted = [t for t in raw_terms if not t.startswith("+")]
     if not raw_terms:
-        return "Error: empty query.", []
+        return "Error: empty query.", [], "Error: empty query."
 
-    hint = _already_callable_hint(query)
-    if hint:
-        return hint, []
+    # A query that is exactly one tool's name names that tool: it is loaded
+    # alone, as ``select:`` would, and nothing is ranked.
+    if _in_scope(query.strip()) is not None:
+        return _tool_search_by_name(query.strip())
 
     allowed = _allowed_tool_names.get()
     candidates = sorted(
         (t for t in all_tools()
-         if tool_tier(t) is Tier.DEFERRED and (allowed is None or t.name in allowed)
+         if tool_tier(t) is Tier.DEFERRED and not callable_now(t)
+         and (allowed is None or t.name in allowed)
          and all(req in t.name.lower() for req in required)),
         key=lambda t: t.name,
     )
@@ -1601,7 +1669,8 @@ def _tool_search_by_keyword(query: str, *, max_results: int) -> tuple[str, list[
         matched = candidates
 
     if not matched:
-        return f"No deferred tools matched query {query!r}.", []
+        text = f"No deferred tools matched query {query!r}. {_NO_SEARCH_NEEDED}"
+        return text, [], text
 
     top = matched[:max_results]
     head = (
@@ -1613,7 +1682,7 @@ def _tool_search_by_keyword(query: str, *, max_results: int) -> tuple[str, list[
     lines = ["<functions>"]
     lines += [f"<function>{_tool_schema_line(t)}</function>" for t in top]
     lines.append("</functions>")
-    return head + "\n" + "\n".join(lines), top
+    return head + "\n" + "\n".join(lines), top, ""
 
 
 # Build + register the ToolSearch entry point manually (rather than
@@ -1631,21 +1700,24 @@ async def _tool_search_execute(call_id, args, cancel, on_update):
     except (TypeError, ValueError):
         max_results = _TOOL_SEARCH_MAX_RESULTS
     max_results = max(1, min(max_results, 20))
-    text, loaded = _tool_search_run(select, max_results=max_results)
+    text, loaded, note = _tool_search(select, max_results=max_results)
     return AgentToolResult(content=[TextContent(text=text)],
-                           details=record_loads(None, loaded) if loaded else None)
+                           details=record_note(record_loads(None, loaded) if loaded else None, note))
 
 
 tool_search = AgentTool(
     name="tool_search",
     description=(
-        "Find deferred tools within the current Agent's allowed scope and "
-        "load their parameter schemas. Their names and JSON Schemas are not "
-        "sent at turn start. This returns a small matching set with full "
-        "schemas, so you can call the tools immediately in the same turn.\n"
+        "Load the schema of a deferred tool so you can call it. Deferred "
+        "tools are the ones named in the deferred tools list: only their "
+        "names are sent at the start. A tool already in your tools list is "
+        "callable as it is and never needs a search. This returns the "
+        "matching deferred tools with full schemas, so you can call them "
+        "immediately in the same turn.\n"
         "\n"
         "Query forms:\n"
-        "  `select:name1,name2`  — load these exact tools by name.\n"
+        "  `select:name1,name2`  — load exactly these tools by name; a "
+        "tool's name alone does the same.\n"
         "  `notebook jupyter`    — keyword search; up to 5 best matches "
         "ranked by tool name, description, parameters and server.\n"
         "  `+slack send`         — `+`-prefixed terms HARD-filter on "
@@ -1657,7 +1729,8 @@ tool_search = AgentTool(
             "select": {
                 "type": "string",
                 "description": (
-                    "Either `select:name1,name2` for exact tool names, "
+                    "Either `select:name1,name2` (or one exact tool name) "
+                    "to load exactly those tools, "
                     "or a free-text keyword query (space-separated, "
                     "use `+keyword` to require a term in the tool name)."
                 ),
@@ -1700,10 +1773,12 @@ _CATALOG_TAG = "deferred-tools"
 
 #: What loading a tool promises: it stays while its source does.
 _LOAD_PROMISE = (
-    "Their schemas are not loaded at the start. Before a tool's first call, "
-    "call tool_search with its name (`select:name`) or descriptive keywords; "
-    "returned schemas can be called in the same turn, and a loaded tool stays "
-    "callable while its source is connected."
+    "Only these tools need loading: their schemas are not sent at the start. "
+    "Before the first call of one of them, call tool_search with its name "
+    "(`select:name`) or descriptive keywords; returned schemas can be called "
+    "in the same turn, and a loaded tool stays callable while its source is "
+    "connected. Every tool already in your tools list is callable as it is; "
+    "never search for one."
 )
 
 

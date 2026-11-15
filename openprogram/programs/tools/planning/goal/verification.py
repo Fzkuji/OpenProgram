@@ -226,26 +226,45 @@ def wrap_read(tool, request):
             return result
         if _stat(path) != before:
             return result
-        with chat.locked_when_free(request.session_id):
+        output_digest = digest(text)
+        # Providers may reuse call IDs across iterations. An already
+        # returned reference must never name a different observation.
+        evidence_id = "read:" + digest([get_current_execution_id(), call_id, path, fingerprint, output_digest])
+
+        def record():
             goal, candidate = require_candidate(request.session_id, vars(request),
                                                 execution_id=get_current_execution_id())
-            output_digest = digest(text)
-            # Providers may reuse call IDs across iterations. An already
-            # returned reference must never name a different observation.
-            evidence_id = "read:" + digest([get_current_execution_id(), call_id, path, fingerprint, output_digest])
             candidate["evidence"].setdefault(evidence_id, {
                 "kind": "file", "path": path, "sha256": fingerprint,
                 "output_sha256": output_digest, "call_id": call_id, "observed_at": time.time(),
             })
             chat.publish(request.session_id, goal)
+
+        chat.turn_step(request.session_id, record)
         return result.model_copy(update={"content": [*result.content, TextContent(
             text=f"\nVerification evidence ID: {evidence_id}; file SHA256: {fingerprint}")]})
 
     return tool.model_copy(update={"execute": execute})
 
 
-def finish(store, execution, goal, request) -> None:
-    """Accept only this exact verifier's persisted result and still-current evidence."""
+def evidence_digests(goal) -> dict:
+    """``{path: sha256 or None}`` of every file the candidate's evidence
+    names, as the files are now; None for one that cannot be read. Hashing
+    reads whole files, so the caller does it before taking the Goal lock."""
+    found = {}
+    for evidence in ((goal.get("verification") or {}).get("evidence") or {}).values():
+        if isinstance(evidence, dict) and evidence.get("kind") == "file" and evidence.get("path"):
+            try:
+                found[evidence["path"]] = _file_digest(evidence["path"])
+            except OSError:
+                found[evidence["path"]] = None
+    return found
+
+
+def finish(store, execution, goal, request, digests=None) -> None:
+    """Accept only this exact verifier's persisted result and still-current
+    evidence. ``digests`` is :func:`evidence_digests` taken before the lock."""
+    digests = digests or {}
     sid = execution.session_id
     candidate = goal.get("verification") or {}
     if candidate.get("status") != "pending":
@@ -289,7 +308,9 @@ def finish(store, execution, goal, request) -> None:
                 if not evidence:
                     raise ValueError("Verifier cited unrecorded evidence")
                 if evidence["kind"] == "file":
-                    if _file_digest(evidence["path"]) != evidence["sha256"]:
+                    current = (digests[evidence["path"]] if evidence["path"] in digests
+                               else _file_digest(evidence["path"]))
+                    if current != evidence["sha256"]:
                         raise ValueError("Verified artifact changed before completion")
                 elif digest(message_snapshot(rows.get(evidence["message_id"], {}))) != evidence["sha256"]:
                     raise ValueError("Verified conversation evidence changed before completion")

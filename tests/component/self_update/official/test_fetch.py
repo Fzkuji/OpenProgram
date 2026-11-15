@@ -295,7 +295,7 @@ def test_a_failed_connection_keeps_the_partial_file_and_says_what_to_do(world, s
 def test_a_full_disk_stops_before_downloading(world, server, published, monkeypatch):
     monkeypatch.setattr(fetch, "_free_bytes", lambda _path: 1024)
     before = world.ref("refs/heads/release")
-    with pytest.raises(ReleaseError, match="Not enough disk space"):
+    with pytest.raises(ReleaseError, match=r"Not enough disk space.* is free, (less than 1 MB|[\d.]+ (MB|GB)) short\."):
         update(world)
     assert_nothing_changed(world, before)
 

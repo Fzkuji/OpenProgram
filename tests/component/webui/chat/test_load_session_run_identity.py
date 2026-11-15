@@ -19,11 +19,7 @@ def test_turn_ending_during_load_is_cleared_by_name(tmp_path, monkeypatch):
     monkeypatch.setattr(server, '_is_selected_run_active', lambda _sid: True)
     monkeypatch.setattr(server, '_canonical_foreground_task', lambda _sid: None)
 
-    def turn_ends(_sid):
-        # The turn finishes while the load is still in flight.
-        with server._running_tasks_lock:
-            server._running_tasks.pop(sid, None)
-    monkeypatch.setattr(server, 'refresh_context_stats', turn_ends)
+    monkeypatch.setattr(server, 'refresh_context_stats', lambda _sid: None)
 
     class WS:
         def __init__(self):
@@ -31,6 +27,10 @@ def test_turn_ending_during_load_is_cleared_by_name(tmp_path, monkeypatch):
 
         async def send_text(self, text):
             self.frames.append(json.loads(text))
+            if self.frames[-1]['type'] == 'session_loaded':
+                # The turn finishes while the load is still in flight.
+                with server._running_tasks_lock:
+                    server._running_tasks.pop(sid, None)
 
     ws = WS()
     with server._sessions_lock:
@@ -119,3 +119,23 @@ def test_a_retry_turn_keeps_its_operation_kind_and_id(monkeypatch):
     finally:
         with server._running_tasks_lock:
             server._running_tasks.pop(sid, None)
+
+
+def test_the_running_turn_and_open_questions_are_sent_before_context_is_counted(monkeypatch):
+    """Counting a long conversation's context once held the Stop button's
+    running-turn frame behind it."""
+    from openprogram.interfaces.server import server
+    from openprogram.interfaces.server.ws_actions.session import load
+    order = []
+
+    async def running(ws, _s, session_id, run_task):
+        order.append('running_task')
+
+    async def waits(ws, _s, session_id):
+        order.append('open waits')
+
+    monkeypatch.setattr(load, '_send_running_task_state', running)
+    monkeypatch.setattr(load, '_replay_open_waits', waits)
+    monkeypatch.setattr(server, 'refresh_context_stats', lambda _sid: order.append('context'))
+    asyncio.run(load._after_session_loaded(object(), server, 'ctx-order', None, True))
+    assert order == ['running_task', 'open waits', 'context']

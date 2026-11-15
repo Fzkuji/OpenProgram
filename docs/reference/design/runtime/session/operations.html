@@ -34,7 +34,7 @@
 <tr><th scope="row">Archive, WebSocket</th><td><code translate="no">{"action": "update_session_flags", "session_id": ..., "archived": true}</code></td></tr>
 <tr><th scope="row">Archive, REST</th><td><code translate="no">POST /api/sessions/archive</code>, <code translate="no">POST /api/sessions/unarchive</code>, body <code translate="no">{"session_id": ...}</code></td></tr>
 <tr><th scope="row">Archive, CLI</th><td><code translate="no">openprogram sessions archive &lt;id&gt;</code>, <code translate="no">openprogram sessions unarchive &lt;id&gt;</code></td></tr>
-<tr><th scope="row">Delete, on disk</th><td>Delete intent in <code translate="no">.deleted/</code>; session directory and recorded other location destroyed; run tables forgotten; <code translate="no">.file-recovery/&lt;id&gt;</code> removed</td></tr>
+<tr><th scope="row">Delete, on disk</th><td>Delete intent in <code translate="no">.deleted/</code>; session directory and recorded other location destroyed; run tables forgotten; <code translate="no">.file-recovery/&lt;id&gt;</code> removed; file history released; lock files removed. See <a href="#after-delete">after a delete</a></td></tr>
 </tbody>
 </table>
 </details>
@@ -55,6 +55,38 @@
 </tbody>
 </table>
 <p class="note">Retained when uncertain: no <code translate="no">created_at</code>, archived or tombstoned, unreachable non-default placement, migration row not <code translate="no">done</code> or <code translate="no">deleted</code>, unreadable journal (pass skipped), busy lock, filesystem error. Files are never deleted; <code translate="no">.quarantine</code> stays until removed by hand. No expiry or session-count limit.</p>
+
+<h2 id="after-delete">After a delete</h2>
+<p>A delete is final: there is no undo and no trash folder. One small file stays.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Left by the conversation</th><th scope="col">After the delete</th></tr></thead>
+<tbody>
+<tr><th scope="row">Delete mark, <code translate="no">.deleted/&lt;id&gt;</code></th><td>Kept for good: about 80 bytes, read by name, never listed. It is what refuses a late writer, a migration, a channel route or a stale copy that would bring the id back</td></tr>
+<tr><th scope="row">Lock files: <code translate="no">.locks/&lt;id&gt;.lock</code>, <code translate="no">.locks/.operations-&lt;id&gt;.lock</code>, <code translate="no">.locks/.migration-&lt;id&gt;.lock</code>, <code translate="no">.goal-locks/&lt;hash&gt;.lock</code></th><td>Removed by the delete, under the conversation's lock, after the mark is written</td></tr>
+<tr><th scope="row">File history, <code translate="no">shadow-git/&lt;hash&gt;/</code></th><td>The repository belongs to a directory. It lists the conversations that committed into it in <code translate="no">.git/openprogram-sessions/</code> and is removed when the last one listed is deleted. Removing the emptied list is the claim: it fails while a conversation is listed, so one that lists itself at that moment keeps the repository</td></tr>
+<tr><th scope="row">REST reads of the id</th><td><code translate="no">404 session_not_found</code> on <code translate="no">/context</code>, <code translate="no">/tokens</code>, <code translate="no">/branches/tokens</code>, <code translate="no">/context-range</code> and <code translate="no">/dag</code>, as for an id nobody created. A conversation the server holds in memory is known, so a draft's first Send is answered</td></tr>
+</tbody>
+</table>
+<p>A store that opens removes the idle lock files of ids it has no conversation for, and releases the file history of a delete that stopped half way. A held lock file stays.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">The sweep</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">Where it runs</th><td>Opening reads the names in <code translate="no">.locks/</code> and <code translate="no">.goal-locks/</code>. The removals run on a thread of their own, so a store opened on the server's event loop does not wait for them</td></tr>
+<tr><th scope="row">A conversation the index missed</th><td>Loses nothing. Only an idle lock file can go, it holds no state, and the next lock of the id makes it again</td></tr>
+<tr><th scope="row">File history</th><td>Removed only when every conversation listed in it has a delete mark in this store. A repository with no list, or one listing an id of another store, stays</td></tr>
+<tr><th scope="row">Reach</th><td>The store's own root and the <code translate="no">shadow-git/</code> folder of its state directory, both fixed when the store opens. Another profile's state directory is never read</td></tr>
+</tbody>
+</table>
+<details><summary>Why this design</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">Decision</th><th scope="col">Reasoning</th></tr></thead>
+<tbody>
+<tr><th scope="row">The mark has no expiry</th><td>Removing lock files is safe only because whoever takes the lock next finds the mark and stops. An expired mark would let a waiter or a leftover copy write the id again. Claude Code and OpenCode delete in place with no mark, and keep one copy of a conversation in one place; here a second process, a channel route and a moved placement can each write an id again</td></tr>
+<tr><th scope="row">Lock files are removable</th><td>Every acquisition checks, after locking, that the path still names the file it locked, and opens the path again when it does not. Without that check a removed lock file gives two holders, which is why the files used to stay</td></tr>
+<tr><th scope="row">File history lives as long as its writers</th><td>Claude Code keeps file history per conversation and removes it with the transcript. OpenCode keeps one snapshot repository per project and prunes by age. A repository shared by a directory cannot drop one conversation's commits, since the others' diffs are read from the same history, so it goes with its last writer</td></tr>
+</tbody>
+</table>
+</details>
 
 <h2 id="main-project-binding">Main project binding</h2>
 <figure>
@@ -95,7 +127,7 @@
 <tr><th scope="row">Action</th><td><code translate="no">move_session_to_project {session_id, project_id}</code></td><td><code translate="no">relocate_project {session_id, project_id, path}</code></td></tr>
 <tr><th scope="row">Changes</th><td>The session's project. <code translate="no">SessionStore.move_session</code>, under session locks: cached repository dropped; <code translate="no">projects/&lt;old&gt;/chats/&lt;id&gt;</code> and <code translate="no">.file-recovery/&lt;id&gt;</code> renamed to <code translate="no">projects/&lt;new&gt;/chats/</code>; location recorded, registry rebound, <code translate="no">meta.project_id</code> set; old project appended to <code translate="no">meta.project_history</code></td><td>The project's path, never the binding, so legal after the freeze. <code translate="no">project_store.relocate_project</code> validates, rewrites the path, keeps the id.</td></tr>
 <tr><th scope="row">Refused</th><td>While a turn runs (<code translate="no">RUNNING_ERROR</code>); destination exists; folder <a href="#held-folder">held by another program</a>. Same project: no change, no node.</td><td>Default project: its display path returns to home on every <code translate="no">get_default_project</code> read, and it has no project Git repository</td></tr>
-<tr><th scope="row">Reply</th><td><code translate="no">session_moved {ok, from_project_id, project_id, node_id}</code>, <code translate="no">projects_changed</code> to every client, a fresh <code translate="no">projects_list</code></td><td><code translate="no">project_relocated {ok, old_path, path, node_id}</code>, a fresh <code translate="no">projects_list</code></td></tr>
+<tr><th scope="row">Reply</th><td><code translate="no">projects_changed</code> to every client first, then <code translate="no">session_moved {ok, from_project_id, project_id, node_id}</code> and a fresh <code translate="no">projects_list</code> to the requester</td><td><code translate="no">projects_changed</code> to every client first, then <code translate="no">project_relocated {ok, old_path, path, node_id}</code> and a fresh <code translate="no">projects_list</code> to the requester</td></tr>
 <tr id="relocate-node"><th scope="row">Node <code translate="no">name</code></th><td><code translate="no">project/move</code>, by <code translate="no">record_move</code></td><td><code translate="no">project/relocate</code>, by <code translate="no">record_relocate</code></td></tr>
 <tr><th scope="row"><code translate="no">output</code></th><td>Old project name → new project name</td><td>Old path → new path</td></tr>
 <tr><th scope="row"><code translate="no">metadata</code></th><td><code translate="no">old_project_id</code>, <code translate="no">new_project_id</code></td><td><code translate="no">display: "runtime"</code>, <code translate="no">project_id</code>, <code translate="no">old_path</code>, <code translate="no">new_path</code></td></tr>

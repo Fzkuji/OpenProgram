@@ -14,6 +14,9 @@ SAFE_AUTO_ALLOWLIST = frozenset({
     "web_search", "web_fetch", "tool_search", "help",
     "todo_create", "todo_list", "todo_update", "open_work",
     "ask_user_question", "send_message", "chat_send",
+    # Attaching a file to this conversation is part of the reply; the
+    # tool's own root check is the boundary, as for ``read``.
+    "send_file",
     "exit_plan_mode",
     "memory_search", "memory_get", "memory_update",
     # Always-on check-ins run unattended with only these readers plus the

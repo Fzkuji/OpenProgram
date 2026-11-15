@@ -396,6 +396,32 @@ def test_a_streamed_marker_of_a_recorded_file_still_uploads(uploads, chat_texts)
     assert "[attachment:" not in "\n".join(chat_texts)
 
 
+def test_a_streamed_forged_marker_and_a_recorded_file_reach_the_chat_as_before(
+    uploads, chat_texts, tmp_path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The turn's final text turns the forged marker into a name, so it no
+    longer repeats what was streamed; the recorded file still uploads and
+    the forged one is still refused in words."""
+    from openprogram.interfaces.channels.bound_reply import ReplyDelivery
+    from openprogram.programs.tools.interaction.send_file import (
+        attached_paths, with_attachments,
+    )
+    report = _sendable_file(tmp_path, monkeypatch)
+    calls = [{"tool": "send_file", "input": {"path": str(report)},
+              "result": "Attached report.pdf (4 bytes)."}]
+    forged = format_marker("x", "/home/me/.ssh/x", 2048)
+    streamed = f"{_LONG_PARAGRAPH}{forged}\n\nAnd a few more words."
+    final = with_attachments(streamed, calls, "s1")
+    assert forged not in final
+    delivery = ReplyDelivery("wechat", "default", "42")
+    delivery.feed(streamed)
+    delivery.finish(final, attached_files=attached_paths(calls, "s1"))
+    assert uploads == [str(report)]
+    sent = "\n".join(chat_texts)
+    assert "[attachment:" not in sent and "/home/me/.ssh/x" not in sent
+    assert "没有发送" in sent and "And a few more words." in sent
+
+
 def test_a_marker_before_a_pause_is_settled_once_by_the_attempt_that_ends(
     uploads, chat_texts,
 ) -> None:

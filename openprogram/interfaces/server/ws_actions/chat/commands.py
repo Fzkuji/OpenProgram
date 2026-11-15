@@ -37,19 +37,24 @@ async def handle_compact(ws, cmd: dict):
         return
 
     from openprogram.runtime.context.session_db import default_db
+    from openprogram.state.store.session.conversation_work import run_for_conversation
+
+    def read_agent() -> str | None:
+        # The conversation's record is read under its lock: in its lane.
+        if default_db().get_session(session_id) is None:
+            return None
+        return _db_agent_id(session_id)
+
     try:
-        session_exists = await asyncio.to_thread(
-            lambda: default_db().get_session(session_id) is not None,
-        )
+        agent_id = await run_for_conversation(session_id, read_agent)
     except Exception:
-        session_exists = False
-    if not session_exists:
+        agent_id = None
+    if agent_id is None:
         await _send_chat_error(
             ws, session_id, "unknown_session", f"compact: unknown session {session_id}",
         )
         return
 
-    agent_id = _db_agent_id(session_id)
     keep_recent_tokens = cmd.get("keep_recent_tokens")
     if keep_recent_tokens is not None:
         try:
@@ -58,8 +63,8 @@ async def handle_compact(ws, cmd: dict):
             keep_recent_tokens = None
 
     reservation_id = "compact_" + uuid.uuid4().hex[:8]
-    refusal = await asyncio.to_thread(
-        _s.reserve_operation, session_id, "compact", reservation_id,
+    refusal = await run_for_conversation(
+        session_id, _s.reserve_operation, session_id, "compact", reservation_id,
     )
     if refusal is not None:
         # The same frame a failed compaction sends, so the context panel
@@ -134,7 +139,10 @@ async def _run_compaction(_s, session_id: str, reservation_id: str,
             "content": f"compact failed: {type(e).__name__}: {e}",
         })
     finally:
-        _s._release_run_reservation(session_id, reservation_id)
+        # The clear reads the selected branch under the conversation's lock.
+        from openprogram.state.store.session.conversation_work import run_for_conversation
+        await run_for_conversation(
+            session_id, _s._release_run_reservation, session_id, reservation_id)
         for data in ending:
             _s._broadcast_chat_response(session_id, "compact", data)
     if compacted:

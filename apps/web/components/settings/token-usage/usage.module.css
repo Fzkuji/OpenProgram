@@ -31,6 +31,11 @@
   font-family: var(--font-sans);
 }
 
+/* "· 25 calls unpriced" after the cost card's label. */
+.cardNote {
+  color: var(--text-muted);
+}
+
 /* ── section wrapper ─────────────────────────────────────────────────────── */
 
 .section {

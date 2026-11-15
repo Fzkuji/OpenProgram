@@ -1,26 +1,14 @@
-import { marked } from "marked";
 import { fileCapabilities } from "../../documents/file-formats.ts";
-import { isArchivePath } from "../../files/archive.ts";
 
 export interface FileOutput { path: string; name: string; }
-/** Only explicit local links/attachments, never paths inferred from prose or code. */
-export function collectFileOutputs(content: string, attachments: { path: string; filename: string }[] = []): FileOutput[] {
+/** The reply's file cards: the attachments the server put on the message
+ *  (``send_file`` and the files the turn produced, ``send_file.py``), in
+ *  order and once each. A path linked from the prose stays a link; which
+ *  files get a card is decided on the server alone. */
+export function replyFiles(attachments: { path: string; filename: string }[]): FileOutput[] {
   const files = new Map<string, FileOutput>();
-  const add = (path: string, name?: string) => {
-    if (!path || path.startsWith("//") || (!path.startsWith("/") && !/^[A-Za-z]:[\\/]/.test(path))) return;
-    if (path.includes("\0") || files.size >= 20) return;
-    files.set(path, { path, name: name || path.replace(/\\/g, "/").split("/").pop() || path });
-  };
-  for (const item of attachments) add(item.path, item.filename);
-  marked.walkTokens(marked.lexer(content), token => {
-    if (token.type !== "link" && token.type !== "image") return;
-    let path = token.href;
-    if (path.startsWith("file:///")) path = path.slice(7);
-    else if (/^[a-z][a-z0-9+.-]*:/i.test(path) && !/^[A-Za-z]:[\\/]/.test(path)) return;
-    try { path = decodeURIComponent(path); } catch { return; }
-    path = path.replace(/:\d+(?::\d+)?$/, "");
-    if (fileCapabilities(path).preview !== "download" || isArchivePath(path)) add(path);
-  });
+  for (const { path, filename } of attachments)
+    if (path && !files.has(path)) files.set(path, { path, name: filename || path.replace(/\\/g, "/").split("/").pop() || path });
   return [...files.values()];
 }
 
@@ -36,11 +24,8 @@ export function previewTarget(path: string, project?: { id: string; path: string
 }
 
 export type InlineMediaKind = "image" | "video" | "audio";
-/** Media the agent sent with ``send_file`` plays in the reply itself; a file
- *  only linked from the prose keeps its row, so a link never turns into a
- *  large embed the agent did not ask for. */
-export function inlineMediaKind(file: FileOutput, attachments: { path: string }[] = []): InlineMediaKind | null {
-  if (!attachments.some(item => item.path === file.path)) return null;
-  const kind = fileCapabilities(file.path).preview;
+/** An attached image, video or audio file plays in the reply itself. */
+export function inlineMediaKind(path: string): InlineMediaKind | null {
+  const kind = fileCapabilities(path).preview;
   return kind === "image" || kind === "video" || kind === "audio" ? kind : null;
 }

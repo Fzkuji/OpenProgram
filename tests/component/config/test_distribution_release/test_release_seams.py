@@ -70,6 +70,22 @@ def _builder_name(os_name: str, node_arch: str, extension: str) -> str:
             .replace("${os}", os_name).replace("${arch}", arch).replace("${ext}", extension))
 
 
+def _latest_link(fixed: str, release_files: list[str]) -> str:
+    """Where docs/_static_root/latest.js sends ``latest.html?<fixed>``."""
+    release = {"assets": [
+        {"name": name, "browser_download_url":
+            f"https://github.com/FuzzyKuji/OpenProgram/releases/download/v{VERSION}/{name}"}
+        for name in release_files
+    ]}
+    script = (
+        f"globalThis.location = {{search: {json.dumps('?' + fixed)}, hash: '',"
+        " replace: (url) => console.log(url)};"
+        f"globalThis.fetch = async () => ({{ok: true, json: async () => ({json.dumps(release)})}});"
+        f"eval(require('fs').readFileSync({json.dumps(str(ROOT / 'docs/_static_root/latest.js'))}, 'utf8'));"
+    )
+    return _node(script).strip()
+
+
 def _updater_names(platform: str, arch: str, options: dict) -> list[str]:
     script = (
         f"const s = require({json.dumps(str(UPDATE_SERVICE))});"
@@ -88,14 +104,36 @@ def test_app_updater_looks_for_the_files_the_release_builds(platform, arch, opti
     built = _builder_name(os_name, arch, expected[0].rsplit(".", 1)[1])
     assert built == expected[0]
 
-    # Every one of them also gets a stable download name.
-    desktop = tmp_path / "desktop-thin-any"
-    desktop.mkdir()
+    # Each is uploaded once; the docs site's newest-download link finds it under
+    # one fixed name, signed or not.
+    fixed = f"OpenProgram-{os_name}-{re.sub(r'.*-(?:mac|win|linux)-', '', expected[0]).replace('-unsigned', '')}"
+    assert json.dumps(fixed) in _read("docs/_static_root/latest.js")
     for name in expected:
-        (desktop / name).write_bytes(b"x")
-    copies = _release_matrix().make_version_free_copies(tmp_path, VERSION, tmp_path / "links")
-    assert len(set(copies)) == 1
-    assert copies[0] == f"OpenProgram-{os_name}-{re.sub(r'.*-(?:mac|win|linux)-', '', expected[0]).replace('-unsigned', '')}"
+        assert _latest_link(fixed, [f"OpenProgram-{VERSION}-runtime-linux-x86_64.tar.gz", name]) == (
+            f"https://github.com/FuzzyKuji/OpenProgram/releases/download/v{VERSION}/{name}"
+        )
+
+
+def test_newest_download_link_opens_the_release_page_when_it_cannot_find_the_file():
+    page = "https://github.com/FuzzyKuji/OpenProgram/releases/latest"
+    dmg = f"OpenProgram-{VERSION}-mac-arm64.dmg"
+    # A name that is not ours, and a release without that file.
+    assert _latest_link("OpenProgram-mac-arm64.zip", [f"OpenProgram-{VERSION}-mac-arm64.zip"]) == page
+    assert _latest_link("OpenProgram-mac-x64.dmg", [dmg]) == page
+    # No answer from the API.
+    script = (
+        "globalThis.location = {search: '?OpenProgram-mac-arm64.dmg', hash: '', replace: (url) => console.log(url)};"
+        "globalThis.fetch = async () => ({ok: false, status: 403});"
+        f"eval(require('fs').readFileSync({json.dumps(str(ROOT / 'docs/_static_root/latest.js'))}, 'utf8'));"
+    )
+    assert _node(script).strip() == page
+    # A download URL on another host is never followed.
+    script = script.replace(
+        "({ok: false, status: 403})",
+        "({ok: true, json: async () => ({assets: [{name: " + json.dumps(dmg)
+        + ", browser_download_url: 'https://example.com/" + dmg + "'}]})})",
+    )
+    assert _node(script).strip() == page
 
 
 def test_unsigned_names_come_from_the_release_steps():
@@ -190,7 +228,7 @@ def test_command_line_launchers_put_the_bundled_git_first():
     assert 'export PATH="$runtime_root/current/git/bin:$PATH"' in shell
     assert 'export GIT_EXEC_PATH="$runtime_root/current/git/libexec/git-core"' in shell
     assert 'export GIT_TEMPLATE_DIR="$runtime_root/current/git/share/git-core/templates"' in shell
-    assert 'set "PATH=$CmdGit;%PATH%"' in _read("scripts/release/install-release.ps1")
+    assert 'set `"PATH=$CmdGit;%PATH%`"' in _read("scripts/release/install-release.ps1")
 
 
 def test_deb_declares_what_the_bundled_git_links_against():

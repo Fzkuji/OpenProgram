@@ -91,6 +91,11 @@ export function configuration(agent: Agent): AgentConfigDTO {
     avatar: agent.avatar ?? {},
   });
 }
+/** Whether other agents may start it: its switch, else the default (on
+ *  for an Agent with programs, off for one without). */
+export function delegationOn(agent: Pick<AgentConfigDTO, "delegation" | "tools">): boolean {
+  return agent.delegation === "on" || agent.delegation === "off" ? agent.delegation === "on" : agent.tools.mode !== "none";
+}
 export function policyMode(policy: GatePolicy): "all" | "selected" | "none" {
   if (policy.disabled.includes("*")) return "none";
   return policy.allowed.length || policy.categories?.length ? "selected" : "all";

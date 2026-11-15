@@ -86,7 +86,7 @@ _OUTER_KEYS = frozenset({"version", "kind", "turn_request", "job_context"})
 
 
 def _validate_context(value: Any, request: Mapping[str, Any]) -> dict[str, Any]:
-    context = _object(value, "job_context", _JOB_CONTEXT_KEYS | {"usage_goal"})
+    context = _object(value, "job_context", _JOB_CONTEXT_KEYS | {"usage_goal", "tool_call_id"})
     required = _JOB_CONTEXT_KEYS - set(context)
     if required:
         raise JobAgentInputError(f"job_context is missing fields: {sorted(required)}")
@@ -118,12 +118,26 @@ def _validate_context(value: Any, request: Mapping[str, Any]) -> dict[str, Any]:
             raise JobAgentInputError("job_context.deferred_inbox requires non-empty identity fields")
     context["deferred_inbox"] = deferred
 
-    chain = _object(context["chain"], "job_context.chain", _CHAIN_KEYS)
-    if set(chain) != _CHAIN_KEYS:
+    chain = _object(context["chain"], "job_context.chain", _CHAIN_KEYS | {"ancestors"})
+    if not _CHAIN_KEYS <= set(chain):
         raise JobAgentInputError("job_context.chain requires messages and generations")
     chain["messages"] = _bounded_int(chain["messages"], "job_context.chain.messages", MAX_JOB_CHAIN_VALUE)
     chain["generations"] = _bounded_int(chain["generations"], "job_context.chain.generations", MAX_JOB_CHAIN_VALUE)
+    if "ancestors" in chain:
+        # Who waits above a delivered message (send_message's cycle check);
+        # present only when a chain has any, so other inputs keep their hash.
+        ancestors = chain["ancestors"]
+        if (not isinstance(ancestors, list) or not ancestors or len(ancestors) > 32
+                or not all(isinstance(a, str) and a and len(a) <= 512 for a in ancestors)):
+            raise JobAgentInputError("job_context.chain.ancestors must be a short list of addresses")
+        chain["ancestors"] = list(ancestors)
     context["chain"] = chain
+    if "tool_call_id" in context:
+        # The model call that started this Job, so a card rebuilt after a
+        # crash pairs with it. Present only when there is one.
+        _optional_string(context["tool_call_id"], "job_context.tool_call_id")
+        if not context["tool_call_id"]:
+            raise JobAgentInputError("job_context.tool_call_id must be non-empty when present")
     if context["relation"] not in {"owned", "linked", "worktree"}:
         raise JobAgentInputError("job_context.relation is invalid")
 

@@ -28,6 +28,7 @@ import {
 } from "@/lib/session-store";
 import { chatAckIsActive, useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import { settleAgentInvocation } from "@/lib/agents/settle-agent-invocation";
+import { adoptDraftContextBreakdown } from "@/lib/chat/context-breakdown-cache";
 import {
   acknowledgePendingUserText,
   clearPendingUserText,
@@ -87,6 +88,9 @@ interface StreamEvent {
   /** retry: what failed, one short line. */
   error?: string;
   text?: string;
+  /** text: what the reply's flat text takes before this delta, on the frame
+   *  that opens a passage after a tool call, reasoning or a steer. */
+  separator?: string;
   /** text_end: sources the provider cited for the block it closes. */
   citations?: unknown;
 }
@@ -144,7 +148,7 @@ function isTurnEnd(type: string): boolean {
 
 export function applyChatWsMessage(msg: WsEnvelope): void {
   if (msg.type === "chat_ack") {
-    handleAck(msg.data as { session_id?: string; msg_id?: string; job_id?: string });
+    handleAck(msg.data as { session_id?: string; msg_id?: string; job_id?: string; starts_goal?: boolean });
     return;
   }
   if (msg.type === "chat_response") {
@@ -162,7 +166,7 @@ export function applyChatWsMessage(msg: WsEnvelope): void {
  *  brand-new chat that's the first time the server-assigned id is known.
  *  The locally stashed user turn takes the server's id here. */
 function handleAck(
-  d: { session_id?: string; msg_id?: string; text?: string; job_id?: string; client_request_id?: string } | undefined,
+  d: { session_id?: string; msg_id?: string; text?: string; job_id?: string; client_request_id?: string; starts_goal?: boolean } | undefined,
 ): void {
   // A Job's ack names the Job's own turn; numbered updates draw it.
   if (!d?.session_id || d.job_id) return;
@@ -174,7 +178,20 @@ function handleAck(
   // first send keeps this intent for retry; only an ACK consumes it, and the
   // pick becomes the conversation's own Agent and model.
   settleAgentInvocation(sid);
-  if (isActive) useSessionStore.getState().setCurrentConv(sid);
+  if (isActive) {
+    const before = useSessionStore.getState();
+    // The shown draft becomes this session: its context estimate goes with
+    // it (the same snapshot the composer ring read for the draft).
+    if (before.currentSessionId == null && before.activeChatKey === sid) {
+      adoptDraftContextBreakdown(
+        sid,
+        before.agentSettings.chat?.provider,
+        before.agentSettings.chat?.model,
+        before.pendingProjectsByChat[sid] ?? null,
+      );
+    }
+    before.setCurrentConv(sid);
+  }
   if (d.msg_id) sessionByMsgId.set(d.msg_id, sid);
 
   // An ack naming another request is not this client's pending send's.
@@ -187,6 +204,8 @@ function handleAck(
     // one way that matters: attachment mentions now carry the absolute
     // path the backend wrote once the bytes hit disk.
     const content = typeof d.text === "string" && d.text ? d.text : text;
+    // A /goal's message is its objective, labelled Goal from the ack on.
+    const goal = d.starts_goal === true ? { startsGoal: true } : {};
     const store = useSessionStore.getState();
     const local = pendingId ? selectRow(sid, pendingId)(store) : undefined;
     if (selectRow(sid, d.msg_id)(store)) {
@@ -195,10 +214,11 @@ function handleAck(
     } else if (local) {
       store.applyLocalChange(sid, {
         kind: "local_replace", rowId: pendingId!,
-        row: { ...local, content, status: "done", ...(timestamp === undefined ? {} : { timestamp }), id: d.msg_id, localAnchor: undefined },
+        row: { ...local, content, status: "done", ...goal, ...(timestamp === undefined ? {} : { timestamp }), id: d.msg_id, localAnchor: undefined },
       });
     } else {
       appendLocalUserTurn(sid, d.msg_id, content, undefined, timestamp, "done", undefined, d.client_request_id);
+      if (d.starts_goal === true) store.applyLocalChange(sid, { kind: "local_patch", rowId: d.msg_id, fields: goal });
     }
   }
   // The frame is the backend's durable acceptance boundary. Run the
@@ -316,7 +336,10 @@ function notSentDetail(d: ChatResponseData): { errorDetail?: string } {
 function applyStreamFrame(d: ChatResponseData, event: StreamEvent): void {
   if (d.row_id && d.item_id) {
     if ((event.type === "text" || event.type === "thinking") && typeof d.offset === "number" && typeof d.item_index === "number") {
-      queueTextFrame({ rowId: d.row_id, itemId: d.item_id, itemIndex: d.item_index, offset: d.offset, type: event.type, text: event.text ?? "" });
+      queueTextFrame({
+        rowId: d.row_id, itemId: d.item_id, itemIndex: d.item_index, offset: d.offset, type: event.type, text: event.text ?? "",
+        ...(event.type === "text" && event.separator ? { separator: event.separator } : {}),
+      });
       return;
     }
     if (event.type === "text_end") {

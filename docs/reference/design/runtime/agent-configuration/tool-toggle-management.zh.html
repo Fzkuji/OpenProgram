@@ -41,7 +41,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">分组</th><th scope="col">成员</th></tr></thead>
 <tbody>
-<tr><th scope="row">常驻</th><td><code translate="no">DEFAULT_TOOLS</code> 减 <code translate="no">DEFERRED_DEFAULT_TOOLS</code>，加 <code translate="no">tool_search</code> 和 <code translate="no">job_output</code>。<code translate="no">tool_search</code> 永不延迟：它是唯一的加载入口。</td></tr>
+<tr><th scope="row">常驻</th><td><code translate="no">DEFAULT_TOOLS</code> 减 <code translate="no">DEFERRED_DEFAULT_TOOLS</code>，加 <code translate="no">read_conversation</code>。<code translate="no">DEFAULT_TOOLS</code> 里带着 <code translate="no">tool_search</code>，它永不延迟：它是唯一的加载入口，所以列出延迟工具的集合一定带着它。</td></tr>
 <tr><th scope="row"><code translate="no">DEFERRED_DEFAULT_TOOLS</code></th><td>记忆工具、<code translate="no">scheduler</code>、<code translate="no">exit_plan_mode</code>（计划模式提示词会点名）、<code translate="no">send_message</code>、<code translate="no">skill</code>、<code translate="no">save_routine</code>。默认可用，体积大且少用。</td></tr>
 <tr><th scope="row">其他已暴露工具</th><td><code translate="no">full</code> 中不属于 <code translate="no">DEFAULT_TOOLS</code> 的全部</td></tr>
 <tr><th scope="row">应用入口</th><td>延迟，应用在窗口中打开时也是：打开不加载任何工具</td></tr>

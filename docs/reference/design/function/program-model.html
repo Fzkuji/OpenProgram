@@ -107,7 +107,7 @@
 <table class="stack">
 <thead><tr><th scope="col">Tier</th><th scope="col">The model sees</th><th scope="col">Assigned to</th></tr></thead>
 <tbody>
-<tr><th scope="row">resident</th><td>Schema in every tools array</td><td>Tools in <code translate="no">RESIDENT_TOOLS</code>: the default set minus cold large-schema members, plus <code translate="no">tool_search</code> and <code translate="no">job_output</code></td></tr>
+<tr><th scope="row">resident</th><td>Schema in every tools array</td><td>Tools in <code translate="no">RESIDENT_TOOLS</code>: the default set, which holds the loader <code translate="no">tool_search</code>, minus cold large-schema members, plus <code translate="no">read_conversation</code></td></tr>
 <tr><th scope="row">deferred</th><td>Name only; <code translate="no">tool_search</code> loads the schema</td><td>Other tools, tools registered <code translate="no">defer=True</code>, and application entries (<code translate="no">ProgramContext._adopt_tools</code>): built-in, installed, external harnesses, user packages</td></tr>
 <tr><th scope="row">hidden</th><td>Nothing; Python only</td><td><code translate="no">expose=False</code></td></tr>
 </tbody>

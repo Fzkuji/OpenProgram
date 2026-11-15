@@ -11,6 +11,7 @@ Public functions:
     print_status()        — human-readable status report
     current_worker_pid()  — PID of the live worker, or None
     read_worker_port()    — port from worker.port if worker is alive
+    claim_worker_port()   — the port a starting worker listens on
 """
 from __future__ import annotations
 
@@ -48,118 +49,121 @@ def clear_port_file() -> None:
 
 
 def read_worker_port() -> Optional[int]:
-    """Return the port the live worker's webui is listening on, or None.
+    """Return the port this profile's live worker listens on, or None.
 
-    Returns None if there's no live worker, no port file, or the file
-    can't be parsed. Verifies liveness so a stale port file from a
-    crashed prior worker doesn't get handed out.
-
-    Also falls back to a TCP probe of the default port (18100) so a
-    foreground ``openprogram web`` — which doesn't write the
-    lock/pid/port files — is still discoverable by
-    HTTP-client commands like ``openprogram mcp list``. Returns the
-    port even if we can't name the PID owning it; callers that need
-    the PID can use :func:`find_running_webui` instead.
+    Only the worker's own ``worker.port`` counts, and only while the worker
+    holds its lock: a listener is not this profile's worker just because it
+    answers on the expected port (another account's worker, or another
+    program, may hold it).
     """
-    if current_worker_pid() is not None:
-        p = paths.port_path()
-        if p.exists():
-            try:
-                return int(p.read_text(encoding="utf-8").strip())
-            except (OSError, ValueError):
-                pass
-    # Fallback: probe the conventional default port. An unmanaged
-    # ``--web`` foreground process is just as serviceable to an HTTP
-    # client as a managed worker.
-    port = _default_webui_port()
-    if _probe_tcp_listening(port):
-        return port
-    return None
+    if current_worker_pid() is None:
+        return None
+    try:
+        return int(paths.port_path().read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
 
 
-def resolve_worker_port() -> int:
-    """Single-port resolution (docs/reference/design/cli/single-port.html).
-
-    Priority: ``OPENPROGRAM_WEB_PORT`` → UI pref ``web_port`` → 18100.
-
-    Multi-instance setups (a stable and a dev worker side by side)
-    differ only by profile + env.
-    """
+def explicit_web_port() -> tuple[int, str] | None:
+    """A port the user set, with where it was set; None when none was."""
     raw = os.environ.get("OPENPROGRAM_WEB_PORT", "").strip()
     if raw:
         try:
-            return int(raw)
+            return int(raw), "OPENPROGRAM_WEB_PORT"
         except ValueError:
             pass
     try:
         from openprogram.state.config import read_config
         ui = read_config().get("ui") or {}
         if ui.get("web_port"):
-            return int(ui["web_port"])
+            return int(ui["web_port"]), "ui.web_port"
     except Exception:
-        # Falls back to the default web port.
         _log.debug("web_port from config unreadable", exc_info=True)
-    return 18100
+    return None
 
 
-def _default_webui_port() -> int:
-    """Default worker port for TCP probing — same resolution as startup."""
-    return resolve_worker_port()
+def recorded_web_port() -> Optional[int]:
+    """The port this profile chose at its first start, or None before that."""
+    try:
+        port = int(paths.web_port_record_path().read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+    return port if 1024 <= port <= 65535 else None
 
 
-def _probe_tcp_listening(port: int, host: str = "127.0.0.1",
-                         timeout_s: float = 0.4) -> bool:
-    """Cheap TCP-connect probe. True if something accepted; False on
-    refusal, timeout, or any other socket error. Thin alias over the
-    shared :func:`openprogram.operations.worker.ports.port_in_use`."""
-    from openprogram.operations.worker.ports import port_in_use
-    return port_in_use(port, host=host, timeout=timeout_s)
+def _record_web_port(port: int, *, replace: bool) -> int:
+    """Write the profile's port; the first writer wins unless ``replace``.
+
+    The App reads the same file (apps/desktop/main/worker/web-port.js).
+    """
+    target = paths.web_port_record_path()
+    if replace:
+        staged = target.with_name(f"{target.name}.{os.getpid()}.tmp")
+        staged.write_text(f"{port}\n", encoding="utf-8")
+        replace_file(staged, target)
+        return port
+    try:
+        with open(target, "x", encoding="utf-8") as stream:
+            stream.write(f"{port}\n")
+        return port
+    except FileExistsError:
+        return recorded_web_port() or port
+
+
+def resolve_worker_port() -> int:
+    """This profile's port (docs/reference/design/cli/single-port.html).
+
+    Priority: ``OPENPROGRAM_WEB_PORT`` → setting ``ui.web_port`` → the port
+    the profile recorded at its first start (``web-port``) → 18100. Reads
+    only; a starting worker settles the port with :func:`claim_worker_port`.
+    """
+    explicit = explicit_web_port()
+    if explicit is not None:
+        return explicit[0]
+    from .ports import FIRST_WEB_PORT
+
+    return recorded_web_port() or FIRST_WEB_PORT
+
+
+def claim_worker_port(*, held: int | None = None) -> tuple[int, str | None]:
+    """The port a starting worker listens on, and the setting that named it.
+
+    The second value is ``OPENPROGRAM_WEB_PORT`` or ``ui.web_port`` when the
+    user set the port, and None when the profile chose it. A profile's first
+    start takes the lowest free port from 18100 up and records it, so a
+    second account on the same computer, or a program already on 18100,
+    never leaves a new user without a port. ``held`` is the port the caller
+    found taken: a chosen port moves to the next free one and the record
+    follows; a port the user set never moves.
+    """
+    explicit = explicit_web_port()
+    if explicit is not None:
+        return explicit
+    from .ports import first_free_web_port
+
+    recorded = recorded_web_port()
+    if held is None and recorded is not None:
+        return recorded, None
+    exclude = frozenset() if held is None else frozenset({held})
+    return _record_web_port(first_free_web_port(exclude), replace=held is not None), None
 
 
 def find_running_webui() -> tuple[Optional[int], Optional[int], str]:
-    """Locate any webui the user has running. Returns (port, pid, source).
+    """This profile's running worker as ``(port, pid, source)``.
 
-    Three states:
-
-    - ``(port, pid, "managed")`` — ``worker.lock`` + ``worker.pid`` say
-      a worker is alive; this is the well-supported path.
-    - ``(18100, None, "unmanaged")`` — no lock/pid, but a process is
-      listening on the conventional default port. Almost always a
-      foreground ``openprogram web``. The PID isn't resolved
-      cross-platform-cheaply, so callers that just want to talk
-      HTTP get a usable answer.
-    - ``(None, None, "none")`` — nothing is up.
+    ``(port, pid, "managed")`` while the worker holds its lock and has named
+    its port; ``(None, None, "none")`` otherwise. A listener without this
+    profile's lock is never reported as ours.
     """
     pid = current_worker_pid()
     if pid is not None:
-        p = paths.port_path()
-        if p.exists():
-            try:
-                return int(p.read_text(encoding="utf-8").strip()), pid, "managed"
-            except (OSError, ValueError):
-                pass
-        # PID present but no port file — uncommon but treat as managed
-        # at the default port (we know SOMETHING owns the lock).
-        if _probe_tcp_listening(_default_webui_port()):
-            return _default_webui_port(), pid, "managed"
-    if _probe_tcp_listening(_default_webui_port()):
-        return _default_webui_port(), None, "unmanaged"
+        port = read_worker_port()
+        if port is not None:
+            return port, pid, "managed"
     return None, None, "none"
 
 
 # pid file
-
-
-def _read_pid_file() -> Optional[int]:
-    p = paths.pid_path()
-    if not p.exists():
-        return None
-    try:
-        raw = p.read_text(encoding="utf-8").strip().splitlines()
-        pid = int(raw[0]) if raw else None
-        return pid if pid is not None and pid > 0 else None
-    except (OSError, ValueError):
-        return None
 
 
 def write_pid_file() -> None:
@@ -185,10 +189,9 @@ def current_worker_pid() -> Optional[int]:
     The bytes in ``worker.lock`` are only a hint: a crashed process leaves
     them behind even though the kernel has released the advisory lock, and
     that PID may later be reused by an unrelated process.  Verify actual lock
-    ownership before trusting the holder.  The legacy PID sidecar fallback is
-    accepted only when its live process still has an OpenProgram worker
-    command line, so ``openprogram stop`` never signals an unrelated reused
-    PID.
+    ownership before trusting the holder.  The holder's PID reads on every
+    platform while the lock is held (host/_platform/locking.py), so the lock
+    is the only proof; ``worker.pid`` is never trusted on its own.
     """
     holder = read_holder_pid()
     if (
@@ -197,23 +200,7 @@ def current_worker_pid() -> Optional[int]:
         and is_held_by(holder)
     ):
         return holder
-    pid = _read_pid_file()
-    if (
-        pid is not None
-        and _process_alive(pid)
-        and _looks_like_worker_process(pid)
-    ):
-        return pid
     return None
-
-
-def _looks_like_worker_process(pid: int) -> bool:
-    """Best-effort identity check for the legacy PID-file fallback."""
-
-    from openprogram.host._platform.processes import process_command_line
-
-    command = " ".join(process_command_line(pid).lower().split())
-    return "openprogram" in command and "worker run" in command
 
 
 # stop request
@@ -622,24 +609,19 @@ def print_status(*, channel_status: Callable[[], list[dict]]) -> int:
 
     if source == "none":
         print("openprogram: not running")
+        from .ports import port_in_use, port_owner_hint
+
+        own_port = resolve_worker_port()
+        if port_in_use(own_port):
+            print(f"  Port {own_port} is in use by another program or account.")
+            hint = port_owner_hint(own_port)
+            if hint:
+                print(hint)
         print()
         print("  Start it with:  openprogram")
         print("  Or install as a service (auto-start at login):  openprogram worker install")
         return 0
 
-    if source == "unmanaged":
-        # Foreground ``--web`` or ``web`` — webui is up, but not under
-        # the managed background service, so ``openprogram stop`` /
-        # ``restart`` can't touch it. Be transparent about that.
-        print(f"openprogram: running on :{port}  (foreground `openprogram web`)")
-        print()
-        print("  This instance is owned by the terminal that launched")
-        print("  `openprogram web`; `openprogram stop` won't affect it —")
-        print("  Ctrl-C in that terminal will.")
-        print()
-        print("  For a background service that survives closing the terminal,")
-        print("  stop the foreground process and run:  openprogram")
-        return 0
 
     started = _worker_start_time(pid) if pid is not None else None
     age = ""

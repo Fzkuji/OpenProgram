@@ -219,7 +219,7 @@
 <ul>
 <li>实测值属于测量时的分支，换 head 就重估。</li>
 <li>占用取最后一次实测请求，从不累加一轮内的请求。空的终止事件保留上次实测；没有实测时界面用本地估算。旧累计格式的用量和校准失效，累计计费总额不变。</li>
-<li>窗口：<code translate="no">get_model(provider, model)</code> 和 <code translate="no">real_context_window()</code>，按冒号拆分 <code translate="no">provider:model</code>（<code translate="no">server._resolve_context_window</code>）。会话选择器的覆盖值优先于持久化的模型。</li>
+<li>窗口：请求所用 Model 的窗口，每次现场解析，不从保存的记录里读回；解析不到的模型没有窗口，界面只显示 token 数、不显示上限（<a href="occupancy-status.zh.html#window">窗口</a>）。</li>
 <li>WebSocket 聊天运行器在每个请求结束时记录提示大小，圆环和面板在工具调用之间更新。轮次结束时刷新分支 head 并持久化最终实测。</li>
 <li>加载会话时，可从未广播过的旧轮次恢复较新的用量记录，除非之后的会话编辑已覆盖它。</li>
 </ul>

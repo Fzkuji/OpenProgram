@@ -8,7 +8,7 @@
 <tbody>
 <tr><th scope="row"><a href="#anthropic">Anthropic 上的加载</a></th><td><code translate="no">tool_reference</code> 结果加 <code translate="no">defer_loading</code> 数组项</td><td>Claude Code</td></tr>
 <tr><th scope="row"><a href="#catalog">目录</a></th><td>放在用户消息旁边，先全量一次，之后只发增减</td><td>Claude Code、Codex</td></tr>
-<tr><th scope="row"><a href="#codex">Codex 没有匹配</a></th><td><code translate="no">tool_search_output</code> 带 <code translate="no">tools: []</code></td><td>Codex</td></tr>
+<tr><th scope="row"><a href="#codex">什么都没加载的搜索</a></th><td>用模型收得到的文字说明原因；已经在数组里的工具回答“已经可以调用”</td><td>Claude Code、Codex</td></tr>
 <tr><th scope="row"><a href="#activation">guide 和应用</a></th><td>点出工具名，由模型加载</td><td>Codex</td></tr>
 <tr><th scope="row"><a href="#unavailable">来源消失</a></th><td>数组项保留，调用返回"不可用"</td><td>Codex</td></tr>
 <tr><th scope="row"><a href="#not-loaded">加载前就调用</a></th><td>参数合法就执行，校验失败时说明怎么加载</td><td>Claude Code</td></tr>
@@ -24,7 +24,7 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">部分</th><th scope="col">有这个形式</th><th scope="col">没有</th></tr></thead>
 <tbody>
-<tr><th scope="row">搜索结果</th><td>只发 <code translate="no">tool_reference</code> 块；旁边没有文字块时补一个兄弟文字块 <code translate="no">Tool loaded.</code>；结果文字仍存在节点上供界面显示</td><td>结果文字</td></tr>
+<tr><th scope="row">搜索结果</th><td>只发 <code translate="no">tool_reference</code> 块，旁边加一个兄弟文字块：搜索的<a href="#codex">说明</a>，没有任何文字时是 <code translate="no">Tool loaded.</code>；结果文字仍存在节点上供界面显示</td><td>结果文字</td></tr>
 <tr><th scope="row">数组</th><td>已加载工具带 <code translate="no">defer_loading: true</code>，按第一次加载的顺序追加，定义取加载记录保存的那份</td><td>已加载工具作为普通项追加；请求记一次预期断点 <code translate="no">tool_loaded</code></td></tr>
 <tr><th scope="row">beta 头</th><td><code translate="no">advanced-tool-use-2025-11-20</code>；Vertex 上 <code translate="no">tool-search-tool-2025-10-19</code></td><td>无</td></tr>
 <tr><th scope="row">缓存</th><td>指纹跳过延迟项；断点打在最后一个普通工具上</td><td>不变</td></tr>
@@ -57,6 +57,8 @@
 <tr><th scope="row">大小</th><td>最多 4 KiB，先列名字，再数出省略了几个</td></tr>
 <tr><th scope="row">基线</th><td>渲染出的历史里最后一份目录</td></tr>
 <tr><th scope="row">自带系统提示（Agent 方法、<code translate="no">runtime.exec</code>）</th><td>目录仍内联在那份提示里</td></tr>
+<tr><th scope="row">本轮工具里没有 <code translate="no">tool_search</code></th><td>什么都不延迟：本轮每个工具都带着 schema 发出，所以没有目录。没有加载器的延迟工具永远调用不了；Claude Code 在工具搜索关闭时也把所有工具一开始就发出。<code translate="no">DEFAULT_TOOLS</code> 里带着加载器，含延迟工具的选定列表也会补上它，所以这是 Agent 禁用了 <code translate="no">tool_search</code> 的情况</td></tr>
+<tr><th scope="row">结尾那句话</th><td>说明只有列出的工具需要加载，已经在工具列表里的工具原样就能调用、不要去搜索。加载器的描述说的是同一件事</td></tr>
 </tbody>
 </table>
 <details><summary>为什么这样设计</summary>
@@ -72,16 +74,47 @@
 <p>只有放进历史，才不会改动已经发出的内容。<code translate="no">turn_context</code> 本来就只重发有变化的节。Anthropic 上不用 <code translate="no">role: system</code> 消息：Claude Code 在那里用 user 侧，而且有的模型不接受它。</p>
 </details>
 
-<h2 id="codex">Codex 没有匹配</h2>
+<h2 id="codex">什么都没加载的搜索</h2>
+<p><code translate="no">tool_search</code> 的结果有两部分：加载记录（<code translate="no">details["loads"]</code>）和说明（<code translate="no">details["note"]</code>），说明是对所有没加载的东西的文字交代。两者都存在工具节点上，所以之后每次请求发出的字节相同。</p>
 <table class="stack fixed">
-<thead><tr><th scope="col">情况</th><th scope="col">发出的内容</th></tr></thead>
+<thead><tr><th scope="col">搜索的对象</th><th scope="col">说明</th><th scope="col">加载</th></tr></thead>
 <tbody>
-<tr><th scope="row">没有匹配、名字不存在、出错</th><td><code translate="no">tool_search_output</code> 带 <code translate="no">tools: []</code></td></tr>
-<tr><th scope="row">对已加载工具做 <code translate="no">select:</code></th><td>再次返回它的定义，并记一次加载</td></tr>
+<tr><th scope="row">已经在数组里的工具：常驻的，或本轮被设为常驻的</th><td><code translate="no">`send_file` is already callable: it is in your tools list with its full schema. Call it now; it never needs tool_search.</code></td><td>无；数组不变</td></tr>
+<tr><th scope="row">本轮没有提供的名字</th><td><code translate="no">No tool named x is offered in this conversation.</code>，再说明哪些工具需要搜索</td><td>无</td></tr>
+<tr><th scope="row">没有匹配的关键词</th><td><code translate="no">No deferred tools matched query …</code>，再说明哪些工具需要搜索</td><td>无</td></tr>
+<tr><th scope="row">延迟工具，不论之前是否加载过</th><td>无</td><td>它的定义，并记一次加载</td></tr>
+<tr><th scope="row">混合</th><td>没加载的那几项各一行</td><td>其余的</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">线路</th><th scope="col">说明放在哪里</th></tr></thead>
+<tbody>
+<tr><th scope="row">Codex（<code translate="no">tool_search_output</code>）</th><td>输出项带已加载的定义，没有时是 <code translate="no">tools: []</code>；说明作为紧随其后的一条 user 项发出，包在 <code translate="no">&lt;tool-search-result&gt;</code> 里</td></tr>
+<tr><th scope="row">Anthropic 引用形式</th><td>有加载时：<code translate="no">tool_reference</code> 块旁边的文字块。没有加载时：结果文字，也就是说明本身</td></tr>
+<tr><th scope="row">其他线路</th><td>结果文字，开头就是说明</td></tr>
 </tbody>
 </table>
 <details><summary>为什么这样设计</summary>
-<p>Codex 自己的客户端对所有失败都发空列表，这是后端确定接受的唯一形状。Claude Code 和 Pi 返回文字，但那是在它们自己的线路上。模型可以对照目录核对名字。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">对比对象</th><th scope="col">做法</th></tr></thead>
+<tbody>
+<tr><th scope="row">Claude Code</th><td>对已经加载的工具做 <code translate="no">select:</code>，把这个工具当作命中返回，“无害的空操作，让模型不用重试就能继续”；交付文件的工具从不延迟</td></tr>
+<tr><th scope="row">Codex</th><td>只搜索延迟工具，任何落空都发空的 <code translate="no">tool_search_output</code>；加载器的描述写明搜索覆盖哪些工具</td></tr>
+<tr><th scope="row">Pi</th><td>在自己的线路上返回文字</td></tr>
+</tbody>
+</table>
+<p>只有一个空的 <code translate="no">tool_search_output</code>，读起来就是“没有这个工具”。模型搜索了数组里本来就有的 <code translate="no">send_file</code>，然后回答说没法发送文件：答案写在结果文字里，而这条线路从不发送结果文字。</p>
+<p>Claude Code 的回答能让模型继续往下做，所以搜索一个可调用的工具时，先用肯定句把这件事说出来。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">没有采用</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">在输出项里再返回一次，数组里也保留</th><td>同名工具有两份，没有哪个客户端发过这种形状</td></tr>
+<tr><th scope="row">放进输出项，从数组里拿掉</th><td>数组变了，前缀要重读</td></tr>
+<tr><th scope="row">把它记成一次加载</th><td>Anthropic 上的常驻工具会变成 <code translate="no">defer_loading</code> 项</td></tr>
+</tbody>
+</table>
+<p>工具输出后面跟一条消息，是每条线路为工具附带内容已经在用的形状。</p>
+<p>更靠前的一步是让模型不去搜索：目录和加载器的描述都写明，只有延迟列表里的工具才需要搜索。</p>
 </details>
 
 <h2 id="activation">guide 和应用</h2>
@@ -148,12 +181,15 @@
 <tr><th scope="row">索引内容</th><td>名字、namespace（MCP server 或应用）、描述、hint、schema 属性的名字和描述</td></tr>
 <tr><th scope="row">分词</th><td>按 camelCase 和 <code translate="no">__</code> 切分；去掉停用词；词干化；CJK 逐字切分</td></tr>
 <tr><th scope="row">顺序</th><td>精确名，其次命中的查询词个数，再次分数</td></tr>
+<tr><th scope="row">工具名</th><td><code translate="no">select:a,b</code> 只加载点名的工具。查询本身正好是一个工具名时也一样，不做排序：<code translate="no">scheduler</code> 只加载 <code translate="no">scheduler</code>，不会连带 <code translate="no">cron</code> 和 <code translate="no">remind</code>。名字指的是工具；应用和 MCP server 不能被 select</td></tr>
 <tr><th scope="row">保留</th><td><code translate="no">select:</code>、逗号列表、先应用的 <code translate="no">+term</code> 过滤、Agent 的允许范围；已加载工具也在内</td></tr>
 <tr><th scope="row">默认个数</th><td>5</td></tr>
 </tbody>
 </table>
 <details><summary>为什么这样设计</summary>
 <p>Pi 和 Codex 用 BM25；Claude Code 用固定的关键词分值。Pi 的排序器把每条规则写清楚，能不加依赖地移植。每个命中都会被永久加载，所以默认个数用 Claude Code 的 5，而不是 8。</p>
+<p>参数本身就叫 <code translate="no">select</code>，模型想要一个工具时，写 <code translate="no">select: scheduler</code> 和写 <code translate="no">select:scheduler</code> 一样常见。Claude Code 对正好是工具名的查询先直接返回该工具，再谈打分；这里用同一条规则，两种写法都只加载一个工具。</p>
+<p>目录里只列工具名，所以分组没有可 select 的名字：关键词查询通过 namespace 字段找到某个 server 或应用。</p>
 </details>
 
 <h2 id="aging">旧的搜索结果</h2>

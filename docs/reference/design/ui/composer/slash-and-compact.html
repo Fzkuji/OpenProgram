@@ -20,6 +20,12 @@
 </tbody>
 </table>
 <p class="note">Optional arguments (only <code translate="no">[…]</code>) run at once. Without a session, session commands keep the input and warn "Start a conversation first".</p>
+<p>A command the server runs (<code translate="no">type: "local"</code> in <code translate="no">/api/commands</code>: <code translate="no">/goal</code>, <code translate="no">/rename</code> …) leaves as the composer's own message, through <code translate="no">sendChatMessage</code>:</p>
+<ul>
+<li>From a New chat draft it carries the draft's <code translate="no">local_*</code> id, permission mode, Agent, project and folders: it runs in the draft, and the tab becomes that conversation.</li>
+<li>It draws no bubble of its own. One that goes on as a turn (<code translate="no">/goal &lt;objective&gt;</code>) gets its message from <code translate="no">chat_ack</code>, before the reply starts; one that only answers (<code translate="no">/goal status</code>, <code translate="no">/goal pause</code>) leaves just its reply line.</li>
+<li>During a run or a waiting request it goes at once beside the turn, with no bubble.</li>
+</ul>
 <details>
 <summary>Known small issues</summary>
 <ul>

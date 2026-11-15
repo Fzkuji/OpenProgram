@@ -82,12 +82,20 @@ def _session_lock_for(session_key: str) -> threading.Lock:
 RUN_SLOT_WAIT_SECONDS = 30.0
 RUN_SLOT_POLL_SECONDS = 0.5
 BUSY_REPLY = "这个对话正在处理别的消息，这条没有发给它。请等它结束后再发一次。"
+#: 会话被占着（比如正在加载或搬动）、等不到它时回这句: 消息没进对话, 可以重发.
+LOCKED_REPLY = "这个对话暂时打不开，这条没有发给它。请稍后再发一次。"
 
 
 def _reserve_run_slot(session_key: str, owner: str, *, wait_seconds: float) -> bool:
+    """占会话的 run slot, 最多等 ``wait_seconds``; 占不到返回 ``False``.
+
+    占 slot 要读会话 (在会话锁下). 等锁也算在这段时间里: 时间到了还拿不到锁,
+    抛 ``SessionLockTimeout`` (slot 可能是空的, 只是会话被占着). ``0`` 表示
+    一点不等, 锁也不等."""
     from openprogram.runtime.conversation.run_control import run_slot
     deadline = time.monotonic() + wait_seconds
-    while not run_slot.reserve(session_key, owner):
+    while not run_slot.reserve(session_key, owner,
+                               lock_wait=max(0.0, deadline - time.monotonic())):
         if time.monotonic() >= deadline:
             return False
         time.sleep(RUN_SLOT_POLL_SECONDS)
@@ -207,7 +215,16 @@ def dispatch_inbound(
     # ---- 同 session 串行 ------------------------------------------------
     # /answer·/decline 必须在锁外处理 (上面已 return): turn 停在
     # runtime.ask 时持锁等待, /answer 若也抢锁就自死锁.
-    with _session_lock_for(session_key):
+    session_lock = _session_lock_for(session_key)
+    if ambient and not session_lock.acquire(blocking=False):
+        # 房间事件没人在等回复: 这个会话正有一轮在跑就跳过, 一点不等.
+        if on_busy is not None:
+            on_busy()
+        _log.info("[%s:%s] room event skipped: conversation busy", channel, account_id)
+        return None
+    if not ambient:
+        session_lock.acquire()
+    try:
         if on_session_locked is not None:
             on_session_locked()
         return _run_session_turn(
@@ -220,6 +237,8 @@ def dispatch_inbound(
             ambient=ambient, memory_mode=memory_mode, thread_id=thread_id,
             room_full_access=room_full_access, on_busy=on_busy,
         )
+    finally:
+        session_lock.release()
 
 
 def _channel_authority(
@@ -352,12 +371,23 @@ def _run_session_turn(
     回复, 不等也不回话."""
     from openprogram.interfaces.channels import _active_turns
     from openprogram.runtime.conversation.run_control import run_slot
+    from openprogram.state.store.session.session_lock import SessionLockTimeout
     slot = {"owner": uuid.uuid4().hex[:12], "execution_id": None,
             "on_busy": on_busy or (lambda: None)}
-    if not _reserve_run_slot(
-        session_key, slot["owner"],
-        wait_seconds=0.0 if ambient else RUN_SLOT_WAIT_SECONDS,
-    ):
+    try:
+        reserved = _reserve_run_slot(
+            session_key, slot["owner"],
+            wait_seconds=0.0 if ambient else RUN_SLOT_WAIT_SECONDS,
+        )
+    except SessionLockTimeout:
+        # 会话锁没等到: 什么都没占, 这条没进对话.
+        slot["on_busy"]()
+        if ambient:
+            _log.info("[%s:%s] room event skipped: conversation locked",
+                      channel, account_id)
+            return None
+        return LOCKED_REPLY
+    if not reserved:
         slot["on_busy"]()
         if ambient:
             _log.info("[%s:%s] room event skipped: conversation busy",
@@ -592,7 +622,8 @@ def _run_turn_core(
                 and data.get("session_id") in (None, session_key)
                 and _own_turn(data.get("msg_id"))):
             if ev_type == "text":
-                streamer.feed(ev.get("text") or "")
+                from openprogram.state.reply_text import stream_text
+                streamer.feed(stream_text(ev))
             elif ev_type == "tool_use":
                 streamer.flush(response_ended=not ev.get("provider_executed"))
             elif ev_type == "retry" and ev.get("restart"):
@@ -977,11 +1008,13 @@ class _BlockStreamer:
         if sent and body.startswith(sent):
             rest = body[len(sent):].strip()
         else:
-            # 流文本和最终文本对不上 (不该发生): 只补流里没发的那段 +
-            # 最终文本里流之外的尾巴 (附件标记).
-            tail = body[len(self.streamed.strip()):] if body.startswith(
-                self.streamed.strip()) else ""
-            rest = (self.streamed[self.sent_upto:].strip() + tail).strip()
+            # 流文本和最终文本对不上 (已发部分里有本轮没登记的标记, 最终
+            # 文本把它换成了文件名): 补流里没发的那段 + 最终文本里流之外
+            # 的附件标记 (本轮登记的文件).
+            tail = [marker for marker, _name, _path in find_markers(body)
+                    if marker not in self.streamed]
+            rest = "\n\n".join(part for part in [
+                self.streamed[self.sent_upto:].strip(), *tail] if part)
         return "\n\n".join(part for part in [*held, rest] if part)
 
 

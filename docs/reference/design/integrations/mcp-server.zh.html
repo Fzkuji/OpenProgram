@@ -101,7 +101,7 @@
 <tr><th scope="row">层级缺少能力</th><td><code translate="no">isError: true</code>，写明能力</td><td>工具存在，但此次不可用</td></tr>
 <tr><th scope="row">审批被拒或无法审批</th><td><code translate="no">isError: true</code>，固定关卡原因</td><td>没有所有者在场；不透传工具细节</td></tr>
 <tr><th scope="row">工具运行后失败</th><td><code translate="no">isError: true</code>，固定的脱敏正文和原因码</td><td>异常、堆栈、工具自述原因都不越过边界</td></tr>
-<tr><th scope="row">SDK 取消进行中的请求</th><td><code translate="no">ErrorData(code=0, message="Request cancelled", data=None)</code>，没有工具结果</td><td>响应归 SDK；OpenProgram 负责停止、清理、审计</td></tr>
+<tr><th scope="row">SDK 取消进行中的请求</th><td><code translate="no">ErrorData(code=0, message="Request cancelled", data=None)</code>，没有工具结果</td><td>响应归 SDK，可能先发出；处理函数在屏蔽的取消作用域里等到轮次停止、请求清除、审计写入后才返回</td></tr>
 <tr><th scope="row"><code translate="no">prompt_cancel</code></th><td>同一连接的活动轮次：<code translate="no">cancelled=true</code>；他人的或已结束：false</td><td>是包装工具，不是 SDK 通知</td></tr>
 </tbody>
 </table>

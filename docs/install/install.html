@@ -7,12 +7,12 @@
 <table class="stack" id="choose">
 <thead><tr><th scope="col">Your computer</th><th scope="col">App</th><th scope="col">Terminal and server</th></tr></thead>
 <tbody>
-<tr><th scope="row">macOS 13 or later</th><td><a href="https://github.com/FuzzyKuji/OpenProgram/releases/download/v1.1.0/OpenProgram-1.1.0-mac-arm64.dmg">Apple Silicon DMG</a> · <a href="https://github.com/FuzzyKuji/OpenProgram/releases/download/v1.1.0/OpenProgram-1.1.0-mac-x64.dmg">Intel DMG</a></td><td><code translate="no">curl -fsSL https://openprogram.io/install | sh</code></td></tr>
-<tr><th scope="row">Linux with glibc 2.35 or later<span class="arg">Ubuntu 22.04, Debian 12 or newer</span></th><td><a href="#linux">deb or AppImage</a></td><td><code translate="no">curl -fsSL https://openprogram.io/install | sh</code></td></tr>
-<tr><th scope="row">Windows 10 or 11, x64</th><td>From v1.2.0: <a href="#windows">installer</a></td><td>From v1.2.0: <code translate="no">irm https://openprogram.io/install.ps1 | iex</code><br>Until then: <a href="#development-checkout">source checkout</a></td></tr>
+<tr><th scope="row">macOS 13.5 or later</th><td><a href="../latest.html?OpenProgram-mac-arm64.dmg">Apple Silicon DMG</a> · <a href="../latest.html?OpenProgram-mac-x64.dmg">Intel DMG</a></td><td><code translate="no">curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh</code></td></tr>
+<tr><th scope="row">Linux with glibc 2.35 or later<span class="arg">Ubuntu 22.04, Debian 12 or newer</span></th><td><a href="#linux">deb or AppImage</a></td><td><code translate="no">curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh</code></td></tr>
+<tr><th scope="row">Windows 10 or 11, x64</th><td><a href="../latest.html?OpenProgram-win-x64.exe">Installer</a></td><td><code translate="no">irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex</code></td></tr>
 </tbody>
 </table>
-<p class="note">If <code translate="no">openprogram.io</code> does not answer, the same scripts come straight from GitHub:</p>
+<p class="note">If the website does not answer, the same scripts come straight from GitHub:</p>
 <pre translate="no"><code>curl -fsSL https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/main/docs/_static_root/install.sh | sh
 irm https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/main/docs/_static_root/install.ps1 | iex</code></pre>
 
@@ -25,16 +25,16 @@ irm https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/main/docs/_static_ro
 </tbody>
 </table>
 
-<h2 id="releases">What each release offers</h2>
-<table class="stack" id="release-support">
-<thead><tr><th scope="col"></th><th scope="col">v1.1.0, latest published</th><th scope="col">v1.2.0, next release</th></tr></thead>
+<h2 id="releases">What a release has for each computer</h2>
+<table class="stack fixed" id="release-support">
+<thead class="sr"><tr><th scope="col">Computer</th><th scope="col">In every release</th></tr></thead>
 <tbody>
-<tr><th scope="row">macOS</th><td data-label="v1.1.0, latest published">App, signed and notarized. Terminal install. Git included.</td><td data-label="v1.2.0, next release">Same.</td></tr>
-<tr><th scope="row">Linux</th><td data-label="v1.1.0, latest published">App as deb and AppImage, and the terminal install; x86_64 and arm64.</td><td data-label="v1.2.0, next release">Same.</td></tr>
-<tr><th scope="row">Windows</th><td data-label="v1.1.0, latest published">No App. The x64 terminal archive is on the <a href="download.html#v1-1-0">Download</a> page.</td><td data-label="v1.2.0, next release">Adds the App, x64. Windows on Arm comes later.</td></tr>
+<tr><th scope="row">macOS</th><td>App for Apple Silicon and Intel, signed and notarized, and the terminal install.</td></tr>
+<tr><th scope="row">Linux</th><td>App as deb and AppImage, and the terminal install; x86_64 and arm64.</td></tr>
+<tr><th scope="row">Windows</th><td>App installer and the terminal install, x64. Windows on Arm is not supported.</td></tr>
 </tbody>
 </table>
-<p class="note">A package missing from a release is named under "Not in this release" in its notes on <a href="https://github.com/FuzzyKuji/OpenProgram/releases">GitHub Releases</a>. <a href="download.html">Every file</a>.</p>
+<p class="note">The links on this page always fetch the newest release. A package missing from a release is named under "Not in this release" in its notes on <a href="https://github.com/FuzzyKuji/OpenProgram/releases">GitHub Releases</a>. <a href="download.html">Every file</a>.</p>
 
 <h2 id="macos">macOS</h2>
 <ol>
@@ -51,7 +51,7 @@ irm https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/main/docs/_static_ro
 </table>
 
 <h2 id="linux">Linux</h2>
-<p class="note">Applies from v1.1.0. <code translate="no">uname -m</code> says which file: <code translate="no">x86_64</code> or <code translate="no">aarch64</code>.</p>
+<p class="note"><code translate="no">uname -m</code> says which file: <code translate="no">x86_64</code> or <code translate="no">aarch64</code>.</p>
 <table class="stack">
 <thead><tr><th scope="col"></th><th scope="col">deb: Ubuntu, Debian</th><th scope="col">AppImage: other glibc systems</th></tr></thead>
 <tbody>
@@ -70,11 +70,12 @@ sudo apt install fuse3 libgtk-3-0t64 libnotify4 libnss3 libxss1 libxtst6 xdg-uti
 
 # Without FUSE
 APPIMAGE_EXTRACT_AND_RUN=1 ./OpenProgram-X.Y.Z-linux-x86_64.AppImage</code></pre>
-<p class="note">On Ubuntu 24.04 and newer only the deb sets up the sandbox profile Chromium needs; an AppImage starts there without Chromium's sandbox, so prefer the deb. Optional for both: <code translate="no">bubblewrap</code>, for sandboxed commands. The terminal install prints the <code translate="no">apt</code> line for any library it finds missing. Alpine and other musl systems are not supported.</p>
+<p class="note">On Ubuntu 24.04 and newer only the deb sets up the sandbox profile Chromium needs; an AppImage starts there without Chromium's sandbox, so prefer the deb. Optional for both: <code translate="no">bubblewrap</code>, for sandboxed commands. Alpine and other musl systems are not supported.</p>
+<p class="note">On a server or container without the libraries Chromium needs, the terminal install still finishes: it says in one line that the browser tool waits for them and prints the <code translate="no">apt</code> line that adds them, and the browser tool works once they are installed.</p>
 
 <h2 id="windows">Windows</h2>
 <ol>
-<li>From v1.2.0, download <code translate="no">OpenProgram-X.Y.Z-win-x64.exe</code> from <a href="https://github.com/FuzzyKuji/OpenProgram/releases/latest">the latest release</a>.</li>
+<li>Download the <a href="../latest.html?OpenProgram-win-x64.exe">installer</a>, <code translate="no">OpenProgram-X.Y.Z-win-x64.exe</code>.</li>
 <li>Run it. It installs for your account and needs no administrator.</li>
 </ol>
 <table class="stack fixed">
@@ -84,7 +85,7 @@ APPIMAGE_EXTRACT_AND_RUN=1 ./OpenProgram-X.Y.Z-linux-x86_64.AppImage</code></pre
 <tr><th scope="row">Blocked by <strong>Smart App Control</strong></th><td>Windows has no per-app exception. Use the terminal install; if Windows stops that too, the only choice left is turning Smart App Control off in <strong>Windows Security → App &amp; browser control</strong>.</td></tr>
 </tbody>
 </table>
-<p class="note">From Command Prompt: <code translate="no">curl -fsSL https://openprogram.io/install.cmd -o install.cmd &amp;&amp; install.cmd</code></p>
+<p class="note">From Command Prompt: <code translate="no">curl -fsSL https://fuzzykuji.github.io/openprogram-site/install.cmd -o install.cmd &amp;&amp; install.cmd</code></p>
 
 <h2 id="proxy">Behind a proxy</h2>
 <table class="stack fixed">
@@ -95,7 +96,7 @@ APPIMAGE_EXTRACT_AND_RUN=1 ./OpenProgram-X.Y.Z-linux-x86_64.AppImage</code></pre
 <tr><th scope="row">Command Prompt</th><td><code translate="no">set HTTPS_PROXY=http://proxy.example:8080</code></td></tr>
 </tbody>
 </table>
-<p class="note">Add <code translate="no">NO_PROXY</code> for hosts that skip the proxy. Both are read by the installers and <code translate="no">openprogram upgrade</code>. From v1.2.0 the App's update check follows the system proxy settings.</p>
+<p class="note">Add <code translate="no">NO_PROXY</code> for hosts that skip the proxy. Both are read by the installers and <code translate="no">openprogram upgrade</code>. The App's update check follows the system proxy settings.</p>
 
 <h2 id="advanced">Advanced</h2>
 
@@ -104,8 +105,8 @@ APPIMAGE_EXTRACT_AND_RUN=1 ./OpenProgram-X.Y.Z-linux-x86_64.AppImage</code></pre
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Shell</th><th scope="col">Command</th></tr></thead>
 <tbody>
-<tr><th scope="row">macOS, Linux</th><td><code translate="no">curl -fsSL https://openprogram.io/install | OPENPROGRAM_VERSION=X.Y.Z sh</code></td></tr>
-<tr><th scope="row">Windows</th><td><code translate="no">$env:OPENPROGRAM_VERSION = "X.Y.Z"; irm https://openprogram.io/install.ps1 | iex</code></td></tr>
+<tr><th scope="row">macOS, Linux</th><td><code translate="no">curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | OPENPROGRAM_VERSION=X.Y.Z sh</code></td></tr>
+<tr><th scope="row">Windows</th><td><code translate="no">$env:OPENPROGRAM_VERSION = "X.Y.Z"; irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex</code></td></tr>
 </tbody>
 </table>
 </details>
@@ -120,7 +121,7 @@ APPIMAGE_EXTRACT_AND_RUN=1 ./OpenProgram-X.Y.Z-linux-x86_64.AppImage</code></pre
 <tr><th scope="row">Windows</th><td><code translate="no">Get-FileHash .\OpenProgram-X.Y.Z-win-x64.exe -Algorithm SHA256</code></td></tr>
 </tbody>
 </table>
-<p class="note">Compare with that file's line in the same release's <code translate="no">SHA256SUMS-…</code> (<a href="download.html#checksum-files">which one</a>). The terminal installers and the App updater check this themselves. Signed Windows builds also show a valid entry under <strong>Properties → Digital Signatures</strong>.</p>
+<p class="note">Compare with the SHA-256 shown beside that file on its release page, or its entry in that release's <code translate="no">release-manifest.json</code> (<a href="download.html#checksum-files">where each is</a>). The terminal installers and the App updater check this themselves. Signed Windows builds also show a valid entry under <strong>Properties → Digital Signatures</strong>.</p>
 </details>
 
 <details id="installer-options">
@@ -139,11 +140,11 @@ APPIMAGE_EXTRACT_AND_RUN=1 ./OpenProgram-X.Y.Z-linux-x86_64.AppImage</code></pre
 <summary>What the installer does</summary>
 <ul>
 <li>The short script finds the latest stable GitHub Release, confirms it has a package for this system and runs the installer from that release's tag.</li>
-<li>Prints the size, checks free space first, shows progress, and resumes an interrupted download on the next run.</li>
+<li>Prints the size, checks free space first (a disk that is too full is told how much is missing), shows progress, and resumes an interrupted download on the next run.</li>
 <li>macOS, Linux: installs under <code translate="no">~/.openprogram/runtime/cli/releases/&lt;version&gt;</code>, creates <code translate="no">~/.local/bin/openprogram</code>, and adds that directory to <code translate="no">PATH</code> with one marked line in the shell profile.</li>
 <li>Windows: installs under <code translate="no">%USERPROFILE%\.openprogram\runtime\cli\releases</code>, creates <code translate="no">%LOCALAPPDATA%\OpenProgram\bin\openprogram.cmd</code> and adds it to the user <code translate="no">PATH</code>. The default script policy is left alone.</li>
 <li>Serialized by a per-user lock. It resolves no product dependencies, clones no repository and builds no JavaScript.</li>
-<li>Before switching <code translate="no">current</code> it verifies the architecture-matched manifest and bundled Ink TUI, then Web, providers, MCP, memory, channels, search, Ink and Chromium, then cold-starts the worker and checks health on an OS-assigned loopback port. <a href="upgrade.html#cli-and-server-release">Activation and failure</a>.</li>
+<li>Before switching <code translate="no">current</code> it verifies the architecture-matched manifest and bundled Ink TUI, then Web, providers, MCP, memory, channels, search, Ink and Chromium (the Chromium launch is left to the browser tool when the machine lacks its libraries), then cold-starts the worker and checks health on an OS-assigned loopback port. <a href="upgrade.html#cli-and-server-release">Activation and failure</a>.</li>
 <li><code translate="no">openprogram doctor</code> reports what is still missing, such as provider credentials.</li>
 </ul>
 </details>
@@ -155,7 +156,7 @@ APPIMAGE_EXTRACT_AND_RUN=1 ./OpenProgram-X.Y.Z-linux-x86_64.AppImage</code></pre
 <tr><th scope="row">Included</th><td>Managed CPython, OpenProgram, prebuilt Web UI, private Node.js, compiled Ink app, providers, channels, search, Playwright Chromium; Desktop adds Electron. Every release contains the same product runtime; only the launch shell differs.</td></tr>
 <tr><th scope="row">Excluded</th><td>PyTorch, OpenCV, and EasyOCR are not in the product runtime. It bundles no Programs.</td></tr>
 <tr><th scope="row">Not needed</th><td>System Python, Node.js, npm</td></tr>
-<tr><th scope="row">Git</th><td>Included from v1.1.0. On v1.0.0, install it yourself for session and Memory history; <code translate="no">openprogram doctor</code> checks it.</td></tr>
+<tr><th scope="row">Git</th><td>Included, for session and Memory history.</td></tr>
 </tbody>
 </table>
 <p class="note">Programs are added with <code translate="no">openprogram programs install</code> (<a href="../capabilities/installing-programs.html">Installing programs</a>) and stored apart from the read-only runtime.</p>
@@ -165,7 +166,7 @@ APPIMAGE_EXTRACT_AND_RUN=1 ./OpenProgram-X.Y.Z-linux-x86_64.AppImage</code></pre
 </details>
 
 <h2 id="development-checkout">Development checkout</h2>
-<p>For contributors, and for Windows until v1.2.0. It does not define the <code translate="no">stable</code> channel.</p>
+<p>For contributors. It does not define the <code translate="no">stable</code> channel.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Platform</th><th scope="col">Command</th></tr></thead>
 <tbody>

@@ -1,5 +1,6 @@
 """release release workflow tests."""
 from __future__ import annotations
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -10,6 +11,8 @@ import subprocess
 import sys
 
 import pytest
+
+from openprogram.operations.project_site import INSTALL_SCRIPT_URL
 
 from ._support import ROOT, _desktop_package
 
@@ -58,7 +61,6 @@ def test_native_release_workflow_has_platform_jobs() -> None:
     assert "matrix.platform != 'win'" not in workflow
     assert "apps/desktop/dist/*.AppImage" in workflow
     assert "apps/desktop/dist/*.deb" in workflow
-    assert "-name '*.AppImage' -o -name '*.deb'" in workflow
 
 
 
@@ -98,7 +100,7 @@ def test_release_workflow_publishes_structured_release_notes() -> None:
             assert archive in download_urls
             assert archive + ".sha256" in download_urls
     assert "#development-checkout)" in notes
-    assert f"curl -fsSL https://openprogram.io/install | OPENPROGRAM_VERSION={version} sh" in notes
+    assert f"curl -fsSL {INSTALL_SCRIPT_URL} | OPENPROGRAM_VERSION={version} sh" in notes
 
     workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
         encoding="utf-8"
@@ -176,7 +178,7 @@ def test_one_platform_failing_does_not_block_the_publish_job() -> None:
     workflow = _workflow()
     publish = workflow[workflow.index("  publish:\n"):]
     assert "if: ${{ !cancelled() && needs.platforms.result == 'success' }}" in publish
-    assert "needs: [platforms, python, product-runtime, seed, desktop, cli-installer]" in publish
+    assert "needs: [office, platforms, python, product-runtime, seed, desktop, cli-installer]" in publish
     assert "release-matrix.py assemble" in publish
     for job in ("seed", "desktop", "cli-installer"):
         body = workflow[workflow.index(f"  {job}:\n"):]
@@ -343,6 +345,7 @@ def _file(path: Path, content: str = "x") -> None:
 
 def _artifacts(root: Path, version: str = "1.0.1") -> None:
     _file(root / "developer-python-distributions" / f"openprogram-{version}-py3-none-any.whl")
+    _file(root / "office-assets" / "OfficeAssets-d15d12b-dc31dd9d-24d2d8e1.zip")
     for key in ("macos-arm64", "linux-x86_64"):
         _file(root / f"product-runtime-{key}" / f"OpenProgram-{version}-runtime-{key}.tar.gz")
         _file(root / f"cli-verified-{key}" / "verified.txt")
@@ -393,12 +396,19 @@ def test_a_linux_leg_without_appimage_ships_the_deb(tmp_path: Path) -> None:
     assert "Linux x86_64 AppImage: its build failed; the deb package is available." in missing
 
 
-def test_publish_refuses_only_without_the_wheel_or_every_macos_and_linux_runtime(tmp_path: Path) -> None:
+def test_publish_refuses_only_without_the_wheel_the_office_archive_or_every_macos_and_linux_runtime(
+    tmp_path: Path,
+) -> None:
     refusal = _select()["refusal"]
     no_wheel = tmp_path / "no-wheel"
     _artifacts(no_wheel)
     shutil.rmtree(no_wheel / "developer-python-distributions")
     assert "wheel" in refusal(no_wheel)
+
+    no_office = tmp_path / "no-office"
+    _artifacts(no_office)
+    shutil.rmtree(no_office / "office-assets")
+    assert refusal(no_office) == "the Office archive is missing"
 
     no_runtimes = tmp_path / "no-runtimes"
     _artifacts(no_runtimes)
@@ -412,29 +422,15 @@ def test_publish_refuses_only_without_the_wheel_or_every_macos_and_linux_runtime
     assert refusal(linux_only) is None
 
 
-def test_version_free_copies_have_stable_names_and_stay_out_of_the_manifest(tmp_path: Path) -> None:
-    module = _select()
-    root = tmp_path / "artifacts"
-    for name in (
-        "desktop-full-mac-arm64/OpenProgram-1.0.1-mac-arm64-unsigned.dmg",
-        "desktop-full-mac-arm64/OpenProgram-1.0.1-mac-arm64-unsigned.zip",
-        "desktop-full-mac-arm64/SHA256SUMS-mac-arm64",
-        "desktop-thin-win-x86_64/OpenProgram-1.0.1-win-x64.exe",
-        "desktop-thin-linux-x86_64/OpenProgram-1.0.1-linux-x86_64.AppImage",
-        "desktop-thin-linux-x86_64/OpenProgram-1.0.1-linux-amd64.deb",
-        "desktop-thin-linux-arm64/OpenProgram-1.0.1-linux-arm64.deb",
-    ):
-        _file(root / name)
-    links = tmp_path / "links"
-    made = module["make_version_free_copies"](root, "1.0.1", links)
-    assert sorted(made) == sorted(path.name for path in links.iterdir()) == [
-        "OpenProgram-linux-amd64.deb", "OpenProgram-linux-arm64.deb", "OpenProgram-linux-x86_64.AppImage",
-        "OpenProgram-mac-arm64.dmg", "OpenProgram-win-x64.exe",
-    ]
-    assert not list(root.rglob("OpenProgram-mac-arm64.dmg")), "the copies live outside the manifest root"
+def test_each_file_is_uploaded_once_under_its_versioned_name() -> None:
     workflow = _workflow()
-    assert workflow.index("--links-output") < workflow.index("name: Create release manifest")
-    assert 'find release-artifacts "$RUNNER_TEMP/release-links" -type f' in workflow
+    # No second name for an App, and no per-leg checksum file: the release page
+    # and release-manifest.json carry every file's SHA-256.
+    assert "release-links" not in workflow and "--links-output" not in workflow
+    assert "SHA256SUMS-" not in workflow
+    assert "make_version_free_copies" not in _select()
+    publish = workflow[workflow.index("- name: Publish GitHub Release"):]
+    assert "mapfile -d '' files < <(find release-artifacts -type f -print0)" in publish
 
 
 def test_notes_list_only_what_exists() -> None:
@@ -498,6 +494,9 @@ def _git(repository: Path, *arguments: str, **options) -> subprocess.CompletedPr
     return subprocess.run(["git", "-C", str(repository), *arguments], capture_output=True, text=True, **options)
 
 
+RETIRED_STAND_IN = "retired-example"
+
+
 @pytest.fixture
 def publishing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
@@ -514,18 +513,69 @@ def publishing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, P
     for relative in (
         "scripts/publish-github.sh", "scripts/git-hooks/pre-push",
         "scripts/git-hooks/pre-commit", "scripts/git-hooks/install.sh",
+        "scripts/retired_accounts.py", "scripts/release/release-version.py",
+        "scripts/release/office-archive.py",
     ):
         target = repository / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / relative, target)
-    _file(repository / "pyproject.toml", '[project]\nname = "x"\nversion = "1.2.3"\n')
-    _file(repository / "apps/desktop/package.json", '{\n  "name": "x",\n  "version": "1.2.3",\n  "private": true\n}\n')
+    # The copied scanner also treats a made-up login as retired, so the tests
+    # below can name one without naming a real account.
+    scanner = repository / "scripts/retired_accounts.py"
+    digest = hashlib.sha256(RETIRED_STAND_IN.encode()).hexdigest()
+    scanner.write_text(
+        scanner.read_text(encoding="utf-8").replace("RETIRED = frozenset({", f'RETIRED = frozenset({{\n    "{digest}",', 1),
+        encoding="utf-8",
+    )
+    _version_places(repository, "1.2.3")
+    _file(repository / "openprogram/programs/applications/office_editor/install.py", (
+        'OFFICE_RELEASES = "https://github.com/Owner/Repo/releases"\n'
+        f'OFFICE_ARCHIVE_NAME = "{OFFICE_NAME}"\n'
+        f'OFFICE_ARCHIVE_SHA256 = "{hashlib.sha256(OFFICE_BYTES).hexdigest()}"\n'
+        f'OFFICE_DOWNLOAD_BYTES = {len(OFFICE_BYTES)}\n'
+    ))
+    # gh answers from GH_ASSETS (the names on the newest release and the
+    # tag's draft) and logs every call, so nothing reaches GitHub.
+    fake_bin = tmp_path / "bin"
+    _file(fake_bin / "gh", (
+        '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "$GH_LOG"\n'
+        'case "$*" in "release view"*"--json assets"*) printf \'%s\\n\' $GH_ASSETS ;; '
+        '"release view"*) exit 1 ;; esac\n'
+    ))
+    (fake_bin / "gh").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{fake_bin}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("GH_LOG", str(tmp_path / "gh.log"))
+    monkeypatch.setenv("GH_ASSETS", OFFICE_NAME)
     _file(repository / ".github/release-notes/v1.2.3.md", "# OpenProgram 1.2.3 Release Notes\n\nText.\n")
     _git(repository, "add", ".", check=True)
     _git(repository, "commit", "--quiet", "-m", "First", check=True)
     _git(repository, "branch", "stable", check=True)
     _git(repository, "remote", "add", "origin", str(origin), check=True)
     return repository, origin
+
+
+OFFICE_NAME = "OfficeAssets-test.zip"
+OFFICE_BYTES = b"office archive"
+
+
+def _version_places(repository: Path, version: str, *, lock: str | None = None) -> None:
+    """Every place release-version.py reads, as the real files write them."""
+    _file(repository / "pyproject.toml", f'[project]\nname = "openprogram"\nversion = "{version}"\n')
+    _file(repository / "apps/desktop/package.json",
+          f'{{\n  "name": "openprogram-desktop",\n  "version": "{version}",\n  "private": true\n}}\n')
+    _file(repository / "package-lock.json", (
+        '{\n  "name": "openprogram-workspace",\n  "packages": {\n'
+        f'    "apps/desktop": {{\n      "name": "openprogram-desktop",\n      "version": "{version}",\n'
+        '      "license": "AGPL-3.0-or-later"\n    }\n  }\n}\n'
+    ))
+    _file(repository / "uv.lock", (
+        'version = 1\n\n[[package]]\nname = "openprogram"\n'
+        f'version = "{lock or version}"\nsource = {{ editable = "." }}\n'
+    ))
+    _file(repository / "scripts/release/install-release.sh",
+          f'#!/usr/bin/env sh\nOPENPROGRAM_VERSION="${{OPENPROGRAM_VERSION:-{version}}}"\n')
+    _file(repository / "scripts/release/install-release.ps1",
+          f'$Version = if ($env:OPENPROGRAM_VERSION) {{ $env:OPENPROGRAM_VERSION }} else {{ "{version}" }}\n')
 
 
 def _publish(repository: Path, *arguments: str) -> subprocess.CompletedProcess:
@@ -558,6 +608,64 @@ def test_tag_refuses_wrong_versions(publishing, tag: str, message: str) -> None:
     repository, _ = publishing
     result = _publish(repository, "-m", "Version", "--tag", tag, "--dry-run")
     assert result.returncode != 0 and message in result.stderr
+
+
+def test_tag_refuses_a_half_bumped_version_naming_each_place(publishing) -> None:
+    repository, origin = publishing
+    _version_places(repository, "1.3.0", lock="1.2.3")
+    _file(repository / "scripts/release/install-release.ps1",
+          '$Version = if ($env:OPENPROGRAM_VERSION) { $env:OPENPROGRAM_VERSION } else { "1.2.3" }\n')
+    _file(repository / ".github/release-notes/v1.3.0.md", "# OpenProgram 1.3.0 Release Notes\n")
+    _git(repository, "add", ".", check=True)
+    _git(repository, "commit", "--quiet", "-m", "Half bump", check=True)
+    _git(repository, "branch", "-f", "stable", "dev", check=True)
+    for arguments in (("--dry-run",), ()):
+        result = _publish(repository, "-m", "V", "--tag", "v1.3.0", *arguments)
+        assert result.returncode != 0
+        assert "uv.lock says 1.2.3" in result.stderr
+        assert "scripts/release/install-release.ps1 says 1.2.3" in result.stderr
+        assert "pyproject.toml" not in result.stderr.split("this source:")[1].split(". Run")[0]
+        assert "release-version.py set 1.3.0" in result.stderr
+    assert _git(origin, "for-each-ref").stdout == ""
+
+
+def test_tag_dry_run_says_whether_the_local_office_archive_is_the_pinned_one(publishing, tmp_path: Path) -> None:
+    repository, _ = publishing
+    absent = _publish(repository, "-m", "V", "--tag", "v1.2.3", "--dry-run")
+    assert absent.returncode == 0, absent.stderr
+    assert f"Office archive: no local copy given (--office-archive /path/to/{OFFICE_NAME})" in absent.stdout
+    archive = tmp_path / "copy" / OFFICE_NAME
+    _file(archive)
+    archive.write_bytes(OFFICE_BYTES)
+    good = _publish(repository, "-m", "V", "--tag", "v1.2.3", "--dry-run", "--office-archive", str(archive))
+    assert good.returncode == 0, good.stderr
+    assert f"Office archive: {archive} is the pinned {OFFICE_NAME} ({len(OFFICE_BYTES)} bytes" in good.stdout
+    archive.write_bytes(b"another build")
+    bad = _publish(repository, "-m", "V", "--tag", "v1.2.3", "--dry-run", "--office-archive", str(archive))
+    assert bad.returncode != 0 and "is not the pinned" in bad.stderr and "13 bytes, not 14" in bad.stderr
+    assert not (tmp_path / "gh.log").exists(), "a dry run never asks GitHub"
+    assert "needs --tag" in _publish(repository, "-m", "V", "--office-archive", str(archive)).stderr
+
+
+def test_tag_without_the_office_archive_on_github_is_refused_or_seeded_first(
+    publishing, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository, origin = publishing
+    monkeypatch.setenv("GH_ASSETS", "something-else.zip")
+    refused = _publish(repository, "-m", "V", "--tag", "v1.2.3")
+    assert refused.returncode != 0
+    assert f"pass --office-archive /path/to/{OFFICE_NAME}" in refused.stderr
+    assert _git(repository, "rev-parse", "--verify", "--quiet", "refs/heads/main").returncode != 0
+    assert _git(origin, "for-each-ref").stdout == ""
+
+    archive = tmp_path / "copy" / OFFICE_NAME
+    _file(archive)
+    archive.write_bytes(OFFICE_BYTES)
+    seeded = _publish(repository, "-m", "V", "--tag", "v1.2.3", "--office-archive", str(archive))
+    assert seeded.returncode == 0, seeded.stderr
+    calls = (tmp_path / "gh.log").read_text().splitlines()
+    assert f"release create v1.2.3 {archive} --draft" in "\n".join(calls)
+    assert _git(origin, "rev-parse", "refs/tags/v1.2.3^{commit}").returncode == 0
 
 
 def test_tag_refuses_missing_notes_a_bad_heading_and_no_push(publishing) -> None:
@@ -602,3 +710,54 @@ def test_hook_lets_only_the_scripts_tag_through(publishing) -> None:
     )
     assert other.returncode != 0, "the script only tags main"
     assert _git(repository, "push", "origin", ":refs/tags/v1.2.3").returncode == 0
+
+
+# --- publish-github.sh: retired accounts ----------------------------------------
+
+
+def test_a_source_naming_a_retired_account_is_refused_before_anything_moves(publishing) -> None:
+    repository, origin = publishing
+    _file(repository / "docs/credits.md", f"Thanks to https://github.com/{RETIRED_STAND_IN}/Repo.\n")
+    _git(repository, "add", ".", check=True)
+    _git(repository, "commit", "--quiet", "-m", "Credits", check=True)
+    _git(repository, "branch", "-f", "stable", "dev", check=True)
+    # Only the commit counts: the checkout no longer holds the line, and the refusal stands.
+    (repository / "docs/credits.md").write_text("Thanks.\n", encoding="utf-8")
+    for arguments in (("--dry-run",), ()):
+        result = _publish(repository, "-m", "Version", "--tag", "v1.2.3", *arguments)
+        assert result.returncode != 0
+        assert "names a retired account" in result.stderr and "docs/credits.md:1" in result.stderr
+    assert _git(repository, "rev-parse", "--verify", "--quiet", "refs/heads/main").returncode != 0
+    assert _git(origin, "for-each-ref").stdout == ""
+
+
+def test_a_summary_naming_a_retired_account_is_refused(publishing) -> None:
+    repository, _ = publishing
+    result = _publish(repository, "-m", f"Thanks {RETIRED_STAND_IN.upper()}", "--dry-run")
+    assert result.returncode != 0 and "the summary names a retired account" in result.stderr
+
+
+def test_main_whose_history_names_a_retired_account_is_not_pushed(publishing) -> None:
+    repository, origin = publishing
+    identity = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "FuzzyKuji", "GIT_AUTHOR_EMAIL": "9404270+FuzzyKuji@users.noreply.github.com",
+        "GIT_COMMITTER_NAME": "FuzzyKuji", "GIT_COMMITTER_EMAIL": "9404270+FuzzyKuji@users.noreply.github.com",
+    }
+    old = _git(
+        repository, "commit-tree", "dev^{tree}", "-m", f"Earlier version by {RETIRED_STAND_IN}",
+        env=identity, check=True,
+    ).stdout.strip()
+    _git(repository, "update-ref", "refs/heads/main", old, check=True)
+    result = _publish(repository)
+    assert result.returncode != 0 and "the history of main names a retired account" in result.stderr
+    assert _git(origin, "for-each-ref").stdout == ""
+
+
+def test_a_clean_source_still_publishes(publishing) -> None:
+    repository, origin = publishing
+    result = _publish(repository, "-m", "Version")
+    assert result.returncode == 0, result.stderr
+    assert _git(origin, "rev-parse", "refs/heads/main").stdout.strip() == _git(
+        repository, "rev-parse", "refs/heads/main",
+    ).stdout.strip()

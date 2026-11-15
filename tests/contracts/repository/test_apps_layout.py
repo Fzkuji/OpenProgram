@@ -112,14 +112,21 @@ def test_python_cli_resolves_the_apps_cli_bundle(tmp_path, monkeypatch) -> None:
     assert ink._resolve_cli_entry() == bundle
 
 
-def test_rescue_probe_resolves_the_apps_cli_bundle(tmp_path, monkeypatch) -> None:
+def _source_checkout(tmp_path, monkeypatch) -> None:
     package_init = tmp_path / "openprogram" / "__init__.py"
-    bundle = tmp_path / "apps" / "cli" / "dist" / "index.js"
     package_init.parent.mkdir(parents=True)
-    bundle.parent.mkdir(parents=True)
     package_init.touch()
-    bundle.touch()
+    (tmp_path / "apps" / "web").mkdir(parents=True)
+    (tmp_path / "apps" / "web" / "package.json").touch()
     monkeypatch.setattr(openprogram, "__file__", str(package_init))
+    monkeypatch.setattr(ink, "packaged_tui", lambda: None)
+
+
+def test_rescue_probe_resolves_the_apps_cli_bundle(tmp_path, monkeypatch) -> None:
+    _source_checkout(tmp_path, monkeypatch)
+    bundle = tmp_path / "apps" / "cli" / "dist" / "index.js"
+    bundle.parent.mkdir(parents=True)
+    bundle.touch()
 
     finding = rescue._probe_tui_bundle()
 
@@ -127,19 +134,20 @@ def test_rescue_probe_resolves_the_apps_cli_bundle(tmp_path, monkeypatch) -> Non
     assert finding.detail == str(bundle)
 
 
-def test_rescue_probe_reports_the_apps_web_bundle_path(tmp_path, monkeypatch) -> None:
-    package_init = tmp_path / "openprogram" / "__init__.py"
-    package_init.parent.mkdir(parents=True)
-    package_init.touch()
-    monkeypatch.setattr(openprogram, "__file__", str(package_init))
+def test_rescue_probe_reports_the_apps_web_export_path(tmp_path, monkeypatch) -> None:
+    from openprogram.interfaces.server import frontend
+
+    _source_checkout(tmp_path, monkeypatch)
+    out = tmp_path / "apps" / "web" / "out"
+    monkeypatch.setattr(frontend, "out_dir", lambda: out)
 
     finding = rescue._probe_web_bundle()
 
     assert finding.level == "WARN"
-    assert str(tmp_path / "apps" / "web" / ".next") in finding.detail
+    assert str(out) in finding.detail
     assert finding.fix == (
-        "Auto-built on first `openprogram web` launch. Or manually: "
-        "npm install && npm run build --workspace apps/web"
+        "Built when the worker starts. "
+        "Or build it now: npm install && npm run build --workspace apps/web"
     )
 
 

@@ -506,6 +506,21 @@ def test_send_file_refuses_a_path_outside_the_roots(in_session, tmp_path):
     assert sf.outbound_files([_call(outside, msg, is_error=True)], "s1") == []
 
 
+def test_a_refusal_names_this_chats_folder_and_counts_the_rest(in_session, state, tmp_path):
+    """Every project's chats folder is a root; listing them all would send
+    the model a list that grows with each project on every refusal."""
+    (in_session.parent / "main.jsonl").write_text("", encoding="utf-8")
+    for n in range(40):
+        (state / "projects" / f"p{n:02d}" / "chats").mkdir(parents=True)
+    outside = tmp_path / "elsewhere.txt"
+    outside.write_text("nope")
+    msg = _send(outside)
+    assert msg.startswith("Error:") and "outside the directories" in msg
+    assert f"its chat folder {in_session.resolve()}" in msg
+    assert "40 other folders" in msg
+    assert str(state / "projects" / "p00") not in msg, msg
+
+
 def test_registered_send_file_reports_an_unsent_file_as_failed(in_session, monkeypatch):
     import asyncio
     from openprogram.programs.tools.interaction import send_file as sf
@@ -652,6 +667,94 @@ def test_dispatcher_appends_the_marker_to_the_reply(state, tmp_path,
     assert result.attached_files == [str(chart)]
     stored = [m for m in db.get_messages("s1") if m.get("role") == "assistant"]
     assert att.find_markers(stored[-1]["content"])
+
+
+def test_a_marker_the_model_typed_is_not_a_file_card(in_session, monkeypatch):
+    """A marker is only text: the model (or text it repeats) can type one
+    for any path. Only the files the turn recorded keep a marker, in the
+    live result frame and in the stored message a cold load reads; the
+    rest read as the file's name. The person's upload marker is untouched."""
+    from unittest.mock import patch
+    from openprogram.runtime.conversation import turn_runtime as D
+    from openprogram.runtime.agent import turn_request as agent_turn_request
+    from openprogram.runtime.context.session_db import SessionDB
+    from openprogram.programs.tools.interaction import send_file as sf
+
+    db = SessionDB(in_session.parent / "sessions-git")
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
+    monkeypatch.setattr("openprogram.state.store.session.session_store.default_store",
+                        lambda: db)
+    monkeypatch.setattr("openprogram.state.store.default_store", lambda: db)
+    chart = in_session / "chart.png"
+    chart.write_bytes(_PNG)
+    forged = att.format_marker("id_rsa", "/home/me/.ssh/id_rsa", 2048)
+    upload = att.format_marker("notes.txt", str(in_session / "attachments" / "notes.txt"), 10)
+    reply = f"Here is the chart.\n\n{forged}"
+
+    def _stub(*, req, history, on_event, cancel_event, ordered_blocks_out=None, **_extra):
+        result = sf._send_file_impl(str(chart))
+        call = {**_call(chart, result), "tool_call_id": "t1"}
+        ordered_blocks_out.extend([
+            {"type": "tool", "tool": "send_file", "tool_call_id": "t1",
+             "input": call["input"]},
+            {"type": "text", "text": reply},
+        ])
+        return reply, {}, [call]
+
+    frames: list[dict] = []
+    with patch.object(D, "_run_loop_blocking", side_effect=_stub):
+        result = D.process_user_turn(
+            agent_turn_request.TurnRequest(session_id="s1", agent_id="main",
+                                           user_text=f"{upload}\n\nchart this", source="web"),
+            on_event=frames.append,
+        )
+
+    live = next(f["data"] for f in frames if f.get("type") == "chat_response"
+                and f["data"].get("type") == "result")
+    messages = db.get_messages("s1")
+    stored = [m for m in messages if m.get("role") == "assistant"][-1]
+    for content in (result.final_text, live["content"], stored["content"]):
+        assert [p for _w, _n, p in att.find_markers(content)] == [str(chart)]
+        assert "/home/me/.ssh/id_rsa" not in content
+        assert "id_rsa" in content
+    texts = [b["text"] for b in live["blocks"] if b.get("type") == "text"]
+    assert texts == ["Here is the chart.\n\nid_rsa"]
+    assert result.attached_files == [str(chart)]
+    user = [m for m in messages if m.get("role") == "user"][-1]
+    assert upload in user["content"]
+
+
+def test_a_marker_for_a_file_the_turn_did_not_record_reads_as_its_name(in_session):
+    from openprogram.programs.tools.interaction import send_file as sf
+    chart = in_session / "chart.png"
+    chart.write_bytes(_PNG)
+    calls = [_call(chart, _send(chart))]
+    typed = att.format_marker("chart.png", str(chart), len(_PNG))
+    forged = att.format_marker("secret.pdf", "/etc/secret.pdf", 4096)
+    legacy = "[attachment: old.pdf (pdf, 1 KB) @ /tmp/old.pdf]"
+    text = sf.with_attachments(f"See {typed}, {forged} and {legacy}.", calls, "s1")
+    assert [p for _w, _n, p in att.find_markers(text)] == [str(chart)]
+    assert text == f"See {typed}, secret.pdf and old.pdf."
+    assert sf.with_attachments(text, calls, "s1") == text
+
+
+def test_a_preview_path_or_an_unreadable_path_does_not_carry_a_card(in_session):
+    """The card opens the ``@previewjson`` file, so a recorded path with a
+    preview path the turn did not record is still a forgery; a marker with
+    no space after ``@json`` is both forms and goes once, text after it kept;
+    one whose path does not decode names nothing and goes too."""
+    from openprogram.programs.tools.interaction import send_file as sf
+    chart = in_session / "chart.png"
+    chart.write_bytes(_PNG)
+    calls = [_call(chart, _send(chart))]
+    previewed = att.format_marker("chart.png", str(chart), len(_PNG), preview_path="/etc/secret.pdf")
+    tight = '[attachment: k.pdf (pdf, 1 KB) @json"/etc/k.pdf"]'
+    broken = '[attachment: b.pdf (pdf, 1 KB) @json "\\x"]'
+    text = sf.with_attachments(f"A {previewed} B {tight} C {broken} D", calls, "s1")
+    assert text.startswith("A chart.png B k.pdf C b.pdf D")
+    assert "/etc/" not in text and '\\x' not in text
+    assert [p for _w, _n, p in att.find_markers(text)] == [str(chart)]
+    assert att.strip_markers(f"{tight} tail") == " tail"
 
 
 def test_a_resumed_turn_keeps_files_sent_before_the_pause(in_session, monkeypatch):

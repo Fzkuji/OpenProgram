@@ -314,8 +314,24 @@ def test_a_syntax_error_stops_the_build_and_keeps_the_worktree(layout, repo, log
 
 def test_not_enough_disk_says_both_sizes(layout, repo, log, monkeypatch):
     monkeypatch.setattr(builder.shutil, "disk_usage", lambda _p: type("U", (), {"free": 1024 ** 3})())
-    with pytest.raises(builder.BuildError, match=r"needs [\d.]+ GB and 1\.0 GB is free"):
+    with pytest.raises(builder.BuildError, match=r"needs [\d.]+ GB and 1\.0 GB is free, [\d.]+ GB short"):
         build(layout, repo)
+
+
+def test_a_disk_just_under_the_need_names_the_difference(layout, repo, log, monkeypatch):
+    required = builder.required_space(layout, new_base=True)
+    free = required - 38 * 1024 ** 2
+    monkeypatch.setattr(builder.shutil, "disk_usage", lambda _p: type("U", (), {"free": free})())
+    with pytest.raises(builder.BuildError, match=r"is free, 38 MB short"):
+        builder.check_space(layout, new_base=True)
+
+
+def test_the_shortfall_is_never_printed_as_nothing():
+    from openprogram.operations.self_update.versions.layout import disk_shortfall
+
+    assert disk_shortfall(5 * 1024 ** 3, 5 * 1024 ** 3 - 1) == "less than 1 MB"
+    assert disk_shortfall(5 * 1024 ** 3, 5 * 1024 ** 3 - 300 * 1024 ** 2) == "300 MB"
+    assert disk_shortfall(5 * 1024 ** 3, 2 * 1024 ** 3) == "3.0 GB"
 
 
 def test_a_reused_base_needs_less_space(layout):
@@ -416,6 +432,11 @@ def test_component_limited_build_matches_the_generator_inputs():
 # ---- the real shell recipes, with stand-ins for uv, node and npm -------------
 
 
+# A stand-in Python still answers the build's wheel-target question with the real script.
+_RUN_TARGET_SCRIPT = f'case "$*" in *runtime-wheels.py*) exec "{sys.executable}" "$@" ;; esac\n'
+_RUN_TARGET_PRINTF = _RUN_TARGET_SCRIPT.replace("\n", "\\n")
+
+
 def _fake_tools(tmp_path, log):
     tools = tmp_path / "tools"
     tools.mkdir()
@@ -425,7 +446,7 @@ if [ "$1" = --version ]; then echo "uv 0.11.16"; exit 0; fi
 if [ "$1 $2" = "python install" ]; then
   dir="$UV_PYTHON_INSTALL_DIR/cpython-x"
   mkdir -p "$dir/bin"
-  printf '#!/bin/sh\\necho "python $*" >> "{log}"\\nmkdir -p "$PLAYWRIGHT_BROWSERS_PATH/chromium" 2>/dev/null\\n' > "$dir/bin/python3"
+  printf '#!/bin/sh\\n{_RUN_TARGET_PRINTF}echo "python $*" >> "{log}"\\nmkdir -p "$PLAYWRIGHT_BROWSERS_PATH/chromium" 2>/dev/null\\n' > "$dir/bin/python3"
   chmod +x "$dir/bin/python3"
   ln -s "$dir" "$UV_PYTHON_INSTALL_DIR/cpython-alias"
   exit 0
@@ -474,7 +495,8 @@ def recipe(tmp_path):
     """The real scripts in a small repository with stub tools on PATH."""
     root = tmp_path / "recipe"
     (root / "scripts/release").mkdir(parents=True)
-    for name in ("build-base.sh", "stage-release-assets.sh", "verify-product-runtime.py", "smoke-ink-tui-pty.py"):
+    for name in ("build-base.sh", "runtime-wheels.py", "stage-release-assets.sh", "verify-product-runtime.py",
+                 "smoke-ink-tui-pty.py"):
         shutil.copy2(REPOSITORY / "scripts/release" / name, root / "scripts/release" / name)
     shutil.copy2(REPOSITORY / "scripts/release/product-runtime.json", root / "scripts/release/product-runtime.json")
     (root / "uv.lock").write_text('[[package]]\nname = "playwright"\nversion = "1.50.0"\n')
@@ -573,27 +595,33 @@ def test_recipe_fills_an_embedded_runtime_with_the_same_commands(recipe, tmp_pat
     runtime = tmp_path / "runtime"
     (runtime / "assets/playwright").mkdir(parents=True)
     python = tmp_path / "python"
-    python.write_text(f'#!/bin/sh\necho "python $PLAYWRIGHT_BROWSERS_PATH $*" >> "{log}"\n')
+    python.write_text(f'#!/bin/sh\n{_RUN_TARGET_SCRIPT}echo "python $PLAYWRIGHT_BROWSERS_PATH $*" >> "{log}"\n')
     python.chmod(0o755)
     done = run_recipe(root, environment, "--embedded-runtime", str(runtime), "--python", str(python))
     assert done.returncode == 0, done.stderr
     text = log.read_text()
     assert "--frozen --no-dev --extra all --extra search --no-emit-project" in text
     assert f"pip install --python {python} --strict --break-system-packages --require-hashes" in text
+    # Wheels only, for the oldest supported system rather than this machine.
+    assert "--python-platform" in text and "--only-binary :all:" in text
     assert f"python {runtime}/assets/playwright -m playwright install chromium" in text
     assert "mdit-py-plugins" not in (runtime / "product-requirements.txt").read_text().split("other")[1]
     assert (runtime / "git/bin/git").is_file() and not (tmp_path / ".git-archive.tar.gz").exists()
 
 
-@pytest.mark.parametrize("machine,platform_name", [("x86_64", "ubuntu-x64"), ("aarch64", "ubuntu-arm64")])
-def test_recipe_fetches_the_pinned_git_on_linux(recipe, tmp_path, machine, platform_name):
+@pytest.mark.parametrize("machine,target,platform_name", [
+    ("x86_64", "linux-x86_64", "ubuntu-x64"), ("aarch64", "linux-arm64", "ubuntu-arm64"),
+])
+def test_recipe_fetches_the_pinned_git_on_linux(recipe, tmp_path, machine, target, platform_name):
     root, log, environment = recipe
     tools = tmp_path / "tools"
     (tools / "uname").write_text(f'#!/bin/sh\nif [ "$1" = -s ]; then echo Linux; else echo {machine}; fi\n')
     (tools / "uname").chmod(0o755)
     runtime = tmp_path / "runtime"
     python = tmp_path / "python"
-    python.write_text("#!/bin/sh\n")
+    # The Git is the packaged Python's: it answers for itself, whatever the machine is.
+    python.write_text(f'#!/bin/sh\ncase "$*" in *"runtime-wheels.py target") echo {target}; exit 0 ;; esac\n'
+                      f"{_RUN_TARGET_SCRIPT}")
     python.chmod(0o755)
     (runtime / "assets/playwright").mkdir(parents=True)
     done = run_recipe(root, environment, "--embedded-runtime", str(runtime), "--python", str(python))
@@ -764,3 +792,15 @@ def test_the_base_takes_a_node_that_runs_on_its_own(tmp_path):
     )
     assert done.returncode == 0, done.stderr
     assert done.stdout == str(official / "node")
+
+
+def test_the_build_has_its_own_windows_profile_folders(layout, tmp_path, monkeypatch):
+    # Without LOCALAPPDATA PowerShell writes its module cache under the working
+    # directory, the worktree, and the next build refuses it as uncommitted.
+    monkeypatch.delenv("LOCALAPPDATA", raising=False)
+    monkeypatch.delenv("APPDATA", raising=False)
+    environment = builder._base_environment(layout)
+    home = Path(environment["HOME"])
+    for name in ("LOCALAPPDATA", "APPDATA"):
+        folder = Path(environment[name])
+        assert folder.is_dir() and folder.is_relative_to(home)

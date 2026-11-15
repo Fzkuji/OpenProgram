@@ -1165,8 +1165,11 @@ class CheckpointStore:
             "target_msg_id": intent.get("target_msg_id"),
             "user_text": intent.get("user_text", ""),
             "turn_ids": intent.get("turn_ids", []),
+            # The outcome of the rewind, the same on every answer for its
+            # key. ``replayed`` says this call did not apply it, for the
+            # work that is done once (``rewind.rewind_to``).
             "head_changed": (
-                committed and not replayed
+                committed
                 and intent.get("target_head_id") != intent.get("expected_head_id")
             ),
             "replayed": replayed,

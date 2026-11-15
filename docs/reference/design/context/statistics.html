@@ -14,12 +14,12 @@
 <table class="stack">
 <thead><tr><th scope="col">Category</th><th scope="col">Source</th><th scope="col">Boundary</th></tr></thead>
 <tbody>
-<tr><th scope="row">Messages</th><td>Rendered history: visible text, thinking, tool input and result, memory prefetch</td><td>Original images that were not persisted fall into the difference</td></tr>
+<tr><th scope="row">Messages</th><td>Rendered history: visible text, thinking, tool input and result, memory prefetch. During a running turn, also the turn's own rounds (row "This turn so far")</td><td>Original images that were not persisted fall into the difference</td></tr>
 <tr><th scope="row">System prompt</th><td>Latest complete recorded system prompt</td><td>Full value first, then Skills, resident Memory and the deferred catalog are subtracted</td></tr>
 <tr><th scope="row">Skills, Memory</th><td>Indexes and resident blocks injected into the system prompt</td><td>Components of the system prompt; never added to the total again</td></tr>
 <tr><th scope="row">System tools, MCP tools</th><td>Provider schemas of the tool set frozen for the turn</td><td><code translate="no">_mcp_server</code> decides which of the two</td></tr>
 <tr><th scope="row">Deferred tools</th><td>Tool-name catalog: beside the user message on a conversation's own turn, inside the prompt of a call that has its own</td><td>The names actually sent, not full descriptions or schemas</td></tr>
-<tr><th scope="row">Other context (estimated)</th><td><code translate="no">provider total - classified estimate</code></td><td>Non-persisted images, provider wrapping overhead, temporary surface prompts. Shown, never hidden</td></tr>
+<tr><th scope="row">Other context (estimated)</th><td><code translate="no">provider total - classified estimate</code>, less a running turn's own rounds</td><td>Non-persisted images, provider wrapping overhead, temporary surface prompts. Shown, never hidden</td></tr>
 </tbody>
 </table>
 
@@ -27,7 +27,9 @@
 <pre translate="no"><code>classified = system_other + skills + memory + tools + mcp + deferred + messages
 other = max(0, provider_total - classified)
 displayed_used = provider_total if measured else classified
-free = max(0, window - displayed_used)</code></pre>
+free = max(0, window - displayed_used) if window else none</code></pre>
+<p>A request measured inside a running turn includes that turn's replies, tool calls and results, which reach the graph only when the turn ends. That part, the request's own estimate (<code translate="no">request_input_estimate</code>) less the graph's, counts as Messages, at most the whole difference; the rest (provider wrapping, estimator error) stays Other context.</p>
+<p>The window is the request model's (<a href="occupancy-status.html#window">The window</a>); without one there is no free space and no percentage.</p>
 <p>Measured input tokens win; local estimates are used only without a measurement. When local estimates exceed the measurement, the provider total stays and displayed categories scale down proportionally. The response keeps raw estimates and the calibration factor. The difference is never negative.</p>
 
 <h2 id="acceptance">Acceptance</h2>

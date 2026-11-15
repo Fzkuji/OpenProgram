@@ -150,13 +150,19 @@ def test_project_path_missing_none_when_directory_present(env, tmp_path: Path):
     assert _workdir.project_path_missing("s1") is None
 
 
-def test_list_projects_reports_path_missing(env, tmp_path: Path):
+def test_list_projects_reports_path_missing(env, tmp_path: Path, monkeypatch):
     from openprogram.state.store.project import project_store as P
     gone = tmp_path / "gone"
     gone.mkdir()
     P.resolve_project(gone, name="gone")
     shutil.rmtree(gone)
 
+    # A listing shows the recorded location; the check that runs behind it
+    # (finished when ``asyncio.run`` returns) records the deleted folder.
+    monkeypatch.setattr(ws_project, "_reconcile_started_at", float("-inf"))
+    monkeypatch.setattr(ws_project, "_reconcile_queued_for", float("-inf"))
+    asyncio.run(ws_project.handle_list_projects(FakeWS(), {"session_id": ""}))
+    monkeypatch.setattr(ws_project, "_reconcile_started_at", float("inf"))
     ws = FakeWS()
     asyncio.run(ws_project.handle_list_projects(ws, {"session_id": ""}))
     by_name = {p["name"]: p for p in _reply(ws, "projects_list")["projects"]}

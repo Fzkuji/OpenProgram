@@ -70,6 +70,7 @@
 <tr><th scope="row">API key 和 CLI 委托凭据（按引用读取其他工具的登录）</th><td>对话、Agent、记忆</td></tr>
 </tbody>
 </table>
+<p>ChatGPT 登录是共享的：开发版读取 Codex CLI 的 <code translate="no">~/.codex/auth.json</code>，稳定版把同一账号的登录同步进这个文件。两边都采用对方写入的更新登录，不去花已经用过的 refresh token（<a href="../providers/auth/unified-auth-storage.zh.html#codex-shared-login">一台机器一个 ChatGPT 登录</a>）。</p>
 
 <h3 id="from-a-conversation">从对话里</h3>
 <p>有 <code translate="no">stable</code> 分支时，<code translate="no">self_update(action="prepare")</code> 走 <code translate="no">dev_stable</code> 后端：开发版是试运行，晋升是切换。调用保存请求并启动脱离的控制器，其余步骤在发起调用的那一轮保存之后才开始。</p>
@@ -91,7 +92,7 @@
 <thead><tr><th scope="col">结束状态</th><th scope="col">条件</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">aborted</code></th><td>rebase 冲突或挡路的脏文件（列出文件）；第 3 或第 4 步失败（提交留在 <code translate="no">dev</code> 上，结果会说明）；第二次晋升被拒绝</td></tr>
-<tr><th scope="row"><code translate="no">rolled_back</code></th><td>刷新重试后仍失败，或稳定版没有恢复健康。<code translate="no">stable</code> 从不后退：一个 revert 提交落到 <code translate="no">dev</code>，部署并晋升，结果写明该提交</td></tr>
+<tr><th scope="row"><code translate="no">rolled_back</code></th><td>刷新失败（<code translate="no">stable</code> 和 App 都留在之前的版本），或稳定版没有恢复健康。<code translate="no">stable</code> 从不后退：一个 revert 提交落到 <code translate="no">dev</code>，让它保持可晋升，再部署并晋升，结果写明该提交</td></tr>
 <tr><th scope="row"><code translate="no">needs_manual_recovery</code></th><td>修复也失败（给出两个原因），或后来的晋升已带上该提交，这种提交绝不 revert</td></tr>
 </tbody>
 </table>
@@ -105,7 +106,7 @@
 <tr><th scope="row">运行方式</th><td>macOS 上是 launchd 任务，其他系统是脱离的会话。挂掉时由 worker 启动拉起</td></tr>
 <tr><th scope="row">环境</th><td>没有 <code translate="no">OPENPROGRAM_SESSION_ID</code>：设置了它，<code translate="no">scripts/refresh-local-app.sh</code> 会脱离并立刻报告成功</td></tr>
 <tr><th scope="row">重启</th><td>步骤幂等。更新目录里的日志记录落地的提交和 rebase 基点，重启后从所在阶段继续</td></tr>
-<tr><th scope="row">别的会话晋升</th><td>它先移动 <code translate="no">stable</code>，再安装几分钟，控制器在此期间继续等 App 服务该提交</td></tr>
+<tr><th scope="row">别的会话晋升</th><td>它在新 worker 健康后才移动 <code translate="no">stable</code>，控制器继续等 App 服务该提交</td></tr>
 <tr><th scope="row">撤销</th><td><code translate="no">self_update(action="undo", target=&lt;提交&gt;)</code> 在 <code translate="no">dev</code> 的 worktree 里 <code translate="no">git revert</code>，作为普通 <code translate="no">prepare</code> 提交</td></tr>
 <tr><th scope="row">重试</th><td><code translate="no">self_update(action="retry")</code> 不适用，修复就是新的 <code translate="no">prepare</code></td></tr>
 </tbody>
@@ -128,17 +129,30 @@
 
 <ol>
 <li>趁旧 worker 还在服务，备份稳定版 profile（<code translate="no">openprogram backup</code>，标签 <code translate="no">pre-promote</code>，保留最新 5 份）。</li>
-<li>用 compare-and-swap 移动 <code translate="no">refs/heads/stable</code>，两次晋升不会互相覆盖。</li>
 <li>把提交检出到 <code translate="no">~/.openprogram/release-source</code>。</li>
-<li>运行 <code translate="no">scripts/refresh-local-app.sh</code>：复用开发版对同一提交的构建，事务式安装 App，重启稳定版 worker。 刷新失败时再运行一次；事务保留原来的 App，所以重试从干净状态开始。</li>
+<li>运行 <code translate="no">scripts/refresh-local-app.sh</code>，<code translate="no">OPENPROGRAM_PROMOTE_FROM</code> 设为上面读到的 <code translate="no">stable</code> 位置，即使在对话里调用也等它结束。它复用开发版对同一提交的构建，按下面的事务安装。</li>
+<li>新 worker 健康后，脚本从那个位置 compare-and-swap 把 <code translate="no">refs/heads/stable</code> 移到该提交：两次晋升不会互相覆盖，<code translate="no">stable</code> 只会快进。</li>
 </ol>
+
+<p>刷新失败不再重跑：失败后稳定版仍在运行原来的版本，重跑只会重复同样的失败和停机。报错只有一行：提交为什么没晋升、<code translate="no">stable</code> 指向哪里、App 运行哪个提交、是否响应，以及刷新日志位置。</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">刷新步骤</th><th scope="col">旧 App 和 worker</th><th scope="col">失败时</th></tr></thead>
+<tbody>
+<tr><th scope="row">把已安装的 App 复制到旁边的 <code translate="no">.openprogram-refresh.*</code>；在这份运行时里安装包、组装、用 <code translate="no">verify-product-runtime.py --write</code> 校验、放入 App 文件、签名；然后安装命令行包</th><td>照常服务</td><td>删除副本。没有停止或替换任何东西</td></tr>
+<tr><th scope="row">退出 App，停止 worker，两个 App 以改名互换，启动新 worker，等 <code translate="no">/healthz</code>，检查它的解释器，移动 <code translate="no">stable</code></th><td>已停止；旧 App 作为 <code translate="no">previous.app</code> 等着</td><td>把旧 App 改名放回，用同样的步骤启动并检查它的 worker，重新打开 App。脚本以非零退出，写明失败的步骤，并说明之前的版本已重新运行；如果恢复也失败，写明两个步骤并保留这些文件。恢复按文件判断切换进行到哪一步，而不靠信号可能抢先的标记；移动 <code translate="no">stable</code> 和记下这一步之间也不会被信号打断</td></tr>
+<tr><th scope="row">重新打开 App</th><td>旧 App 被删除</td><td>保留新版本；脚本说明这一点并以非零退出。<code translate="no">stable</code> 已经移动，所以晋升报告提交已晋升并给出警告，自更新控制器不会撤销它</td></tr>
+</tbody>
+</table>
+
+<p>App 安装器（<a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/desktop/scripts/install-app.sh"><code translate="no">install-app.sh</code></a>）也是这样替换 App：整个包在同一卷上准备好，再以改名切换，所以停机只覆盖切换和 worker 启动，新版本上可能失败的步骤都不在已安装的 App 上执行。</p>
 
 <p>晋升只读取稳定版的数据存储，用来查看正在运行的工作。只有持有 <code translate="no">worker.lock</code> 的进程写运行状态，所以由重启后的新代码 worker 接管（见<a href="../runtime/execution/control.zh.html#store-schema-ownership">谁拥有运行状态</a>）。</p>
 
 <details>
 <summary>刷新闸门与 Electron 升级</summary>
-<p>stable 分支存在后，<code translate="no">scripts/refresh-local-app.sh</code> 只安装 <code translate="no">refs/heads/stable</code>；从其他提交运行会被拒绝，并指向开发版。</p>
-<p>稳定版刷新替换 <code translate="no">app.asar</code>，保留 App 的 Electron。当 <code translate="no">apps/desktop/package.json</code> 锁定了另一个 Electron 或版本更新时，脚本构建同样的外壳，在 App 关闭时搬入 frameworks、可执行文件、<code translate="no">Info.plist</code> 和 locales，所以晋升带来的是开发版 App 已经跑过的 Electron。</p>
+<p>stable 分支存在后，<code translate="no">scripts/refresh-local-app.sh</code> 只安装 <code translate="no">refs/heads/stable</code>；从其他提交运行会被拒绝，并指向开发版。晋升时它改为安装要晋升的提交，但要求 <code translate="no">stable</code> 仍是晋升读到的位置且该提交包含它，构建前检查一次，App 停止前再检查一次，否则拒绝。</p>
+<p>稳定版刷新替换 <code translate="no">app.asar</code>，保留 App 的 Electron。当 <code translate="no">apps/desktop/package.json</code> 锁定了另一个 Electron 或版本更新时，脚本构建同样的外壳，把 frameworks、可执行文件、<code translate="no">Info.plist</code> 和 locales 搬入准备好的 App，所以晋升带来的是开发版 App 已经跑过的 Electron。</p>
 </details>
 
 <h2 id="publishing">发布</h2>

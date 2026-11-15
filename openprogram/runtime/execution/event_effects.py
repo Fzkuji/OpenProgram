@@ -413,11 +413,11 @@ class ExecutionEventEffects:
                       if reason == "wait_declined" else "This request expired before an answer was received.")
             blocks = self._checkpoint_blocks(execution, source.assistant_message_id)
             if blocks:
+                from openprogram.state.reply_text import reply_text
+                # The notice is the runtime's, never part of the passage before it.
+                fields["output"] = "\n\n".join(part for part in (reply_text(blocks), notice) if part)
                 blocks.append({"type": "text", "text": notice})
                 fields["metadata"]["extra"] = json.dumps({"blocks": blocks})
-                fields["output"] = "\n\n".join(
-                    block["text"] for block in blocks if block.get("type") == "text"
-                )
             else:
                 fields["output"] = node.output if notice in (node.output or "") else f"{node.output or ''}\n\n{notice}".strip()
             if reason == "wait_declined":
@@ -428,9 +428,9 @@ class ExecutionEventEffects:
             output = ""
             state = self._journal(execution, source.assistant_message_id)
             if state is not None:
-                output = "".join(item["text"] for item in state.last.message.get("content", [])
-                                 if isinstance(item, dict) and item.get("type") == "text"
-                                 and isinstance(item.get("text"), str))
+                from openprogram.state.reply_text import reply_text
+                output = reply_text(item for item in state.last.message.get("content", [])
+                                    if isinstance(item, dict))
             fields["output"] = output or "[error] Agent execution failed."
         writer.update(source.assistant_message_id, **fields)
 

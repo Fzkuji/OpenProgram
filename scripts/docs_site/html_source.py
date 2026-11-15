@@ -251,7 +251,7 @@ def _code_span(text: str) -> str:
     return f"{fence}{pad}{text}{pad}{fence}"
 
 
-def _inline(node: Node | str, origin: str) -> str:
+def _inline(node: Node | str, origin: tuple[str, str]) -> str:
     if isinstance(node, str):
         return re.sub(r"\s+", " ", node)
     children = "".join(_inline(child, origin) for child in node.children)
@@ -263,8 +263,9 @@ def _inline(node: Node | str, origin: str) -> str:
         return f"*{children.strip()}*" if children.strip() else ""
     if node.tag == "a":
         href = node.attrs.get("href", "")
-        if href.startswith("/"):
-            href = origin + href
+        link_base, public_base = origin
+        if link_base and public_base and href.startswith(link_base):
+            href = public_base + href[len(link_base):]
         return f"[{children.strip()}]({href})" if href else children
     if node.tag == "br":
         return " "
@@ -279,11 +280,11 @@ def _inline(node: Node | str, origin: str) -> str:
     return children
 
 
-def _inline_all(nodes: list[Node | str], origin: str) -> str:
+def _inline_all(nodes: list[Node | str], origin: tuple[str, str]) -> str:
     return _collapse("".join(_inline(node, origin) for node in nodes))
 
 
-def _table(node: Node, origin: str) -> list[str]:
+def _table(node: Node, origin: tuple[str, str]) -> list[str]:
     blocks: list[str] = []
     rows: list[list[str]] = []
     head_rows = 0
@@ -314,7 +315,7 @@ def _table(node: Node, origin: str) -> list[str]:
     return blocks
 
 
-def _definition_list(node: Node, origin: str) -> list[str]:
+def _definition_list(node: Node, origin: tuple[str, str]) -> list[str]:
     lines: list[str] = []
     term = ""
     for child in node.elements():
@@ -326,7 +327,7 @@ def _definition_list(node: Node, origin: str) -> list[str]:
     return ["\n".join(lines)] if lines else []
 
 
-def _list(node: Node, origin: str) -> list[str]:
+def _list(node: Node, origin: tuple[str, str]) -> list[str]:
     lines: list[str] = []
     for number, item in enumerate((child for child in node.elements() if child.tag == "li"), 1):
         marker = f"{number}. " if node.tag == "ol" else "- "
@@ -347,7 +348,7 @@ def _preformatted(node: Node) -> str:
     return f"{fence}{language}\n{text}\n{fence}"
 
 
-def _blocks(node: Node, origin: str) -> list[str]:
+def _blocks(node: Node, origin: tuple[str, str]) -> list[str]:
     """Render a container: consecutive inline children form one paragraph."""
     blocks: list[str] = []
     pending: list[Node | str] = []
@@ -400,10 +401,12 @@ def _blocks(node: Node, origin: str) -> list[str]:
     return blocks
 
 
-def to_markdown(body: str, *, origin: str = "") -> str:
+def to_markdown(body: str, *, link_base: str = "", public_base: str = "") -> str:
     """A clean Markdown copy of an article, for Agents and other plain readers.
 
     Figures appear once, through their narrow twin or accessible description.
-    Folded detail is included unfolded. Site-absolute links gain ``origin``.
+    Folded detail is included unfolded. Links under the build's mount path
+    ``link_base`` become absolute under the public ``public_base``, so the
+    copy works wherever it is read.
     """
-    return "\n\n".join(_blocks(_parse(body), origin.rstrip("/"))) + "\n"
+    return "\n\n".join(_blocks(_parse(body), (link_base, public_base))) + "\n"

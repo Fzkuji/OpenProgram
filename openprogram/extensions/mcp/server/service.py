@@ -726,9 +726,14 @@ class MCPService:
             )
         except asyncio.CancelledError:
             record.outer_abandoned.set()
-            await asyncio.shield(
-                self.cancel_request(request_id, reason="request_cancelled")
-            )
+            # The SDK cancels this handler through an anyio cancel scope,
+            # which re-cancels the task at every await: ``asyncio.shield``
+            # would return at the cancel's first real suspension (its writes
+            # run in worker threads) and leave it an orphan task. The
+            # shielded scope keeps the handler here until the turn is
+            # cancelled and the request released.
+            with anyio.CancelScope(shield=True):
+                await self.cancel_request(request_id, reason="request_cancelled")
             raise
         except Exception:
             failure = json_result({"error": "prompt execution failed"}, is_error=True)

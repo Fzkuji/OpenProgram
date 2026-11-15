@@ -60,6 +60,18 @@ def test_a_receipt_on_an_old_row_counts_only_when_its_sender_exists() -> None:
         ("agent_delivery", "received_message"), ("person", "user"), ("person", "user")]
 
 
+def test_a_stored_hand_off_between_conversations_is_agent_traffic() -> None:
+    rows = project_rows([
+        {"id": "a", "role": "user", "content": "📨 Message from “Butler” (butler):\n\nCheck the deploy\n\n(Another of your conversations handed this to you.)"},
+        {"id": "b", "role": "user", "content": "↩️ Reply from “Butler” (butler) to the message you sent it:\n\nThree files changed."},
+        {"id": "c", "role": "user", "content": "📨 Message from “Nobody” (no-such-session):\n\npasted by a person"},
+        {"id": "d", "role": "user", "content": "I saw 📨 Message from “Butler” (butler): in the log"},
+    ], db=_Sessions("butler"))
+    assert [(row["origin"], row["rowKind"]) for row in rows] == [
+        ("agent_delivery", "received_message"), ("agent_delivery", "received_message"),
+        ("person", "user"), ("person", "user")]
+
+
 def test_a_failed_reply_keeps_its_partial_text_apart_from_the_failure() -> None:
     row, legacy, compatible = project_rows([
         {"id": "failed-history", "role": "assistant", "status": "error", "content": "Partial answer",
@@ -71,5 +83,28 @@ def test_a_failed_reply_keeps_its_partial_text_apart_from_the_failure() -> None:
     ])
     assert (row["content"], row["errorDetail"], row["errorReason"], row["errorRetryable"], row["errorRetryAfterS"]) == (
         "Partial answer", "connection lost", "transport", True, 4)
+    assert "errorCause" not in row and "errorCause" not in legacy
     assert (legacy["content"], legacy["errorDetail"]) == ("Existing answer", "[error] ProviderStreamError: ConnectError")
     assert (compatible["content"], compatible["errorDetail"]) == ("Partial answer", "[error] disconnected")
+
+
+def test_a_reply_a_spent_quota_stopped_carries_its_cause() -> None:
+    cause = {"cause": "quota_exhausted", "http_status": 429, "provider": "openai-codex", "limit": "5h",
+             "resets_at": 1_800_000_000.0, "account": None,
+             "other_limits": [{"label": "Week", "left_fraction": 0.71, "resets_at": None}]}
+    failed, done = project_rows([
+        {"id": "spent", "role": "assistant", "status": "error", "content": "[error] usage_limit_reached",
+         "error_detail": "[error] usage_limit_reached", "error_reason": "authz", "error_cause": cause},
+        {"id": "fine", "role": "assistant", "status": "completed", "content": "ok", "error_cause": cause},
+    ])
+    assert failed["errorCause"] == cause
+    assert "errorCause" not in done
+
+
+def test_only_the_message_that_set_a_goal_carries_the_goal_mark() -> None:
+    rows = {row["id"]: row for row in project_rows([
+        {"id": "g", "role": "user", "content": "ship the release", "starts_goal": True},
+        {"id": "plain", "role": "user", "content": "and the notes", "predecessor": "g"},
+    ])}
+    assert (rows["g"]["startsGoal"], rows["g"]["content"]) == (True, "ship the release")
+    assert "startsGoal" not in rows["plain"]

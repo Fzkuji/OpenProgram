@@ -40,11 +40,18 @@ def register(app):
                 status_code=400,
                 detail=f"format must be one of {', '.join(FORMATS)}")
 
-        db = default_db()
-        if db.get_session(session_id) is None:
-            raise HTTPException(status_code=404, detail="session not found")
+        from openprogram.state.store.session.conversation_work import run_for_conversation
 
-        document = export_session(session_id, format, store=db)
+        def render() -> str | None:
+            # Read under the conversation's lock: in its lane, off the loop.
+            db = default_db()
+            if db.get_session(session_id) is None:
+                return None
+            return export_session(session_id, format, store=db)
+
+        document = await run_for_conversation(session_id, render)
+        if document is None:
+            raise HTTPException(status_code=404, detail="session not found")
         filename = f"{session_id}.{format}"
         return Response(
             content=document,

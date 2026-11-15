@@ -161,8 +161,10 @@ export function formatFileBytes(bytes: number) {
   return `${(bytes / 1024 ** exponent).toFixed(1)} ${["B", "KiB", "MiB", "GiB", "TiB"][exponent]}`;
 }
 
-// One queue is shared by the sidebar and central Files view. Automatic work
-// only starts for visible rows and stops after a bounded number of chunks.
+// One queue is shared by the sidebar and central Files view. A visible row
+// asks once per folder ("measure": the saved sample, else one bounded walk the
+// server saves); it asks again only after Refresh or a Files change. Chunked
+// start/continue is reserved for Recalculate and Continue in Details.
 interface SizeJob { projectId: string; path: string; value: SizeResult; listeners: Set<() => void>; running: boolean; cancelled: boolean; generation: number; needsRefresh: boolean }
 const jobs = new Map<string, SizeJob>();
 const queue: Array<{ job: SizeJob; run: () => Promise<void> }> = [];
@@ -188,7 +190,7 @@ function getJob(projectId: string, path: string) {
   }
   return job;
 }
-async function scan(job: SizeJob, restart = false, priority = false) {
+async function scan(job: SizeJob, restart = false, priority = false, explicit = false) {
   if (job.running) {
     const queued = queue.findIndex(item => item.job === job);
     if (priority && queued > 0) queue.unshift(queue.splice(queued, 1)[0]);
@@ -200,6 +202,16 @@ async function scan(job: SizeJob, restart = false, priority = false) {
   const task = { job, run: async () => {
     try {
       if (!job.listeners.size || job.cancelled || generation !== job.generation) return;
+      if (!explicit) {
+        const fresh = restart;
+        job.needsRefresh = false;
+        if (fresh && job.value.token) void fileManagementQuery("project_folder_size", job.projectId, job.path, { operation: "cancel", token: job.value.token });
+        if (fresh) publish(job, { ...job.value, token: null, state: "scanning" });
+        const result = await fileManagementQuery<SizeResult>("project_folder_size", job.projectId, job.path, { operation: "measure", ...(fresh ? { fresh: true } : {}) });
+        if (generation !== job.generation) { if (result?.token) void fileManagementQuery("project_folder_size", job.projectId, job.path, { operation: "cancel", token: result.token }); return; }
+        publish(job, result ?? { ...job.value, state: "error", error: "Size query unavailable" });
+        return;
+      }
       if (restart && job.value.token) await fileManagementQuery("project_folder_size", job.projectId, job.path, { operation: "cancel", token: job.value.token });
       if (!restart && job.value.state === "unknown") {
         const cached = await fileManagementQuery<SizeResult>("project_folder_size", job.projectId, job.path);
@@ -244,7 +256,7 @@ export function useFolderSize(projectId: string, path: string, enabled: boolean,
     if (job.value.state === "complete") publish(job, { ...job.value, state: "cached" });
     if (job.value.state === "unknown" || job.needsRefresh) void scan(job, false, priority);
   }, [enabled, job, priority, job.generation]);
-  return { value, start: (restart = false) => void scan(job, restart, true), cancel: () => {
+  return { value, start: (restart = false) => void scan(job, restart, true, true), cancel: () => {
     job.cancelled = true;
     if (!job.running && job.value.token) void fileManagementQuery<SizeResult>("project_folder_size", projectId, path, { operation: "cancel", token: job.value.token }).then(result => publish(job, result ?? { ...job.value, state: "cancelled", token: null }));
   } };

@@ -1,7 +1,7 @@
 # openprogram-site
 
-Published build of [openprogram.io](https://openprogram.io) — the OpenProgram
-documentation site.
+Published build of [the OpenProgram website]({{SITE_URL}}): the landing page
+and the documentation.
 
 Everything in this repository is generated. The sources live in
 [FuzzyKuji/OpenProgram](https://github.com/FuzzyKuji/OpenProgram) under `docs/`, and a

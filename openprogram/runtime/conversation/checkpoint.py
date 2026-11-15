@@ -21,6 +21,7 @@ from openprogram.runtime.execution.agent_journal import (
 from openprogram.runtime.execution.runtime_contract import (
     RUNTIME_CONTRACT_VERSION,
     RuntimeContractError,
+    contract_sha256,
     json_safe as _json_safe,
     validate_runtime_contract,
 )
@@ -91,30 +92,45 @@ def runtime_contract_snapshot(
     structured_output: Any = None,
     toolset: Any = None,
 ) -> dict[str, Any]:
-    """Build the immutable runtime contract used by continuation activation."""
+    """Build the immutable runtime contract used by continuation activation.
+
+    A tool is named with two digests, not copied: a resume resolves the live
+    tools again and only has to tell whether each is still the one the turn
+    saw. ``declaration_sha256`` covers what the model and the permission
+    check were given (description, parameters, cache control, permission,
+    approval), ``implementation_sha256`` the code that runs. A digest is
+    None for a tool that cannot be resumed against (no schema, no
+    identifiable code), which ``validate_runtime_contract`` rejects.
+    """
+    permission = {
+        "mode": getattr(request, "permission_mode", None),
+        "rules": _json_safe(getattr(request, "permission_rules", None)),
+    }
     tool_values: list[dict[str, Any]] = []
     for tool in tools or ():
         implementation = _implementation_descriptor(tool)
         approval = getattr(tool, "_requires_approval", None)
-        approval_value = approval if isinstance(approval, bool) or approval is None else _callable_descriptor(approval)
-        if implementation is None:
-            implementation_value = None
-        else:
-            implementation_value = implementation
+        description = getattr(tool, "description", None)
+        parameters = _json_safe(getattr(tool, "parameters", None))
+        declared = isinstance(description, str) and isinstance(parameters, Mapping)
+        identified = isinstance(implementation, Mapping) and all(
+            isinstance(implementation.get(key), str) and implementation.get(key)
+            for key in ("module", "qualname", "code_sha256")
+        )
         tool_values.append({
             "name": getattr(tool, "name", None),
-            "description": getattr(tool, "description", None),
-            "parameters": _json_safe(getattr(tool, "parameters", None)),
-            "cache_control": _json_safe(getattr(tool, "cache_control", None)),
-            "permission": {
-                "mode": getattr(request, "permission_mode", None),
-                "rules": _json_safe(getattr(request, "permission_rules", None)),
-            },
-            "approval": {
-                "requires": approval_value,
-                "accept_edits_safe": bool(getattr(tool, "_accept_edits_safe", False)),
-            },
-            "implementation": implementation_value,
+            "declaration_sha256": contract_sha256({
+                "description": description,
+                "parameters": parameters,
+                "cache_control": _json_safe(getattr(tool, "cache_control", None)),
+                "permission": permission,
+                "approval": {
+                    "requires": (approval if isinstance(approval, bool) or approval is None
+                                 else _callable_descriptor(approval)),
+                    "accept_edits_safe": bool(getattr(tool, "_accept_edits_safe", False)),
+                },
+            }) if declared else None,
+            "implementation_sha256": contract_sha256(implementation) if identified else None,
         })
     request_semantics = {
         key: _json_safe(getattr(request, key, None))

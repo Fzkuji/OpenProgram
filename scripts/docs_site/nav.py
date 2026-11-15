@@ -310,7 +310,8 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
         ("Overview", "概览", ["interfaces/README.html"]),
         ("Surfaces", "界面", [
             "interfaces/desktop.html", "interfaces/web.html", "interfaces/tui.html",
-            "interfaces/cli.html", "interfaces/acp.html"]),
+            "interfaces/cli.html", "interfaces/acp.html",
+            "interfaces/openai-api.html"]),
         ("Chat input", "聊天输入", ["interfaces/voice-input.html"]),
     ],
     "models": [
@@ -339,6 +340,7 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
             "reference/cli.html", "reference/config.html",
             "reference/diagnostics.html",
             "reference/session-export.html",
+            "reference/session-import.html",
             "reference/output-styles.html",
             # generated from code at build time (generate_reference.py):
             "reference/config-keys.md", "reference/provider-registry.md"]),
@@ -384,6 +386,7 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
             "reference/design/runtime/session/unified-session-context.html",
             "reference/design/runtime/session/additional-working-directories.html",
             "reference/design/runtime/session/comparison.html",
+            "reference/design/runtime/session/external-import.html",
             "reference/design/runtime/session/storage-consistency.html",
             "reference/design/runtime/session/name.html",
         ]),
@@ -626,6 +629,7 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
             "reference/design/providers/reliability/request-repair.html",
             "reference/design/providers/codex-transport.html",
             "reference/design/providers/provider-quota.html",
+            "reference/design/providers/provider-management.html",
             "reference/design/providers/record-replay.html",
             "reference/design/providers/responses-reasoning-replay.html",
         ]),
@@ -638,6 +642,7 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
             "reference/design/integrations/harness-standard.html",
             "reference/design/integrations/mcp-integration.html",
             "reference/design/integrations/mcp-server.html",
+            "reference/design/integrations/openai-compatible-endpoint.html",
             "reference/design/integrations/skills-and-plugins.html",
             "reference/design/integrations/plugin-runtime.html",
             "reference/design/integrations/computer-and-browser-use.html",
@@ -809,7 +814,8 @@ PAGE_ORDER: dict[str, int] = {
     "interfaces/tui.html": 3,
     "interfaces/cli.html": 4,
     "interfaces/acp.html": 5,
-    "interfaces/voice-input.html": 6,
+    "interfaces/openai-api.html": 6,
+    "interfaces/voice-input.html": 7,
     "models/README.html": 0,
     "models/providers.html": 1,
     "models/auth.html": 2,
@@ -831,8 +837,9 @@ PAGE_ORDER: dict[str, int] = {
     "reference/config.html": 4,
     "reference/diagnostics.html": 5,
     "reference/session-export.html": 6,
-    "reference/output-styles.html": 7,
-    "reference/comparisons": 8,
+    "reference/session-import.html": 7,
+    "reference/output-styles.html": 8,
+    "reference/comparisons": 9,
     "reference/comparisons/ai-agent-frameworks.html": 0,
     "reference/comparisons/related-projects.html": 1,
     "reference/design": 900,  # design-notes archive always last
@@ -916,6 +923,7 @@ PAGE_ORDER: dict[str, int] = {
     "reference/design/distribution/windows-command-shell.html": 1038.5,
     # Integrations: the MCP server design follows the alphabetical integration notes.
     "reference/design/integrations/mcp-server.html": 1040,
+    "reference/design/integrations/openai-compatible-endpoint.html": 1040.5,
     "reference/design/integrations/nooa.html": 1041,
 
     # Test architecture and execution contracts.

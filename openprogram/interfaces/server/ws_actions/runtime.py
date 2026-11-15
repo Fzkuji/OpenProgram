@@ -16,6 +16,7 @@ from openprogram.runtime.execution.control.submission import (  # noqa: F401
     trusted_runtime_actor,
     validate_execution_command_request,
 )
+from openprogram.state.store.session.conversation_work import run_for_conversation
 
 _log = logging.getLogger(__name__)
 
@@ -57,7 +58,8 @@ async def handle_switch_model(ws, cmd: dict):
         explicit_provider = (cmd.get("provider") or "").strip() or None
         session_id = cmd.get("session_id")
         from openprogram.interfaces.server.branch_settings import prepare_initial_guard, materialized_guard, commit_model, current_branch
-        initial_branch_id = prepare_initial_guard(session_id, cmd)
+        # Each branch check reads the conversation under its lock: off the loop.
+        initial_branch_id = await run_for_conversation(session_id, prepare_initial_guard, session_id, cmd)
         if not model:
             await ws.send_text(json.dumps({
                 "type": "error", "data": {"message": "Missing model"},
@@ -91,7 +93,7 @@ async def handle_switch_model(ws, cmd: dict):
                 # now — silently falling through to the default-runtime
                 # swap changed the model for EVERY session and left this
                 # one on the old default.
-                conv = await asyncio.to_thread(
+                conv = await run_for_conversation(session_id, 
                     _s._get_or_create_session, session_id)
             if conv:
                 from openprogram.interfaces.server.routes.execution.runtime import picks_other_branch
@@ -101,7 +103,7 @@ async def handle_switch_model(ws, cmd: dict):
                 )
                 prov = target_provider or cur_prov
                 # Another branch's model is stored, not run: build nothing.
-                elsewhere = picks_other_branch(session_id, cmd)
+                elsewhere = await run_for_conversation(session_id, picks_other_branch, session_id, cmd)
                 need_new_rt = not elsewhere and (
                     (target_provider and target_provider != cur_prov)
                     or (old_rt is None)
@@ -114,8 +116,8 @@ async def handle_switch_model(ws, cmd: dict):
                         new_rt = None
                 else:
                     new_rt = old_rt
-                guarded_cmd = materialized_guard(session_id, cmd, initial_branch_id)
-                row = await asyncio.to_thread(commit_model, session_id, guarded_cmd, prov, bare_model, conv,
+                guarded_cmd = await run_for_conversation(session_id, materialized_guard, session_id, cmd, initial_branch_id)
+                row = await run_for_conversation(session_id, commit_model, session_id, guarded_cmd, prov, bare_model, conv,
                                         runtime=None if elsewhere else new_rt,
                                         replace_runtime=bool(need_new_rt))
                 prov, bare_model = row.get("provider_override"), row.get("model_override")
@@ -125,16 +127,17 @@ async def handle_switch_model(ws, cmd: dict):
                     # Another branch's model: no broadcast moves the selected one's.
                     await ws.send_text(json.dumps({"type": "model_switched", "data": reply}, default=str))
                     return
-                info = _s._get_provider_info(session_id)
+                info = await run_for_conversation(session_id, _s._get_provider_info, session_id)
                 _s._broadcast(json.dumps(
                     {"type": "provider_changed", "data": info},
                 ))
                 # New model, new window — re-estimate against it so the
                 # ring's percentage tracks the switch immediately.
-                _s.refresh_context_stats(session_id)
+                await run_for_conversation(session_id, _s.refresh_context_stats, session_id)
+                active_branch_id = await run_for_conversation(session_id, current_branch, session_id)
                 await ws.send_text(json.dumps({
                     "type": "model_switched",
-                    "data": {**reply, "active_branch_id": current_branch(session_id)},
+                    "data": {**reply, "active_branch_id": active_branch_id},
                 }, default=str))
                 return
 
@@ -182,8 +185,9 @@ async def handle_switch_model(ws, cmd: dict):
         }))
     except BranchConfigConflict as exc:
         from openprogram.interfaces.server.routes.execution.runtime import model_conflict
+        conflict = await run_for_conversation(cmd.get("session_id"), model_conflict, cmd.get("session_id"), exc)
         await ws.send_text(json.dumps({"type": "error", "data": {
-            **model_conflict(cmd.get("session_id"), exc),
+            **conflict,
             "session_id": cmd.get("session_id"), "request_id": cmd.get("request_id"),
         }}))
     except Exception as e:  # noqa: BLE001
@@ -248,16 +252,20 @@ def _public_execution_snapshot(execution, *, event_sequence: int | None = None) 
     return execution_data, cursor
 
 
-async def _send_command_update(ws, command, execution) -> None:
-    # Job activation is asynchronous and may finish between command acceptance
-    # and transport serialization.  Refresh the command and execution together
-    # until the command status is stable, so a response never combines an old
-    # accepted command with a newer terminal resource snapshot.
+def _settled_command_snapshot(command, execution):
+    """``(command_data, execution, execution_data, cursor)`` once the command's status is stable.
+
+    Job activation is asynchronous and may finish between command acceptance
+    and transport serialization.  Refresh the command and execution together
+    until the command status is stable, so a response never combines an old
+    accepted command with a newer terminal resource snapshot.  The snapshot's
+    job view reads the conversation's records under its lock, so callers on
+    the event loop run this in a worker thread.
+    """
     command_data = command.to_dict() if hasattr(command, "to_dict") else dict(command)
-    has_public_snapshot = hasattr(execution, "execution_id")
     execution_data: dict = {}
     cursor: dict = {}
-    if has_public_snapshot:
+    if hasattr(execution, "execution_id"):
         execution_data, cursor = _public_execution_snapshot(execution)
         for _ in range(3):
             try:
@@ -280,6 +288,14 @@ async def _send_command_update(ws, command, execution) -> None:
             command = current
         else:
             execution_data, cursor = _public_execution_snapshot(execution)
+    return command_data, execution, execution_data, cursor
+
+
+async def _send_command_update(ws, command, execution) -> None:
+    has_public_snapshot = hasattr(execution, "execution_id")
+    command_data, execution, execution_data, cursor = await run_for_conversation(getattr(execution, "session_id", None), 
+        _settled_command_snapshot, command, execution,
+    )
     if command_data.get("kind") == "execution.step":
         checkpoint_id = getattr(execution, "checkpoint_head_id", None)
         if checkpoint_id:
@@ -331,7 +347,8 @@ async def _handle_execution_control(ws, cmd: dict, operation: str) -> None:
     execution_data = execution.to_dict() if hasattr(execution, "to_dict") else dict(execution)
     if operation == "cancel" and execution_data.get("status") in {"cancelling", "cancelled"}:
         from openprogram.interfaces.server import server as _s
-        _s._release_session_occupancy_for_execution(execution_data)
+        # Releasing reads the conversation's records under its lock: off the loop.
+        await run_for_conversation(execution_data.get("session_id"), _s._release_session_occupancy_for_execution, execution_data)
 
 
 async def handle_execution_pause(ws, cmd: dict):
@@ -375,27 +392,34 @@ async def handle_execution_replay(ws, cmd: dict) -> None:
             or type(after_sequence) is not int or type(snapshot_only) is not bool):
         await ws.send_text(json.dumps({"type": "execution.replay", "error": "invalid_command"}))
         return
-    store = default_store()
-    execution = store.get_execution(execution_id)
     scope = getattr(ws, "scope", None)
     state = scope.get("state") if isinstance(scope, dict) else None
     bound_session = state.get("session_id") if isinstance(state, dict) else None
-    try:
+    actor = _trusted_runtime_actor(ws)
+
+    def read():
+        # The job view reads the conversation's records under its lock: the
+        # whole read runs off the event loop.
+        store = default_store()
+        execution = store.get_execution(execution_id)
         if execution is None:
             raise ExecutionConflict("not_found", "execution is not visible")
         _authorize_execution(
-            _trusted_runtime_actor(ws), "execution.events", execution,
+            actor, "execution.events", execution,
             bound_session=bound_session if isinstance(bound_session, str) else None,
         )
         replay = store.read_event_replay(
             execution_id, after_sequence=after_sequence, include_events=not snapshot_only,
         )
+        return replay, _public_execution_snapshot(
+            replay.execution, event_sequence=replay.cursor.next_sequence - 1,
+        )
+
+    try:
+        replay, (snapshot, cursor) = await run_for_conversation(execution_id, read)
     except Exception:
         await ws.send_text(json.dumps({"type": "execution.replay", "error": "not_found", "execution_id": execution_id}))
         return
-    snapshot, cursor = _public_execution_snapshot(
-        replay.execution, event_sequence=replay.cursor.next_sequence - 1,
-    )
     await ws.send_text(json.dumps({
         "type": "execution.replay",
         "execution_id": execution_id,
@@ -671,7 +695,8 @@ async def handle_subscribe_execution_stream(ws, cmd: dict):
     # the session to exist so forged ids cannot probe arbitrary node streams.
     try:
         from openprogram.runtime.context.session_db import default_db
-        if default_db().get_session(session_id) is None:
+        # Read under the conversation's lock: in its lane, off the loop.
+        if await run_for_conversation(session_id, default_db().get_session, session_id) is None:
             await ws.send_text(json.dumps({
                 "type": "action_error",
                 "data": {"code": "forbidden", "message": "unknown session"},
@@ -715,10 +740,8 @@ async def handle_subscribe_execution_stream(ws, cmd: dict):
         node = None
         try:
             from openprogram.runtime.context.session_db import default_db
-            node = next(
-                (n for n in default_db().get_nodes(session_id) if n.id == node_id),
-                None,
-            )
+            nodes = await run_for_conversation(session_id, default_db().get_nodes, session_id)
+            node = next((n for n in nodes if n.id == node_id), None)
             if node is not None:
                 stream_meta = (node.metadata or {}).get("stream")
         except Exception:

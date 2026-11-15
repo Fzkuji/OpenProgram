@@ -30,9 +30,11 @@
 <tbody>
 <tr><th scope="row">源码安装器</th><td>检出内 <code translate="no">.venv</code>、npm 锁文件、Web 和 Ink 构建、所选 extras、用户 PATH 上的 <code translate="no">openprogram.cmd</code>。<code translate="no">-Minimal</code>：只装 Python CLI 和服务端</td></tr>
 <tr><th scope="row">启动器</th><td>只有一个 <code translate="no">openprogram.cmd</code>：PowerShell 优先选同名 <code translate="no">.ps1</code>，而默认的 Restricted 策略会拒绝它，所以安装器会删除旧文件。PowerShell 脚本：带 BOM 的 UTF-8。批处理：不带 BOM 的 UTF-8，带 ASCII 代码页前导，关闭延迟展开，转义百分号，恢复调用方代码页，保留退出状态。安装器只对自身进程使用 <code translate="no">powershell.exe -ExecutionPolicy Bypass -File</code>；不改机器的执行策略或区域设置</td></tr>
+<tr><th scope="row">唯一的批处理写入</th><td>发布安装器写的每个 <code translate="no">.cmd</code> 都经过 <code translate="no">Write-CmdLauncher</code>；版本库的 <code translate="no">bin-openprogram.cmd</code> 和源码安装器用同样的前导，由测试保证三者一致。版本库前面那个在 PATH 上的启动器先切换控制台，再读版本库的路径，然后不经 <code translate="no">call</code> 启动版本库的启动器，免得带引号参数里的脱字符被加倍，并通过 <code translate="no">_OPENPROGRAM_CALLER_CODEPAGE</code> 把调用方代码页交给它恢复</td></tr>
 <tr><th scope="row">Ink</th><td>各系统都按能力判断。Windows Terminal 和 ConPTY 全屏运行；MinTTY 等恢复 stdio 后回退 Rich。分词器把控制字节和可打印片段分开；括号粘贴保持一个事件</td></tr>
 <tr><th scope="row">MCP 令牌</th><td>唯一临时文件加原子硬链接。读取时重新校验文件和祖先目录</td></tr>
 <tr><th scope="row">进程</th><td>PowerShell CIM，不用 WMIC。存活和创建时间来自只读原生查询；绝不用信号 0。信号到不了另一个进程，所以 <code translate="no">worker stop</code> 把 worker 的 PID 写进 <code translate="no">worker.stop</code>，worker 轮询到后按顺序关停；五秒没有回应就结束整棵进程树。<code translate="no">--print</code> 对 Ctrl-Break 和对 Ctrl-C 一样处理。那里阻塞的等待不会被信号唤醒，所以运行按最多半秒一次轮询等待，读 Worker 连接也一样</td></tr>
+<tr><th scope="row">识别 Worker</th><td>命令和 App 要从 Worker 外面认出它。msvcrt 拒绝读取被别的句柄锁住的字节，所以文件锁锁在远离数据的一个字节上，<code translate="no">worker.lock</code> 仍然可读，和 POSIX 一样写着持有者。锁是唯一的凭据：<code translate="no">worker.pid</code> 里写的进程即使还活着，也不当作 Worker。<code translate="no">web auth-url</code>、<code translate="no">worker status</code> 和 <code translate="no">worker stop</code> 都靠它</td></tr>
 <tr><th scope="row">登录时启动 worker</th><td>最小权限的按用户计划任务，每个 profile 一个，运行失败后重试。启动脚本自己设置 profile 和状态目录，因为任务不继承安装时那个 shell 的环境。装上后 worker 归它管：start 和 restart 按当前运行时重写启动脚本并启动任务；stop 先请求 worker 关停，再结束任务的这次运行，重试就不会把它带回来</td></tr>
 <tr><th scope="row">文件日志</th><td>共用跨进程锁。应用和回滚用不同的 guard 文件</td></tr>
 <tr><th scope="row">文本与字节</th><td>文本打开都写明 UTF-8，仓库契约计数的六处除外；<code translate="no">openprogram/state</code> 下每个文本模式的子进程也是。应用环境的 <code translate="no">.pth</code> 文件按区域编码写入，Python 的 <code translate="no">site</code> 模块在每个受支持的版本上都读这种编码。用 <code translate="no">os.write</code> 写入的描述符是二进制的，所以行尾是 LF，字节偏移保持准确</td></tr>
@@ -94,6 +96,9 @@
 <tr><th scope="row">未签名安装包的提示</th><td>浏览器可能提示该文件不常被下载。运行时出现<strong>Windows 已保护你的电脑</strong>，发布者未知；点<strong>更多信息 → 仍要运行</strong>继续，不会要求管理员权限。智能应用控制会直接阻止，无法放行。用新证书签名的文件在积累信誉前也可能遇到同样的警告</td></tr>
 <tr><th scope="row">运行</th><td>封存版本位于 <code translate="no">%USERPROFILE%\.openprogram\runtime</code>，首次启动时在进度页后从 seed 解包。seed 里的链接，文件夹变成 junction，文件变成第二个名字，因为符号链接需要特权。终端：Windows PowerShell，否则 <code translate="no">COMSPEC</code>，经 <code translate="no">node-pty</code> ConPTY。从常规路径导入浏览器</td></tr>
 <tr><th scope="row">Worker 进程</th><td>App 通过 <code translate="no">openprogram-launcher.exe</code> 以分离方式启动 Worker。没有控制台的 launcher 启动 Python 时不开控制台窗口，并把自己的输出句柄交给它，所以 Worker 写入 <code translate="no">worker.log</code>；从终端运行时共用该终端。参数从宽字符命令行按 UTF-8 读取</td></tr>
+<tr><th scope="row">继承的句柄</th><td>Node 启动 launcher 时打开了句柄继承，所以它先关掉除标准句柄以外所有继承来的句柄。否则 App 的 DevTools 监听 socket 会在 Worker 的整个生命里一直开着，重新打开的 App 拿不到这个端口</td></tr>
+<tr><th scope="row">从终端安装种子</th><td>Windows 的 <code translate="no">tar.exe</code> 按 ANSI 代码页读参数，所以安装程序在目标目录里运行它，只给它一条到压缩包的 ASCII 相对路径；profile 文件夹含代码页之外的字符（英文 Windows 上的中文用户名）也能正常解包，装好后留在 PATH 上的 <code translate="no">openprogram</code> 命令在这样的文件夹里、任何控制台代码页下都能运行。<code translate="no">tar.exe</code> 按 <code translate="no">System32</code> 路径调用</td></tr>
+<tr><th scope="row">安装钩子</th><td>全新安装在安装前不运行 PowerShell。覆盖一个有 <code translate="no">OpenProgram.exe</code> 和 <code translate="no">resources\app.asar</code> 的安装时，先停掉其下的进程，只有它们一直不退才中止安装。每个钩子把脚本文本交给 <code translate="no">powershell.exe -Command</code>，路径放在环境变量里：执行策略只管脚本文件，而组策略设的执行策略 <code translate="no">-ExecutionPolicy Bypass</code> 也绕不过。发布门禁在只允许签名脚本的组策略下安装</td></tr>
 <tr><th scope="row">卸载</th><td>卸载 App 时先请 Worker 停止，再移除它的登录任务；升级和重装两样都不做。状态文件夹原样保留：对话、设置和版本库。Worker 停不下来也不阻止卸载，原地运行的卸载程序自身不在被结束的进程之内</td></tr>
 <tr><th scope="row">应用标识</th><td>外壳在打开任何窗口前设置应用 ID <code translate="no">ai.openprogram.desktop</code>，即安装器写在开始菜单快捷方式上的那个。通知、任务栏按钮及其固定项都归属这个 ID</td></tr>
 <tr><th scope="row">更新器</th><td>通过 <code translate="no">openprogram upgrade --json</code> 接收封存版本。只有发行版需要更新的外壳时，才提供文件 <code translate="no">OpenProgram-&lt;version&gt;-win-&lt;arch&gt;.exe</code> 或 <code translate="no">-unsigned.exe</code>。运行中 App 自身的签名决定更新线：只有未签名构建的 App 才接受 NotSigned，并且要先通过大小和 SHA-256；已签名的 App 要求 Valid 且发布者相同。失败时删除候选。可见的用户交接：<a href="automatic-updates.zh.html">自动更新</a></td></tr>
@@ -232,7 +237,7 @@
 <tr><th scope="row">Windows 包失败</th><td>发布里只缺这个包，<strong>Check every planned package</strong> 写明它，和 macOS、Linux 一样。Codex 以“构建并签名成功”为门禁，全有或全无；这里一个平台失败不挡住其他平台的修复版本</td></tr>
 <tr><th scope="row">发布冒烟</th><td>每个 Windows 分支安装自己的包，先把提示用管道传给 <code translate="no">openprogram --print</code>，再经替身模型跑一次工具调用（<code translate="no">scripts/release/smoke-tool-call.py</code>）；Windows 契约包括 PowerShell 规则测试和 <code translate="no">--print</code> 的 Ctrl-Break 停止</td></tr>
 <tr><th scope="row">签名</th><td>Azure Trusted Signing，和 Codex 一样：不用保管硬件证书，按月付费，SmartScreen 不再挡首次安装</td></tr>
-<tr><th scope="row">Windows on Arm</th><td>五个锁定的依赖有 arm64 wheel 之前，发 x64 包在模拟下运行；之后照 Codex 的安装器出原生包</td></tr>
+<tr><th scope="row">Windows on Arm</th><td>五个锁定的依赖有 arm64 wheel 之前，发 x64 包在模拟下运行；之后照 Codex 的安装器出原生包。模拟下 <code translate="no">platform.machine()</code> 对 x64 Python 也回答 ARM64，所以凡是挑 wheel、内置 Git、发布资产或按需安装包目录的地方，都问解释器自己的构建（<code translate="no">openprogram/host/_platform/architecture.py</code>），从不问机器</td></tr>
 <tr><th scope="row">对话内更新</th><td>版本库的控制器：构建新版本、移动指针、保留上一版用于回滚，Windows 和其他平台一样。要退役的版本有文件被进程占用时留在原处，之后的一轮再移进 <code translate="no">trash</code></td></tr>
 </tbody>
 </table>
@@ -254,6 +259,7 @@
 <tr><th scope="row">Windows on Arm</th><td>默认关闭，从未在 Release 运行中构建。锁定的依赖里有五个包没有 arm64 Windows wheel（<code translate="no">claude-agent-sdk</code>、<code translate="no">cryptography</code>、<code translate="no">httptools</code>、<code translate="no">tiktoken</code>、<code translate="no">torch</code>），构建要靠编译它们。runner 标签 <code translate="no">windows-11-vs2026-arm</code> 存在。命令行安装器在 Windows 11 on Arm 上回退到 x64 安装包，从安装器带有这项回退的第一个版本起生效；这个包和 x64 App 安装包在那里靠模拟能否运行，没有测过</td></tr>
 <tr><th scope="row">Arm 上的 x64</th><td>Windows install smoke 工作流也在 Arm runner 上安装 x64 文件；它还没有运行过</td></tr>
 <tr><th scope="row">薄壳</th><td>已实现。launcher 可交叉编译到 x64 和 arm64；它的控制台、Unicode 和 UTF-8 模式测试只在 Windows core 任务里运行。Release 的 Windows 任务和安装冒烟工作流把 App 装到中文名的用户文件夹下并启动，检查 Worker 的控制台、日志、UTF-8 模式、快捷方式 id 和路径长度，做一次工具调用，然后卸载</td></tr>
+<tr><th scope="row">冒烟里的 App 窗口</th><td>Worker 健康还不够：冒烟要等到 <code translate="no">web auth-url</code> 给出已登录的地址、并且经 DevTools 端口读到的 App 窗口显示 <code translate="no">/chat</code>。然后关掉 App、留着 Worker、重新打开 App，确认 DevTools 端口属于新的 App</td></tr>
 <tr><th scope="row">App 冒烟首次运行</th><td>1.2.0 演练，x64：安装、首次启动到健康的 Worker、版本库（没有链接，最长路径 239 个字符）和工具调用都通过。冒烟脚本自己有三项检查出错，已修好：Worker 带引号的命令行、开始菜单位置（现在向 shell 询问，并写出在别处找到的位置）、用 cp1252 输出。快捷方式是否存在、卸载、校验和与上传步骤以及 Arm 上的运行都尚未证实</td></tr>
 <tr><th scope="row">卸载</th><td>使用者列表、安装程序的登记和最后一个卸载程序的询问已经做好；询问是默认“否”的是/否对话框，不是自定义页面上的复选框。命令行安装只在它的 Worker 启动时登记，也没有卸载程序来移除自己，所以两者都装过的电脑上，CLI 那一条不去掉，版本库就一直保留。两种回答都没有在 Windows 上运行过。命名 profile 的 Worker 和任务不会被停止</td></tr>
 <tr><th scope="row">长路径</th><td>壳和 launcher 自己能打开长路径；Python 需要系统开关。最深的文件在用户文件夹下约 218 个字符，文件夹名不超过 32 个字符时在 260 的限制内。冒烟工作流会测量它</td></tr>

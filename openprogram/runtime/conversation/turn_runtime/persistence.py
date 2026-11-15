@@ -221,6 +221,12 @@ def persist_assistant_message(
                         # Running when the turn was stopped.
                         tool_block["outcome"] = "cancelled"
                     blocks.append(tool_block)
+                elif blk.get("type") == "text" and isinstance(blk.get("text"), str):
+                    # The model wrote this text; a marker in it is not a
+                    # file the turn attached (those ride the content, see
+                    # send_file.with_attachments), so it reads as the name.
+                    from openprogram.state.attachments import markers_as_names
+                    blocks.append({**blk, "text": markers_as_names(blk["text"])})
                 else:
                     blocks.append(dict(blk))
         else:
@@ -243,16 +249,9 @@ def persist_assistant_message(
             default=str,
         )
     if cancel_event is not None and cancel_event.is_set():
-        # A stopped reply keeps what was shown: its text is the text of its
-        # blocks, the cut response's included (``loop_runner``), and the
-        # next turn is told it was cut (``interruption``, read by ``prep``).
-        shown = "".join(
-            b.get("text") or "" for b in blocks
-            if b.get("type") == "text" and isinstance(b.get("text"), str)
-        ).strip()
-        if shown and shown != (final_text or "").strip():
-            from openprogram.programs.tools.interaction.send_file import with_attachments
-            assistant_msg["content"] = with_attachments(shown, _tool_calls_all, req.session_id)
+        # A stopped reply keeps what was shown: ``final_text`` already holds
+        # the cut response's text (``loop_runner._keep_stopped_response``).
+        # The next turn is told it was cut (``interruption``, read by ``prep``).
         assistant_msg["interruption"] = stopped_reply_interruption(blocks)
     if _placeholder_inserted:
         # Update the placeholder row in place — same id, now with

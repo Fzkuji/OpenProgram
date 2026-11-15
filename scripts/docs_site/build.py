@@ -19,6 +19,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 
 from markdown_it import MarkdownIt
 from mdit_py_plugins.anchors import anchors_plugin
@@ -30,6 +31,7 @@ from pygments.lexers import get_lexer_by_name
 from pygments.util import ClassNotFound
 
 from openprogram.host._platform import locking
+from openprogram.operations import project_site
 
 from . import html_source
 from . import nav as navmod
@@ -42,16 +44,26 @@ DOCS_ROOT = REPO_ROOT / "docs"
 OUT_ROOT = DOCS_ROOT / "_site"
 ASSETS_SRC = Path(__file__).parent / "assets"
 
-# Absolute URL prefix the site is mounted under. The worker serves it at /docs,
+# Path prefix the built site is mounted under. The worker serves it at /docs,
 # so all asset/nav/internal links are absolute (/docs/...) — this makes them
 # resolve correctly whether the page URL has a trailing slash or not.
-# Override with OPENPROGRAM_DOCS_BASE (must start and end with "/").
+# Override with OPENPROGRAM_DOCS_BASE (must start and end with "/"); the
+# publishing workflow sets it to project_site.DOCS_PATH.
 DEPLOY_BASE = os.environ.get("OPENPROGRAM_DOCS_BASE", "/docs/")
 
-# Scheme + host the site is published under. Only sitemap.xml needs it, since
-# sitemap entries must be absolute URLs.
-SITE_ORIGIN = os.environ.get(
-    "OPENPROGRAM_DOCS_ORIGIN", "https://openprogram.io")
+# The public address of the site (openprogram.operations.project_site). Every
+# absolute URL the build writes — canonical and language links, the sitemap,
+# Markdown copies, llms.txt and the files in docs/_static_root — derives from
+# it, whatever path the build is mounted under locally.
+SITE_URL = project_site.SITE_URL
+
+
+def _public_url(path: str = "") -> str:
+    return SITE_URL.rstrip("/") + "/" + path.lstrip("/")
+
+
+def _public_docs_url(path: str = "") -> str:
+    return _public_url("docs/" + path.lstrip("/"))
 
 _SLUG_DEDUP: dict[str, int] = {}
 
@@ -257,7 +269,9 @@ def relink_internal(body_html: str, cur_dir: Path) -> str:
         if "#" in url:
             url, anchor = url.split("#", 1)
             anchor = "#" + anchor
-        if url.endswith(".md"):
+        if url.endswith(".html.md"):
+            pass  # a page's published Markdown copy, not a Markdown source
+        elif url.endswith(".md"):
             url = url[:-3] + ".html"
         elif url.endswith(".html"):
             source = DOCS_ROOT / cur_dir / url
@@ -296,7 +310,8 @@ def render_html_document(source: str, cur_dir: Path) -> _HtmlDocument:
         toc=extract_toc(body),
         description=html_source.page_description(source, body),
         search_text=html_source.page_text(body),
-        markdown=html_source.to_markdown(body, origin=SITE_ORIGIN),
+        markdown=html_source.to_markdown(
+            body, link_base=DEPLOY_BASE, public_base=_public_docs_url()),
     )
 
 
@@ -314,7 +329,7 @@ _ESC_FORWARD = (
 
 def add_raw_readability(html_text: str) -> str:
     """Load shared reading support without replacing standalone page styles."""
-    llms_url = _html.escape(SITE_ORIGIN.rstrip("/") + "/llms.txt", quote=True)
+    llms_url = _html.escape(_public_url("llms.txt"), quote=True)
     resources = (
         f'<link rel="describedby" href="{llms_url}">\n'
         f'<link rel="stylesheet" href="{DEPLOY_BASE}assets/raw-readability.css">\n'
@@ -656,21 +671,17 @@ def _build_into_out_root() -> int:
         # toggle jump straight to it (and vice-versa from the zh page).
         alt_url = (DEPLOY_BASE + str(p.zh_out).replace("\\", "/")) if p.zh_out else ""
         page_description = document.description if document else _meta_description(body, p.title)
-        page_url = SITE_ORIGIN.rstrip("/") + DEPLOY_BASE + str(p.out).replace("\\", "/")
+        page_url = _public_docs_url(p.out.as_posix())
         if p.out.as_posix() == "README.html":
-            page_url = SITE_ORIGIN.rstrip("/") + DEPLOY_BASE
+            page_url = _public_docs_url()
         markdown_url = ""
         if p.kind == "md" or document:
             markdown_url = (
                 page_url + "index.html.md" if page_url.endswith("/")
                 else page_url + ".md"
             )
-        llms_url = SITE_ORIGIN.rstrip("/") + "/llms.txt"
-        zh_page_url = (
-            SITE_ORIGIN.rstrip("/") + DEPLOY_BASE + str(p.zh_out).replace("\\", "/")
-            if p.zh_out
-            else ""
-        )
+        llms_url = _public_url("llms.txt")
+        zh_page_url = _public_docs_url(p.zh_out.as_posix()) if p.zh_out else ""
 
         full = render_page(
             title=p.title, body_html=body, nav_html=nav_html,
@@ -679,7 +690,7 @@ def _build_into_out_root() -> int:
             tabbar_html=tabbar_html,
             canonical_url=page_url, description=page_description,
             alt_lang_canonical_url=zh_page_url,
-            docs_root_url=SITE_ORIGIN.rstrip("/") + DEPLOY_BASE,
+            docs_root_url=_public_docs_url(),
             markdown_url=markdown_url, llms_url=llms_url,
             article_class="doc" if document else "",
         )
@@ -726,7 +737,7 @@ def _build_into_out_root() -> int:
                 alt_lang_canonical_url=page_url,
                 description=(zh_document.description if zh_document
                              else _meta_description(zh_body, p.title_zh or p.title)),
-                docs_root_url=SITE_ORIGIN.rstrip("/") + DEPLOY_BASE,
+                docs_root_url=_public_docs_url(),
                 markdown_url=zh_page_url + ".md" if p.zh_src.suffix == ".md" or zh_document else "",
                 llms_url=llms_url,
                 article_class="doc" if zh_document else "",
@@ -820,17 +831,32 @@ def _copy_static_root() -> None:
             continue
         dst = OUT_ROOT / path.relative_to(src)
         dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(path, dst)
+        if path.suffix in SITE_URL_FILES:
+            # Absolute links in these files carry the site address as a
+            # placeholder, so it is written in one place only.
+            text = path.read_text(encoding="utf-8")
+            dst.write_text(text.replace(SITE_URL_PLACEHOLDER, _public_url()), encoding="utf-8")
+        else:
+            shutil.copy2(path, dst)
     shutil.copy2(REPO_ROOT / "apps" / "web" / "app" / "favicon.ico", OUT_ROOT / "favicon.ico")
+    # GitHub Pages attaches a custom domain from a CNAME file at the site
+    # root; the account's github.io address must not carry one.
+    host = urlparse(SITE_URL).hostname or ""
+    if not host.endswith(".github.io"):
+        (OUT_ROOT / "CNAME").write_text(host + "\n", encoding="utf-8")
+
+
+SITE_URL_PLACEHOLDER = "{{SITE_URL}}"
+SITE_URL_FILES = {".txt", ".md"}
 
 
 def _write_sitemap() -> None:
     """List every built page so crawlers index the whole site from one fetch.
 
-    Entries are absolute URLs under SITE_ORIGIN + DEPLOY_BASE; the .raw.html
+    Entries are absolute public URLs (SITE_URL + docs/...); the .raw.html
     iframe payloads are left out because their shell page already covers them.
     """
-    base = SITE_ORIGIN.rstrip("/") + DEPLOY_BASE
+    base = _public_docs_url()
     static_root = {
         p.name for p in (DOCS_ROOT / "_static_root").glob("*") if p.is_file()
     }
@@ -850,10 +876,9 @@ def _write_sitemap() -> None:
         else:
             urls.append(base + rel)
 
-    # When the docs are mounted below the domain root, the landing page at the
-    # root is a separate document that no built page covers.
-    if DEPLOY_BASE != "/":
-        urls.insert(0, SITE_ORIGIN.rstrip("/") + "/")
+    # The landing page at the site root is a separate document that no built
+    # page covers.
+    urls.insert(0, _public_url())
 
     body = "\n".join(
         f"  <url><loc>{_html.escape(u)}</loc></url>" for u in urls)

@@ -23,12 +23,12 @@ CHAINS = {
     "r-waiting": {"chain": "c2", "hop": 1, "origin": "planner", "handoff_id": "h2", "session_id": "planner",
                   "at": 1.0, "boot": "old", "phase": "waiting",
                   "text": "↩️ Reply from “Docs bot” (docs) to the message you sent it:\n\nAll links work."},
-    # A turn already running owes its reply when it ends: it stays.
+    # A turn already running owes its reply when it ends: the sender watches it.
     "m-running": {"chain": "c3", "hop": 1, "origin": "planner", "session_id": "docs", "at": 1.0,
                   "boot": "old", "phase": "running", "reply_to": "planner"},
     "m-done": {"chain": "c4", "hop": 1, "origin": "planner", "session_id": "docs", "at": 1.0,
                "boot": "old", "phase": "done"},
-    # A reply whose text names no conversation: the old replay keeps it.
+    # A reply whose text names no conversation: kept in the record only.
     "r-unnamed": {"chain": "c5", "hop": 1, "session_id": "planner", "at": 1.0, "boot": "old",
                   "phase": "waiting", "text": "(no sender named)"},
 }
@@ -47,15 +47,30 @@ def _read(path):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+@pytest.fixture(autouse=True)
+def watches(monkeypatch):
+    """Watches and relays recorded instead of written to a sender's notices."""
+    seen = {"watch": [], "relay": []}
+
+    def watch(delivery):
+        seen["watch"].append(delivery)
+        return "delivered", delivery["watch_id"], "watching"
+
+    monkeypatch.setattr(migration, "watch_with_notices", watch)
+    monkeypatch.setattr(migration, "hold_relays", lambda delivery: seen["relay"].append(delivery))
+    return seen
+
+
 def test_a_dry_run_reports_and_changes_nothing(copy):
     before = copy.read_bytes()
     report = migration.migrate()
-    assert report == {"messages": 1, "replies": 1, "kept": 3, "pending": 0, "applied": False}
+    assert report == {"messages": 1, "replies": 1, "watches": 1, "retired": 2, "pending": 0,
+                      "applied": False}
     assert copy.read_bytes() == before
     assert not copy.with_name(migration.MIGRATED_NAME).exists()
 
 
-def test_waiting_entries_go_through_send_message_and_the_rest_stays(copy):
+def test_every_entry_moves_and_the_old_file_is_emptied(copy, watches):
     sent = []
 
     def send(delivery):
@@ -63,20 +78,24 @@ def test_waiting_entries_go_through_send_message_and_the_rest_stays(copy):
         return "delivered", delivery["job_id"], "[delivered]"
 
     report = migration.migrate(apply=True, send=send)
-    assert (report["messages"], report["replies"], report["delivered"]) == (1, 1, 2)
+    assert (report["messages"], report["replies"], report["watches"], report["delivered"]) == (1, 1, 1, 3)
     by_kind = {item["kind"]: item for item in sent}
     assert by_kind["message"] | {} == {**by_kind["message"], "from": "planner", "to": "docs",
-                                       "message": "Check the links", "hop": 2}
+                                       "message": "Check the links", "hop": 2,
+                                       "ancestors": ["planner"]}
     # The reply goes from the conversation that answered to the one that asked.
     assert (by_kind["reply"]["from"], by_kind["reply"]["to"]) == ("docs", "planner")
     assert "All links work." in by_kind["reply"]["message"]
-    # Running, finished and unreadable entries stay for the old hooks.
-    assert set(_read(copy)) == {"m-running", "m-done", "r-unnamed"}
-    # Everything moved stays readable, and the file was copied first.
+    # The running turn's sender watches its conversation for the reply.
+    (watch,) = watches["watch"]
+    assert (watch["from"], watch["to"], watch["watch_id"]) == ("planner", "docs", migration.watch_id_for("m-running"))
+    # Nothing is left for a replay: the old file is empty.
+    assert _read(copy) == {}
+    # Every entry stays readable, and the file was copied first.
     record = _read(copy.with_name(migration.MIGRATED_NAME))
-    assert record["original"]["m-waiting"] == CHAINS["m-waiting"]
+    assert record["original"] == CHAINS
     assert {key: value["status"] for key, value in record["deliveries"].items()} == {
-        "m-waiting": "delivered", "r-waiting": "delivered"}
+        "m-waiting": "delivered", "r-waiting": "delivered", "m-running": "delivered"}
     assert record["deliveries"]["m-waiting"]["execution_id"] == migration.job_id_for("m-waiting")
     assert _read(copy.with_name(migration.BACKUP_NAME)) == CHAINS
 
@@ -104,7 +123,7 @@ def test_a_stop_midway_delivers_each_entry_once_on_the_next_start(copy):
         return "delivered", delivery["job_id"], ""
 
     first = migration.migrate(apply=True, send=flaky)
-    assert (first["delivered"], first["failed"]) == (1, 0)
+    assert (first["delivered"], first["failed"]) == (2, 0)
     second = migration.deliver_pending(send=flaky)
     assert second == {"delivered": 1, "failed": 0}
     assert sorted(calls) == sorted([migration.job_id_for("m-waiting"), migration.job_id_for("r-waiting"),
@@ -133,13 +152,13 @@ def test_delivery_uses_send_messages_path_with_a_fixed_job(copy, monkeypatch):
 
     monkeypatch.setattr(dispatch, "deliver", deliver)
     report = migration.migrate(apply=True)
-    assert report["delivered"] == 2
+    assert report["delivered"] == 3
     message = next(item for item in seen if item["run_session"] == "docs")
     assert message == {
         "message": "Check the links", "sid": "planner", "aid": "p-head", "parent_agent": "assistant",
         "chosen_agent": "butler", "run_session": "docs", "target_tip": "d-head",
         "caller_authority": {"principal_id": "owner"}, "messages": 2, "generations": 0,
-        "job_id": migration.job_id_for("m-waiting")}
+        "job_id": migration.job_id_for("m-waiting"), "ancestors": ["planner"]}
     # A Job that already exists is not admitted again.
     record_path = copy.with_name(migration.MIGRATED_NAME)
     record = _read(record_path)
@@ -175,7 +194,8 @@ def test_a_refused_delivery_is_tried_again_under_a_new_job(copy, monkeypatch):
 
     monkeypatch.setattr(dispatch, "deliver", deliver)
     first = migration.migrate(apply=True)
-    assert (first["delivered"], first["failed"]) == (0, 0)
+    # Only the watch went; both sends were refused and wait for the next start.
+    assert (first["delivered"], first["failed"]) == (1, 0)
     record = _read(copy.with_name(migration.MIGRATED_NAME))["deliveries"]["m-waiting"]
     assert record["status"] == "pending" and record["job_id"] == migration.job_id_for("m-waiting#1")
     # The cancelled Job under the first id is not taken for a delivery.
@@ -185,9 +205,17 @@ def test_a_refused_delivery_is_tried_again_under_a_new_job(copy, monkeypatch):
     assert record["execution_id"] == migration.job_id_for("m-waiting#1")
 
 
-def test_a_message_that_owes_earlier_conversations_stays_for_the_old_replay(copy):
-    relay = {**CHAINS["m-waiting"], "owed_after": ["origin-conv"]}
-    copy.write_text(json.dumps({**CHAINS, "m-waiting": relay}), encoding="utf-8")
+def test_a_message_that_owes_earlier_conversations_carries_the_answer_on(copy, watches):
+    relay = {**CHAINS["m-waiting"], "owed_after": ["origin-conv", "middle-conv"]}
+    copy.write_text(json.dumps({"m-waiting": relay}), encoding="utf-8")
     report = migration.migrate(apply=True, send=lambda d: ("delivered", d["job_id"], ""))
-    assert report["messages"] == 0
-    assert _read(copy)["m-waiting"] == relay
+    assert report["messages"] == 1 and _read(copy) == {}
+    (delivery,) = watches["relay"]
+    job = migration.job_id_for("m-waiting")
+    # The nearest earlier conversation waits on docs' answer to planner; the
+    # first one waits on what the nearest passes on.
+    nearest, first = delivery["relays"]
+    assert (nearest["to"], nearest["from"], nearest["waits_on"]) == ("middle-conv", "planner",
+                                                                     ["planner", job, "docs"])
+    assert (first["to"], first["from"], first["waits_on"]) == ("origin-conv", "middle-conv",
+                                                               ["middle-conv", nearest["id"], ""])

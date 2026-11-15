@@ -156,12 +156,13 @@ test("/goal status during a run leaves the run going", () => {
   assert.equal(useSessionStore.getState().runningTasks[sid]?.execution_id, "exec1");
   assert.equal(pending.hasPendingUserText(sid), false);
 
-  // On an idle chat the command's own send reservation is released.
+  // On an idle chat the command's own send reservation is released, and a
+  // bubble drawn for it goes: it was no message, only its reply line stays.
   const idle = "goal-idle";
   send(idle, "/goal");
   respond({ type: "local_command", session_id: idle, command: "goal", content: "No goal" });
   assert.equal(useSessionStore.getState().runningTasks[idle], undefined);
-  assert.equal(selectRow(idle, `pending_${idle}`)(useSessionStore.getState()).status, "done");
+  assert.equal(selectRow(idle, `pending_${idle}`)(useSessionStore.getState()), undefined);
 });
 
 test("an error without msg_id shows a toast and settles the rejected first send", () => {

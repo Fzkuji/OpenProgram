@@ -11,12 +11,19 @@ def register(app):
     async def goal_state_unavailable(_request, _error):
         return JSONResponse(content={"error": "GoalStateUnavailable"}, status_code=503)
 
+    # Plain functions: FastAPI runs them in its thread pool, so a Goal read
+    # or change under the conversation's lock never holds the event loop.
     @app.get("/api/sessions/{session_id}/goal")
-    async def get_goal(session_id: str):
+    def get_goal(session_id: str):
         import openprogram.programs.tools.planning.goal as goal_module
         goal = goal_module.load_goal(session_id)
         if not goal:
             return JSONResponse(content={"error": "GoalNotFound"}, status_code=404)
+        # A Goal still waiting on a turn that already ended is settled now.
+        from openprogram.programs.tools.planning.goal import chat
+        if not chat.recover_unsettled(session_id, goal):
+            # One paused by a turn that failed goes on by itself.
+            chat.continue_after_failure(session_id, goal)
         return JSONResponse(content=goal_module.goal_projection(goal, session_id))
 
     @app.post("/api/sessions/{session_id}/goal/queue")
@@ -27,7 +34,7 @@ def register(app):
         return JSONResponse(content={"ok": True})
 
     @app.post("/api/sessions/{session_id}/goal")
-    async def mutate_goal(session_id: str, body: dict = None):
+    def mutate_goal(session_id: str, body: dict = None):
         import openprogram.programs.tools.planning.goal as goal_module
         payload = body or {}
         action = str(payload.get("action") or "").strip()

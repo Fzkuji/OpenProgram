@@ -872,7 +872,8 @@ def resolve_project(path: str | Path | None = None, *, name: str | None = None) 
             from .identity import is_portable, captured_identity_matches
             if p.is_dir() and is_portable(existing) and not captured_identity_matches(existing, p):
                 raise ProjectStoreError("project location has changed; locate the original folder or confirm a replacement")
-            return set_project_hidden(existing.id, False) if existing.hidden else existing
+            # A removed project made again comes back under the name it is made with.
+            return _reopened(existing.id, name) if existing.hidden else existing
 
         from .identity import read_marker, captured_identity_matches
         marker = read_marker(p)
@@ -893,8 +894,22 @@ def resolve_project(path: str | Path | None = None, *, name: str | None = None) 
             )
             return _upsert(proj, capture_identity=True, replace_identity=bool(owners))
     owner = owners[0]
-    return relocate_project(owner.id, p, expected_path=owner.path,
-                            expected_revision=owner.location_revision, require_identity=True)
+    moved = relocate_project(owner.id, p, expected_path=owner.path,
+                             expected_revision=owner.location_revision, require_identity=True)
+    return _reopened(moved.id, name) if moved.hidden else moved
+
+
+def _reopened(project_id: str, name: str | None) -> Project:
+    """Show a removed project again, under ``name`` when one is given."""
+    with _registry_transaction():
+        reg = _read_registry()
+        if project_id not in reg:
+            raise ValueError("unknown project")
+        reg[project_id]["hidden"] = False
+        if name and name.strip():
+            reg[project_id]["name"] = name.strip()[:200]
+        _write_registry(reg)
+        return Project.from_dict(reg[project_id])
 
 
 def _fold_into(stale: Project, owner: Project) -> Project:
@@ -1108,14 +1123,30 @@ def unbind_session(session_id: str, project_id: Optional[str] = None) -> None:
 
 def prune_sessions(alive_ids: set[str]) -> int:
     """把所有项目 session_ids 里不在 alive_ids 的孤立记录清掉，返回清理条数。
-    修 882-bug：session_ids 曾只增不减，累积了大量已删会话的死引用。"""
+    修 882-bug：session_ids 曾只增不减，累积了大量已删会话的死引用。
+
+    Runs behind a reply. It looks at the published registry first, without
+    the registry lock, and checks a folder only for a project that holds a
+    dead reference; the lock is taken only when there is something to
+    remove, so a pass that finds nothing never makes a turn wait.
+    """
+    stale: set[str] = set()
+    for project_id, d in _registry_snapshot().items():
+        if all(s in alive_ids for s in d.get("session_ids") or ()):
+            continue
+        # Missing project storage is unavailable, not evidence of deleted sessions.
+        if not d.get("is_default") and d.get("path") and not Path(d["path"]).is_dir():
+            continue
+        stale.add(project_id)
+    if not stale:
+        return 0
     removed = 0
     with _registry_transaction():
         reg = _read_registry()
         changed = False
-        for d in reg.values():
-            # Missing project storage is unavailable, not evidence of deleted sessions.
-            if not d.get("is_default") and d.get("path") and not Path(d["path"]).is_dir():
+        for project_id in stale:
+            d = reg.get(project_id)
+            if d is None:
                 continue
             sids = list(d.get("session_ids", []) or [])
             kept = [s for s in sids if s in alive_ids]

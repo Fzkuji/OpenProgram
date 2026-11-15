@@ -5,6 +5,7 @@ const crypto = require("node:crypto");
 const os = require("node:os");
 const path = require("node:path");
 const { runScroll } = require("./self-update-ui-scroll");
+const { isChosenWebPort } = require("../worker/web-port");
 
 // Someone without administrator rights installs into their own Applications.
 const APP_LOCATIONS = ["/Applications/OpenProgram.app", path.join(os.homedir(), "Applications", "OpenProgram.app")];
@@ -73,7 +74,7 @@ function registerUiVerificationIpc({ ipcMain, windows, origin, app, request,
         typeof nonce !== "string" || !NONCE.test(nonce)) return { ok: false };
     try {
       const base = new URL(origin);
-      if (base.protocol !== "http:" || base.port !== "18100" ||
+      if (base.protocol !== "http:" || !isChosenWebPort(base.port) ||
           !["127.0.0.1", "localhost", "[::1]"].includes(base.hostname) ||
           new URL(event.senderFrame.url).origin !== origin) return { ok: false };
     } catch { return { ok: false }; }

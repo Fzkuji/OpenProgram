@@ -134,6 +134,10 @@ def _set_active_head(
         if conv is not None:
             if update:
                 old_runtime = conv.pop("runtime", None)
+                # The last turn's model and window were the branch's that
+                # was left; this one's context is counted against its own.
+                conv.pop("_turn_model_ref", None)
+                conv.pop("_turn_context_window", None)
             for key in BRANCH_CONFIG_FIELDS:
                 conv[key] = selected.get(key)
             conv["provider_name"] = selected.get("provider_override")
@@ -372,6 +376,19 @@ def _web_follow_up(session_id: str, msg_id: str, func_name: str, tree_cb=None):
             state._follow_up_queues.pop(session_id, None)
 
 
+def _saved_context_stats(stats):
+    """The context stats a reopened conversation starts from: the measurement.
+
+    The per-category breakdown is worked out from the conversation's own
+    nodes, prompt and tools, and a first open works it out again
+    (``load._after_session_loaded``); saving it put the whole tool catalog
+    and prompt in the log after every provider request.
+    """
+    if not isinstance(stats, dict):
+        return stats
+    return {key: value for key, value in stats.items() if key != "breakdown"}
+
+
 def _save_session(session_id: str):
     """Persist one conversation's meta + messages under its agent.
 
@@ -414,7 +431,7 @@ def _save_session(session_id: str):
             "model": getattr(runtime, "model", None),
             "context_tree": None,
             "_chat_usage": conv.get("_chat_usage"),
-            "_last_context_stats": conv.get("_last_context_stats"),
+            "_last_context_stats": _saved_context_stats(conv.get("_last_context_stats")),
             "_last_exec_session": conv.get("_last_exec_session"),
             "_last_exec_cumulative_usage": conv.get("_last_exec_cumulative_usage"),
             # No head_id here — the conv dict is a display mirror and
@@ -449,73 +466,3 @@ def _default_agent_id() -> str:
         # Registry unreadable: fall back to the built-in default agent.
         _log.debug("default agent lookup failed", exc_info=True)
     return "main"
-
-
-def _restore_sessions():
-    """Walk every agent's sessions dir and hydrate _sessions."""
-    for agent_id, session_id in state._persist.list_sessions():
-        try:
-            data = state._persist.load_session(agent_id, session_id)
-            if data is None:
-                continue
-
-            provider_override = data.get("provider_override")
-            model_override = data.get("model_override")
-            # The "session_id" inside meta is the LLM runtime's own
-            # session identifier (Claude Code, etc.) — separate from
-            # session_id in this loop, which is the SessionDB primary
-            # key. Use a different local name to keep them apart.
-            runtime_session_id = data.get("session_id") or data.get("llm_session_id")
-            model = data.get("model")
-
-            # Skip eager runtime restore unless this session was
-            # explicitly switched (provider_override). Without an
-            # override we can't tell whether the persisted
-            # ``provider_name`` reflects a user choice or stale state
-            # written by the old auto-default-on-create path; letting
-            # ``_get_session_runtime`` build the runtime lazily from agent
-            # config is the only way old buggy sessions escape the
-            # legacy claude-code default.
-            runtime = None
-            if provider_override:
-                try:
-                    runtime = state._create_runtime_for_visualizer(
-                        provider_override, model=model_override or model
-                    )
-                    if runtime_session_id and hasattr(runtime, "_session_id"):
-                        runtime._session_id = runtime_session_id
-                        runtime._turn_count = 1
-                        runtime.has_session = True
-                except Exception:
-                    runtime = None
-
-            # ContextGit migration: backfill predecessor on legacy
-            # messages and pick a head_id. Old conversations become a
-            # straight linear chain (see docs/design/context/overview.md).
-            from openprogram.runtime.context.git import (
-                normalize_parent_pointers,
-                head_or_tip,
-            )
-            msgs = data.get("messages", [])
-            normalize_parent_pointers(msgs)
-            head_id = data.get("head_id") or head_or_tip({}, msgs)
-
-            with state._sessions_lock:
-                state._sessions[session_id] = {
-                    "id": session_id,
-                    "agent_id": data.get("agent_id") or agent_id,
-                    "runtime": runtime,
-                    "provider_name": provider_override or None,
-                    "provider_override": provider_override,
-                    "model_override": model_override,
-                    "messages": msgs,
-                    "_chat_usage": data.get("_chat_usage"),
-                    "_last_context_stats": data.get("_last_context_stats"),
-                    "_last_exec_session": data.get("_last_exec_session"),
-                    "_last_exec_cumulative_usage": data.get("_last_exec_cumulative_usage"),
-                    "head_id": head_id,
-                }
-            state._log(f"[restore] agent={agent_id} session={session_id}: "
-                 f"{data.get('title')} (runtime_session={runtime_session_id})")
-        except Exception as e:
-            state._log(f"[restore] failed for {session_id}: {e}")

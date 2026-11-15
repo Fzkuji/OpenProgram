@@ -26,7 +26,7 @@
 </ol>
 </figure>
 <h2 id="start-and-plan">Start and plan</h2>
-<p>Enter <code translate="no">/goal &lt;objective&gt;</code>, use <strong>Abilities → Programs → Tools → planning → goal → Use</strong>, or ask the agent. In the Rich REPL <code translate="no">/goal</code> starts a canonical chat execution and prints its ID.</p>
+<p>Enter <code translate="no">/goal &lt;objective&gt;</code>, use <strong>Abilities → Programs → Tools → planning → goal → Use</strong>, or ask the agent. The objective shows as your message, labelled Goal. In the Rich REPL <code translate="no">/goal</code> starts a canonical chat execution and prints its ID.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
 <tbody>
@@ -42,7 +42,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Command</th><th scope="col">Effect</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">/goal</code></th><td>Reads the current state</td></tr>
+<tr><th scope="row"><code translate="no">/goal</code> or <code translate="no">/goal status</code></th><td>Reads the current state</td></tr>
 <tr><th scope="row"><code translate="no">/goal pause</code></th><td>Saves a pause and requests cancellation of the current execution</td></tr>
 <tr><th scope="row"><code translate="no">/goal resume</code></th><td>Continues with cumulative usage</td></tr>
 <tr><th scope="row"><code translate="no">/goal verify</code></th><td>Independently verifies the latest finished work, without marking it achieved</td></tr>
@@ -62,7 +62,8 @@
 <thead><tr><th scope="col">Stops or pauses</th><th scope="col">How</th></tr></thead>
 <tbody>
 <tr><th scope="row">Budget depleted</th><td>Raise or remove with <code translate="no">/goal budget</code>, then resume. Waiting time is not active time.</td></tr>
-<tr><th scope="row">Failed or cancelled execution</th><td>Automatic continuation stops. An <a href="always-on-agents.html">always-on</a> wake may restart a Goal the Agent itself started after a failed turn, never after someone stopped the turn.</td></tr>
+<tr><th scope="row">Failed execution</th><td>After a passing failure (a provider error, a lost connection, a short rate limit) the Goal waits a few seconds, then longer, and continues by itself, at most three failures in a row. A failure that would repeat at once (a rejected key, no credit, a spent quota or budget) keeps the pause and its reason until you continue.</td></tr>
+<tr><th scope="row">Cancelled execution</th><td>Automatic continuation stops; a turn you stopped is never restarted. An <a href="always-on-agents.html">always-on</a> wake may restart a Goal the Agent itself started after a failed turn.</td></tr>
 <tr><th scope="row">Two idle automatic turns in a row (no tool call)</th><td><strong>Stalled</strong>. The first is warned. Any tool call or user turn resets; Resume starts over.</td></tr>
 <tr><th scope="row">Paused</th><td>Shows why: failed turn, Plan mode, unmet verification prerequisite, restart limit</td></tr>
 </tbody>

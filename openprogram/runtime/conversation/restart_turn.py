@@ -47,10 +47,16 @@ def start_recovery_turn(store, execution, event):
         state = recovery_state(store, current)
         if not state["can_start_new_turn"]:
             return None
-        foreground = active_foreground_task(store, execution.session_id)
+        goal = goals.load_goal(execution.session_id)
+        # The turn's own branch: the continuation is superseded only by a
+        # foreground turn on the branch it continues, and a turn running on
+        # another branch of the conversation does not hold it back.
+        # A Goal's turn admitted without a branch runs on the Goal's.
+        branch_id = request.get("branch_id") or (
+            (goal or {}).get("branch_id") if request.get("goal_context") else None)
+        foreground = active_foreground_task(store, execution.session_id, selected_branch=branch_id)
         if foreground and foreground["execution_id"] != new_id:
             return "superseded"
-        goal = goals.load_goal(execution.session_id)
         expected = request.get("goal_context")
         if not expected and goal:
             created = goal.get("creation_execution_context") or {}
@@ -83,8 +89,10 @@ def start_recovery_turn(store, execution, event):
                 if exhausted:
                     return "budget_exhausted"
             request.update(goal_trigger=True, goal_previous_execution=execution.execution_id)
-        elif goal and goal.get("execution_mode") == "chat" and goal.get("status") == "active":
-            # A new/revised Goal is not authority to continue the abandoned task.
+        elif (goal and goal.get("execution_mode") == "chat" and goal.get("status") == "active"
+              and chat.on_goal_branch(goal, request.get("branch_id"))):
+            # A new/revised Goal is not authority to continue the abandoned
+            # task. A Goal on another branch does not concern this turn.
             return "goal_changed"
         from openprogram.runtime.permissions.identity import HANDOFF_TURNS
         if request.get("automation") in HANDOFF_TURNS:
@@ -122,9 +130,5 @@ def start_recovery_turn(store, execution, event):
                 adapter.fail_admission(admission, reason_code="restart_activation_failed")
                 restart.not_continued(store, latest)
             return
-        if ran is not None and ran[1] is not None:
-            # A raise outside the turn's own loop leaves no turn to report it.
-            from openprogram.runtime.conversation.always_on import handoff
-            handoff.run_ended(store, store.get_execution(admission.execution_id), ran[1])
     threading.Thread(target=activate, name="chat-restart", daemon=True).start()
     return "new_turn_admitted"

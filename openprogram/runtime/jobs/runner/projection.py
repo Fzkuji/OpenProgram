@@ -146,7 +146,8 @@ class ProjectionOperations:
                 WorktreeStatus.KEPT,
                 WorktreeStatus.MERGED,
             }:
-                manager.discard_worktree(canonical_job.worktree_id, force=True)
+                # The Job has ended: this is its end.
+                manager.discard_worktree(canonical_job.worktree_id, force=True, owner_done=True)
         elif canonical_job.worktree_id:
             # A sub-agent's own worktree that ended with nothing in it
             # goes away; one with changes waits for merge or discard.

@@ -77,6 +77,129 @@ test("a step opened before its card arrives stays open as the sub-agent step", a
   await view.unmount();
 });
 
+const card = (view) => view.container.querySelector(".attach-card");
+const cardRow = (view) => view.container.querySelector(".attach-card-row");
+
+test("an agent's card is one row until it is opened", async () => {
+  seed({ ...attach("ref", { manual: true, prompt: "Run the tests\nand report", usage: { duration_s: 41, cost_usd: "0.020000", tokens: 18400, tool_calls: 12 },
+    files: { count: 2, branch: "pr-verifier-7f2a" } }, "external_reference"), content: "All 48 tests pass." });
+  const view = await draw("ref");
+  assert.equal(card(view).getAttribute("data-expanded"), "0");
+  assert.equal(cardRow(view).getAttribute("aria-expanded"), "false");
+  assert.equal(view.container.querySelector(".attach-card-name").textContent, "helper");
+  assert.equal(view.container.querySelector(".attach-card-task").textContent, "Run the tests");
+  assert.equal(view.container.querySelector(".attach-card-facts").textContent, "41 s · $0.02");
+  assert.match(cardRow(view).textContent, /Done/);
+  assert.equal(view.container.querySelector(".attach-card-body"), null);
+  assert.equal(view.container.querySelector(".attach-card-open"), null);
+  await click(cardRow(view));
+  assert.equal(card(view).getAttribute("data-expanded"), "1");
+  assert.match(view.container.querySelector(".attach-card-preview").textContent, /All 48 tests pass\./);
+  assert.match(view.container.querySelector(".attach-card-files").textContent, /2 files changed/);
+  assert.equal(view.container.querySelector(".attach-card-files code").textContent, "pr-verifier-7f2a");
+  const go = view.container.querySelector(".attach-card-open");
+  assert.match(go.textContent, /^Switch/);
+  assert.equal(go.getAttribute("aria-label"), "Switch to this branch");
+  await click(cardRow(view));
+  assert.equal(view.container.querySelector(".attach-card-body"), null);
+  await view.unmount();
+});
+
+test("a card that failed or waits for approval says so on its closed row", async () => {
+  seed(attach("bad", { session_id: "other", status: "errored" }, "external_reference"),
+    attach("asks", { session_id: "other", status: "running", execution_id: "job-9", status_version: 1 }, "external_reference"));
+  let view = await draw("bad");
+  assert.equal(card(view).getAttribute("data-state"), "failed");
+  assert.match(cardRow(view).textContent, /Failed/);
+  await view.unmount();
+  view = await draw("asks");
+  assert.match(cardRow(view).textContent, /Running/);
+  await act(async () => {
+    useSessionStore.setState({ pendingDecisions: [{ id: "q1", sessionId: SID, executionId: "job-9", waitGeneration: 1, expectedVersion: 1,
+      kind: "approval", prompt: "[helper] run it?", options: [], multi: false, allow_custom: false }] });
+  });
+  assert.equal(card(view).getAttribute("data-state"), "needs_approval");
+  assert.match(cardRow(view).textContent, /Needs approval/);
+  // The badge is the Activity roster's: outlined, with the yellow dot.
+  const badge = cardRow(view).querySelector("[data-slot=badge]");
+  assert.equal(badge.getAttribute("data-variant"), "outline");
+  assert.ok(badge.querySelector(".indicator-dot.--warn"));
+  assert.equal(view.container.querySelector(".attach-card-body"), null);
+  await act(async () => { useSessionStore.setState({ pendingDecisions: [] }); });
+  await view.unmount();
+});
+
+test("a running agent's card updates in place and stays open", async () => {
+  seed(attach("live", { session_id: "other", status: "running", execution_id: "job-1", status_version: 1 }, "external_reference"));
+  const view = await draw("live");
+  await click(cardRow(view));
+  const before = card(view);
+  assert.ok(view.container.querySelector(".attach-card-cancel"), "a running agent can be cancelled from the open card");
+  assert.equal(view.container.querySelector(".attach-card-preview"), null);
+  await update("live", { content: "Mapped the module.", attach: { session_id: "other", head_id: "h1", label: "helper", status: "completed",
+    execution_id: "job-1", status_version: 2, usage: { duration_s: 12, cost_usd: "0.010000" } } });
+  assert.equal(card(view), before, "the card keeps its element");
+  assert.equal(card(view).getAttribute("data-expanded"), "1");
+  assert.equal(card(view).getAttribute("data-state"), "done");
+  assert.equal(view.container.querySelector(".attach-card-facts").textContent, "12 s · $0.01");
+  assert.match(view.container.querySelector(".attach-card-preview").textContent, /Mapped the module\./);
+  assert.equal(view.container.querySelector(".attach-card-cancel"), null);
+  assert.match(view.container.querySelector(".attach-card-open").textContent, /^Open/);
+  await view.unmount();
+});
+
+test("a card with a long name and task keeps one row, and a cost under a cent reads as the roster's", async () => {
+  const name = "一个名字特别特别长的子代理用来检查卡片这一行不会被撑开";
+  seed({ ...attach("long", { manual: true, label: name, status: "completed", prompt: `${"审查整个认证模块并报告每一个问题 ".repeat(20)}\nsecond line`,
+    usage: { duration_s: 3725, cost_usd: "0.004200", tokens: 18400, tool_calls: 1 } }, "external_reference"), content: "ok" });
+  const view = await draw("long");
+  assert.deepEqual([...cardRow(view).children].map((child) => /attach-card-[a-z]+/.exec(child.getAttribute("class") || "")?.[0]).filter(Boolean),
+    ["attach-card-agent", "attach-card-name", "attach-card-task", "attach-card-facts", "attach-card-chevron"]);
+  assert.equal(view.container.querySelector(".attach-card-name").textContent, name);
+  assert.ok(view.container.querySelector(".attach-card-task").textContent.length <= 121, "the task is cut to one short line");
+  assert.doesNotMatch(view.container.querySelector(".attach-card-task").textContent, /second line/);
+  assert.match(view.container.querySelector(".attach-card-facts").textContent, / · <\$0\.01$/);
+  await view.unmount();
+});
+
+const handed = (id, content) => ({ id, role: "user", rowKind: "received_message", origin: "agent_delivery", content, status: "done", timestamp: 1 });
+
+test("a message between agents is one line that opens in place; a person's stays a bubble", async () => {
+  seed(handed("in", "📨 Message from “Butler” (conv_1):\n\nCheck the deploy.\n\n(Another of your conversations handed this to you. Handle it here; your final answer goes back to it on its own.)"),
+    handed("back", "↩️ Reply from “Butler” (conv_1) to the message you sent it:\n\nYes, 3 files."),
+    { id: "typed", role: "user", rowKind: "user", origin: "person", content: "hello", status: "done", timestamp: 1 });
+  let view = await draw("in");
+  const line = view.container.querySelector('.agent-event[data-msg-id="in"]');
+  assert.equal(line.querySelector(".agent-event-label").textContent, "Message from “Butler”");
+  assert.equal(line.querySelector(".agent-event-detail"), null);
+  assert.equal(view.container.querySelector(".message.user"), null);
+  await click(line.querySelector(".agent-event-head"));
+  assert.equal(line.querySelector(".agent-event-detail").textContent.trim(), "Check the deploy.");
+  await view.unmount();
+  view = await draw("back");
+  assert.equal(view.container.querySelector(".agent-event-label").textContent, "“Butler” replied");
+  await view.unmount();
+  view = await draw("typed");
+  assert.ok(view.container.querySelector(".message.user"));
+  assert.equal(view.container.querySelector(".agent-event"), null);
+  await view.unmount();
+});
+
+test("a find match inside a closed line or card opens it", async () => {
+  const { revealForFind } = await import("../../../lib/chat/transcript/conversation-find.ts");
+  seed(handed("back", "↩️ Reply from “Butler” (conv_1) to the message you sent it:\n\nYes, 3 files."),
+    { ...attach("ref", { manual: true }, "external_reference"), content: "the needle" });
+  let view = await draw("back");
+  await act(async () => { assert.equal(revealForFind("back"), true); });
+  assert.match(view.container.querySelector(".agent-event-detail").textContent, /Yes, 3 files\./);
+  await view.unmount();
+  assert.equal(revealForFind("back"), false, "an unmounted row no longer answers");
+  view = await draw("ref");
+  await act(async () => { assert.equal(revealForFind("ref"), true); });
+  assert.match(view.container.querySelector(".attach-card-preview").textContent, /the needle/);
+  await view.unmount();
+});
+
 test("the same row id in two views keeps two choices", () => {
   const state = useSessionStore.getState();
   state.setStepExpansion("a", "k", true);

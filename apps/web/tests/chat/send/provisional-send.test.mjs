@@ -243,6 +243,28 @@ describe("failed and local sends", () => {
     chatHandlers.handleChatResponse({ type: "local_command", session_id: provisional, content: "second local output" });
   });
 
+  test("a command that only answers leaves its reply line in the draft and no user bubble", () => {
+    const sid = "local_reply_only";
+    store().setCurrentDraft(sid);
+    assert.equal(sendChatMessage({ text: "/goal status", sessionId: sid, thinking: "medium", webSearchEnabled: false, bubble: false }), true);
+    const users = () => (store().messageOrder[sid] ?? []).map(message).filter((row) => row?.role === "user");
+    assert.deepEqual(users(), [], "no bubble while the server decides");
+    chatHandlers.handleChatResponse({ type: "local_command", session_id: sid, content: "No goal set." });
+    assert.deepEqual(users(), []);
+    const rows = (store().messageOrder[sid] ?? []).map(message);
+    assert.deepEqual(rows.map((row) => [row.rowKind, row.content]), [["system_text", "No goal set."]]);
+    assert.equal(pendingUserText.hasPendingFirstAck(sid), false);
+  });
+
+  test("a bubble drawn for a command that turned out to only answer is removed", () => {
+    const sid = "local_reply_typed";
+    store().setCurrentDraft(sid);
+    sendChatMessage({ text: "/goal status", sessionId: sid, thinking: "medium", webSearchEnabled: false });
+    assert.equal((store().messageOrder[sid] ?? []).length, 1);
+    chatHandlers.handleChatResponse({ type: "local_command", session_id: sid, content: "No goal set." });
+    assert.deepEqual((store().messageOrder[sid] ?? []).map(message).map((row) => row.role), ["system"]);
+  });
+
   test("a throwing socket write returns false, logs the error and releases the provisional turn", () => {
     const sid = "local_send-throws";
     store().setRunningTaskFor(sid, { session_id: sid, msg_id: "optimistic", started_at: Date.now() / 1000 });

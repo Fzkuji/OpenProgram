@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from openprogram.interfaces.cli.commands.providers import quota_status
 from openprogram.interfaces.cli.parser import build_parser
 
@@ -117,6 +119,7 @@ def test_status_without_a_provider_is_the_overview(monkeypatch, capsys):
 
     import openprogram.models.usage.provider_status as provider_status
     monkeypatch.setattr(provider_status, "build_status", build_status)
+    monkeypatch.setattr(quota_status, "worker_status", lambda refresh: None)
     from openprogram.interfaces.cli.commands.providers import dispatch
 
     parser = build_parser()
@@ -127,3 +130,81 @@ def test_status_without_a_provider_is_the_overview(monkeypatch, capsys):
     assert calls == ["stale", "force"]
     args = parser.parse_args(["providers", "status", "openai"])
     assert args.provider == "openai"
+
+
+def test_a_running_worker_answers_so_the_cli_prints_what_the_page_shows(monkeypatch, capsys):
+    """A key's use count and last use live in the Worker's memory: with a
+    Worker up, the CLI prints its payload instead of building one that
+    reads them as never used."""
+    import openprogram.models.usage.provider_status as provider_status
+    from openprogram.host.security import backend_endpoint
+    from openprogram.interfaces.cli.commands.providers import dispatch
+
+    monkeypatch.setattr(provider_status, "build_status",
+                        lambda **_k: pytest.fail("built locally while the Worker answers"))
+    endpoint = backend_endpoint.BackendEndpoint(origin="http://127.0.0.1:18299", token="t")
+    monkeypatch.setattr(backend_endpoint, "resolve_backend_endpoint", lambda: endpoint)
+    sent: list[tuple[str, str, bytes | None, str]] = []
+
+    class _Response:
+        status = 200
+
+        def __init__(self, body):
+            self.body = body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            return self.body
+
+    class _Opener:
+        def open(self, req, timeout):
+            sent.append((req.get_method(), req.full_url, req.data, req.get_header("Authorization")))
+            return _Response(json.dumps(PAYLOAD).encode())
+
+    import urllib.request
+    monkeypatch.setattr(urllib.request, "build_opener", lambda *_a: _Opener())
+    parser = build_parser()
+    assert dispatch(parser.parse_args(["providers", "status", "--json"])) == 0
+    assert json.loads(capsys.readouterr().out) == PAYLOAD
+    assert dispatch(parser.parse_args(["providers", "status", "--refresh"])) == 0
+    assert "OpenRouter" in capsys.readouterr().out
+    assert sent == [
+        ("GET", "http://127.0.0.1:18299/api/providers/status", None, "Bearer t"),
+        ("POST", "http://127.0.0.1:18299/api/providers/status/refresh", b"{}", "Bearer t"),
+    ]
+
+
+def test_without_a_worker_the_cli_builds_the_status_itself(monkeypatch):
+    from openprogram.host.security import backend_endpoint
+
+    def no_worker():
+        raise backend_endpoint.OwnerAuthError("no worker")
+
+    monkeypatch.setattr(backend_endpoint, "resolve_backend_endpoint", no_worker)
+    assert quota_status.worker_status(False) is None
+
+
+def test_a_fresh_install_has_no_connected_provider(tmp_path):
+    """A new user (empty HOME, no keys, no provider CLIs on PATH) sees the empty state.
+
+    A login-only subscription such as Grok Subscription used to count as
+    configured with nothing stored, so it was listed as connected on every
+    fresh install and the "Connect a model provider" state never showed.
+    """
+    import subprocess
+    import sys
+
+    home = tmp_path / "home"
+    home.mkdir()
+    env = {"HOME": str(home), "USERPROFILE": str(home), "PATH": "/usr/bin:/bin"}
+    run = lambda *args: subprocess.run(  # noqa: E731
+        [sys.executable, "-m", "openprogram", "providers", "status", *args],
+        env=env, capture_output=True, text=True, timeout=120, check=True,
+    ).stdout
+    assert json.loads(run("--json"))["providers"] == []
+    assert run().startswith("No connected providers.")

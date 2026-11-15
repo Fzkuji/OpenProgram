@@ -7,11 +7,13 @@
         matrices, and what this release leaves out and why.
 
     release-matrix.py assemble ARTIFACT_ROOT --version vX.Y.Z --plan JSON \\
-        --notes FILE --notes-output FILE --links-output DIR
+        --notes FILE --notes-output FILE
         Turn the downloaded artifacts into what the release carries: drop the
-        internal ones and anything that did not pass, refuse when the wheel or
-        every macOS and Linux command-line runtime is missing, make the
-        version-free App copies, and write the release notes for what exists.
+        internal ones and anything that did not pass, refuse when the wheel,
+        the Office archive or every macOS and Linux command-line runtime is
+        missing, and write the release notes for what exists. Each file is
+        uploaded once, under its
+        versioned name; the docs site's latest.html finds the newest one.
         --incomplete-output FILE lists what the plan built for and the release
         does not carry, one per line; the workflow fails on it after publishing.
 
@@ -271,8 +273,6 @@ def keep_publishable(root: Path, plan: Mapping[str, list]) -> list[str]:
         else:
             if row["platform"] == "linux" and not any(directory.glob("*.AppImage")):
                 missing.append(f"{label} AppImage: its build failed; the deb package is available.")
-            if not (directory / f"SHA256SUMS-{row['platform']}-{row['arch']}").is_file():
-                missing.append(f"{label} App: its checksum file is missing; the installer is available.")
     if plan.get("update_files"):
         # A full-layout App and the command-line install do not read these yet,
         # so nothing is removed; the release still says they are not there.
@@ -291,6 +291,10 @@ def refusal(root: Path) -> str | None:
     """Why this release must not publish at all, or None."""
     if not any((root / "developer-python-distributions").glob("*.whl")):
         return "the Python wheel is missing"
+    # The App installs Office from its own version's release, so every release
+    # carries the pinned archive exactly once (the office job checks its bytes).
+    if len(list((root / "office-assets").glob("OfficeAssets-*.zip"))) != 1:
+        return "the Office archive is missing"
     runtimes = [*root.glob("product-runtime-macos-*"), *root.glob("product-runtime-linux-*")]
     if not any(path.is_dir() for path in runtimes):
         return "no macOS or Linux command-line runtime was built"
@@ -299,28 +303,6 @@ def refusal(root: Path) -> str | None:
 
 def asset_names(root: Path) -> set[str]:
     return {path.name for path in root.rglob("*") if path.is_file()}
-
-
-def make_version_free_copies(root: Path, version: str, output: Path) -> list[str]:
-    """Copies with stable names, for releases/latest/download links."""
-    pattern = re.compile(
-        rf"OpenProgram-{re.escape(version)}-(mac|win|linux)-([A-Za-z0-9_]+)(?:-unsigned)?\.(dmg|exe|AppImage|deb)"
-    )
-    output.mkdir(parents=True, exist_ok=True)
-    made = []
-    for path in sorted(root.glob("desktop-*/*")):
-        match = pattern.fullmatch(path.name)
-        if match is None:
-            continue
-        name = f"OpenProgram-{match[1]}-{match[2]}.{match[3]}"
-        target = output / name
-        target.unlink(missing_ok=True)
-        try:
-            os.link(path, target)
-        except OSError:
-            shutil.copy2(path, target)
-        made.append(name)
-    return made
 
 
 def _published_name(name: str, names: set[str]) -> str | None:
@@ -382,12 +364,10 @@ def _assemble(options: argparse.Namespace) -> int:
     reason = refusal(options.artifact_root)
     if reason is not None:
         raise SystemExit(f"refusing to publish {options.version}: {reason}")
-    copies = make_version_free_copies(options.artifact_root, version, options.links_output)
     # The manifest is written after this step, from what is left here.
     names = asset_names(options.artifact_root) | {"release-manifest.json"}
     notes = write_notes(options.notes.read_text(encoding="utf-8"), version, names, missing)
     options.notes_output.write_text(notes, encoding="utf-8")
-    print(f"version-free copies: {', '.join(copies) or 'none'}")
     for item in missing:
         print(f"::warning::{item}", file=sys.stderr)
     if options.incomplete_output is not None:
@@ -409,7 +389,6 @@ def main() -> int:
     assemble.add_argument("--plan", required=True, help="the plan output of `select`")
     assemble.add_argument("--notes", type=Path, required=True)
     assemble.add_argument("--notes-output", type=Path, required=True)
-    assemble.add_argument("--links-output", type=Path, required=True)
     assemble.add_argument("--incomplete-output", type=Path)
     assemble.set_defaults(run=_assemble)
     options = parser.parse_args()

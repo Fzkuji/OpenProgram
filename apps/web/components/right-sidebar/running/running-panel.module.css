@@ -54,3 +54,27 @@
 
 .countBadge { position: absolute; top: -5px; right: -7px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: var(--radius-md); background: var(--accent-red); color: var(--ink-on-fill); font-size: var(--fs-2xs); line-height: 15px; text-align: center; box-shadow: 0 0 0 2px var(--color-sidebar); pointer-events: none; }
 .status[data-tone="run"] { color: var(--accent-blue); }
+
+/* ---- Agents roster: the rows under an agent ---- */
+/* The agent's row is a disclosure: its open state is the chevron, not a fill. */
+.row[aria-expanded]:not(:hover) { background: transparent; }
+.disclosure { flex: none; display: grid; place-items: center; width: 14px; height: 14px; color: var(--text-secondary); cursor: pointer; }
+.disclosure svg, .finishedChevron svg { width: 14px; height: 14px; }
+.row:hover .disclosure, .row:focus-visible .disclosure { color: var(--text-primary); }
+/* A helper: avatar, name, status badge, cost at the right edge. */
+.agentRow { display: flex; align-items: center; gap: 8px; width: 100%; height: auto; min-height: var(--ui-button-h); padding: 5px 8px 5px calc(8px + var(--indent, 0px)); border: 0; border-radius: var(--ui-list-radius); justify-content: flex-start; font: inherit; font-weight: 400; line-height: 1.4; color: inherit; text-align: left; cursor: pointer; transition: box-shadow var(--motion-medium), background-color var(--motion-medium); }
+.panel .agentRow { position: relative; z-index: 1; }
+.agentRow:hover { background: var(--row-raised-bg); box-shadow: var(--composer-shadow-focus); color: inherit; }
+.agentRow[aria-expanded]:not(:hover) { background: transparent; }
+/* Buttons draw no focus ring (base/focus.css); a row reached with the
+   keyboard takes the hover fill, so Left and Right show where they act. */
+.agentRow:focus-visible, .row[aria-expanded]:focus-visible { background: var(--row-raised-bg); }
+.agentRow .agentGlyph { width: 20px; height: 20px; }
+.agentRow .agentGlyph svg { width: 20px; height: 20px; }
+.agentRow[data-outgoing] .name { color: var(--text-secondary); }
+.arrow { color: var(--text-muted); }
+.cost { flex: none; margin-left: auto; font-size: var(--right-panel-meta-size, var(--fs-xs)); color: var(--text-secondary); }
+.finishedChevron { flex: none; display: grid; place-items: center; width: 20px; height: 20px; color: var(--text-muted); }
+.finishedLabel { color: var(--text-secondary); font-size: var(--right-panel-meta-size, var(--fs-xs)); }
+/* The group's total after its name. */
+.sum { color: var(--text-muted); }

@@ -16,9 +16,10 @@ Mirrors the three things openclaw does around its fixed gateway port
     (``describe_port_owner`` / ``port_owner_hint``), so a "port in use"
     error can name the squatter instead of saying "another process".
 
-We never kill or auto-migrate off a held port: the port is pinned on
-purpose (a stable UI URL), so the policy is reuse-if-ours / report-and-
-refuse-if-not — same stance as openclaw.
+We never kill a holder and never attach to one that is not ours. A port
+the profile chose for itself (``web-port``) moves to the next free one when
+something else holds it at start; a port the user set (``ui.web_port`` or
+``OPENPROGRAM_WEB_PORT``) is refused with the holder named.
 """
 from __future__ import annotations
 
@@ -41,6 +42,43 @@ def port_in_use(port: int, host: str = "127.0.0.1", timeout: float = 0.4) -> boo
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(timeout)
         return s.connect_ex((host, port)) == 0
+
+
+def port_bindable(port: int, host: str = "127.0.0.1") -> bool:
+    """True iff this process could listen on ``host:port`` right now.
+
+    POSIX sets ``SO_REUSEADDR`` so a port left in ``TIME_WAIT`` by a worker
+    that just stopped counts as free; it never lets two listeners share a
+    port there. On Windows ``SO_REUSEADDR`` would let the probe bind over a
+    live listener and report a held port as free, so the probe asks for
+    exclusive use instead (a stopped listener's port binds again at once).
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            else:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind((host, port))
+        return True
+    except OSError:
+        return False
+
+
+# The ports a profile picks from when it chooses its own (the development
+# instance's 18200 is outside them).
+FIRST_WEB_PORT = 18100
+WEB_PORT_SPAN = 100
+
+
+def first_free_web_port(exclude: frozenset[int] = frozenset()) -> int:
+    """The lowest port from 18100 up that nothing listens on."""
+    for port in range(FIRST_WEB_PORT, FIRST_WEB_PORT + WEB_PORT_SPAN):
+        if port not in exclude and port_bindable(port):
+            return port
+    raise OSError(
+        f"no free port between {FIRST_WEB_PORT} and {FIRST_WEB_PORT + WEB_PORT_SPAN - 1}"
+    )
 
 
 # identity probes (HTTP signature)

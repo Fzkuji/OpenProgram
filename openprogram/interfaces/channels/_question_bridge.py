@@ -106,7 +106,9 @@ def _render_question(data: dict[str, Any]) -> str:
 
     lines: list[str] = []
     head = {"confirm": "需要确认", "approval": "⚠ 需要批准", "form": "需要填写"}.get(kind, "需要你的回答")
-    lines.append(f"🤔 {head}")
+    # A foreground sub-agent's request names it (approval._asker_metadata).
+    asked_by = str(data.get("asked_by") or "").strip()
+    lines.append(f"🤔 {head}" + (f" · {asked_by}" if asked_by else ""))
     if prompt:
         lines.append(prompt)
     if detail:

@@ -38,7 +38,8 @@ export function SectionHeader({
   actions,
   className,
 }: {
-  name: string;
+  /** The label; a section may add a muted figure after its name. */
+  name: ReactNode;
   collapsible: boolean;
   collapsed: boolean;
   onToggle: () => void;

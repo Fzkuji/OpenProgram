@@ -118,7 +118,7 @@ def test_ambient_proxy_does_not_expand_custom_routing(proxy_env, consumer, origi
 
 
 @pytest.mark.parametrize("consumer,url", [
-    ("tool.web_fetch", "https://github.com/fzkuji2026/ctxpress"),
+    ("tool.web_fetch", "https://github.com/example-org/ctxpress"),
     ("tool.image_result.download", "https://cdn.example.com/image.png"),
     ("channel.attachment.download", "https://cdn.example.com/file.pdf"),
     ("tool.web_search.fixed_api", "https://html.duckduckgo.com/html/?q=x"),
@@ -161,7 +161,7 @@ def test_no_proxy_bypass_keeps_direct_policy_for_public_urls(proxy_env):
     transport = ManagedHTTPTransport("tool.web_fetch", security=security)
     try:
         with pytest.raises(URLPolicyError) as exc:
-            transport._evaluate("GET", "https://github.com/fzkuji2026/ctxpress")
+            transport._evaluate("GET", "https://github.com/example-org/ctxpress")
         assert exc.value.reason == "NON_GLOBAL_ADDRESS"
     finally:
         transport.close()

@@ -1056,3 +1056,68 @@ def test_a_turn_that_runs_does_not_report_busy(
     with _stream_replies():
         assert _inbound(on_busy=lambda: calls.append("busy")) == "done"
     assert calls == []
+
+
+class _LockedSlot(_RunSlot):
+    """A slot behind a conversation lock that is not had in time."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.lock_waits: list[float | None] = []
+
+    def reserve(self, session_id: str, owner: str, *, lock_wait: float | None = None) -> bool:
+        from openprogram.state.store.session.session_lock import SessionLockTimeout
+        self.reserve_calls += 1
+        self.lock_waits.append(lock_wait)
+        raise SessionLockTimeout(session_id, lock_wait or 0.0, "another process")
+
+
+def test_a_message_whose_conversation_stays_locked_is_not_delivered_and_says_so(
+    tmp_db: SessionDB, stub_routing, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Nothing was taken or written: the sender is told to send it again,
+    not that a turn is running, and the wait for the lock fits the slot's."""
+    from openprogram.runtime.conversation.run_control import run_slot
+    port = _LockedSlot()
+    monkeypatch.setattr(run_slot, "_port", port)
+    monkeypatch.setattr(C, "RUN_SLOT_WAIT_SECONDS", 0.5)
+    busy: list[str] = []
+    assert _inbound(on_busy=lambda: busy.append("busy")) == C.LOCKED_REPLY
+    assert busy == ["busy"]
+    assert port.reserve_calls == 1 and 0 < port.lock_waits[0] <= 0.5
+    assert port.holder is None
+
+
+def test_an_ambient_event_does_not_wait_for_a_locked_conversation(
+    tmp_db: SessionDB, stub_routing, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from openprogram.runtime.conversation.run_control import run_slot
+    port = _LockedSlot()
+    monkeypatch.setattr(run_slot, "_port", port)
+    busy: list[str] = []
+    started = time.monotonic()
+    assert _inbound(peer_kind="group", ambient=True,
+                    on_busy=lambda: busy.append("busy")) is None
+    assert time.monotonic() - started < 1
+    assert port.lock_waits == [0.0]
+    assert busy == ["busy"]
+
+
+def test_an_ambient_event_skips_a_conversation_another_channel_turn_holds(
+    tmp_db: SessionDB, stub_routing, monkeypatch: pytest.MonkeyPatch,
+    run_slot_port: _RunSlot,
+) -> None:
+    """The room event does not queue behind the channel turn running in its
+    conversation; a direct message would."""
+    import threading
+    held = threading.Lock()
+    held.acquire()
+    monkeypatch.setattr(C, "_session_lock_for", lambda _key: held)
+    busy: list[str] = []
+    started = time.monotonic()
+    assert _inbound(peer_kind="group", ambient=True,
+                    on_busy=lambda: busy.append("busy")) is None
+    assert time.monotonic() - started < 1
+    assert busy == ["busy"]
+    assert run_slot_port.reserve_calls == 0
+    held.release()

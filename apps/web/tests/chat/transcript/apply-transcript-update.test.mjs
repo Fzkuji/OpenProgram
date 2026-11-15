@@ -95,6 +95,16 @@ test("text frames extend their block by offset, and the same frame twice changes
   assert.equal(again.gap, false);
 });
 
+test("the frame that opens a passage after a tool call puts a blank line in the row's text, once", () => {
+  const start = view(row("r", { content: "before", status: "streaming", blocks: [{ type: "text", text: "before" }, { type: "tool", tool_call_id: "t" }] }));
+  const opening = textFrame(0, "af", { itemId: "text:1", itemIndex: 2, separator: "\n\n" });
+  const first = applyTextFrame(start, opening);
+  const again = applyTextFrame({ order: ["r"], rows: first.rows }, opening);
+  const more = applyTextFrame({ order: ["r"], rows: again.rows }, textFrame(2, "ter", { itemId: "text:1", itemIndex: 2 }));
+  assert.equal(more.rows.r.content, "before\n\nafter");
+  assert.deepEqual(more.rows.r.blocks.map((block) => block.text), ["before", undefined, "after"]);
+});
+
 test("a frame past the block's end asks for a read and writes nothing", () => {
   const start = view(row("r", { content: "", blocks: [], status: "streaming" }));
   const result = applyTextFrame(start, textFrame(5, "late"));

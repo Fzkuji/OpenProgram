@@ -25,7 +25,7 @@ def review_then_revise(draft: str) -&gt; str:
 PROGRAM_ENTRIES = [review_then_revise]</code></pre>
 <p class="note">Python fixes the order; two roles do the semantic steps, each seeing only the blocks its Context holds.</p>
 <h2>Ask for one</h2>
-<pre translate="no" tabindex="0"><code>curl -fsSL https://openprogram.io/install | sh
+<pre translate="no" tabindex="0"><code>curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh
 openprogram</code></pre><pre translate="no" tabindex="0"><code>Create a Workflow named review_then_revise. It must review a draft, revise it
 against the review, return only the final text, and include a behavior test.</code></pre>
 <h2>Controls that still apply</h2>

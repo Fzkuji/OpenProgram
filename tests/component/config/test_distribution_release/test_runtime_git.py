@@ -101,10 +101,12 @@ def test_python_that_refuses_a_locally_built_module_fails(monkeypatch):
         verifier["_probe_compiled_import"]()
 
 
-def test_windows_base_asks_the_operating_system_for_its_architecture():
+def test_windows_base_asks_the_python_it_packages_for_its_architecture():
+    # An x64 base built on Windows on Arm ships to x64 PCs; neither the
+    # machine nor the environment the build inherits decides its Git.
     recipe = (ROOT / "scripts/release/build-base.ps1").read_text(encoding="utf-8")
-    assert "RuntimeInformation]::OSArchitecture" in recipe
-    assert "$env:PROCESSOR_ARCHITECTURE" not in recipe
+    assert 'runtime-wheels.py") target' in recipe
+    assert "OSArchitecture" not in recipe and "PROCESSOR_ARCHITECTURE" not in recipe
 
 
 def test_both_runtime_recipes_install_and_require_git():

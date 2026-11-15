@@ -144,6 +144,67 @@ def test_slash_goal_starts_normal_chat(session):
     assert goal["execution_mode"] == "chat"
     assert goal["text"] == "implement and verify the feature"
     assert "max_turns" not in goal["budget"]
+    # The message that carries the objective is the one marked as setting it.
+    assert (result["send_text"], result["starts_goal"]) == ("implement and verify the feature", True)
+
+
+def test_goal_status_shows_the_status_and_sets_nothing(session):
+    goals, _ = session
+    empty = goals.handle_goal_command("chat-goal", "status")
+    assert empty == goals.handle_goal_command("chat-goal", "")
+    assert empty["send_text"] is None and goals.load_goal("chat-goal") is None
+    goals.handle_goal_command("chat-goal", "an objective")
+    shown = goals.handle_goal_command("chat-goal", " Status ")
+    assert shown == goals.handle_goal_command("chat-goal", "")
+    assert shown["send_text"] is None and not shown.get("starts_goal")
+    assert goals.load_goal("chat-goal")["text"] == "an objective"
+    assert "/goal status" in goals.handle_goal_command("chat-goal", "help")["text"]
+
+
+def test_a_goal_that_cannot_be_created_answers_in_text_and_marks_nothing(session):
+    goals, _ = session
+    goals.handle_goal_command("chat-goal", "first objective")
+    result = goals.handle_goal_command("chat-goal", "second objective")
+    assert result["text"] and not result.get("send_text") and not result.get("starts_goal")
+
+
+def test_resume_sends_its_continuation_unmarked(session, monkeypatch):
+    goals, _ = session
+    goals.handle_goal_command("chat-goal", "an objective")
+    goals.apply_goal_action("chat-goal", "pause")
+    from openprogram.programs.tools.planning.goal import chat
+    monkeypatch.setattr(chat, "resume", lambda *_a, **_k: {})
+    result = goals.handle_goal_command("chat-goal", "resume")
+    assert result["send_text"] and "starts_goal" not in result
+
+
+def test_the_message_that_sets_a_goal_is_written_with_its_mark(tmp_path, monkeypatch):
+    from openprogram.runtime.agent.turn_request import TurnRequest
+    from openprogram.runtime.context.session_db import SessionDB
+    from openprogram.runtime.conversation import turn_runtime
+
+    db = SessionDB(tmp_path / "sessions")
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
+    monkeypatch.setattr("openprogram.state.store.default_store", lambda: db)
+    monkeypatch.setattr("openprogram.state.store.session.session_store.default_store", lambda: db)
+    monkeypatch.setattr(turn_runtime, "_run_loop_blocking", lambda **_kw: ("done", {}, []))
+    turn_runtime._process_turn_once(TurnRequest(
+        session_id="marked", user_text="ship it", agent_id="main", source="cli", starts_goal=True))
+    row = next(m for m in SessionDB(tmp_path / "sessions").get_branch("marked") if m["role"] == "user")
+    assert (row["content"], row["starts_goal"]) == ("ship it", True)
+
+
+def test_a_goal_mark_left_at_its_default_stays_out_of_the_stored_input():
+    from openprogram.runtime.agent.turn_request import TurnRequest
+    from openprogram.runtime.conversation.production_driver.shared import (
+        CanonicalAgentAdapter, normalize_agent_turn_payload)
+
+    def stored(**fields):
+        payload = CanonicalAgentAdapter.payload_for(TurnRequest("s", "hi", "main", "web", **fields))
+        return normalize_agent_turn_payload(payload)["request"]
+
+    assert "starts_goal" not in stored()
+    assert stored(starts_goal=True)["starts_goal"] is True
 
 
 def test_chat_goal_completion_rejects_unfinished_todos(session, monkeypatch):

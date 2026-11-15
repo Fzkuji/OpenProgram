@@ -58,7 +58,16 @@ export function OfficeSurface({ controller, bytes, path, readOnly, mode }: {
           if (!installRequested) { setNeedsInstall(true); setLoading(false); return; }
           setPhase("install");
           const result = await fetch("/api/documents/office-install", { method: "POST", signal: abort.signal });
-          if (!result.ok) throw new Error(message("Installation failed. Check your connection and available disk space, then retry.", "安装失败，请检查网络和可用磁盘空间后重试。"));
+          if (!result.ok) {
+            const failure = await result.json().catch(() => ({})) as { code?: string; version?: string | null; updateTo?: string | null };
+            // No release this version reads carries the Office files: a retry cannot help, an update can.
+            if (failure.code === "office_release_missing") throw new Error(failure.updateTo
+              ? message(`OpenProgram ${failure.version} cannot download Office support: releases before ${failure.updateTo} do not include it. Update OpenProgram to ${failure.updateTo} or newer, then install again.`,
+                `OpenProgram ${failure.version} 无法下载 Office 支持：${failure.updateTo} 之前的版本不包含它。请把 OpenProgram 更新到 ${failure.updateTo} 或更高版本后再安装。`)
+              : message("No OpenProgram release offers the Office files this version needs. Update OpenProgram to the newest version, then install again.",
+                "没有任何 OpenProgram 版本提供此版本所需的 Office 文件。请把 OpenProgram 更新到最新版本后再安装。"));
+            throw new Error(message("Installation failed. Check your connection and available disk space, then retry.", "安装失败，请检查网络和可用磁盘空间后重试。"));
+          }
           available = await officeHostAvailability(session, fetch, abort.signal);
           if (!available.available) throw new Error(message("Office installation is unavailable.", "Office 安装尚不可用。"));
         }

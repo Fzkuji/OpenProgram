@@ -108,6 +108,9 @@ def ensure_attach_placeholder(job: Any) -> bool:
         node_id=job.attach_pointer_id,
         job_id=job.id,
         target_session_id=job.parent_session_id,
+        # The interrupted call this card answers, so the rebuilt card pairs
+        # with it as the card written at admission did.
+        tool_call_id=job.tool_call_id,
         delivery="tool_result" if job.wait else None,
     )
     return written == job.attach_pointer_id

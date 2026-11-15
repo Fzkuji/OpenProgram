@@ -207,6 +207,10 @@ def test_saved_runtime_script_and_native_login_survive_original_app_removal(nati
     package = next((runtime / "python").glob("*/lib/python*/site-packages/openprogram"))
     shutil.copytree(Path(bootstrap.__file__).parent.parent, package / "operations" / "self_update", dirs_exist_ok=True,
                     ignore=shutil.ignore_patterns("__pycache__"))
+    # The checkout's self_update picks archives through this module, which an
+    # installed runtime older than it does not have yet.
+    architecture = Path(bootstrap.__file__).parents[3] / "host" / "_platform" / "architecture.py"
+    shutil.copy2(architecture, package / "host" / "_platform" / "architecture.py")
     (resources / "update").mkdir()
     shutil.copy2(INSTALLER, resources / "update/install-app.sh")
     owner_home = tmp / "owner"

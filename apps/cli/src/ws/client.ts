@@ -428,6 +428,8 @@ export interface QuestionAskedEnvelope {
     /** approval-only: the gated tool + its args, for the danger summary. */
     tool?: string;
     args?: Record<string, unknown>;
+    /** A foreground sub-agent's request names it. */
+    asked_by?: string;
     /** form-only: flat-object field schema (field name → field def). */
     schema?: Record<string, unknown>;
     /** ask_many-only: a packed group of questions. */

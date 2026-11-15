@@ -122,6 +122,11 @@ def _validate_account(provider: str, name: str, *, ping: bool = False) -> dict:
         out = result.to_dict()
         out["status"] = display
         out["ok"] = display == "valid"
+        # The same one-line result Add provider shows (Retry re-checks here).
+        from openprogram.models.listing.key_check import balance_of, check_of
+        check = check_of(provider, result)
+        check["balance"] = balance_of(provider, cred.credential_id)
+        out["check"] = check
         return out
     if kind in ("oauth", "device_code"):
         from openprogram.models.auth.credential_provider import get_credential_provider
@@ -275,6 +280,107 @@ def _generic_summary(provider: str) -> dict:
         "login_methods": methods,
         "default_method": default_method(provider),
     }
+
+
+def _settings_changed() -> None:
+    """Tell open tabs to reload enabled models (a provider or models were turned on)."""
+    try:
+        from openprogram.runtime.events import emit_ws_frame
+        emit_ws_frame({"type": "agent_settings_changed", "data": {}})
+    except Exception:
+        _log.debug("settings change not broadcast", exc_info=True)
+
+
+def _add_api_key(provider: str, key: str, name_field: str, *, validate: bool, source: str) -> tuple[dict, int]:
+    """Store a new api-key account and, with ``validate``, check it first.
+
+    The check is answered as ``check`` (models/listing/key_check.py): one
+    of works / rejected / no_credit / not_available / unreachable /
+    unverified, with the balance, the model count and three suggested
+    models. A rejected key is not stored (400). The first usable key of a
+    provider turns the provider and its suggested models on. Never returns
+    the key.
+    """
+    validation = None
+    persist = None
+    probe = None
+    from openprogram.models.listing.credentials import (
+        INVALID_CREDENTIAL,
+        display_status_from_probe,
+        persist_status_from_probe,
+        probe_proves_usable,
+        validate_credential,
+    )
+    from openprogram.models.listing.key_check import check_of, connect
+    if validate:
+        try:
+            res = validate_credential(
+                provider, api_key=key, use_cache=False, prove_usable=True,
+            )
+            probe = res
+            usable = probe_proves_usable(res)
+            persist = persist_status_from_probe(
+                res.status, previous="", usable_proven=usable,
+            )
+            display = display_status_from_probe(
+                res.status, previous="", usable_proven=usable,
+            )
+            validation = res.to_dict()
+            validation["status"] = display
+            validation["ok"] = display == "valid"
+            if res.status == INVALID_CREDENTIAL:
+                return {"error": f"{provider} rejected that key", "check": check_of(provider, res)}, 400
+        except Exception:
+            persist = None
+            probe = None
+    from openprogram.models.auth.store import get_store
+    from openprogram.models.auth.account.account_selection import get_active_pin
+    from openprogram.models.auth.account.account_selection import set_active_account
+    from openprogram.models.auth.types import Credential, CredentialData
+    store = get_store()
+    pid = _pool_id(provider)
+    pools = [p for p in store.list_pools() if p.provider_id == pid]
+    existing = {p.account_id for p in pools}
+    first_credential = not any(p.credentials for p in pools)
+    name = name_field.strip()
+    if not name:
+        name = "default" if "default" not in existing else f"key-{len(existing) + 1}"
+    cur = store.find_pool(pid, name)
+    if cur is not None and cur.credentials:
+        return {"error": f"account '{name}' already exists"}, 409
+    # Never stamp ``valid`` just because a key was saved. Persist the
+    # mapped probe result; an unproven key stays ``unknown``.
+    initial_status = persist or "unknown"
+    credential = Credential(
+        provider_id=pid, account_id=name, kind="api_key",
+        payload=CredentialData(kind="api_key", auth_value=key),
+        source=source,
+        status=initial_status,
+    )
+    store.add_credential(credential)
+    if persist == "billing_blocked":
+        pool = store.find_pool(pid, name)
+        live = _primary_cred(pool)
+        if live is not None:
+            live.cooldown_until_ms = 0
+            if validation and validation.get("detail"):
+                live.last_error = validation["detail"]
+            store.put_pool(pool)
+    if not existing and not get_active_pin(pid):
+        set_active_account(pid, name)   # first account becomes active
+    check = None
+    if probe is not None:
+        # The balance is read now, once, through the provider's verified
+        # quota reader; the provider and its suggested models are turned on.
+        check = connect(provider, check_of(provider, probe), account=credential.credential_id,
+                        first_credential=first_credential)
+        if check["auto_enabled"] or check["enabled_models"]:
+            _settings_changed()
+    else:
+        # A new key's quota (balance, key limit) is read right away, once.
+        from openprogram.models.usage.quota_fetchers import after_key_added
+        after_key_added(pid)
+    return {"ok": True, "name": name, "validation": validation, "status": initial_status, "check": check}, 200
 
 
 def register(app):
@@ -456,76 +562,31 @@ def register(app):
             return JSONResponse(
                 content={"error": "invalid account key body"}, status_code=400
             )
-        validation = None
-        persist = None
-        from openprogram.models.listing.credentials import (
-            INVALID_CREDENTIAL,
-            display_status_from_probe,
-            persist_status_from_probe,
-            probe_proves_usable,
-            validate_credential,
-        )
-        if validate:
-            try:
-                res = validate_credential(
-                    provider, api_key=key, use_cache=False, prove_usable=True,
-                )
-                usable = probe_proves_usable(res)
-                persist = persist_status_from_probe(
-                    res.status, previous="", usable_proven=usable,
-                )
-                display = display_status_from_probe(
-                    res.status, previous="", usable_proven=usable,
-                )
-                validation = res.to_dict()
-                validation["status"] = display
-                validation["ok"] = display == "valid"
-                if res.status == INVALID_CREDENTIAL:
-                    return JSONResponse(
-                        content={"error": f"{provider} rejected that key"},
-                        status_code=400,
-                    )
-            except Exception:
-                persist = None
-        from openprogram.models.auth.store import get_store
-        from openprogram.models.auth.account.account_selection import get_active_pin
-        from openprogram.models.auth.account.account_selection import set_active_account
-        from openprogram.models.auth.types import Credential, CredentialData
-        store = get_store()
-        pid = _pool_id(provider)
-        existing = {p.account_id for p in store.list_pools() if p.provider_id == pid}
-        name = name_field.strip()
-        if not name:
-            name = "default" if "default" not in existing else f"key-{len(existing) + 1}"
-        cur = store.find_pool(pid, name)
-        if cur is not None and cur.credentials:
-            return JSONResponse(
-                content={"error": f"account '{name}' already exists"},
-                status_code=409,
-            )
-        # Never stamp ``valid`` just because a key was saved. Persist the
-        # mapped probe result; an unproven key stays ``unknown``.
-        initial_status = persist or "unknown"
-        store.add_credential(Credential(
-            provider_id=pid, account_id=name, kind="api_key",
-            payload=CredentialData(kind="api_key", auth_value=key),
-            source="webui_add",
-            status=initial_status,
-        ))
-        if persist == "billing_blocked":
-            pool = store.find_pool(pid, name)
-            live = _primary_cred(pool)
-            if live is not None:
-                live.cooldown_until_ms = 0
-                if validation and validation.get("detail"):
-                    live.last_error = validation["detail"]
-                store.put_pool(pool)
-        if not existing and not get_active_pin(pid):
-            set_active_account(pid, name)   # first account becomes active
-        # A new key's quota (balance, key limit) is read right away, once.
-        from openprogram.models.usage.quota_fetchers import after_key_added
-        after_key_added(pid)
-        return JSONResponse(content={"ok": True, "name": name, "validation": validation, "status": initial_status})
+        payload, status = _add_api_key(provider, key, name_field, validate=validate, source="webui_add")
+        return JSONResponse(content=payload, status_code=status)
+
+    @app.post("/api/providers/{provider}/accounts/env")
+    def api_accounts_use_env_key(provider: str, body: Any = Body(default=None)):
+        """``Use`` on a key found in the Worker's environment: the named
+        variable is read here, checked and stored like a pasted key, so the
+        key itself never crosses the wire. Body ``{env_var, name?}``; the
+        variable must be one the provider reads (models/listing/detected.py)."""
+        error = check_request_body(body, allowed={"env_var", "name"}, required={"env_var"})
+        if error is not None:
+            return JSONResponse(content={"error": error}, status_code=400)
+        env_var, name_field = body["env_var"], body.get("name", "")
+        if not is_nonempty_printable_ascii(env_var) or not isinstance(name_field, str) or (
+                name_field != "" and not is_nonempty_printable_ascii(name_field)):
+            return JSONResponse(content={"error": "invalid env key body"}, status_code=400)
+        provider = _pool_id(provider)
+        from openprogram.models.listing.detected import env_value, key_env_names
+        if env_var not in key_env_names(provider):
+            return JSONResponse(content={"error": f"{provider} does not read {env_var}"}, status_code=400)
+        key = env_value(env_var)
+        if not key or "sk-ant-oat" in key or is_redacted_value(key):
+            return JSONResponse(content={"error": f"{env_var} is not set"}, status_code=404)
+        payload, status = _add_api_key(provider, key, name_field, validate=True, source=f"env:{env_var}")
+        return JSONResponse(content=payload, status_code=status)
 
     @app.post("/api/providers/{provider}/accounts/{name}/update")
     def api_account_update(

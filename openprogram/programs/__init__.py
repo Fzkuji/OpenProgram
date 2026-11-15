@@ -28,6 +28,7 @@ from ._host.runtime import (
     function,
     get as _get_agent_tool,
     install_allowed_tool_names,
+    install_turn_tools,
     loaded_tools,
     note_request_loaded,
     schema_not_sent_hint,
@@ -136,6 +137,9 @@ DEFAULT_TOOLS: list[str] = [
     # "Do this every Monday": turns the work just done into a Skill and,
     # optionally, a waking reminder. Deferred below; asked for rarely.
     "save_routine",
+    # The loader of the deferred tools above: a set that names them without
+    # it would list tools nothing can load.
+    "tool_search",
 ]
 
 
@@ -159,15 +163,23 @@ DEFERRED_DEFAULT_TOOLS: set = {
     "save_routine",
 }
 
-# 常驻工具：schema 一直带在请求里（不 defer）。= DEFAULT_TOOLS 减去上面的冷门大块，
-# 再加 tool_search 引导器（它是加载其余工具的唯一入口，永不 defer）。
+# 常驻工具：schema 一直带在请求里（不 defer）。= DEFAULT_TOOLS 减去上面的冷门大块
+# （其中的 tool_search 引导器是加载其余工具的唯一入口，永不 defer）。
 # DEFAULT_TOOLS 之外的已曝光工具也默认 defer。
 # 这是治「exec 默认全塞 ~14000 token」的唯一旋钮 —— 保守取，宁多勿缺。
 RESIDENT_TOOLS: set = (
     (set(DEFAULT_TOOLS) - DEFERRED_DEFAULT_TOOLS)
-    | {"tool_search"}
     | {"read_conversation"}
 )
+
+
+# Tools an Agent gets only by naming them (a selected list or a preset
+# that lists them), never through ``full``: an automatic Agent does not
+# carry them. ``mixture_of_agents`` asks several models for one answer;
+# that is a cross-model answer, not collaboration, and every tool in the
+# list costs prefix tokens (Pi keeps a small cache-stable list for the
+# same reason). Design: agent-collaboration.html#tools.
+OPT_IN_TOOLS: frozenset[str] = frozenset({"mixture_of_agents"})
 
 
 # Hermes-style named presets. ``default`` is the always-on minimal
@@ -228,6 +240,11 @@ TOOLSETS: dict[str, dict[str, list[str]]] = {
         "tools":    [],
         "includes": ["research", "coding"],
     },
+    "mixture_of_agents": {
+        # The opt-in group for OPT_IN_TOOLS' cross-model answer.
+        "tools":    ["mixture_of_agents"],
+        "includes": ["default"],
+    },
 }
 
 
@@ -238,13 +255,14 @@ def _preset_tool_names(name: str, entry: dict[str, list[str]]) -> list[str]:
     the exception: it means "every exposed tool", so it is read from
     the live registry instead of being written down. A tool joins it by
     registering, and a private helper stays out of it by registering
-    with ``expose=False`` — neither needs an edit here.
+    with ``expose=False`` — neither needs an edit here. ``OPT_IN_TOOLS``
+    stay out of it: they are offered only where named.
     """
     if name == "full":
         exposed = _exposed_set()
         if exposed is None:      # exposure filter disabled by a test fixture
-            return sorted(t.name for t in _all_agent_tools())
-        return sorted(exposed)
+            exposed = {t.name for t in _all_agent_tools()}
+        return sorted(set(exposed) - OPT_IN_TOOLS)
     return list(entry.get("tools", []) or [])
 
 
@@ -569,6 +587,7 @@ __all__ = [
     "deferred_catalog",
     "deferred_catalog_text",
     "install_allowed_tool_names",
+    "install_turn_tools",
     "loaded_tools",
     "note_request_loaded",
     "schema_not_sent_hint",
@@ -610,7 +629,10 @@ def apply_default_deferral() -> None:
     tools, reloaded packages) get theirs at registration.
     """
     from openprogram.programs._host.runtime import set_tier
-    for t in agent_tools(toolset="full", include_disabled=True):
+    # ``full`` leaves out the opt-in tools; they get their tier too.
+    opt_in = [t for t in agent_tools(toolset="mixture_of_agents", include_disabled=True)
+              if t.name in OPT_IN_TOOLS]
+    for t in [*agent_tools(toolset="full", include_disabled=True), *opt_in]:
         try:
             set_tier(t, default_tier(t))
         except Exception:

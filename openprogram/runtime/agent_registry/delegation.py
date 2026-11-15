@@ -75,12 +75,46 @@ def isolation_for(
     return "", False
 
 
+def delegate_model(spec: Optional[manager.AgentSpec], *, caller_agent: str) -> Optional[str]:
+    """``provider/model`` a helper started as ``spec`` runs on, or None to
+    run on its caller's model.
+
+    A helper runs in its caller's conversation, whose model would otherwise
+    win, so a saved Agent's own model is passed with the call: its own
+    model, else for the utility tier (Explorer) the Lightweight helper's
+    (``builtin_agents.utility_tier_model``). Running the caller's own Agent
+    keeps the caller's model, as a model the person picked for this
+    conversation should."""
+    if spec is None or spec.id == caller_agent:
+        return None
+    provider, model_id = (spec.model.provider or "").strip(), (spec.model.id or "").strip()
+    if provider and model_id:
+        return f"{provider}/{model_id}"
+    from openprogram.runtime.agent_registry.builtin_agents import utility_tier_model
+    pair = utility_tier_model(spec)
+    return f"{pair[0]}/{pair[1]}" if pair else None
+
+
+def delegatable() -> list[manager.AgentSpec]:
+    """The saved Agents, then the Agents defined as Markdown files in the
+    project or home folder (``markdown_imports``) whose name no saved Agent
+    already has: a saved Agent wins a name."""
+    saved = manager.list_all()
+    try:
+        from openprogram.runtime.agent_registry.markdown_imports import list_imports
+        imported = list_imports()
+    except Exception:  # noqa: BLE001 - the saved Agents still serve
+        imported = []
+    names = {(spec.name or "").casefold() for spec in saved}
+    return saved + [spec for spec in imported if spec.name.casefold() not in names]
+
+
 def find(ref: str, specs: Optional[Iterable[manager.AgentSpec]] = None) -> Optional[manager.AgentSpec]:
     """The Agent ``ref`` names: its id, else its name (case-insensitive)."""
     needle = (ref or "").strip()
     if not needle:
         return None
-    rows = list(specs) if specs is not None else manager.list_all()
+    rows = list(specs) if specs is not None else delegatable()
     for spec in rows:
         if spec.id == needle:
             return spec
@@ -92,6 +126,6 @@ def find(ref: str, specs: Optional[Iterable[manager.AgentSpec]] = None) -> Optio
 def roster(specs: Optional[Iterable[manager.AgentSpec]] = None) -> list[tuple[str, str, str]]:
     """``(id, name, description)`` of every Agent other agents may start,
     sorted by id so one Agent's edit moves no other line."""
-    rows = list(specs) if specs is not None else manager.list_all()
+    rows = list(specs) if specs is not None else delegatable()
     listed = sorted((s for s in rows if delegation_enabled(s)), key=lambda s: s.id)
     return [(s.id, s.name, s.description) for s in listed[:ROSTER_MAX]]

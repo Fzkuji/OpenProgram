@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+
+from scripts import retired_accounts
 from scripts.update_readme_contributors import (
     is_listed_contributor,
     render_block,
@@ -8,7 +11,7 @@ from scripts.update_readme_contributors import (
 
 
 def test_omits_bots_and_ai_coding_accounts() -> None:
-    assert is_listed_contributor({"login": "Fzkuji", "type": "User"})
+    assert is_listed_contributor({"login": "FuzzyKuji", "type": "User"})
     assert is_listed_contributor({"login": "Qi202", "type": "User"})
     assert is_listed_contributor({"login": "basil-k-aji-dev", "type": "User"})
     assert not is_listed_contributor({"login": "claude", "type": "User"})
@@ -19,8 +22,8 @@ def test_omits_bots_and_ai_coding_accounts() -> None:
 
 
 def test_readme_block_uses_github_pngs_and_omits_claude() -> None:
-    block = render_block(["Fzkuji", "Qi202"])
-    assert 'src="https://github.com/Fzkuji.png?size=48"' in block
+    block = render_block(["FuzzyKuji", "Qi202"])
+    assert 'src="https://github.com/FuzzyKuji.png?size=48"' in block
     assert 'src="https://github.com/Qi202.png?size=48"' in block
     assert 'width="24"' in block
     assert "contrib.rocks" not in block
@@ -30,4 +33,15 @@ def test_readme_block_uses_github_pngs_and_omits_claude() -> None:
     assert updated.startswith("before\n")
     assert updated.endswith("after\n")
     assert "old" not in updated
-    assert "Fzkuji.png" in updated
+    assert "FuzzyKuji.png" in updated
+
+
+def test_never_lists_a_retired_account(monkeypatch) -> None:
+    # A stand-in login takes a retired account's place, so this file names none.
+    stand_in = "retired-example"
+    digest = hashlib.sha256(stand_in.encode()).hexdigest()
+    monkeypatch.setattr(retired_accounts, "RETIRED", retired_accounts.RETIRED | {digest})
+    monkeypatch.setattr(retired_accounts, "_seen", {})
+    assert not is_listed_contributor({"login": stand_in, "type": "User"})
+    assert not is_listed_contributor({"login": "Retired-Example", "type": "User"})
+    assert is_listed_contributor({"login": "FuzzyKuji", "type": "User"})

@@ -61,6 +61,56 @@ def load_agent_profile(agent_id: str) -> dict:
     return _profile_loader(agent_id)
 
 
+def model_ref_window(model: Optional[str], provider: Optional[str] = None) -> Optional[int]:
+    """Context window of the model a stored reference names, or ``None``.
+
+    ``model`` is ``provider/model``, ``provider:model`` or a bare id under
+    ``provider`` (``catalog.models.split_model_ref``). The window is the
+    one compaction reads for the same Model; an unresolvable reference is
+    ``None``, never a default.
+    """
+    if not model:
+        return None
+    try:
+        from openprogram.models.providers.catalog.models import find_model_ref
+        from openprogram.runtime.context.tokens import known_context_window
+        return known_context_window(find_model_ref(model, provider))
+    except Exception:
+        _log.debug("model window not resolved for %r", model, exc_info=True)
+        return None
+
+
+def session_model_window(sess: dict) -> tuple[str, Optional[int]]:
+    """``(model id, window)`` for a session row.
+
+    The branch's own pick (``provider_override`` / ``model_override``)
+    first, then the model its last turn ran (``model``, written as
+    ``provider/model``). The first one named decides; the id is bare and
+    the window is ``None`` when that model does not resolve.
+    """
+    from openprogram.models.providers.catalog.models import split_model_ref
+
+    extra = sess.get("extra_meta") or {}
+    if isinstance(extra, str):
+        try:
+            extra = json.loads(extra)
+        except ValueError:
+            extra = {}
+    if not isinstance(extra, dict):
+        extra = {}
+    fallback = sess.get("provider_name") or None
+    candidates = (
+        (sess.get("model_override") or extra.get("model_override"),
+         sess.get("provider_override") or extra.get("provider_override") or fallback),
+        (sess.get("model"), fallback),
+    )
+    for model, provider in candidates:
+        if model:
+            return (split_model_ref(model, provider)[1] or "",
+                    model_ref_window(model, provider))
+    return "", None
+
+
 BREAKDOWN_CATEGORY_KEYS = (
     "system_prompt",
     "tools_schema",
@@ -92,7 +142,6 @@ def compute_breakdown(
     global head.
     """
     from openprogram.runtime.context.session_db import default_db
-    from openprogram.runtime.context.tokens import real_context_window
 
     db = default_db()
     from openprogram.runtime.context.persistence import rendered_history
@@ -196,20 +245,10 @@ def compute_breakdown(
             "metadata": {},
         })
 
-    # sess["model"] 存的是 "provider:model"（如 openai-codex:gpt-5.5），
-    # get_model 需要拆开的两个参数。以前整串传单参 TypeError 被吞，
-    # 窗口永远回落 128k 默认值。
-    model_id = sess.get("model") or ""
-    provider_id = sess.get("provider_name") or ""
-    if ":" in model_id:
-        provider_id, model_id = model_id.split(":", 1)
-    try:
-        from openprogram.models.providers.catalog.models import get_model as _get_model
-        model_obj = (_get_model(provider_id, model_id)
-                     if provider_id and model_id else None)
-    except Exception:
-        model_obj = None
-    ctx_window = int(context_window or 0) or real_context_window(model_obj)
+    # The caller's window is the model the turn resolved; without one, the
+    # session row's model decides (``session_model_window``).
+    model_id, row_window = session_model_window(sess)
+    ctx_window = int(context_window or 0) or row_window or 0
 
     # 工具集：优先用节点存的原料（精确）；没有（如 codex 等自带
     # runtime 的 provider 没走采集路径）就回退到会话当前 toolset，
@@ -293,7 +332,8 @@ def _classify(
     )
     bd["session_id"] = session_id
     bd["model"] = model_id
-    bd["context_window"] = ctx_window
+    # 0 means the model's window is unknown: no limit is shown.
+    bd["context_window"] = ctx_window or None
     bd["tools_source"] = (
         "recorded_snapshot" if has_tool_snapshot else
         ("recorded" if latest_tools else "session_default")
@@ -434,10 +474,10 @@ def _classify(
         int(bd.get(key) or 0) for key in BREAKDOWN_CATEGORY_KEYS
     )
     bd["input_used_pct"] = (
-        round(bd["input_used"] / ctx_window, 4) if ctx_window else 0
+        round(bd["input_used"] / ctx_window, 4) if ctx_window else None
     )
     # Free space
-    bd["free_space"] = max(0, ctx_window - bd["input_used"])
+    bd["free_space"] = max(0, ctx_window - bd["input_used"]) if ctx_window else None
 
     return bd
 
@@ -464,7 +504,6 @@ def compute_draft_breakdown(
 
 def _draft_breakdown(agent_id: str, provider: str, model: str, channel: str) -> dict:
     from openprogram.runtime.context.components import build_system_prompt
-    from openprogram.runtime.context.tokens import real_context_window
 
     try:
         from openprogram.programs import agent_tools
@@ -474,17 +513,13 @@ def _draft_breakdown(agent_id: str, provider: str, model: str, channel: str) -> 
     profile = load_agent_profile(agent_id or "main")
     agent_view = type("_AgentView", (), dict(profile or {}))()
     latest_system = build_system_prompt(agent_view, channel=channel, tools=tools)
-    try:
-        from openprogram.models.providers.catalog.models import get_model
-        model_obj = get_model(provider, model) if provider and model else None
-    except Exception:
-        model_obj = None
+    window = model_ref_window(model, provider) if provider and model else None
     bd = _classify(
         session_id=None, sess={"agent_id": agent_id}, model_id=model,
         latest_system=latest_system, recorded_sections=None,
         agent_view=agent_view, msgs=[], message_rows=[], branch=[],
         tools=tools, latest_tools=[], has_tool_snapshot=False,
-        recorded_tool_rows=[], ctx_window=real_context_window(model_obj),
+        recorded_tool_rows=[], ctx_window=window or 0,
     )
     bd["basis"] = "estimated"
     bd["draft"] = True
@@ -671,6 +706,11 @@ def build_stats(
     that just completed. Passing it selects the ``measured`` basis; the
     estimate is still computed alongside so ``calibration`` can report the
     ratio between them. Omitting it selects ``estimated``.
+
+    ``window`` is the window of the model the caller resolved now (the
+    turn's Model, or the session's current model); without one the
+    session row's model decides. It is never read back from an earlier
+    record, and ``None`` means unknown: the reader shows no limit.
     """
     breakdown = None
     if estimated_total is None:
@@ -680,7 +720,7 @@ def build_stats(
     else:
         estimated = int(estimated_total)
         est_window = int(window or 0)
-    window = int(window or 0) or est_window
+    window = int(window or 0) or est_window or None
 
     if measured_total and measured_total > 0:
         total_used = int(measured_total)
@@ -740,13 +780,22 @@ _DETAIL_OF = {
 }
 
 
-def finalize_breakdown(breakdown: dict, occupancy: dict) -> dict:
+def finalize_breakdown(breakdown: dict, occupancy: dict, *,
+                       running_turn: bool = False,
+                       request_estimate: Optional[int] = None) -> dict:
     """Merge one local breakdown with the matching occupancy snapshot.
 
     Provider usage owns the headline total. Locally reconstructable rows keep
     their estimates; a positive provider residual is explicit. If the local
     estimate is higher, rows are proportionally calibrated so displayed rows
     still add up to the provider total without inventing a negative category.
+
+    ``running_turn`` marks a total measured by a request inside a turn that
+    is still running: that turn's own rounds, which the graph does not
+    hold yet, count under Conversation as ``turn``. Their size is the
+    request's own estimate (``request_estimate``) less the graph's; the
+    rest of the residual (provider-side prompt, estimator error) stays
+    unclassified, as it does once the turn ends.
     """
     result = dict(breakdown)
     result.update(occupancy)
@@ -804,11 +853,33 @@ def finalize_breakdown(breakdown: dict, occupancy: dict) -> dict:
             "top": [{**m, "tokens": round(int(m.get("tokens") or 0) * ratio)}
                     for m in detail.get("top") or []],
         }
+    # Mid-turn, the request just measured carries the turn's own rounds
+    # (replies, tool calls and results), which reach the graph only when
+    # the turn ends. That growth is conversation, not unclassified.
+    growth = (min(max(0, total - sum(values.values())),
+                  max(0, int(request_estimate or 0) - classified_estimate))
+              if running_turn else 0)
+    if growth:
+        values["messages"] = values.get("messages", 0) + growth
+        result["messages"] = values["messages"]
+        shown = result.get("messages_detail")
+        shown = shown if isinstance(shown, dict) else {}
+        result["messages_detail"] = {
+            **shown,
+            "groups": [{"kind": "turn", "tokens": growth, "count": 0},
+                       *(shown.get("groups") or [])],
+            "top": list(shown.get("top") or []),
+        }
     result["classified_estimate"] = classified_estimate
     result["classified_used"] = sum(values.values())
     result["classification_scale"] = round(scale, 6)
     result["unclassified"] = max(0, total - result["classified_used"])
     result["input_used"] = classified_estimate
-    window = int(result.get("window") or result.get("context_window") or 0)
-    result["free_space"] = max(0, window - total)
+    # The occupancy's window is the one resolved now; a snapshot's own
+    # ``context_window`` is only what it was computed against.
+    window = int((occupancy.get("window") if "window" in occupancy
+                  else breakdown.get("context_window")) or 0)
+    result["window"] = result["context_window"] = window or None
+    result["free_space"] = max(0, window - total) if window else None
+    result["input_used_pct"] = round(total / window, 4) if window else None
     return result

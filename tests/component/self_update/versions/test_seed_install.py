@@ -186,7 +186,7 @@ def test_the_installed_command_starts_python_in_utf8_mode_and_gives_the_console_
     assert len(starts) == 2
     assert all(" -I -B -X utf8 " in line for line in starts), starts
     saved, switched, restored = (lines.index(line) for line in (
-        """for /f "tokens=2 delims=:." %%P in ('chcp') do set "_OPENPROGRAM_CODEPAGE=%%P\"""",
+        """if not defined _OPENPROGRAM_CODEPAGE for /f "tokens=2 delims=:." %%P in ('chcp') do set "_OPENPROGRAM_CODEPAGE=%%P\"""",
         "chcp 65001 >nul",
         "chcp %_OPENPROGRAM_CODEPAGE% >nul",
     ))
@@ -196,7 +196,7 @@ def test_the_installed_command_starts_python_in_utf8_mode_and_gives_the_console_
     for start in starts:
         assert lines[lines.index(start) + 1] == 'set "_OPENPROGRAM_EXIT=%ERRORLEVEL%"'
     # The same preamble the complete-runtime installer writes.
-    release = (RELEASE / "install-release.ps1").read_text(encoding="utf-8")
+    release = (RELEASE / "install-release.ps1").read_text(encoding="utf-8").replace("''", "'")
     for line in (lines[saved], lines[switched], lines[restored], "setlocal DisableDelayedExpansion"):
         assert line in release and line in lines
 

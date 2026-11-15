@@ -115,6 +115,48 @@ for (const [label, action] of [["Allow once", "execution.wait.answer"], ["Deny",
     });
   });
 }
+test("the Worker's tool approval wording is shown in the reader's language", async () => {
+  await mounted({ ...decision, prompt: "允许执行 bash？", tool: "bash", args: { command: "echo verified" } }, async ({ host }) => {
+    assert.match(host.textContent, /Run this command\?/);
+    assert.doesNotMatch(host.textContent, /允许执行/);
+  });
+  await mounted({ ...decision, prompt: "允许执行 agent？", tool: "agent", args: { description: "Scout" } }, async ({ host }) => {
+    assert.match(host.textContent, /Run agent\?/);
+  });
+  // Any other prompt is the asker's own words and stays as written.
+  await mounted({ ...decision, prompt: "Allow this command?", tool: "bash", args: { command: "ls" } }, async ({ host }) => {
+    assert.match(host.textContent, /Allow this command\?/);
+  });
+});
+
+test("a sub-agent's approval names it in the title row; the conversation's own agent's does not", async () => {
+  await mounted({ ...decision, askedBy: "PR Verifier", prompt: "Run this command?" }, async ({ host }) => {
+    const header = host.querySelector("[data-decision]");
+    const who = header.querySelector("[data-asked-by]");
+    assert.equal(who.textContent, "PR Verifier");
+    assert.equal(who.getAttribute("aria-label"), "Asked by PR Verifier");
+    assert.ok(who.querySelector("[data-bot-glyph]"), "its character sits before its name");
+    assert.equal(who.nextElementSibling.textContent, "Approval required");
+    assert.match(host.textContent, /Run this command\?/);
+  });
+  // A card that draws its own body (the terminal one) names the asker too.
+  await mounted({ ...decision, askedBy: "scout", tool: "terminal_use", args: { terminal_id: "t1", action: "input", data: "ls\r" } }, async ({ host }) => {
+    assert.equal(host.querySelector("[data-asked-by]").textContent, "scout");
+    assert.match(host.textContent, /Type into your Terminal tab\?/);
+  });
+  await mounted(decision, async ({ host }) => {
+    assert.equal(host.querySelector("[data-asked-by]"), null);
+  });
+  // A long name is cut inside its badge, so the title and the buttons keep their place.
+  const long = "一个名字特别特别特别特别长的子代理 with a very long English tail as well";
+  await mounted({ ...decision, askedBy: long }, async ({ host }) => {
+    const who = host.querySelector("[data-asked-by]");
+    assert.match(who.className, /max-w-\[45%\]/);
+    assert.match(who.className, /(^| )shrink( |$)/);
+    assert.equal(who.querySelector(".truncate").textContent, long);
+    assert.equal(who.getAttribute("aria-label"), `Asked by ${long}`);
+  });
+});
 test("approval remains pending until its answer is acknowledged", async () => {
   await mounted(decision, async ({ button, resolved }) => {
     let acknowledge;

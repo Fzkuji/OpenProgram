@@ -102,7 +102,9 @@ def _work_lines(session_id: str) -> list[str]:
         return []
     out = ["", "Running or queued work (close_agent stops one; read_conversation reads it):"]
     for job in jobs:
-        subject = " ".join((job.label or job.subject or job.prompt or "").split())[:70]
+        # An agent's name is shown as it is addressed, spaces as written
+        # (agent_name keeps it on one line); a prompt is folded to one.
+        subject = (job.label or " ".join((job.subject or job.prompt or "").split()))[:70]
         out.append(f"  - execution_id={job.id} [{job.status.value}] {subject}")
     return out
 

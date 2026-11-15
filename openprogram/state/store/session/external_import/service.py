@@ -20,12 +20,14 @@ from __future__ import annotations
 import logging
 import time
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
 from . import claude_code, codex
 from .ledger import load_scans, locked, save_scans
 from .model import AGENT_LABELS, AGENTS, CLAUDE_CODE, CODEX, Candidate, ExternalSession
+from .sanitize import remove_secret_values, remove_secrets
 from .writer import node_prefix, reply_id, write_turns
 
 _log = logging.getLogger(__name__)
@@ -49,17 +51,29 @@ def _summaries(agent: str, home: Path, ledger_root: Optional[Path] = None) -> li
         for path in claude_code.discover(home):
             scans[str(path)] = cached.get(str(path)) or {}
             found.append(claude_code.summarize(path, scans[str(path)]))
+        for scan in scans.values():
+            # The cache keeps a first message and titles: hold them without
+            # credentials, like everything else an import stores.
+            if isinstance(scan.get("first_user"), str):
+                scan["first_user"] = remove_secret_values(scan["first_user"])
+            if isinstance(scan.get("titles"), dict):
+                scan["titles"] = remove_secret_values(scan["titles"])
         save_scans(scans, ledger_root)
     else:
         titles = codex.thread_titles(home)
         found = (codex.summarize(p, titles) for p in codex.discover(home))
-    return [c for c in found if c is not None]
+    rows = [c for c in found if c is not None]
+    for c in rows:
+        c.title = remove_secret_values(c.title)
+    return rows
 
 
 def _parse(candidate: Candidate, home: Path) -> ExternalSession:
     if candidate.agent == CLAUDE_CODE:
-        return claude_code.parse(candidate.path)
-    return codex.parse(candidate.path, codex.thread_titles(home))
+        session = claude_code.parse(candidate.path)
+    else:
+        session = codex.parse(candidate.path, codex.thread_titles(home))
+    return remove_secrets(session)
 
 
 def _changed(candidate: Candidate, entry: dict[str, Any]) -> bool:
@@ -199,55 +213,85 @@ def _create(store, session: ExternalSession, agent_id: str) -> str:
     return session_id
 
 
-def _import_one(store, candidate: Candidate, home: Path, ledger, agent_id: str) -> dict[str, Any]:
-    result: dict[str, Any] = {
-        "agent": candidate.agent, "source_id": candidate.source_id,
-        "path": str(candidate.path), "title": candidate.title,
-        "session_id": None, "turns_added": 0,
-    }
-    entry = ledger.get(candidate.agent, candidate.source_id)
+@dataclass
+class _Plan:
+    """What importing one source does now, decided before anything is written."""
+    status: str  # created | appended | unchanged | empty
+    session: Optional[ExternalSession] = None
+    session_id: Optional[str] = None
+    start: int = 0
+    predecessor: str = "ROOT"
+
+
+def _plan(store, candidate: Candidate, home: Path, entry: Optional[dict[str, Any]]) -> _Plan:
     state = _state(candidate, entry, store)
     if state == "imported":
-        return {**result, "status": "unchanged", "session_id": entry["session_id"],
-                "moved": _place(store, entry["session_id"], candidate.cwd)}
+        return _Plan("unchanged", session_id=entry["session_id"])
     if state == "empty":
-        return {**result, "status": "empty"}
+        return _Plan("empty")
 
     session = _parse(candidate, home)
-    result["title"] = session.title or candidate.title
     if not any(t.blocks for t in session.turns):
-        if not (entry and entry.get("session_id")):
-            ledger.put(candidate.agent, candidate.source_id, {
-                "empty": True, "path": str(candidate.path),
-                "last_message_at": candidate.updated_at,
-            })
-        return {**result, "status": "empty"}
+        return _Plan("empty", session=session)
 
-    start, predecessor, session_id, status = 0, "ROOT", None, "created"
     if entry and store.get_session(entry.get("session_id") or ""):
         done = int(entry.get("turns") or 0)
         same_prefix = (0 < done <= len(session.turns)
                        and session.turns[done - 1].fingerprint() == entry.get("last_fingerprint"))
         head = (store.get_session(entry["session_id"]) or {}).get("head_id")
         if same_prefix and head == entry.get("last_node_id"):
-            session_id = entry["session_id"]
             if done == len(session.turns) and session.turns[-1].digest() == entry.get("last_digest"):
-                status, start = "unchanged", done
-            else:
-                # Rewrite the last imported turn as well: it may still have
-                # been running in the other agent when it was imported.
-                status, start = "appended", done - 1
-                prefix = node_prefix(session.agent, session.source_id)
-                predecessor = reply_id(prefix, done - 2) if done >= 2 else "ROOT"
+                return _Plan("unchanged", session, entry["session_id"], start=done)
+            # Rewrite the last imported turn as well: it may still have
+            # been running in the other agent when it was imported.
+            prefix = node_prefix(session.agent, session.source_id)
+            return _Plan("appended", session, entry["session_id"], start=done - 1,
+                         predecessor=reply_id(prefix, done - 2) if done >= 2 else "ROOT")
+    return _Plan("created", session)
 
-    moved = False
+
+def _result(candidate: Candidate) -> dict[str, Any]:
+    return {
+        "agent": candidate.agent, "source_id": candidate.source_id,
+        "path": str(candidate.path), "title": candidate.title,
+        "session_id": None, "turns_added": 0,
+    }
+
+
+def _turns_added(plan: _Plan, entry: Optional[dict[str, Any]]) -> int:
+    if plan.session is None or plan.status == "empty":
+        return 0
+    done_before = 0 if plan.status == "created" else int((entry or {}).get("turns") or 0)
+    return len(plan.session.turns) - done_before
+
+
+def _import_one(store, candidate: Candidate, home: Path, ledger, agent_id: str) -> dict[str, Any]:
+    result = _result(candidate)
+    entry = ledger.get(candidate.agent, candidate.source_id)
+    plan = _plan(store, candidate, home, entry)
+    session = plan.session
+    if session is None and plan.status == "unchanged":
+        return {**result, "status": "unchanged", "session_id": plan.session_id,
+                "moved": _place(store, plan.session_id, candidate.cwd)}
+    if session is not None:
+        result["title"] = session.title or candidate.title
+    if plan.status == "empty":
+        if session is not None and not (entry and entry.get("session_id")):
+            ledger.put(candidate.agent, candidate.source_id, {
+                "empty": True, "path": str(candidate.path),
+                "last_message_at": candidate.updated_at,
+            })
+        return {**result, "status": "empty"}
+
+    status, session_id, moved = plan.status, plan.session_id, False
     if session_id is None:
         session_id = _create(store, session, agent_id)
     else:
         moved = _place(store, session_id, session.cwd)
     last = (entry or {}).get("last_node_id")
     if status != "unchanged":
-        last = write_turns(store, session_id, session, start=start, predecessor=predecessor) or last
+        last = write_turns(store, session_id, session, start=plan.start,
+                           predecessor=plan.predecessor) or last
         if last:
             store.set_head(session_id, last)
         store.update_session(session_id, updated_at=session.updated_at or time.time())
@@ -263,9 +307,55 @@ def _import_one(store, candidate: Candidate, home: Path, ledger, agent_id: str) 
         "last_message_at": candidate.updated_at,
         "imported_at": time.time(),
     })
-    done_before = 0 if status == "created" else int(entry.get("turns") or 0)
     return {**result, "status": status, "session_id": session_id, "moved": moved,
-            "turns_added": len(session.turns) - done_before}
+            "turns_added": _turns_added(plan, entry)}
+
+
+def _selected(agents, roots, ledger_root, paths, since) -> Iterable[Candidate]:
+    wanted = {str(Path(p).expanduser().resolve()) for p in paths} if paths else None
+    for agent in agents:
+        for candidate in _summaries(agent, roots[agent], ledger_root):
+            if wanted is not None and str(candidate.path.resolve()) not in wanted:
+                continue
+            if since is not None and candidate.updated_at < since:
+                continue
+            yield candidate
+
+
+def plan_imports(
+    agents: Iterable[str] = AGENTS,
+    *,
+    paths: Optional[Iterable[str]] = None,
+    since: Optional[float] = None,
+    homes: Optional[dict[str, Path]] = None,
+    store=None,
+    ledger_root: Optional[Path] = None,
+) -> list[dict[str, Any]]:
+    """What :func:`import_transcripts` with the same arguments would do; writes nothing.
+
+    One row per source, shaped like an import's, with the ``status`` that
+    import would report: ``created`` (including a rewound source, or one
+    whose session was continued here), ``appended``, ``unchanged`` or
+    ``empty``. Each source that changed is parsed to decide.
+    """
+    from .ledger import Ledger
+    store = store or _default_store()
+    roots = _homes(homes)
+    ledger = Ledger(ledger_root).load()
+    rows: list[dict[str, Any]] = []
+    for candidate in _selected(agents, roots, ledger_root, paths, since):
+        entry = ledger.get(candidate.agent, candidate.source_id)
+        result = _result(candidate)
+        try:
+            plan = _plan(store, candidate, roots[candidate.agent], entry)
+        except Exception as exc:  # noqa: BLE001 — one bad transcript must not stop the rest
+            rows.append({**result, "status": "failed", "error": str(exc)})
+            continue
+        if plan.session is not None:
+            result["title"] = plan.session.title or candidate.title
+        rows.append({**result, "status": plan.status, "session_id": plan.session_id,
+                     "turns_added": _turns_added(plan, entry)})
+    return rows
 
 
 def import_transcripts(
@@ -288,24 +378,13 @@ def import_transcripts(
     """
     store = store or _default_store()
     roots = _homes(homes)
-    wanted = {str(Path(p).expanduser().resolve()) for p in paths} if paths else None
     agent_id = agent_id or _default_agent_id()
     results: list[dict[str, Any]] = []
     with locked(ledger_root) as ledger:
-        for agent in agents:
-            for candidate in _summaries(agent, roots[agent], ledger_root):
-                if wanted is not None and str(candidate.path.resolve()) not in wanted:
-                    continue
-                if since is not None and candidate.updated_at < since:
-                    continue
-                try:
-                    results.append(_import_one(store, candidate, roots[agent], ledger, agent_id))
-                except Exception as exc:  # noqa: BLE001 — one bad transcript must not stop the rest
-                    _log.warning("import of %s failed", candidate.path, exc_info=True)
-                    results.append({
-                        "agent": agent, "source_id": candidate.source_id,
-                        "path": str(candidate.path), "title": candidate.title,
-                        "session_id": None, "turns_added": 0,
-                        "status": "failed", "error": str(exc),
-                    })
+        for candidate in _selected(agents, roots, ledger_root, paths, since):
+            try:
+                results.append(_import_one(store, candidate, roots[candidate.agent], ledger, agent_id))
+            except Exception as exc:  # noqa: BLE001 — one bad transcript must not stop the rest
+                _log.warning("import of %s failed", candidate.path, exc_info=True)
+                results.append({**_result(candidate), "status": "failed", "error": str(exc)})
     return results

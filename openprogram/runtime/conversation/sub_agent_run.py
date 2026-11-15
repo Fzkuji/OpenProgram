@@ -310,6 +310,7 @@ def run_agent_turn(
     response_format: Optional[dict[str, Any]] = None,
     job_id: Optional[str] = None,
     worktree_id: Optional[str] = None,
+    tool_call_id: Optional[str] = None,
 ) -> AgentTurnResult:
     """Durably admit one agent turn and wait for its Job result.
 
@@ -373,6 +374,7 @@ def run_agent_turn(
             attach_pointer_id=attach_pointer_id,
             borrow_current_claim=borrow_current_claim,
             worktree_id=worktree_id,
+            tool_call_id=tool_call_id,
         )
         if borrow_current_claim or owns_worker:
             job = runner.await_job(job_id)
@@ -543,14 +545,22 @@ def write_attach_pointer_for_spawn(
             attach["tool_call_id"] = tool_call_id
         attach_node_id = node_id or _uuid.uuid4().hex[:12]
         if placeholder is not None:
-            merged = dict((placeholder.metadata or {}).get("attach") or {})
-            if not delivery:
-                merged.pop("delivery", None)
-            SessionNodeWriter(store, session_id).update(
-                attach_node_id,
-                output=content,
-                metadata={"attach": {**merged, **attach}, "is_error": failed},
-            )
+            # The job runner settles this card too, when the job ends, and
+            # its write can land just before this one: merge into the card
+            # as it is now, not the copy read above, so its usage and
+            # execution fields stay.
+            def settle(current) -> dict:
+                merged = dict((current.metadata or {}).get("attach") or {})
+                if not delivery:
+                    merged.pop("delivery", None)
+                # A field this caller could not fill (no commit found, no
+                # label) does not blank the one the runner wrote.
+                mine = {key: value for key, value in attach.items()
+                        if value not in (None, "") or not merged.get(key)}
+                return {"output": content,
+                        "metadata": {"attach": {**merged, **mine}, "is_error": failed}}
+
+            SessionNodeWriter(store, session_id).merge(attach_node_id, settle)
         else:
             # Attach is a branch-referencing function_call that lives ON
             # the main sequence (per docs/design/runtime/dag-node-model.md),
@@ -634,6 +644,12 @@ def write_attach_placeholder_for_spawn(
             attach["tool_call_id"] = tool_call_id
         if delivery:
             attach["delivery"] = delivery
+        elif job_id:
+            # The card's prompt text stays as written now; the helper's
+            # result reaches the caller as the notice turn (``render.
+            # _attach_report``, ``jobs/notices.py``). A card without this
+            # mark (written before) still carries its report.
+            attach["result_in"] = "notice"
         store.append_message(session_id, {
             "id": attach_node_id,
             "role": "assistant",
@@ -686,6 +702,9 @@ def run_agent_turn_async(
     resume_deferred: bool = False,
     message_origin: Optional[str] = None,
     worktree_id: Optional[str] = None,
+    tool_call_id: Optional[str] = None,
+    chain_ancestors: Optional[list[str]] = None,
+    model_override: Optional[str] = None,
 ) -> str:
     """Submit an agent turn to the job runner, return ``job_id``.
 
@@ -733,4 +752,7 @@ def run_agent_turn_async(
         resume_deferred=resume_deferred,
         message_origin=message_origin,
         worktree_id=worktree_id,
+        tool_call_id=tool_call_id,
+        chain_ancestors=chain_ancestors,
+        model_override=model_override,
     )

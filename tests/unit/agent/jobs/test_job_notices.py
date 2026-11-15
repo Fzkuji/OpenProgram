@@ -133,7 +133,8 @@ def test_notice_text_marks_itself_and_carries_replies():
     text = notices.notice_text([spawn, reply])
     assert "not a message from the user" in text
     assert "Agent \"scout\" finished (job s1)." in text
-    assert "(its report is attached above)" in text
+    # No card says it renders the report itself: the result travels here.
+    assert "attached above" not in text
     assert "Reply from branch p2:hb:" in text and "B says yes" in text
     assert "send_message(to=\"p2:hb\")" in text
 
@@ -151,3 +152,16 @@ def test_notice_items_give_each_job_its_row():
     assert items[1]["address"] == "p2:hb"
     # The chat finds each job's part of the text by its first line.
     assert all(i["line"] in text.split("\n") for i in items)
+
+
+def test_a_notice_turn_cut_off_by_a_restart_counts_as_answered(session, monkeypatch):
+    """A reply held on a message passed on (``hold``) waits for the passer's
+    notice turn to end. A restart cuts that turn off before it records its
+    end; the next Worker counts it answered, so the held reply goes on."""
+    path = notices._path("p1")
+    with notices._lock:
+        notices._write(path, [], ["c1"], ["older"])
+    monkeypatch.setattr(notices, "_seeded", False)
+    notices._seed()
+    assert notices._answered(path) == ["older", "c1"]
+    assert notices._load(path) == ([], ["c1"])

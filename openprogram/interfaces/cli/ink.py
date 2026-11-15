@@ -86,6 +86,26 @@ def _sealed_version_tui() -> tuple[Path, Path] | None:
     return layout.frontend_bundle(site) / "tui" / "index.cjs", node
 
 
+def packaged_tui() -> tuple[Path, Path] | None:
+    """``(bundle, node)`` an installed runtime ships; ``None`` in a source checkout.
+
+    An installed runtime (a sealed version, or a release or App runtime found
+    by its manifest) brings its own terminal UI and Node.js and never builds
+    either. The paths may be missing when the install is damaged; callers
+    check them.
+    """
+    sealed = _sealed_version_tui()
+    if sealed is not None:
+        return sealed
+    runtime_root = _managed_runtime_root()
+    if runtime_root is None:
+        return None
+    names = ("node.exe", "node") if sys.platform == "win32" else ("node", "node.exe")
+    node = next((runtime_root / "bin" / name for name in names
+                 if (runtime_root / "bin" / name).is_file()), runtime_root / "bin" / names[0])
+    return runtime_root / "assets" / "tui" / "index.cjs", node
+
+
 def _resolve_cli_entry() -> Path:
     """Return path to the built Ink TUI bundle, building it if needed.
 
@@ -106,18 +126,12 @@ def _resolve_cli_entry() -> Path:
     bundle without npm or a source checkout. Missing release assets or a
     failed source build raise ``FileNotFoundError``.
     """
-    sealed = _sealed_version_tui()
-    if sealed is not None:
-        if sealed[0].is_file():
-            return sealed[0]
-        raise FileNotFoundError(f"This version's terminal UI is missing: {sealed[0]}.")
-    runtime_root = _managed_runtime_root()
-    if runtime_root is not None:
-        bundled = runtime_root / "assets" / "tui" / "index.cjs"
-        if bundled.is_file():
-            return bundled
+    packaged = packaged_tui()
+    if packaged is not None:
+        if packaged[0].is_file():
+            return packaged[0]
         raise FileNotFoundError(
-            f"Packaged Ink TUI is missing: {bundled}. "
+            f"This install's terminal UI is missing: {packaged[0]}. "
             "Reinstall the complete OpenProgram release."
         )
 
@@ -211,24 +225,12 @@ def _build_ink_bundle(cli_dir: Path, expected_bundle: Path) -> None:
 
 
 def _resolve_node() -> str:
-    sealed = _sealed_version_tui()
-    if sealed is not None:
-        if sealed[1].is_file():
-            return str(sealed[1])
-        raise RuntimeError(f"This version's Node.js runtime is missing: {sealed[1]}.")
-    runtime_root = _managed_runtime_root()
-    if runtime_root is not None:
-        names = (
-            ("node.exe", "node")
-            if sys.platform == "win32"
-            else ("node", "node.exe")
-        )
-        for name in names:
-            bundled = runtime_root / "bin" / name
-            if bundled.is_file():
-                return str(bundled)
+    packaged = packaged_tui()
+    if packaged is not None:
+        if packaged[1].is_file():
+            return str(packaged[1])
         raise RuntimeError(
-            "the packaged Node.js runtime is missing. "
+            f"This install's Node.js runtime is missing: {packaged[1]}. "
             "Reinstall the complete OpenProgram release."
         )
     node = shutil.which("node")

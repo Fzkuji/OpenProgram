@@ -1,9 +1,10 @@
 "use client";
 
 /** Compact per-turn file card. Diffs live in the center Review tab. */
-import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState, type ReactElement } from "react";
 
 import { FileTypeIcon } from "@/components/files/file-type-icon";
+import { FilePathContextMenu } from "@/components/files/file-path-menu";
 import { SolarIcon } from "@/components/solar-icons";
 import { buttonVariants } from "@/components/ui/button";
 import { HoverTip, TipBody } from "@/components/ui/tooltip";
@@ -23,6 +24,7 @@ import type {
 import { showToast } from "@/lib/format-utils/toast";
 import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import { useCurrentProject } from "@/lib/files/files-shared";
+import { openLocalFile } from "@/lib/files/open-local-file";
 
 import {
   historyPresentation,
@@ -410,6 +412,19 @@ export function TurnFilesChips({
             : text("Undo", "撤回");
   const actionRedo = currentAction === "redo" || currentAction === "reapply"
     || (!currentAction && reverted);
+  // Right-click on a row: the file menu every chat file shares. A deleted
+  // file has nothing left to open, copy or show.
+  const fileMenu = (file: TurnFile, row: ReactElement) => file.op === "delete" || !sessionId ? row : (
+    <FilePathContextMenu
+      key={file.path}
+      path={file.path}
+      sessionId={sessionId}
+      project={project}
+      onOpen={() => openLocalFile(file.path, sessionId, project)}
+    >
+      {row}
+    </FilePathContextMenu>
+  );
 
   return (
     <div
@@ -481,7 +496,7 @@ export function TurnFilesChips({
       </div>
 
       <div className="turn-files-list">
-        {shown.map((file) => (
+        {shown.map((file) => fileMenu(file,
           <button
             type="button"
             className="turn-files-row"
@@ -507,7 +522,7 @@ export function TurnFilesChips({
                 <span className="turn-files-stat is-del"><span>−</span>{file.removed ?? "—"}</span>
               </span>
             )}
-          </button>
+          </button>,
         ))}
         {layout.overflow > 0 ? (
           <button

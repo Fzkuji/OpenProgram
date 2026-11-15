@@ -3,26 +3,40 @@
 /**
  * AttachCard — rendered for assistant rows whose ``function === "attach"``.
  *
- * An attach row records that this turn spawned another agent. The
- * spawned agent's reply is a branch in the SAME session, so opening
- * the card checks out that branch in this chat view (no
- * cross-session navigation). Legacy rows (from before the same-
- * session refactor) carry a foreign ``session_id`` and fall back to
- * navigating to that session.
+ * An attach row records that this turn spawned another agent. The card is
+ * one row: the agent's character and name, what it was asked, its state,
+ * how long it ran and what it cost. Opening the row shows its final reply,
+ * the files it changed, and the button that goes to its conversation. A
+ * state the person has to act on (it needs approval, it failed) is on the
+ * row itself.
+ *
+ * The spawned agent's reply is a branch in the SAME session, so Switch
+ * checks out that branch in this chat view (no cross-session navigation).
+ * Legacy rows (from before the same-session refactor) carry a foreign
+ * ``session_id`` and fall back to navigating to that session.
  */
 import { sendExecutionCancel } from "@/lib/execution/cancel-execution";
 import { useEffect, useRef, useState } from "react";
+import { ChevronRight, FileDiff } from "lucide-react";
 
 import type { ChatMsg } from "@/lib/session-store";
 
 import { selectRow, selectViewRows, useSessionStore } from "@/lib/session-store";
 import { isAgentRunning } from "@/lib/chat/transcript/row-status";
+import { agentCardLive, agentCardState, costOf, taskWords, type AgentCardState } from "@/lib/chat/transcript/agent-card";
+import { onFindReveal } from "@/lib/chat/transcript/conversation-find";
+import { subAgentShape } from "@/lib/runtime-bridge/dag/render/agent-look";
 import { useTranslation } from "@/lib/i18n";
 import type { JobResourceView } from "@/lib/net/ws/ws-events";
 import { navigate } from "@/lib/nav/navigate";
 import { runtimeState } from "@/lib/runtime-bridge/state";
 import { sendRuntimeCommand } from "@/lib/runtime-bridge/session/session-load";
-import { jobResourceDetails } from "@/lib/execution/job-resource";
+import { fmtUsd } from "@/components/settings/providers/status/model";
+import { BotGlyph } from "@/components/avatar/bot/bot-glyph";
+import { duration } from "@/components/right-sidebar/running/running-format";
+import { RosterBadge, usageTip } from "@/components/right-sidebar/running/agent-roster";
+import { Badge } from "@/components/ui/badge";
+import { HoverTip, TipBody } from "@/components/ui/tooltip";
 import {
   type AnimatedNavIconHandle,
   ArrowUpRightIcon,
@@ -117,12 +131,63 @@ function useFollowupNotice(attachMsgId: string): string | null {
   });
 }
 
+/** Seconds since the card was written, counted while its agent runs. */
+function useElapsed(timestamp: number | undefined, live: boolean): number | null {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!live) return;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [live]);
+  if (!live || typeof timestamp !== "number" || !Number.isFinite(timestamp) || timestamp <= 0) return null;
+  const started = timestamp > 1e12 ? timestamp : timestamp * 1000;
+  return Math.max(0, (now - started) / 1000);
+}
+
+type Text = (en: string, zh: string) => string;
+
+/** The badge of each state. The states the Activity roster also names
+ *  wear its badge, so a helper reads the same in both places. */
+function StateBadge({ state, text }: { state: AgentCardState; text: Text }) {
+  switch (state) {
+    case "needs_approval": return <RosterBadge status="approval" text={text} />;
+    case "needs_input": return <RosterBadge status="input" text={text} />;
+    case "running": return <RosterBadge status="running" text={text} />;
+    case "queued": return <RosterBadge status="waiting" text={text} />;
+    case "failed": return <RosterBadge status="failed" text={text} />;
+    case "cancelling":
+      return <Badge variant="secondary"><span className="indicator-dot sm --neutral pulse-opacity" data-icon="inline-start" aria-hidden="true" />{text("Cancelling", "正在取消")}</Badge>;
+    case "stopped":
+      return <Badge variant="outline" className="text-text-muted">{text("Stopped", "已停止")}</Badge>;
+    case "done":
+      return <Badge variant="outline">{text("Done", "已完成")}</Badge>;
+    case "attached":
+      return <Badge variant="outline" className="text-text-muted">{text("Attached", "已附加")}</Badge>;
+    case "none":
+      return null;
+  }
+}
+
+/** Why a limit or the person ended the agent, in the reader's words. */
+function reasonWords(reason: string | undefined, text: Text): string {
+  switch (reason) {
+    case "user": return text("Stopped by you", "由你停止");
+    case "timeout": return text("Ran past its time limit", "超过运行时限");
+    case "spend cap": return text("Reached the spend cap", "达到花费上限");
+    case "idle limit": return text("Idle too long", "空闲过久");
+    case "cost limit": return text("Reached its cost limit", "达到费用上限");
+    case "token limit": return text("Reached its token limit", "达到 Token 上限");
+    default: return "";
+  }
+}
+
 export function AttachCard({ msg }: { msg: ChatMsg }) {
   useMarkdownReady();
   const { text } = useTranslation();
   const switchIconRef = useRef<AnimatedNavIconHandle>(null);
-  // 默认一行（头部：图标 + 名字 + 状态 + Switch），预览等内容点开才
-  // 渲染——中间产物不占版面。运行中的取消按钮保持可见。
+  // One row by default; the reply, the files and the actions render only
+  // once it is opened.
   const [expanded, setExpanded] = useState(false);
   const currentSessionId = useRowSessionId();
   const attach = msg.attach || {};
@@ -135,18 +200,23 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
   const targetSessionId = attach.session_id || "";
   const targetHead = attach.head_id || "";
   const label = (attach.label || "").trim();
-  const preview = msg.content || text("(no output)", "（无输出）");
   const headTag = targetHead ? targetHead.slice(0, 8) : "";
-  // The expanded-block stats — populated server-side when the
-  // attach pointer pinned a source_commit_id (post attach-commit
-  // expansion refactor). Absent on legacy attach rows; fall back to
-  // the single-message preview in that case.
-  const sourceCommitId = attach.source_commit_id || "";
-  const embedCount = attach.embed_count;
-  const embedTokens = attach.embed_tokens;
-  const hasEmbedStats = typeof embedCount === "number" && embedCount > 0;
+  const hasEmbedStats = typeof attach.embed_count === "number" && attach.embed_count > 0;
   const sameSession =
     !!targetSessionId && targetSessionId === currentSessionId;
+  // A question the agent stopped at is asked in this conversation; the
+  // row says so, since the card may be far above the composer.
+  const waitId = executionId || jobId || "";
+  const waiting = useSessionStore((s) => {
+    if (!waitId) return null;
+    const asked = s.pendingDecisions.find((decision) => decision.executionId === waitId);
+    return asked ? (asked.kind === "approval" ? "approval" : "input") : null;
+  });
+  const state = agentCardState(attach, waiting);
+  const live = agentCardLive(state);
+  const elapsed = useElapsed(msg.timestamp, live);
+  // A find match inside the folded reply opens the card.
+  useEffect(() => onFindReveal(msg.id, () => setExpanded(true)), [msg.id]);
   // If the chat is already on the branch the card points at, drop
   // the Switch button — there's nowhere to switch to. Drive this off
   // the same active-head signal the topbar chip uses so the two stay
@@ -174,6 +244,7 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
   const alreadyHere =
     sameSession && !!targetHead && activeHead === targetHead;
 
+  // The running agent's cost so far comes with its Job's status.
   useEffect(() => {
     setResource(undefined);
     if (!jobId) return;
@@ -198,17 +269,6 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
     };
   }, [jobId]);
 
-  const resourceDetails = jobResourceDetails(resource);
-  function resourceLabel(key: (typeof resourceDetails)[number]["key"]): string {
-    if (key === "state") return text("Resource state", "资源状态");
-    if (key === "tokens") return text("Tokens remaining", "Token 剩余");
-    if (key === "cost") return text("Cost remaining", "费用剩余");
-    if (key === "runtime") return text("Runtime remaining", "运行时间剩余");
-    if (key === "idle") return text("Idle remaining", "空闲时间剩余");
-    return text("Reason", "原因");
-  }
-
-
   function open() {
     if (sameSession && targetHead) {
       // Same-session: checkout the spawned branch in place.
@@ -224,10 +284,10 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
     navigate("/s/" + targetSessionId);
   }
 
-  // Label intro: "Attached" for user-triggered attaches (Branches →
-  // Attach to), "Spawned" for /job or job() invocations, "Imported"
-  // for legacy cross-session attaches. Title-cased and human-readable
-  // so the chat row reads "Attached: alpha A" not "attached · alpha A".
+  // What kind of reference this is: "Attached" for user-triggered
+  // attaches (Branches → Attach to), "Spawned" for /job or job()
+  // invocations, "Imported" for legacy cross-session attaches. It is the
+  // row's hover tip; the row itself shows the agent's name.
   const isManual = !!attach.manual;
   const labelKind = !sameSession
     ? text("Imported from", "导入自")
@@ -240,163 +300,146 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
   // the visible title because none of those layers fired.
   const lookedUpName = _branchNameFor(currentSessionId, targetHead);
   const sourceName = (label || lookedUpName || (targetHead ? targetHead.slice(0, 8) : "")) || text("(branch)", "（分支）");
-  // Sub-label: short, human-readable context so the user knows what
-  // they're looking at without parsing a hex id.
   const subtitle = sameSession
-    ? text("source branch - its content is embedded below", "源分支，内容已嵌入下方")
-    : `${text("from session", "来自会话")} ${targetSessionId}`;
+    ? text("source branch", "源分支")
+    : `${text("from session", "来自会话")} ${targetSessionId}${headTag ? ` @${headTag}` : ""}`;
 
+  const task = taskWords(attach.prompt);
+  const usage = attach.usage;
+  const seconds = live ? elapsed : usage?.duration_s ?? null;
+  const cost = live ? costOf(resource?.resource?.usage?.subtree?.cost_usd) : costOf(usage?.cost_usd);
+  const facts = [
+    seconds != null ? duration(seconds, text) : "",
+    cost != null ? fmtUsd(cost) : "",
+  ].filter(Boolean).join(" · ");
+  // The rest of what it used, and why it ended, on the row's hover tip.
+  const tipDetail = [
+    subtitle,
+    reasonWords(attach.result_reason, text),
+    usageTip({ usage: usage ?? null }, text),
+  ].filter(Boolean).join(" · ");
+  const preview = msg.content || (live ? "" : text("(no output)", "（无输出）"));
+  const files = attach.files && attach.files.count > 0 ? attach.files : null;
+  const canOpen = sameSession ? !!targetHead : !!targetSessionId;
+  const canCancel = !!executionId && typeof expectedVersion === "number" && isAgentRunning(attach.status);
 
   return (
     <div
       className="attach-card"
+      data-kind="agent"
       data-peer-session-id={targetSessionId}
       data-head-id={targetHead}
       data-expanded={expanded ? "1" : "0"}
+      data-state={state}
     >
-      <div
-        className="attach-card-header"
-        onClick={() => setExpanded((v) => !v)}
-        style={{ cursor: "pointer" }}
-      >
-        <div className="attach-card-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-               strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="4 17 10 11 4 5" />
-            <line x1="12" y1="19" x2="20" y2="19" />
-          </svg>
-        </div>
-        <div className="attach-card-meta">
-          <div className="attach-card-label">
-            {labelKind}: <span className="attach-card-source">{sourceName}</span>
-            {attach.status && attach.status !== "completed" ? (
-              <span
-                className={`attach-card-status-pill attach-card-status-${attach.status}`}
-              >
-                {isAgentRunning(attach.status) ? (
-                  <span className="indicator-dot sm pulse-opacity" />
-                ) : null}
-                {attach.status}
-              </span>
-            ) : null}
-          </div>
-          <div className="attach-card-sub">
-            {subtitle}
-            {!sameSession && headTag ? (
-              <span className="attach-card-head">@{headTag}</span>
-            ) : null}
-          </div>
-        </div>
-        {alreadyHere ? (
-          // Already on this branch — a "current branch" tag instead
-          // of a Switch button. Keeps the row layout consistent.
-          <span
-            className="attach-card-here"
-          >
-            {text("current", "当前")}
-          </span>
-        ) : (sameSession ? !!targetHead : !!targetSessionId) ? (
-          <button
-            type="button"
-            className="attach-card-open"
-            onClick={(e) => { e.stopPropagation(); open(); }}
-            onMouseEnter={() => switchIconRef.current?.startAnimation?.()}
-            onMouseLeave={() => switchIconRef.current?.stopAnimation?.()}
-            aria-label={sameSession ? text("Switch to this branch", "切换到这个分支") : text("Open peer session", "打开关联会话")}
-            title={sameSession ? text("Switch to this branch", "切换到这个分支") : text("Open peer session", "打开关联会话")}
-          >
-            {sameSession ? text("Switch", "切换") : text("Open", "打开")}
-            <ArrowUpRightIcon ref={switchIconRef} size={14} />
-          </button>
-        ) : null}
-      </div>
-      {expanded && resourceDetails.length > 0 ? (
-        <div className="attach-card-resources">
-          <div className="attach-card-preview-label">
-            {text("Resources", "资源")}
-          </div>
-          {resourceDetails.map((detail) => (
-            <div className="attach-card-resource-row" key={detail.key}>
-              <span>{resourceLabel(detail.key)}</span>
-              <code>{detail.value}</code>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {expanded ? (
-        <>
-          <div className="attach-card-preview-label">
-            {hasEmbedStats
-              ? `${text("EMBEDS", "嵌入")} ${embedCount} ${text("messages", "条消息")}${
-                  typeof embedTokens === "number"
-                    ? ` · ${embedTokens} ${text("tokens", "tokens")}`
-                    : ""
-                }${sourceCommitId ? ` · commit ${sourceCommitId.slice(0, 8)}` : ""}`
-              : text("Preview (tip of this branch)", "预览（该分支末端）")}
-          </div>
-          <div
-            className="attach-card-preview chat-text"
-            dangerouslySetInnerHTML={{ __html: renderMarkdown(preview) }}
-          />
-        </>
-      ) : null}
-      {expanded && isManual ? (
-        <div className="attach-card-footer">
-          <span className="attach-card-status">
-            {hasEmbedStats
-              ? text("Will be expanded into your next message", "会展开到你的下一条消息中")
-              : text("Will be included in your next message", "会包含在你的下一条消息中")}
-          </span>
-        </div>
-      ) : null}
-      {/* Live-job footer: cancel button for in-flight jobs. */}
-      {executionId && typeof expectedVersion === "number"
-        && isAgentRunning(attach.status) ? (
-        <div className="attach-card-footer">
-          <span className="attach-card-status">
-            {text("Running - embedding placeholder until done", "运行中，完成前使用嵌入占位")}
-          </span>
-          <button
-            type="button"
-            className="attach-card-cancel"
-            onClick={() => {
-              sendExecutionCancel(sendRuntimeCommand, executionId, expectedVersion);
-            }}
-            title={text("Cancel execution", "取消运行")}
-            aria-label={text("Cancel execution", "取消运行")}
-          >
-            {text("Cancel execution", "取消运行")}
-          </button>
-        </div>
-      ) : null}
-      {/* Auto-followup notice — surfaced after the job completes.
-          The runner writes a synthetic ``[系统消息]…`` user msg to
-          trigger the parent agent to react to the sub-job's output.
-          That msg lives on the main lane (display=runtime, hidden
-          from the chat panel) but the user kept asking "what is
-          this DAG node I'm hovering?" because it wasn't surfaced
-          anywhere. Show it inline as a small italic footer on the
-          attach card so the card represents the full sub-job
-          lifecycle: spawn → status → preview → auto-followup. */}
-      {expanded && followupNotice ? (
-        <div
-          className="attach-card-followup"
-          // The followup user msg has no chat bubble of its own
-          // (display=runtime). Tag this card section with its id so
-          // the history-graph visibility scan marks the DAG node
-          // visible while the card is in view — and crucially, lets
-          // it scroll out of view with the card.
-          data-msg-id={followupMsgId || undefined}
+      <HoverTip label={<TipBody title={`${labelKind}: ${sourceName}`} detail={tipDetail} />}>
+        <button
+          type="button"
+          className="attach-card-row"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((v) => !v)}
         >
-          <div className="attach-card-followup-label">{text("Auto follow-up", "自动 follow-up")}</div>
-          <div className="attach-card-followup-body">{followupNotice}</div>
+          <span className="attach-card-agent" aria-hidden="true">
+            <BotGlyph shape={subAgentShape(sourceName)} size={20} />
+          </span>
+          <span className="attach-card-name">{sourceName}</span>
+          <StateBadge state={state} text={text} />
+          <span className="attach-card-task">{task}</span>
+          {facts ? <span className="attach-card-facts">{facts}</span> : null}
+          <ChevronRight className="attach-card-chevron" size={16} aria-hidden="true" />
+        </button>
+      </HoverTip>
+      {expanded ? (
+        <div className="attach-card-body">
+          {preview ? (
+            <div
+              className="attach-card-preview chat-text"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(preview) }}
+            />
+          ) : null}
+          {files ? (
+            <div className="attach-card-files">
+              <FileDiff size={14} aria-hidden="true" />
+              <span>
+                {files.count === 1
+                  ? text("1 file changed", "改动了 1 个文件")
+                  : text(`${files.count} files changed`, `改动了 ${files.count} 个文件`)}
+                {files.dirty ? text(", uncommitted", "，未提交") : ""}
+              </span>
+              {files.branch ? <code>{files.branch}</code> : null}
+            </div>
+          ) : null}
+          {isManual ? (
+            <div className="attach-card-footer">
+              <span className="attach-card-status">
+                {hasEmbedStats
+                  ? text("Will be expanded into your next message", "会展开到你的下一条消息中")
+                  : text("Will be included in your next message", "会包含在你的下一条消息中")}
+              </span>
+            </div>
+          ) : null}
+          {/* Auto-followup notice — surfaced after the job completes.
+              The runner writes a synthetic ``[系统消息]…`` user msg to
+              trigger the parent agent to react to the sub-job's output.
+              That msg lives on the main lane (display=runtime, hidden
+              from the chat panel), so the card shows it: spawn → status
+              → reply → auto-followup. */}
+          {followupNotice ? (
+            <div
+              className="attach-card-followup"
+              // The followup user msg has no chat bubble of its own
+              // (display=runtime). Tag this card section with its id so
+              // the history-graph visibility scan marks the DAG node
+              // visible while the card is in view — and crucially, lets
+              // it scroll out of view with the card.
+              data-msg-id={followupMsgId || undefined}
+            >
+              <div className="attach-card-followup-label">{text("Auto follow-up", "自动 follow-up")}</div>
+              <div className="attach-card-followup-body">{followupNotice}</div>
+            </div>
+          ) : null}
+          <div className="attach-card-actions">
+            {alreadyHere ? (
+              // Already on this branch — a "current branch" tag instead
+              // of a Switch button.
+              <span className="attach-card-here">
+                {text("current", "当前")}
+              </span>
+            ) : canOpen ? (
+              <button
+                type="button"
+                className="attach-card-open"
+                onClick={open}
+                onMouseEnter={() => switchIconRef.current?.startAnimation?.()}
+                onMouseLeave={() => switchIconRef.current?.stopAnimation?.()}
+                aria-label={sameSession ? text("Switch to this branch", "切换到这个分支") : text("Open peer session", "打开关联会话")}
+                title={sameSession ? text("Switch to this branch", "切换到这个分支") : text("Open peer session", "打开关联会话")}
+              >
+                {sameSession ? text("Switch", "切换") : text("Open", "打开")}
+                <ArrowUpRightIcon ref={switchIconRef} size={14} />
+              </button>
+            ) : null}
+            {canCancel ? (
+              <button
+                type="button"
+                className="attach-card-cancel"
+                onClick={() => {
+                  sendExecutionCancel(sendRuntimeCommand, executionId, expectedVersion);
+                }}
+                title={text("Cancel execution", "取消运行")}
+                aria-label={text("Cancel execution", "取消运行")}
+              >
+                {text("Cancel execution", "取消运行")}
+              </button>
+            ) : null}
+            <div className="message-actions-footer attach-card-time">
+              <div className="message-actions">
+                <MessageTimestamp timestamp={msg.timestamp} />
+              </div>
+            </div>
+          </div>
         </div>
       ) : null}
-      <div className="message-actions-footer attach-card-time">
-        <div className="message-actions">
-          <MessageTimestamp timestamp={msg.timestamp} />
-        </div>
-      </div>
     </div>
   );
 }

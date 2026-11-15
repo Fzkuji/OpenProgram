@@ -116,6 +116,8 @@ export interface PendingDecision {
   /** approval-only: the gated tool + its args, for the danger summary. */
   tool?: string;
   args?: Record<string, unknown>;
+  /** The sub-agent that asks, when it is not the conversation's own agent. */
+  askedBy?: string;
   /** form-only: flat-object field schema (field name → field def). The
    *  answer is an object (field → value). runtime.form / Phase 4a. */
   schema?: Record<string, FormFieldSchema>;

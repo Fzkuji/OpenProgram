@@ -171,6 +171,10 @@
     "en": "Editor integration",
     "zh": "编辑器集成"
   },
+  "interfaces/openai-api.html": {
+    "en": "OpenAI-compatible API",
+    "zh": "OpenAI 兼容接口"
+  },
   "interfaces/cli.html": {
     "en": "CLI",
     "zh": "命令行"
@@ -454,6 +458,10 @@
   "reference/design/integrations/mcp-server.html": {
     "en": "MCP server",
     "zh": "MCP 服务端"
+  },
+  "reference/design/integrations/openai-compatible-endpoint.html": {
+    "en": "OpenAI-compatible endpoint",
+    "zh": "OpenAI 兼容端点"
   },
   "reference/design/integrations/skills-and-plugins.html": {
     "en": "Skills and plugins",
@@ -935,6 +943,10 @@
     "en": "Context",
     "zh": "上下文"
   },
+  "reference/design/runtime/session/external-import.html": {
+    "en": "Importing other agents",
+    "zh": "导入其他 agent"
+  },
   "reference/design/runtime/session/name.html": {
     "en": "Title generation",
     "zh": "标题生成"
@@ -1234,6 +1246,10 @@
   "reference/session-export.html": {
     "en": "Session export",
     "zh": "会话导出"
+  },
+  "reference/session-import.html": {
+    "en": "Session import",
+    "zh": "会话导入"
   },
   "server/README.html": {
     "en": "Overview",

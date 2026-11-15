@@ -29,11 +29,12 @@ def require_backend_endpoint():
 
 
 def request(endpoint, method: str, path: str,
-            body: Optional[dict] = None) -> tuple[int, Any]:
+            body: Optional[dict] = None, *, exit_if_unreachable: bool = True) -> tuple[int, Any]:
     """Send one JSON request to ``endpoint``; return ``(status, payload)``.
 
     An HTTP error answers with its status and body; an unreachable
-    worker exits with a message.
+    worker exits with a message, or answers ``(0, None)`` when
+    ``exit_if_unreachable`` is false (a command that can do without it).
     """
     url = endpoint.base_url + path
     data: Optional[bytes] = None
@@ -60,5 +61,13 @@ def request(endpoint, method: str, path: str,
             payload = {"detail": text}
         return e.code, payload
     except urllib.error.URLError as e:
+        if not exit_if_unreachable:
+            return 0, None
         print(f"Error contacting worker at {url}: {e}", file=sys.stderr)
         sys.exit(1)
+    except (OSError, ValueError):
+        # A timeout or an unreadable answer; callers that must have the
+        # worker keep seeing it as before.
+        if not exit_if_unreachable:
+            return 0, None
+        raise

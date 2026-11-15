@@ -46,6 +46,10 @@ def register(app, office=office_editor) -> None:
         async with install_lock:
             try:
                 await run_in_threadpool(service.install)
+            except service.UNPUBLISHED_ERRORS as error:
+                # Retrying cannot help: no release this version reads carries the files.
+                return JSONResponse({"error": str(error), "code": "office_release_missing",
+                                     "version": error.version, "updateTo": error.update_to}, status_code=503)
             except service.INSTALL_ERRORS:
                 return JSONResponse({"error": "Office installation failed. Please retry.", "code": "office_install_failed"}, status_code=503)
         return JSONResponse({"installed": True})

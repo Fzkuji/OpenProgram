@@ -330,6 +330,14 @@ function formatGigabytes(bytes) {
   return `${gigabytes < 10 ? gigabytes.toFixed(1) : Math.round(gigabytes)} GB`;
 }
 
+/** The missing amount in the unit that shows it: a need and a free amount
+ *  within the same tenth of a gigabyte print as the same figure. */
+function formatShortfall(bytes) {
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+  if (bytes >= 1024 ** 2) return `${Math.round(bytes / 1024 ** 2)} MB`;
+  return "less than 1 MB";
+}
+
 /** How much the disk holding `directory` has free, or null when it can't be told. */
 function freeBytes(directory, statfs = fs.statfsSync) {
   let current = path.resolve(directory);
@@ -354,10 +362,17 @@ function assertDiskSpace(root, manifest, archives, { statfs, partial = false } =
   if (free !== null && free < needed) {
     throw new SeedError(
       `OpenProgram needs about ${formatGigabytes(needed)} of free disk space to finish setting up, ` +
-      `and this disk has ${formatGigabytes(free)} free. Free up some space, then try again.`,
+      `and this disk has ${formatGigabytes(free)} free, ${formatShortfall(needed - free)} short. ` +
+      "Free up some space, then try again.",
     );
   }
 }
+
+// What may already be in a root that has never been seeded: an older
+// command-line install, the seed's own leftovers, and the shell's recovery.log,
+// which records every failed setup, including one that stopped before it
+// began (recovery.js runSetup), so a failed first run can be retried.
+const SEEDABLE_ENTRIES = new Set(["cli", WORK, LINKS, "recovery.log"]);
 
 function assertSeedable(root) {
   if (fs.existsSync(path.join(root, ".seeding"))) return;
@@ -368,9 +383,13 @@ function assertSeedable(root) {
     if (error.code === "ENOENT") return;
     throw error;
   }
-  const unrelated = entries.filter((name) => name !== "cli" && name !== WORK && name !== LINKS);
+  const unrelated = entries.filter((name) => !SEEDABLE_ENTRIES.has(name)).sort();
   if (unrelated.length) {
-    throw new SeedError(`${root} already holds files that are not a version store`);
+    const shown = unrelated.slice(0, 5).join(", ") + (unrelated.length > 5 ? ", ..." : "");
+    throw new SeedError(
+      `${root} already holds files that are not a version store (${shown}). ` +
+      "Move them somewhere else, then try again.",
+    );
   }
 }
 

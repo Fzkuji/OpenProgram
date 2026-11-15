@@ -67,6 +67,93 @@ def _repo_dir_for(project_path: str) -> Path:
     return _shadow_root() / h
 
 
+#: Inside a shadow repository's ``.git``: one empty file per conversation
+#: that committed into it, named by the conversation id. Made with the
+#: repository, so every conversation that ever wrote into it is listed.
+OWNERS_DIR = "openprogram-sessions"
+
+
+def _owners(repo: Path) -> Optional[set[str]]:
+    """The conversations listed in ``repo``, or None when it keeps no list."""
+    try:
+        return set(os.listdir(repo / ".git" / OWNERS_DIR))
+    except OSError:
+        return None
+
+
+#: A repository on its way out is renamed to this suffix first, so its path
+#: is free at once for a conversation that starts a new history there.
+_REMOVED_SUFFIX = ".removed"
+
+
+def _release(repo: Path, gone: set[str]) -> bool:
+    """Drop ``gone`` from ``repo``'s list; remove the repository when the
+    list empties. True when the repository was removed.
+
+    Removing the emptied list directory is what claims the repository: it
+    fails while any conversation is listed, so one that lists itself at the
+    same moment (:meth:`ShadowGitStore.note_session`) either keeps the
+    repository or finds the list gone and starts a new one.
+    """
+    owners = _owners(repo)
+    if owners is None or not owners & gone:
+        return False
+    for session_id in owners & gone:
+        try:
+            os.unlink(repo / ".git" / OWNERS_DIR / session_id)
+        except OSError:
+            return False
+    try:
+        os.rmdir(repo / ".git" / OWNERS_DIR)
+    except OSError:
+        return False
+    return _remove_repo(repo)
+
+
+def _remove_repo(repo: Path) -> bool:
+    removed = repo.with_name(repo.name + _REMOVED_SUFFIX)
+    shutil.rmtree(removed, ignore_errors=True)
+    try:
+        os.rename(repo, removed)
+    except OSError:
+        return False
+    shutil.rmtree(removed, ignore_errors=True)
+    return True
+
+
+def release_session(session_id: str) -> int:
+    """A conversation was deleted: its file history goes with it.
+
+    A shadow repository belongs to a directory and is shared by every
+    conversation that edited files there, and one conversation's commits
+    cannot be cut out of a history the others' diffs are read from. So the
+    repository is removed when the last conversation listed in it is
+    deleted. Returns how many repositories were removed.
+    """
+    return sweep_released(lambda owner: owner == session_id)
+
+
+def sweep_released(is_gone, root: Optional[Path] = None) -> int:
+    """Remove every shadow repository all of whose conversations ``is_gone``
+    (a delete that stopped before :func:`release_session`). ``root`` is the
+    shadow folder, this state directory's when omitted. Returns how many
+    were removed."""
+    try:
+        repos = [entry for entry in (root or _shadow_root()).iterdir() if entry.is_dir()]
+    except OSError:
+        return 0
+    removed = 0
+    for repo in repos:
+        if repo.name.endswith(_REMOVED_SUFFIX):
+            # A removal that stopped after its rename.
+            shutil.rmtree(repo, ignore_errors=True)
+            continue
+        gone = {owner for owner in (_owners(repo) or ()) if is_gone(owner)}
+        if gone and _release(repo, gone):
+            removed += 1
+    return removed
+
+
 class ShadowGitStore:
     """Independent git store that mirrors agent file changes.
 
@@ -94,6 +181,7 @@ class ShadowGitStore:
                 self.repo_path.mkdir(parents=True, exist_ok=True)
                 if not (self.repo_path / ".git").exists():
                     self._git("init", "--quiet", "--initial-branch=main")
+                    (self.repo_path / ".git" / OWNERS_DIR).mkdir(exist_ok=True)
                     self._git("config", "user.name", self.AGENT_NAME)
                     self._git("config", "user.email", self.AGENT_EMAIL)
                     self._git("commit", "--allow-empty", "-m",
@@ -104,6 +192,32 @@ class ShadowGitStore:
                 logger.debug("shadow-git init failed for %s",
                              self.project_path, exc_info=True)
                 return False
+
+    def note_session(self, session_id: str) -> None:
+        """List ``session_id`` among the conversations that write here, so
+        the repository outlives it only while another one is listed
+        (:func:`release_session`). Called before the conversation's commit."""
+        if (not session_id or session_id in {".", ".."} or "/" in session_id
+                or "\\" in session_id or not self._ensure_init()):
+            return
+        owner = self.repo_path / ".git" / OWNERS_DIR / session_id
+        try:
+            owner.touch()
+            return
+        except OSError:
+            pass
+        if (self.repo_path / ".git").exists():
+            # A repository made without the list keeps none; it stays.
+            logger.debug("shadow-git owner not recorded for %s", session_id)
+            return
+        # The last conversation listed here was deleted just now and the
+        # repository went with it: this one starts the next.
+        self._initialized = False
+        if self._ensure_init():
+            try:
+                owner.touch()
+            except OSError:
+                logger.debug("shadow-git owner not recorded for %s", session_id, exc_info=True)
 
     def commit_turn(
         self,

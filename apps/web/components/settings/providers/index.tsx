@@ -1,252 +1,214 @@
 "use client";
 
-import { settingsSend } from "@/lib/settings/settings-request";
-
 /**
- * LLM Providers settings — port of /js/shared/settings-providers.js (521 lines).
+ * LLM Providers settings (design: docs/reference/design/providers/provider-management.html).
  *
- * Two-pane layout: provider list (search + grouped by enabled/disabled)
- * on the left; detail pane on the right with enable toggle, API key
- * input (masked status and explicit replacement), base URL override,
- * connectivity check, and
- * model list (toggle / search / fetch remote / bulk enable / disable).
- *
- * Originally a single 800-line file (providers-section.tsx); now split
- * into one file per sub-component:
- *   - types.ts: Provider / Model / formatCtx
- *   - provider-item.tsx, detail.tsx, setup-hint.tsx
- *   - api-key.tsx (exported for /settings/search), base-url.tsx,
- *     connectivity.tsx, model-list.tsx
+ * /settings/providers lists the connected providers as cards or compact
+ * rows (the switch is remembered), with Routing beside it; with nothing
+ * connected it is the picker of popular providers. Add provider opens the
+ * three-step dialog. /settings/providers/<id> is that provider's page.
  */
 import { useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { LayoutGrid, List, Plus, RefreshCw } from "lucide-react";
 
-import { Waypoints } from "lucide-react";
-
-import { Detail } from "./detail";
-import { RoutingOverview } from "./routing-overview";
-import { ProviderItem } from "./provider-item";
-import { AddCustomProvider } from "./add-custom-provider";
-import type { Provider } from "./types";
-import { SettingsPage } from "../settings-ui";
-import styles from "./provider-pane.module.css";
 import { Button } from "@/components/ui/button";
-import { SearchInput } from "@/components/ui/search-input";
-import { cachedFetch, invalidate, readCachedSettings } from "@/lib/prefs/settings-cache";
-import { refreshAgentChip } from "./types";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { HoverTip } from "@/components/ui/tooltip";
 import { useTranslation } from "@/lib/i18n";
 import { pushPath } from "@/lib/nav/shallow-nav";
+import { invalidate } from "@/lib/prefs/settings-cache";
+import { setProvidersView, useProvidersView, type ProvidersView } from "@/lib/prefs/providers-view";
+import { settingsSend } from "@/lib/settings/settings-request";
+import { cn } from "@/lib/utils";
 
-// Re-export ApiKey for search-providers-section.tsx (the only other
-// consumer outside this subdirectory).
+import { SettingsPage } from "../settings-ui";
+import { AddProviderDialog, type AddStart } from "./add/add-provider-dialog";
+import { CATALOGUE_URL, choiceOf, useAddData } from "./add/data";
+import { PickProvider } from "./add/pick";
+import { Detail } from "./detail";
+import { RoutingOverview } from "./routing-overview";
+import { fmtAgo, updatedAt } from "./status/model";
+import { ProviderCard } from "./status/provider-card";
+import { ProviderRows } from "./status/provider-rows";
+import styles from "./status/status.module.css";
+import { useProviderStatus } from "./status/use-provider-status";
+import { refreshAgentChip } from "./types";
+
+// Re-export ApiKey for the search-providers page (the only other consumer).
 export { ApiKey } from "./auth/api-key";
 export type { Provider, Model } from "./types";
 
+type Segment = "providers" | "routing";
+
 export function ProvidersSection({ initialProviderId }: { initialProviderId?: string } = {}) {
   const { t, text } = useTranslation();
-  const router = useRouter();
   const queryClient = useQueryClient();
-  const [providers, setProviders] = useState<Provider[]>(() => readCachedSettings<{ providers?: Provider[] }>("/api/providers/list")?.providers ?? []);
-  // Selection lives in the URL: /settings/providers/<id> selects <id>,
-  // /settings/providers (no id) falls back to the first enabled provider.
-  // ``initialProviderId`` is the route param so a hard refresh / shared
-  // link lands on the right provider; clicking a row shallow-pushes the
-  // new URL, which re-renders this with a new initialProviderId.
-  // /settings/providers with no id opens the Overview; a provider id opens
-  // that provider. ``fallbackSelectedId`` is only the post-delete reset.
-  const [fallbackSelectedId, setSelectedId] = useState<string | null>(null);
-  const selectedId = initialProviderId ?? fallbackSelectedId;
-  const [search, setSearch] = useState("");
-  const sidebarRef = useRef<HTMLDivElement>(null);
+  const { payload, error, refreshing, reload, refresh, refreshOne } = useProviderStatus();
+  const { detected, detectedFailed, catalogue, reload: reloadCatalogue } = useAddData();
+  const view = useProvidersView();
+  const [segment, setSegment] = useState<Segment>("providers");
+  const [dialog, setDialog] = useState<{ open: boolean; start: AddStart }>({ open: false, start: { step: "pick" } });
+  // Cleared after a removal so the page falls back to the list before the URL catches up.
+  const [left, setLeft] = useState<string | null>(null);
+  const selectedId = initialProviderId && initialProviderId !== left ? initialProviderId : null;
 
-  // Sidebar scroll is intentionally CONTAINED — see the matching
-  // `overscroll-behavior: contain` in settings-page.module.css. The
-  // previous version forwarded wheel deltas from the sidebar onto the
-  // page scroller once the list hit its boundary; that made the right
-  // detail column drift up/down while the user was just trying to
-  // scroll the provider list, which read as a bug.
+  const openProvider = useCallback((id: string) => { setLeft(null); pushPath(`/settings/providers/${encodeURIComponent(id)}`); }, []);
+  const showList = useCallback(() => { pushPath("/settings/providers"); }, []);
+  const openAdd = (start: AddStart = { step: "pick" }) => setDialog({ open: true, start });
+  const connect = (id: string) => {
+    const p = catalogue.find((c) => c.id === id);
+    if (p) openAdd({ step: "connect", choice: choiceOf(p, detected) });
+    else openProvider(id);
+  };
 
-  // Why the last read of the list failed. A failed read keeps the list
-  // already shown and says so, rather than showing no providers at all.
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  const reload = useCallback(async () => {
-    try {
-      // ``cachedFetch`` shares in-flight promises and keeps successful
-      // responses for 30s, so tab-switching back here within that
-      // window is instant. Mutations call ``invalidate()`` below to
-      // force the next read to hit the network.
-      const d = await cachedFetch<{ providers?: Provider[] }>("/api/providers/list");
-      setProviders(d.providers || []);
-      setLoadError(null);
-    } catch (err) {
-      setLoadError(err instanceof Error && err.message ? err.message : String(err));
-    }
-  }, []);
-
+  // ?add=1 (or ?add=<provider>) opens Add provider on arrival — the model
+  // picker and the "no model" notice link here — and leaves the address clean.
+  const catalogueReady = catalogue.length > 0;
   useEffect(() => {
-    reload();
-  }, [reload]);
+    const wanted = new URLSearchParams(window.location.search).get("add");
+    if (!wanted) return;
+    if (wanted !== "1" && !catalogueReady) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("add");
+    window.history.replaceState(window.history.state, "", url);
+    if (wanted === "1") openAdd();
+    else connect(wanted);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per arrival
+  }, [catalogueReady]);
 
-  useEffect(() => {
-    const refreshProviders = () => {
-      invalidate("/api/providers/list");
-      void reload();
-    };
-    window.addEventListener("op:provider-models-changed", refreshProviders);
-    return () => window.removeEventListener("op:provider-models-changed", refreshProviders);
-  }, [reload]);
+  const reloadAll = useCallback(() => {
+    invalidate(CATALOGUE_URL);
+    void reload(true);
+    void reloadCatalogue(true);
+    void queryClient.invalidateQueries({ queryKey: ["models-enabled"] });
+    refreshAgentChip();
+  }, [reload, reloadCatalogue, queryClient]);
 
-  // Navigate to /settings/providers/<id> instead of plain setState so the
-  // URL is shareable and survives a refresh.
-  const selectProvider = useCallback(
-    (id: string) => {
-      setSelectedId(id);
-      pushPath(`/settings/providers/${encodeURIComponent(id)}`);
-    },
-    [],
-  );
-
-  const showOverview = useCallback(() => {
-    setSelectedId(null);
-    pushPath("/settings/providers");
-  }, []);
-
-  const enabled = providers.filter((p) => p.enabled);
-  const disabled = providers.filter((p) => !p.enabled);
-  const selected = providers.find((p) => p.id === selectedId) || null;
-
-  function matches(p: Provider) {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return p.label.toLowerCase().includes(q) || p.id.toLowerCase().includes(q);
-  }
-
-  async function toggleProvider(id: string, en: boolean) {
+  async function toggleProvider(id: string, enabled: boolean) {
     await settingsSend(`/api/providers/${encodeURIComponent(id)}/toggle`, {
-      body: { enabled: en },
+      body: { enabled },
       failure: text("Could not change this provider. Try again.", "无法更改这个 Provider，请重试。"),
     });
-    invalidate("/api/providers/list");
-    reload();
-    // Disabling/enabling a provider changes which models the chat picker
-    // may show — drop the React-Query cache the composer + model badge
-    // read so a disabled provider's models vanish from the top menu
-    // without a page reload (the backend already excludes them).
-    queryClient.invalidateQueries({ queryKey: ["models-enabled"] });
-    // The top-bar agent chip reads agentSettings, not the query cache —
-    // refetch it so disabling the current model's provider clears the chip.
-    refreshAgentChip();
+    reloadAll();
   }
+
+  const now = Date.now() / 1000;
+  const connected = payload?.providers ?? [];
+  const selected = selectedId ? catalogue.find((p) => p.id === selectedId) ?? null : null;
+  const updated = payload ? updatedAt(connected, payload.generated_at) : 0;
+
+  const dialogEl = (
+    <AddProviderDialog
+      open={dialog.open}
+      start={dialog.start}
+      detected={detected}
+      detectedFailed={detectedFailed}
+      onRetryDetected={() => void reloadCatalogue(true)}
+      catalogue={catalogue}
+      onOpenChange={(open) => setDialog((d) => ({ ...d, open }))}
+      onConnected={reloadAll}
+      onOpenProvider={(id) => { setDialog((d) => ({ ...d, open: false })); reloadAll(); openProvider(id); }}
+    />
+  );
+
+  if (selectedId) {
+    return (
+      <SettingsPage title={t("settings.tab.providers")}>
+        {selected ? (
+          <Detail
+            key={selected.id}
+            provider={selected}
+            status={connected.find((p) => p.id === selected.id) ?? null}
+            onBack={showList}
+            onRefresh={() => refreshOne(selected.id)}
+            onToggle={(en) => void toggleProvider(selected.id, en)}
+            onChanged={reloadAll}
+            onDeleted={() => { setLeft(selected.id); reloadAll(); showList(); }}
+          />
+        ) : null}
+        {dialogEl}
+      </SettingsPage>
+    );
+  }
+
+  const empty = payload !== null && connected.length === 0;
+  const actions = (
+    <div className="flex flex-wrap items-center justify-end gap-[8px]">
+      {payload && !empty ? <span className={styles.updated}>{text("Updated ", "更新于 ")}{fmtAgo(updated, now, text)}</span> : null}
+      {!empty ? (
+        <HoverTip label={text("Read every sign-in and quota again", "重新读取所有登录和额度")}>
+          <Button variant="ghost" size="icon-sm" aria-label={text("Refresh", "刷新")} disabled={refreshing} onClick={() => void refresh()}>
+            <RefreshCw className={cn(refreshing && styles.spinning)} />
+          </Button>
+        </HoverTip>
+      ) : null}
+      {segment === "providers" && !empty ? (
+        <Tabs value={view} onValueChange={(v) => setProvidersView(v as ProvidersView)}>
+          <TabsList aria-label={text("View", "视图")}>
+            <HoverTip label={text("Cards", "卡片")}>
+              <TabsTrigger value="cards" className="px-2" aria-label={text("Cards", "卡片")}><LayoutGrid /></TabsTrigger>
+            </HoverTip>
+            <HoverTip label={text("Rows", "列表")}>
+              <TabsTrigger value="rows" className="px-2" aria-label={text("Rows", "列表")}><List /></TabsTrigger>
+            </HoverTip>
+          </TabsList>
+        </Tabs>
+      ) : null}
+      <Button size="sm" onClick={() => openAdd()}><Plus aria-hidden="true" />{text("Add provider", "添加 Provider")}</Button>
+    </div>
+  );
 
   return (
     <SettingsPage
-      title={t("settings.tab.providers")}
-      description={text(
-        "Enable an LLM backend, paste an API key (or rely on local OAuth / subscription), and pick which models the chat composer exposes.",
-        "启用大模型后端，填写 API key（或使用本地 OAuth / 订阅），并选择聊天输入框可用的模型。",
-      )}
-      bodyClassName="gap-0 overflow-hidden p-0"
-    >
-        <div className={styles.providersLayout}>
-          <div className={styles.providersSidebar} ref={sidebarRef}>
-            <div className="p-[0_0_8px]">
-              <div className="flex items-center w-full min-w-0">
-                <div className="w-full min-w-0">
-                  <SearchInput
-                    placeholder={text("Search providers...", "搜索 Provider...")}
-                    value={search}
-                    onChange={setSearch}
-                  />
-                </div>
-              </div>
-              <AddCustomProvider
-                onCreated={(id) => {
-                  invalidate("/api/providers/list");
-                  reload().then(() => selectProvider(id));
-                }}
-              />
-            </div>
-          <div className={`${styles.providerListItems} flex flex-col gap-[1px]`}>
-          <button
-            type="button"
-            className={styles.providerItem + (selectedId === null ? " " + styles.active : "")}
-            onClick={showOverview}
-            aria-current={selectedId === null ? "true" : undefined}
-          >
-            <span className={styles.overviewIcon}><Waypoints size={14} strokeWidth={1.75} aria-hidden /></span>
-            <span className={styles.providerLabel}>{text("Overview", "总览")}</span>
-          </button>
-          {loadError ? (
-            <div className={styles.loadError} role="alert">
-              <p className={styles.loadErrorText}>
-                {text("Couldn't load the provider list: ", "无法读取 Provider 列表：")}
-                {loadError}
-              </p>
-              <Button
-                variant="elevated"
-                size="sm"
-                onClick={() => {
-                  invalidate("/api/providers/list");
-                  void reload();
-                }}
-              >
-                {text("Retry", "重试")}
-              </Button>
-            </div>
+      title={
+        <span className="flex items-center gap-3">
+          {t("settings.tab.providers")}
+          {!empty ? (
+            <Tabs value={segment} onValueChange={(v) => setSegment(v as Segment)}>
+              <TabsList aria-label={text("Section", "分区")}>
+                <TabsTrigger value="providers" className="px-3">{text("Providers", "Providers")}</TabsTrigger>
+                <TabsTrigger value="routing" className="px-3">{text("Routing", "路由")}</TabsTrigger>
+              </TabsList>
+            </Tabs>
           ) : null}
-          {enabled.filter(matches).length > 0 && (
-            <>
-              <div className={styles.providersGroupLabel}>{text("Enabled", "已启用")}</div>
-              {enabled.filter(matches).map((p) => (
-                <ProviderItem
-                  key={p.id}
-                  p={p}
-                  active={selectedId === p.id}
-                  onSelect={selectProvider}
-                />
-              ))}
-            </>
-          )}
-          {disabled.filter(matches).length > 0 && (
-            <>
-              <div className={styles.providersGroupLabel}>{text("Not enabled", "未启用")}</div>
-              {disabled.filter(matches).map((p) => (
-                <ProviderItem
-                  key={p.id}
-                  p={p}
-                  active={selectedId === p.id}
-                  onSelect={selectProvider}
-                />
-              ))}
-            </>
-          )}
-          </div>
+        </span>
+      }
+      actions={actions}
+    >
+      {error && !payload ? (
+        <div className="flex items-center justify-between gap-[10px]" role="alert">
+          <span className={cn(styles.xs, styles.muted)}>{text("Couldn't load the providers: ", "无法读取 Provider：")}{error}</span>
+          <Button variant="elevated" size="sm" onClick={() => void reload(true)}>{text("Retry", "重试")}</Button>
         </div>
-          <div className={styles.detail}>
-            {selectedId === null ? (
-              <RoutingOverview providers={providers} onSelectProvider={selectProvider} />
-            ) : !selected ? (
-              <div className={styles.detailEmpty}>{text("Select a provider on the left", "选择左侧 Provider")}</div>
-            ) : (
-              <Detail
-                key={selected.id}
-                provider={selected}
-                onToggle={(en) => toggleProvider(selected.id, en)}
-                onChanged={() => reload()}
-                onDeleted={() => {
-                  invalidate("/api/providers/list");
-                  setSelectedId(null);
-                  queryClient.invalidateQueries({ queryKey: ["models-enabled"] });
-                  refreshAgentChip();
-                  router.push("/settings/providers");
-                  reload();
-                }}
-              />
-            )}
-          </div>
+      ) : null}
+      {empty ? (
+        <div className="flex flex-col gap-[14px] w-full max-w-[640px] mx-auto mt-[24px]" data-empty>
+          <h3 className={styles.emptyTitle}>{text("Connect a model provider", "连接一个模型 Provider")}</h3>
+          <PickProvider
+            detected={detected}
+            detectedFailed={detectedFailed}
+            onRetry={() => void reloadCatalogue(true)}
+            catalogue={catalogue}
+            onPick={(choice) => openAdd({ step: "connect", choice })}
+            onUseEnv={(row) => openAdd({ step: "env", row })}
+            onCustom={() => openAdd({ step: "custom" })}
+          />
         </div>
+      ) : segment === "routing" ? (
+        <RoutingOverview providers={catalogue} onSelectProvider={openProvider} />
+      ) : payload ? (
+        <div className={styles.listWrap} data-view={view}>
+          {view === "rows" ? (
+            <ProviderRows providers={connected} now={now} onOpen={openProvider} onConnect={connect} />
+          ) : (
+            <div className="grid grid-cols-2 gap-[12px] @max-[720px]:grid-cols-1">
+              {connected.map((p) => <ProviderCard key={p.id} p={p} now={now} onOpen={openProvider} onConnect={connect} />)}
+            </div>
+          )}
+        </div>
+      ) : null}
+      {dialogEl}
     </SettingsPage>
   );
 }

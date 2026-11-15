@@ -799,7 +799,7 @@ def _dispatch_sessions_command(args) -> None:
                                  args.output)
         elif verb == "import":
             _cmd_sessions_import(args.paths, args.import_from, args.since,
-                                 args.list_only)
+                                 args.list_only, args.dry_run)
         elif verb == "aliases":
             from openprogram.runtime.agent_registry import session_aliases as _a
             rows = _a.list_all()
@@ -878,7 +878,7 @@ def _dispatch_settings_command(args) -> None:
         return
 
     if args.command == "ports":
-        from openprogram.state.preferences import read_ui_prefs, set_ui_ports
+        from openprogram.state.preferences import set_ui_ports
 
         def _valid(p):
             return p is None or 1 <= p <= 65535
@@ -887,8 +887,9 @@ def _dispatch_settings_command(args) -> None:
             print("Port must be in 1–65535.")
             return
         if args.port is None:
-            prefs = read_ui_prefs()
-            print(f"web UI (API + WebSocket + frontend):  {prefs['web_port']}")
+            from openprogram.operations.worker.lifecycle import resolve_worker_port
+
+            print(f"web UI (API + WebSocket + frontend):  {resolve_worker_port()}")
             print()
             print("Change with:  openprogram ports --port <port>")
             print("Override one run via env:  OPENPROGRAM_WEB_PORT")

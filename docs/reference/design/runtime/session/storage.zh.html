@@ -36,6 +36,7 @@
 <thead class="sr"><tr><th scope="col">行类型</th><th scope="col">记录</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">node.put</code>、<code translate="no">node.patch</code>、<code translate="no">node.delete</code></th><td>写入、修改或移除 DAG 节点</td></tr>
+<tr><th scope="row"><code translate="no">node.stream</code></th><td>流式回复自上一行以来新增的部分：打开中那个块的新文字，或从第一个变动的块起的各块，以及输出的新尾部</td></tr>
 <tr><th scope="row"><code translate="no">meta.patch</code></th><td>标题、设置和其他 session 元数据</td></tr>
 <tr><th scope="row"><code translate="no">file.put</code></th><td>一个完整的小文档：<code translate="no">jobs.json</code>、<code translate="no">notices.json</code>、<code translate="no">inbox.json</code>、<code translate="no">todos.json</code>、<code translate="no">open_work.json</code>、<code translate="no">always_on.json</code>、<code translate="no">always_on_reports.jsonl</code></td></tr>
 <tr><th scope="row"><code translate="no">turn.*</code></th><td>Agent journal：快照、模型决策、启动的工具及其结果</td></tr>
@@ -47,15 +48,34 @@
 <li>每个文件一个写者：Worker 写 <code translate="no">main.jsonl</code>，其他进程写 <code translate="no">agents/</code> 下自己的文件。</li>
 <li>读取时按时间戳折叠所有文件，跳过 <code translate="no">crc</code> 失败的行，这只可能是已停止写者的最后一行。</li>
 <li>进程保留折叠结果，只读新增内容。已知文件被替换或变短，或新行排在已折叠内容之前时，从头重新折叠。</li>
+<li>回复的轨迹（<code translate="no">metadata.extra</code>）在折叠结果交出时才算一次：从最后一次整份存它的那行（大的会压缩）加上之后的 <code translate="no">node.stream</code> 行算出。被后面的行替换掉的版本从不解压或解析。</li>
+<li><code translate="no">node.stream</code> 行给某个块或输出追加的文字先按片段留着，到这时才拼一次。折叠一条回复的开销只看它的长度，与它分多少行流出无关。</li>
+<li>一次折叠读了至少 4 MB、且不少于上一个检查点的大小时，写 <code translate="no">checkpoint/fold.json</code>（折叠出的节点、元数据、状态文件、运行行）和 <code translate="no">checkpoint/records.json</code>（状态文件和运行行）。每份按文件记下覆盖到的偏移和那里结尾的字节。检查点的开销不超过它覆盖的日志的两倍。</li>
+<li>冷打开读检查点，再只读它之后的行。某个文件的 inode、长度或覆盖段结尾对不上，就从头读。</li>
+<li>状态文件和运行行一起读，从记录检查点开始，只扫这两类行，一遍完成。</li>
 <li>只有实时推送片段不保留。</li>
 </ul>
+<p>以前流式输出每来一个 delta 就重写回复的整条轨迹：有个日志涨到 731 MB，其中 675 MB 是重写，冷打开要 8 秒。现在一行只记新增部分。pi-mono、Claude Code 和 Codex 一条完成的条目写一行，opencode 原地更新 part，没有一家每个 delta 重写整条消息。</p>
+
+<h3 id="turn-weight">一轮除回复外还写什么</h3>
+<p>一行只记算不出来的东西，只记一次。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">行</th><th scope="col">记录</th><th scope="col">不记什么，从哪里来</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">turn.snapshot</code></th><td>每轮一次：模型、请求设置、提示词或其哈希，以及每个工具的名字和两个摘要：<code translate="no">declaration_sha256</code>（描述、参数、缓存控制、权限、审批）和 <code translate="no">implementation_sha256</code>（实际运行的代码）</td><td>工具的描述和参数结构。恢复时重新解析当前的工具并比较摘要；对不上时指出是哪个工具、两项里哪一项变了</td></tr>
+<tr><th scope="row"><code translate="no">meta.patch</code> 的 <code translate="no">_last_context_stats</code></th><td>每次模型请求之后：实测总量、依据、估算值和校准系数</td><td>按类别的明细及其中的工具行和提示词行。明细由对话的节点、提示词和工具数出来；首次打开会重新数，面板自己取</td></tr>
+</tbody>
+</table>
+<p>在一轮六次模型请求、81 个工具的对话上实测：回复和 journal 之外多写 27 KB，其中快照 18 KB、上下文统计 4 KB。如果把工具结构和明细也抄进这些行，同一轮要写 224 KB（127 KB 和 97 KB）。</p>
+<p>Codex 每轮写一行很小的 <code translate="no">turn_context</code>（模型、工作目录、策略），指令每个 session 只写一次；Claude Code 的 transcript 每行是一条消息和它的用量，<code translate="no">/context</code> 在询问时才数。两家都不按请求记录工具结构或上下文明细，这份日志也不记。</p>
+<p>摘要按工具保留而不是整个目录一个，因为拒绝恢复时要说出是哪个工具变了，而且持久函数的代码可以变、声明不可以。</p>
 
 <h2 id="run-state">运行状态</h2>
 <p>执行、尝试、副作用、等待和命令从同样的日志折叠成 Worker 内存中的普通 Python 表，有自己的事务、撤销和唯一性规则。不用数据库。已提交的变更是一条 <code translate="no">turn.rows</code>。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">项</th><th scope="col">作用</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">~/.openprogram/active/&lt;session&gt;</code></th><td>标记有未完成运行，启动时折叠。其他 session 首次用到时折叠。删除对话时移除它的标记，启动时丢弃指向已删除对话的标记</td></tr>
+<tr><th scope="row"><code translate="no">~/.openprogram/active/&lt;session&gt;</code></th><td>标记有未完成运行，启动时折叠。其他 session 首次用到时折叠：启动时不读任何对话，对话在第一次打开时才读。删除对话时移除它的标记，启动时丢弃指向已删除对话的标记</td></tr>
 <tr><th scope="row"><code translate="no">run_index.jsonl</code></th><td>执行 → session</td></tr>
 <tr><th scope="row"><code translate="no">revisions.jsonl</code></th><td>Workflow 版本和审批，以及全局预算</td></tr>
 <tr><th scope="row">空闲 session</th><td>最后变更一小时后离开内存，需要时从日志恢复</td></tr>

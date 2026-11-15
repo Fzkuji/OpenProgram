@@ -44,13 +44,24 @@ clone_tree() {
 
 # Writes the locked requirements, then installs them. `sync` also removes what
 # a cloned Python layer brought along and the new lock no longer lists.
+# Wheels are picked for the oldest system the release supports, never for this
+# runner, and only as wheels: runtime-wheels.py names the few packages a leg
+# builds from source against a static library it prepared (OPENSSL_DIR).
 install_packages() {
-  local verb="$1" python="$2" requirements="$3"
+  local verb="$1" python="$2" requirements="$3" target_args=()
   "$uv_bin" export --project "$repo_root" --frozen --no-dev \
     --extra all --extra search --no-emit-project \
     --output-file "$requirements" >/dev/null
-  "$uv_bin" pip "$verb" --python "$python" --strict --break-system-packages \
-    --require-hashes --requirements "$requirements"
+  while IFS= read -r argument; do target_args+=("$argument"); done < <(
+    "$python" -I "$repo_root/scripts/release/runtime-wheels.py" uv-args)
+  test "${#target_args[@]}" -gt 0 || { printf 'no wheel target for this machine\n' >&2; exit 1; }
+  # `uv pip sync` takes the file as an argument and refuses --requirements;
+  # `uv pip install` needs --requirements, since its arguments are packages.
+  local source=(--requirements "$requirements")
+  test "$verb" = sync && source=("$requirements")
+  MACOSX_DEPLOYMENT_TARGET="$(read_pin macosMinimum)" \
+    "$uv_bin" pip "$verb" --python "$python" --strict --break-system-packages \
+      --require-hashes "${target_args[@]}" "${source[@]}"
 }
 
 # Seal each browser bundle once here. Packaging leaves this tree untouched
@@ -70,16 +81,19 @@ install_browsers() {
 # A pinned Git, so a new machine needs none installed and nothing reaches the
 # macOS /usr/bin/git shim and its Command Line Tools dialog. The Linux builds
 # need glibc 2.34 (Ubuntu 22.04 has 2.35, Debian 12 has 2.36) and libz.so.1;
-# only Git over HTTP(S) also needs the system's libcurl.so.4.
+# only Git over HTTP(S) also needs the system's libcurl.so.4. It is the Git for
+# the Python it ships beside, which an emulated build (an x86_64 shell under
+# Rosetta) does not share with this machine.
 install_git() {
-  local target="$1" git_pin git_platform git_asset git_sha git_archive actual_sha
-  case "$(uname -s)-$(uname -m)" in
-    Darwin-arm64) git_platform=macOS-arm64 ;;
-    Darwin-*) git_platform=macOS-x64 ;;
-    Linux-x86_64) git_platform=ubuntu-x64 ;;
-    Linux-aarch64 | Linux-arm64) git_platform=ubuntu-arm64 ;;
+  local target="$1" python="$2" packaged git_pin git_platform git_asset git_sha git_archive actual_sha
+  packaged="$("$python" -I "$repo_root/scripts/release/runtime-wheels.py" target)"
+  case "$packaged" in
+    macos-arm64) git_platform=macOS-arm64 ;;
+    macos-x86_64) git_platform=macOS-x64 ;;
+    linux-x86_64) git_platform=ubuntu-x64 ;;
+    linux-arm64) git_platform=ubuntu-arm64 ;;
     *)
-      printf 'no pinned Git is available for %s %s\n' "$(uname -s)" "$(uname -m)" >&2
+      printf 'no pinned Git is available for %s\n' "$packaged" >&2
       exit 1
       ;;
   esac
@@ -108,7 +122,7 @@ if test -n "$embedded_runtime"; then
   test -n "$python_bin" || { printf -- '--embedded-runtime needs --python\n' >&2; exit 2; }
   install_packages install "$python_bin" "$embedded_runtime/product-requirements.txt"
   install_browsers "$python_bin" "$embedded_runtime/assets/playwright"
-  install_git "$embedded_runtime/git"
+  install_git "$embedded_runtime/git" "$python_bin"
   exit 0
 fi
 
@@ -215,7 +229,7 @@ git_pin="$(read_pin git)"
 if test -n "$(pin_of git)" && test "$(pin_of git)" = "$git_pin" && test -d "$clone_from/git"; then
   clone_tree "$clone_from/git" "$dest/git"
 else
-  install_git "$dest/git"
+  install_git "$dest/git" "$base_python"
 fi
 
 cp "$product_config" "$dest/product-runtime.json"

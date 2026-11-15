@@ -385,12 +385,11 @@ def is_configured(provider_id: str) -> bool:
     if _is_custom_provider(provider_id):
         import os
         return bool(os.environ.get(synthesized_env_var(provider_id)))
-    # Community / models.dev provider: a saved key would have hit the
-    # AuthStore check at the top. Providers with no key concept at all
-    # (no env-var name in the catalogue) are conservatively "configured"
-    # so the UI doesn't show a red dot the user can't act on.
-    env = env_var_for(provider_id)
-    return env is None
+    # Anything else signs in only through OpenProgram (a subscription OAuth
+    # or import such as xai-subscription, or a community provider whose key
+    # would have been saved in the store): no credential checked above means
+    # it is not set up, so a fresh install lists no provider as connected.
+    return False
 
 
 # ── provider.json endpoint metadata ──────────────────────────────

@@ -81,6 +81,48 @@ def test_rewind_applies_the_confirmed_plan_and_moves_head(monkeypatch):
     ]
 
 
+def _repeat_a_rewind(monkeypatch, stored_head):
+    """The same Rewind sent twice: the second finds the first's outcome."""
+    from openprogram.interfaces.server import server
+    from openprogram.runtime.context import session_db
+    from openprogram.runtime.conversation import rewind, rewind_marks as marks
+
+    class _Store:
+        def get_session(self, session_id):
+            return {"head_id": stored_head}
+
+    moves: list = []
+    answers = iter([False, True])
+    _reserve(monkeypatch, [])
+    monkeypatch.setattr(marks, "list_rewind_marks", lambda sid: [])
+    monkeypatch.setattr(session_db, "default_db", lambda: _Store())
+    monkeypatch.setattr(server, "_set_active_head", lambda sid, head: moves.append(head))
+    monkeypatch.setattr(server, "refresh_context_stats", lambda sid: moves.append("stats"))
+    monkeypatch.setattr(rewind, "rewind_to", lambda sid, msg, **kw: {
+        "status": "committed", "head_changed": True, "new_head_id": "before-u",
+        "turns_reverted": 1, "user_text": "make notes", "replayed": next(answers),
+    })
+    request = {"session_id": "s", "msg_id": "u", "plan_hash": "sha256:p", "idempotency_key": "k"}
+    first = asyncio.run(routes.post_chat_rewind(dict(request)))
+    del moves[:]
+    second = asyncio.run(routes.post_chat_rewind(dict(request)))
+    return first, second, moves
+
+
+def test_a_repeated_rewind_answers_as_the_first_did(monkeypatch):
+    first, second, moves = _repeat_a_rewind(monkeypatch, stored_head="before-u")
+    assert first.status_code == second.status_code == 200
+    assert _body(second) == _body(first) and _body(first)["head_changed"] is True
+    # The head is still where the rewind left it: mirroring it again changes nothing.
+    assert moves == ["before-u", "stats"]
+
+
+def test_a_repeated_rewind_does_not_pull_back_a_conversation_that_moved_on(monkeypatch):
+    first, second, moves = _repeat_a_rewind(monkeypatch, stored_head="a-later-reply")
+    assert _body(second) == _body(first)
+    assert moves == []
+
+
 def test_a_stale_plan_rewinds_nothing(monkeypatch):
     from openprogram.interfaces.server import server
     from openprogram.runtime.conversation import rewind

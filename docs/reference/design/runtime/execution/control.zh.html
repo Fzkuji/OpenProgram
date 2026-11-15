@@ -116,8 +116,9 @@
 <caption>第一个请求占着槽位时重复发来的同一请求</caption>
 <thead><tr><th scope="col">请求</th><th scope="col">键</th><th scope="col">重复的那个</th></tr></thead>
 <tbody>
-<tr><th scope="row">执行回退</th><td><code translate="no">idempotency_key</code></td><td rowspan="2">等第一个结束（最多一分钟，与存储的锁预算相同），再占槽位；存储返回第一个记下的结果（<a href="../session/storage-consistency.zh.html">存储一致性</a>），文件和 head 只变一次，两个调用方拿到同一个结果</td></tr>
+<tr><th scope="row">执行回退</th><td><code translate="no">idempotency_key</code></td><td rowspan="2">等第一个结束（最多一分钟，与存储的锁预算相同），再占槽位；存储返回第一个记下的结果（<a href="../session/storage-consistency.zh.html">存储一致性</a>），文件和 head 只变一次，两个调用方拿到同一个结果，包括 <code translate="no">head_changed</code></td></tr>
 <tr><th scope="row">撤销、重新应用</th><td><code translate="no">idempotency_key</code> 加该轮</td></tr>
+<tr><th scope="row">回退之后的 head</th><td><code translate="no">idempotency_key</code></td><td>执行回退的那个请求在释放槽位前把新 head 同步到服务端并重新测量上下文。重复的请求只有在存储的 head 仍是这次回退留下的那个时才再同步一次，所以之后又往前走的对话不会被拉回去</td></tr>
 <tr><th scope="row">聊天发送、函数运行</th><td><code translate="no">client_request_id</code></td><td>回答 <code translate="no">request_admitted</code>，带正在运行的轮次的 id，不带 <code translate="no">retry_query</code>：一次发送只准入一个执行，而 <code translate="no">run_active</code> 会让客户端把它当新的一轮排队</td></tr>
 <tr><th scope="row">键不同或没有键</th><td>任意</td><td>拒绝，<code translate="no">run_active</code>。槽位比存储先检查，所以这一层也要认得重复</td></tr>
 </tbody>
@@ -195,7 +196,8 @@
 <table class="stack">
 <thead><tr><th scope="col">项目</th><th scope="col">怎么做</th><th scope="col">跟随</th></tr></thead>
 <tbody>
-<tr><th scope="row">被停止的回复</th><td>已完成的模型调用连同推理签名留在历史里。流式中被截断的文字作为最后一次不带签名的调用保留；它不带签名的推理只显示、不发送；参数还没收完的工具调用丢掉。</td><td>OpenCode</td></tr>
+<tr><th scope="row">被停止的回复</th><td>已完成的模型调用连同推理签名留在历史里。流式中被截断的文字作为最后一次不带签名的调用保留；它不带签名的推理只显示、不发送；参数还没收完的工具调用丢掉。保留的文字就是已经作为流帧发出去的那些增量，不多不少。被 steer 截断的回复也截回到这些增量。</td><td>OpenCode</td></tr>
+<tr><th scope="row">被停止回复的文字</th><td>各块的文字（<a href="dispatcher-split.zh.html#reply-text">段与段之间一个空行</a>），再加它附带的文件。存下来的回复、最后的 <code translate="no">result</code> 帧、<code translate="no">--print</code> 和渠道拿到的都是这一个值。</td><td>OpenCode</td></tr>
 <tr><th scope="row">每个调用都有结果</th><td>运行中的调用：先放已有输出，再接 <code translate="no">Stopped by the user after 3.2s.</code>。已发出没运行的：<code translate="no">Not run: the turn was stopped before this call started.</code>。Worker 重启：<code translate="no">Interrupted after 3.2s because the service restarted.</code>。会话 id 不再发给模型。</td><td>Codex，已有输出按 OpenCode</td></tr>
 <tr><th scope="row">下一条消息上的说明</th><td>停止时在回复上写 <code translate="no">interruption</code>（原因、阶段、是否截断了调用）。下一条消息的轮次块里加一句说明上一条为什么停了；截断过调用时再加 "A tool call that was stopped may have partly run."。它只写一次，存在这条消息的节点上，之后每次请求字节相同。</td><td>文字跟 Codex，位置跟 Grok Build</td></tr>
 <tr><th scope="row">空的被停止回复</th><td>助手位置不写任何内容。Anthropic 和 Gemini 的请求把相邻的两条普通用户消息合成一条。</td><td>Codex</td></tr>
@@ -215,6 +217,7 @@
 <thead><tr><th scope="col">项目</th><th scope="col">原因</th></tr></thead>
 <tbody>
 <tr><th scope="row">被停止的回复</th><td>模型看到的应当就是用户看到的：停下后用户常说"继续"或"改一下那句"，丢掉截断的文字（Codex、Pi）会让模型从头再写。已完成的调用是合法的带签名历史。Anthropic 不接受不带签名的推理，所以只丢被截断那次的推理。</td></tr>
+<tr><th scope="row">被停止回复的文字</th><td>provider 先把每个增量加进它的 partial 消息，循环之后才读到这个增量的事件，所以停止或 steer 时 partial 可能比流多出内容；保留它会存下没有任何客户端收到的文字，steer 之后还会把这些文字发给模型。OpenCode 用它处理过的增量事件来组成存储的片段，流和存储因此一致。被截断的文字在循环结束处并入这一轮的文字，后面的步骤手里没有第二个值。</td></tr>
 <tr><th scope="row">调用结果</th><td>调用没有结果，提供方会拒绝请求。运行时长和"未运行"让模型判断要不要重跑；按工具维护副作用表（Hermes）要长期维护，那句"可能执行了一半"已经覆盖。</td></tr>
 <tr><th scope="row">说明的位置</th><td>放在助手位置的文字会被模型复述（Hermes 的经验），所以说明放在用户的轮次块上，和回退说明同一机制。停止时就写下，缓存前缀保持稳定。</td></tr>
 <tr><th scope="row">停止键</th><td>Codex 和 Claude Code 都是第一下就停；先给提示会让人以为没反应，第二下又误入退出流程。每次停止一行就够，但重发保留，因为第一次信号可能丢。</td></tr>
@@ -364,7 +367,7 @@
 <tr><th scope="row"><code translate="no">permission_wait_reconciler</code></th><td>conversation，必需</td><td>恢复时重新运行权限审批等待</td></tr>
 <tr><th scope="row"><code translate="no">session_goals</code></th><td>conversation，必需</td><td>重启协调用的会话 Goal owner 锁；Workflow Goal 的可恢复暂停</td></tr>
 <tr><th scope="row"><code translate="no">live_owner_signals</code></th><td>conversation，可选</td><td>停止或杀死子进程和 exec 运行时</td></tr>
-<tr><th scope="row"><code translate="no">terminal_settler</code></th><td>conversation，可选</td><td>结算聊天 Goal：用量、空闲计数、下一轮</td></tr>
+<tr><th scope="row"><code translate="no">terminal_settler</code></th><td>conversation，可选</td><td>结算聊天 Goal：用量、空闲计数、下一轮。Goal 正忙或用量尚未到账时，记账交给轮次的所有者和下一次读取 Goal 来完成，不抛出异常。被停止的轮次，无论结算结果如何，都会写出“已取消”回复并释放资源。</td></tr>
 <tr><th scope="row"><code translate="no">job_records</code></th><td>jobs，必需</td><td>取消时查找、列出和结算 Job 记录</td></tr>
 <tr><th scope="row"><code translate="no">turn_request_fields</code></th><td>jobs，必需</td><td>存储的 Job 输入可携带的字段</td></tr>
 <tr><th scope="row"><code translate="no">job_runner</code></th><td>jobs，可选</td><td>绑定执行存储的活动 runner</td></tr>

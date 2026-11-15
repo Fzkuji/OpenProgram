@@ -56,6 +56,7 @@
 <thead><tr><th scope="col">Surface</th><th scope="col">Source</th></tr></thead>
 <tbody>
 <tr><th scope="row">Top-bar chat and exec chips</th><td>the gated <code translate="no">GET /api/agent_settings</code></td></tr>
+<tr><th scope="row">Reads of that endpoint</th><td>One request in flight per conversation and branch (<code translate="no">lib/agents/agent-settings-request.ts</code>): the socket connecting, the conversation loading and the composer mounting share its answer, and nothing is kept after it. <code translate="no">agent_settings_changed</code> or this page's own write makes later callers ask again</td></tr>
 <tr><th scope="row">Model picker dropdowns</th><td><code translate="no">/api/models/enabled</code></td></tr>
 <tr><th scope="row">Default resolution on send</th><td><code translate="no">_resolve_session_provider_model</code>, including the <code translate="no">agent.json</code> model path</td></tr>
 <tr><th scope="row">Function execution</th><td>the exec runtime</td></tr>

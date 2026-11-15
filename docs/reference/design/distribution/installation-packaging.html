@@ -1,7 +1,7 @@
 <title>Installation, packaging, release and upgrade</title>
 <meta name="description" content="Who installs OpenProgram how, what every release contains, and how installs are verified, upgraded and removed.">
 <h1>Installation, packaging, release and upgrade</h1>
-<p><strong>Official releases</strong>: v1.2.0 is the version this tree builds; v1.1.0 is the latest published. One complete product runtime per platform and architecture. The macOS App adds only the Electron shell to it and the CLI only launchers; Windows and Linux Apps are a <a href="#thin-shell">thin shell</a> plus a seed. Checks, downloads and platform handoff are in <a href="automatic-updates.html">Automatic updates</a>.</p>
+<p><strong>Official releases</strong>: v1.3.0 is the version this tree builds; v1.2.0 is the latest tagged. One complete product runtime per platform and architecture. The macOS App adds only the Electron shell to it and the CLI only launchers; Windows and Linux Apps are a <a href="#thin-shell">thin shell</a> plus a seed. Checks, downloads and platform handoff are in <a href="automatic-updates.html">Automatic updates</a>.</p>
 
 <h2>Who gets what</h2>
 <table class="stack">
@@ -44,20 +44,32 @@
 </table>
 
 <h2>One version, one artifact set</h2>
-<p><code translate="no">pyproject.toml</code> is the version source; Electron metadata keeps a copy. The tag, runtime manifest, release manifest and health endpoint must equal it, and the tag must point at the built commit. Tags are immutable: fixes take a higher patch version.</p>
+<p><code translate="no">pyproject.toml</code> is the version source; Electron metadata, the lock files and the installers' default keep copies, all written by <code translate="no">scripts/release/release-version.py set</code> (<a href="github-publishing.html#version-places">version places</a>). The tag, runtime manifest, release manifest and health endpoint must equal it, and the tag must point at the built commit. Tags are immutable: fixes take a higher patch version.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Artifact</th><th scope="col">Platforms</th></tr></thead>
 <tbody>
 <tr><th scope="row">Runtime archive + checksum</th><td>macOS arm64, x64; Linux x86_64, arm64; Windows x86_64 (ZIP), arm64 behind a switch</td></tr>
-<tr><th scope="row">Desktop</th><td>macOS DMG and ZIP; Windows NSIS EXE; Linux deb and AppImage; each with <code translate="no">SHA256SUMS-&lt;os&gt;-&lt;arch&gt;</code></td></tr>
-<tr><th scope="row">Version-free App copies</th><td><code translate="no">OpenProgram-&lt;os&gt;-&lt;arch&gt;.&lt;ext&gt;</code>, for <code translate="no">releases/latest/download</code> links. Kept out of the manifest</td></tr>
+<tr><th scope="row">Desktop</th><td>macOS DMG and ZIP; Windows NSIS EXE; Linux deb and AppImage; one copy each, under its versioned name</td></tr>
 <tr><th scope="row">Update assets</th><td><code translate="no">version-</code>, <code translate="no">base-</code> and <code translate="no">toolchain-&lt;platform&gt;.tar.zst</code>, <code translate="no">repo.bundle</code>, <code translate="no">SHA256SUMS</code>, signed <code translate="no">update-manifest.json</code></td></tr>
 <tr><th scope="row">Developer</th><td>Wheel and sdist, not user entries</td></tr>
 <tr><th scope="row"><code translate="no">release-manifest.json</code></th><td>Schema 1: version, and path, bytes, SHA-256 per file</td></tr>
 </tbody>
 </table>
 <p class="note">arm64 and x64 build separately, no universal2. A platform leg that fails leaves its files out and is named under "Not in this release"; publication stops only when the wheel or every macOS and Linux runtime is missing. Thin Apps need a trusted update signing key, because without one they could never update.</p>
-<p class="note">A leg whose artifact holds no installer or archive counts as failed and publishes nothing. When a planned package, a platform's update files or an installer's checksum file is missing, the publish job turns red after the release is public and names each one. What a switch or a missing key leaves out does not.</p>
+<p class="note">A leg whose artifact holds no installer or archive counts as failed and publishes nothing. When a planned package or a platform's update files are missing, the publish job turns red after the release is public and names each one. What a switch or a missing key leaves out does not.</p>
+<details id="one-copy-per-file">
+<summary>Each file once, under its versioned name</summary>
+<p>A release uploads every file once. Up to v1.2.0 it also carried a version-free copy of each App installer (<code translate="no">OpenProgram-mac-arm64.dmg</code> and six more) and one <code translate="no">SHA256SUMS-&lt;os&gt;-&lt;arch&gt;</code> per App leg; from v1.3.0 it carries neither, 12 files fewer.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Question</th><th scope="col">Answer</th></tr></thead>
+<tbody>
+<tr><th scope="row">Why versioned names, not version-free</th><td>An installed v1.2.0 App looks for <code translate="no">OpenProgram-&lt;version&gt;-mac-&lt;arch&gt;.dmg</code> (or <code translate="no">-unsigned</code>) by name in the newest release, so that name must exist. Codex, OpenCode and Goose publish only version-free names, which leaves one name per file too; a second name for the same bytes is what we drop</td></tr>
+<tr><th scope="row">Newest-download links</th><td><code translate="no">latest.html?OpenProgram-mac-arm64.dmg</code>, published beside the documentation from <code translate="no">docs/_static_root/latest.html</code> and linked relatively, reads the newest release's file list from the GitHub API and opens that file; without an answer it opens the newest release page. Every App link on the Install and Download pages goes through it, so no install page names a release and none goes stale when one ships. Claude Code resolves "latest" the same way, from a pointer and a manifest rather than a duplicate file</td></tr>
+<tr><th scope="row">Checksums</th><td>GitHub shows each file's SHA-256 on the release page, and <code translate="no">release-manifest.json</code> lists every file's path, size and SHA-256. The App updater checks against that manifest, and the release notes' App table links to it in its checksum column</td></tr>
+<tr><th scope="row">Still published</th><td>The runtime archives' <code translate="no">.sha256</code>: <code translate="no">openprogram upgrade</code> in v1.2.0 requires that file by name before it updates. The update <code translate="no">SHA256SUMS</code>, which the signed update manifest hashes. Seed <code translate="no">.sha256</code>, read by the command-line installer</td></tr>
+</tbody>
+</table>
+</details>
 <table class="stack fixed">
 <thead><tr><th scope="col">Repository variable</th><th scope="col">Leg</th></tr></thead>
 <tbody>
@@ -85,8 +97,8 @@
 <tr><th scope="row">macOS Desktop</th><td>Architecture-matched DMG, copy <code translate="no">OpenProgram.app</code> to Applications, or <code translate="no">~/Applications</code> without administrator rights. <code translate="no">-unsigned</code> assets need Privacy &amp; Security → Open Anyway</td></tr>
 <tr><th scope="row">Windows Desktop</th><td>Per-user NSIS wizard. <code translate="no">-unsigned.exe</code>: SmartScreen <strong>More info → Run anyway</strong>; under Smart App Control use the CLI</td></tr>
 <tr><th scope="row">Linux Desktop</th><td>deb through <code translate="no">apt</code>, or AppImage with FUSE 2 or <code translate="no">APPIMAGE_EXTRACT_AND_RUN=1</code></td></tr>
-<tr><th scope="row">macOS, Linux CLI</th><td><code translate="no">curl -fsSL https://openprogram.io/install | sh</code></td></tr>
-<tr><th scope="row">Windows CLI</th><td><code translate="no">irm https://openprogram.io/install.ps1 | iex</code>, or <code translate="no">install.cmd</code> from Command Prompt</td></tr>
+<tr><th scope="row">macOS, Linux CLI</th><td><code translate="no">curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh</code></td></tr>
+<tr><th scope="row">Windows CLI</th><td><code translate="no">irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex</code>, or <code translate="no">install.cmd</code> from Command Prompt</td></tr>
 <tr><th scope="row">Development</th><td>Repository checkout, <code translate="no">uv sync</code>, Web and Ink builds, same capability probes as a release</td></tr>
 </tbody>
 </table>
@@ -99,8 +111,9 @@
 <tr><th scope="row">Unpack</th><td>Exact archive and checksum, to <code translate="no">runtime/cli/releases/X.Y.Z</code> under the state directory</td></tr>
 <tr><th scope="row">Switch</th><td>Probes with absolute paths, then atomically switches the <code translate="no">current</code> symlink (Windows: replaces the launcher and keeps its predecessor)</td></tr>
 <tr><th scope="row">Failure</th><td>Keeps the old version</td></tr>
-<tr><th scope="row">Download</th><td>States its size, checks free space first, resumes through a partial file, names <code translate="no">HTTPS_PROXY</code> on network failure</td></tr>
-<tr><th scope="row">Linux, before any download</th><td>musl is refused; missing libraries are named with the <code translate="no">apt</code> line</td></tr>
+<tr><th scope="row">Download</th><td>States its size, checks free space first and names the shortfall beside the need and the free amount (the two can round to the same figure), resumes through a partial file, names <code translate="no">HTTPS_PROXY</code> on network failure</td></tr>
+<tr><th scope="row">macOS, before any download</th><td>A Mac older than <code translate="no">macosMinimum</code> (13.5) is refused with the version it runs and where to update macOS, the same floor as the App's <code translate="no">LSMinimumSystemVersion</code></td></tr>
+<tr><th scope="row">Linux, before any download</th><td>musl is refused. Missing Chromium libraries never stop the install: one line says the browser tool waits for them and gives the <code translate="no">apt</code> line, and the runtime check leaves the Chromium launch to the browser tool</td></tr>
 <tr><th scope="row"><code translate="no">PATH</code> (macOS, Linux)</th><td>Adds one marked line unless <code translate="no">OPENPROGRAM_NO_MODIFY_PATH</code> or <code translate="no">OPENPROGRAM_BIN_DIR</code> is set</td></tr>
 </tbody>
 </table>
@@ -227,14 +240,15 @@
 <details>
 <summary>Local App refresh: <code translate="no">scripts/refresh-local-app.sh</code></summary>
 <ul>
-<li>Installs only <code translate="no">refs/heads/stable</code>. Without a <code translate="no">stable</code> branch, the checkout must contain local <code translate="no">main</code> and fetched <code translate="no">origin/main</code>.</li>
+<li>Installs only <code translate="no">refs/heads/stable</code>, or during a promotion the fast-forward of it being promoted, moving <code translate="no">stable</code> once healthy (<a href="dev-instance.html#promoting-to-stable">Promoting to stable</a>). Without a <code translate="no">stable</code> branch, the checkout must contain local <code translate="no">main</code> and fetched <code translate="no">origin/main</code>.</li>
 <li>Paths are resolved first, so slashes, dot components and symlink aliases share checks and lock. A genuinely custom App keeps its own source check.</li>
 <li>Tracked, staged or non-ignored untracked changes refuse, before packaging, after it, and under the lock. HEAD changes during packaging rebuild; after the payload is frozen they abort.</li>
 <li>Checkout, bundle, runtime manifest and bundled Python metadata must have one version, except that the source may be newer than the installed App, whose Electron and bundle metadata are then upgraded. A downgrade is refused.</li>
 <li>Synchronizes main, preload, updater and runtime dependencies; never an <code translate="no">app.asar</code> over old modules. Rechecks source, wheel and App under the shared lock.</li>
 <li>Extraction loses execute bits on unpacked <code translate="no">node-pty</code> files, so staging restores installed modes and forces <code translate="no">spawn-helper</code> executable. Symlinks are not followed.</li>
-<li>Starts the embedded worker once; polls <code translate="no">:18100/healthz</code> for up to 120 s, with no repeat starts. Timeout reports endpoint and log.</li>
-<li>After signature verification, reopens the App once even on failure, keeping the primary status; failures before that launch nothing. Cleanup errors never report success.</li>
+<li>Assembles, verifies and signs the new App in <code translate="no">.openprogram-refresh.*</code> beside the installed one while the old worker serves, then swaps the two by rename.</li>
+<li>Starts the embedded worker once; polls <code translate="no">:18100/healthz</code> for up to 300 s, with no repeat starts. Timeout reports endpoint and log.</li>
+<li>A failure after the swap renames the previous App back and starts and checks its worker the same way. The App reopens once the new or the restored version is up, keeping the primary status; failures before the App quits launch nothing. Cleanup errors never report success.</li>
 </ul>
 </details>
 
@@ -250,6 +264,8 @@
 </table>
 <h3>First start</h3>
 <ol>
+<li>Check first: <code translate="no">&lt;root&gt;</code> holds only an older <code translate="no">cli/</code>, the seed's leftovers and the shell's own <code translate="no">recovery.log</code>, which records a failed setup, and the disk has room.</li>
+<li>A refusal names the files in the way, or the space needed, the space free and how much is missing. The setup page shows it, <code translate="no">recovery.log</code> keeps it, and <strong>Try again</strong> or the next launch checks again.</li>
 <li>Write <code translate="no">.seeding</code>, unpack with progress.</li>
 <li>Run <code translate="no">install_seed.py</code> with the base's Python: rename the build root in the version, rewrite the seal's file table, install the identity and tools, create <code translate="no">repo/</code>, write the pointer.</li>
 <li>Remove <code translate="no">.seeding</code> last, so an interrupted install starts over.</li>
@@ -316,6 +332,7 @@
 <tr><th scope="row">Thin shell and seed</th><td>Implemented, used by the Linux App from v1.1.0 and the Windows App from v1.1.1. The packaged shell passes the macOS smoke; Linux deb and AppImage pass under Xvfb on arm64. Open: x86_64 Linux packages, a real Windows run, and the macOS privacy-grant gate (<a href="developer-id.html">Developer ID</a>) before the macOS App can turn thin. <code translate="no">legacy_app</code> and the App ties in the supervisor still exist</td></tr>
 <tr><th scope="row">Linux Desktop</th><td>Implemented, first published with v1.1.0. Update activation and going back on Linux need one more end-to-end run</td></tr>
 <tr><th scope="row">Release workflow</th><td>Independent legs and unsigned forms implemented and tested as scripts; the workflow itself has not yet run on GitHub</td></tr>
+<tr><th scope="row">One copy per file</th><td>Implemented; first release without the version-free copies and per-leg checksum files is v1.3.0. The runtime <code translate="no">.sha256</code> files can go once no supported release's <code translate="no">openprogram upgrade</code> asks for them</td></tr>
 <tr><th scope="row">Local refresh completion</th><td>Regression cases pass; installed-App acceptance open</td></tr>
 <tr><th scope="row"><code translate="no">openprogram update</code></th><td>Leftover command: its handler imports helpers that no longer exist and raises <code translate="no">ImportError</code>. <code translate="no">upgrade</code> is the update command</td></tr>
 </tbody>

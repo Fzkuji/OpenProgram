@@ -141,6 +141,8 @@
 <li>Job 只在一个会话中运行，即 <code translate="no">parent_session_id</code>，且不变。其他会话的调用方记为 <code translate="no">caller_session_id</code>，并有链接镜像用于可见性和所有权校验。</li>
 <li>输出落为该会话的分支；<code translate="no">context="clean"</code> 时是新的根。</li>
 <li>attach 节点（<code translate="no">function="attach"</code>）在准入后写入，状态 <code translate="no">running</code>，带 <code translate="no">job_id</code>。runner 在终态更新同一节点。跨会话卡片存于来源会话并指明目标。</li>
+<li>同步调用方在等待结束时也写这张卡片。每个写入方只把自己的字段合并进会话写锁内读到的卡片（<code translate="no">SessionStore.merge_node</code>），从不写回早先读到的副本。</li>
+<li>这个等待在本进程的 runner 把 Job 处理完（状态、卡片、通知）后才结束，而不是状态刚写入时，因此工具结果和卡片一致。</li>
 <li>上下文渲染跳过运行中的卡片。完成的卡片变成一条子 Agent 报告，含任务、最终回复和转录地址。</li>
 </ul>
 

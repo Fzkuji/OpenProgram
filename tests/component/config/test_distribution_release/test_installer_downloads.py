@@ -1,6 +1,7 @@
 """What a person sees from the POSIX installers: downloads, disk, PATH, re-runs."""
 from __future__ import annotations
 
+import re
 import hashlib
 import http.server
 import os
@@ -277,6 +278,9 @@ def test_the_disk_check_keeps_the_same_margin_as_the_app(tmp_path: Path, release
 
     assert result.returncode == 1
     assert "512 MB to spare" in result.stderr
+    # The need and the free amount can print as the same figure; the
+    # difference is always named.
+    assert re.search(r"is free, (\d+ MB|[\d.]+ GB|less than 1 MB) short\.", result.stderr)
 
 
 def test_a_damaged_download_is_removed_and_says_to_run_again(tmp_path: Path, release) -> None:
@@ -554,9 +558,11 @@ def test_missing_browser_libraries_print_the_exact_apt_line_for_time64_systems(t
     result = _preflight(tmp_path, tools)
 
     assert result.returncode == 0
-    line = next(item for item in result.stderr.splitlines() if item.startswith("To add them, run:"))
-    assert line.startswith("To add them, run: sudo apt-get update && sudo apt-get install -y ")
-    assert " libasound2t64" in line
+    # One line: what will not work, that the rest does, and how to add it later.
+    line = next(item for item in result.stderr.splitlines() if item.startswith("The browser tool will not work"))
+    assert "everything else does" in line
+    assert "Add them any time with: sudo apt-get update && sudo apt-get install -y " in line
+    assert " libasound2t64" in line and " libatspi2.0-0t64" in line
     assert " libnss3" not in line
     assert "Git was not found" not in result.stderr
 
@@ -564,7 +570,7 @@ def test_missing_browser_libraries_print_the_exact_apt_line_for_time64_systems(t
 def test_older_systems_get_the_plain_package_names(tmp_path: Path) -> None:
     result = _preflight(tmp_path, _linux_tools(tmp_path, cache="libnss3.so"))
 
-    line = next(item for item in result.stderr.splitlines() if item.startswith("To add them, run:"))
+    line = next(item for item in result.stderr.splitlines() if item.startswith("The browser tool will not work"))
     assert " libasound2" in line
     assert "t64" not in line
 

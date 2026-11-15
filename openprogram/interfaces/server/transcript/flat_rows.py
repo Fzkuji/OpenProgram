@@ -21,8 +21,8 @@ def _text(row: dict) -> str:
     content = row.get("content")
     if isinstance(content, str) and content:
         return content
-    blocks = row.get("blocks") or ()
-    return "".join(block.get("text") or "" for block in blocks if isinstance(block, dict) and block.get("type") == "text")
+    from openprogram.state.reply_text import reply_text
+    return reply_text(block for block in row.get("blocks") or () if isinstance(block, dict))
 
 
 def _flat(row: dict) -> dict:

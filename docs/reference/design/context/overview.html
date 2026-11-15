@@ -219,7 +219,7 @@
 <ul>
 <li>A measurement belongs to its branch; another head is re-estimated.</li>
 <li>Occupancy uses the last measured request, never the sum of a turn's requests. Empty terminal events keep the last measurement. With none, the UI uses a local estimate. Usage and calibration in the older cumulative format are invalidated; cumulative billing totals are unchanged.</li>
-<li>Window: <code translate="no">get_model(provider, model)</code> and <code translate="no">real_context_window()</code>, splitting <code translate="no">provider:model</code> on the colon (<code translate="no">server._resolve_context_window</code>). The session's picker override beats its persisted model.</li>
+<li>Window: the window of the Model the request ran on, resolved each time and never read back from a saved record; a model that does not resolve has none, and the UI then shows tokens without a limit (<a href="occupancy-status.html#window">The window</a>).</li>
 <li>The WebSocket chat runner records each request's prompt size as it finishes, so ring and panel update between tool calls. At turn end it refreshes the branch head and persists the final measurement.</li>
 <li>Session loading recovers a newer provider usage record from an older turn that never broadcast, unless a later session edit superseded it.</li>
 </ul>

@@ -16,6 +16,7 @@
 <tbody>
 <tr><th scope="row"><strong>Waiting for backend to start...</strong></th><td>The App is starting the worker; it checks every second</td></tr>
 <tr><th scope="row"><strong>Updating OpenProgram...</strong></th><td>An installer is replacing the App and runtime; no worker is started and it reconnects by itself</td></tr>
+<tr><th scope="row"><strong>Port 18100 is in use</strong></th><td>A port you set (<code translate="no">ui.web_port</code>) is held by the program named on the page. Quit it and the App connects by itself, or set another port. A port OpenProgram chose itself never stops here: the App reopens on the next free one, which also gives each account on a shared PC its own worker. <a href="../reference/design/cli/ports.html#one-port-per-account">How the port is chosen</a></td></tr>
 </tbody>
 </table>
 <h2>Tabs</h2>

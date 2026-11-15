@@ -11,6 +11,24 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[3]
+INSTALLER = ROOT / "apps" / "desktop" / "build" / "installer.nsh"
+
+
+def _macro(source: str, name: str) -> str:
+    body = source[source.index(f"!macro {name}"):]
+    return body[: body.index("!macroend")]
+
+
+def _hook_command(powershell: str, script: str, arguments: str = "") -> tuple[list[str], dict[str, str]]:
+    """The command line the installer runs for `!insertmacro openProgramHook`,
+    read from installer.nsh, with NSIS's variables filled in."""
+    line = next(row for row in _macro(INSTALLER.read_text(encoding="utf-8"), "openProgramHook").splitlines()
+                if "nsExec::ExecToStack" in row)
+    flags, command = line.split("powershell.exe\" ", 1)[1].split(' -Command "', 1)
+    command = command.rstrip('"`').replace("$$", "$").replace("${ARGUMENTS}", arguments)
+    return [powershell, *flags.split(), "-Command", command], {
+        "OPENPROGRAM_HOOK": str(ROOT / "apps" / "desktop" / "build" / script),
+    }
 
 
 def test_windows_installer_builds_web_and_tui_and_checks_failures() -> None:
@@ -52,13 +70,13 @@ def test_windows_release_installer_replaces_stale_launchers_atomically() -> None
     ).read_text(encoding="utf-8")
 
     launcher_section = installer[installer.index("$LauncherCmd =") :]
-    assert 'set "OPENPROGRAM_IMMUTABLE_RUNTIME=1"' in launcher_section
+    assert 'set `"OPENPROGRAM_IMMUTABLE_RUNTIME=1`"' in launcher_section
     assert 'Publish-CliLauncher $CmdTemporary $LauncherCmd' in launcher_section
     assert 'Move-Atomic $Source $Target (Join-Path $Directory "openprogram.previous.cmd")' in installer
     assert 'Remove-PowerShellLaunchers $Directory' in installer
     assert 'if (-not (Test-Path -LiteralPath $LauncherCmd' not in launcher_section
     assert "ConvertTo-CmdBatchLiteral $PythonBin" in launcher_section
-    assert '"$CmdPython" -I -B -X utf8 -m openprogram %*' in launcher_section
+    assert '"`"$CmdPython`" -I -B -X utf8 -m openprogram %*"' in launcher_section
     assert "powershell.exe -NoLogo" not in launcher_section
 
 
@@ -91,6 +109,33 @@ def test_desktop_upgrade_preparation_is_path_scoped_and_long_path_aware() -> Non
     assert "customCheckAppRunning" not in installer
 
 
+def test_installer_hooks_run_where_script_files_may_not() -> None:
+    """A Group Policy execution policy (AllSigned, Restricted) outranks
+    -ExecutionPolicy Bypass, so `-File hook.ps1` stopped a fresh install on a
+    managed PC with "could not stop its background worker". A fresh install
+    runs no hook before installing, and every hook goes through -Command."""
+    installer = INSTALLER.read_text(encoding="utf-8")
+    code = "\n".join(line for line in installer.splitlines() if not line.lstrip().startswith(";"))
+
+    assert "-File" not in code and "-ExecutionPolicy" not in code
+    assert code.count("nsExec::ExecToStack") == 1, "every hook runs through openProgramHook"
+    hook = _macro(code, "openProgramHook")
+    assert "-Command \"& ([scriptblock]::Create([IO.File]::ReadAllText($$env:OPENPROGRAM_HOOK)))" in hook
+    assert "-InstallRoot $$env:OPENPROGRAM_INSTALL_ROOT" in hook
+    assert '"OPENPROGRAM_INSTALL_ROOT", "$INSTDIR"' in hook
+
+    init = _macro(code, "customInit")
+    gate = init.index('${If} ${FileExists} "$INSTDIR\\OpenProgram.exe"')
+    assert gate < init.index('${AndIf} ${FileExists} "$INSTDIR\\resources\\app.asar"') < init.index(
+        "openProgramHook prepare-upgrade.ps1") < init.index("Quit") < init.rindex("${EndIf}")
+    helper = (ROOT / "apps" / "desktop" / "build" / "prepare-upgrade.ps1").read_text(encoding="utf-8")
+    assert '"OpenProgram.exe"' in helper and '"resources\\app.asar"' in helper, "the same proof of an install"
+    # Nothing in a hook may depend on being a script file.
+    for script in ("prepare-upgrade.ps1", "remove-background.ps1", "runtime-users.ps1"):
+        text = (ROOT / "apps" / "desktop" / "build" / script).read_text(encoding="utf-8")
+        assert "$PSScriptRoot" not in text and "$MyInvocation" not in text and "$PSCommandPath" not in text
+
+
 def test_uninstalling_the_app_stops_the_worker_and_its_logon_task_and_keeps_user_data() -> None:
     build = ROOT / "apps" / "desktop" / "build"
     installer = (build / "installer.nsh").read_text(encoding="utf-8")
@@ -100,7 +145,7 @@ def test_uninstalling_the_app_stops_the_worker_and_its_logon_task_and_keeps_user
     hook = hook[: hook.index("!macroend")]
     # An upgrade runs the old uninstaller too; that must leave the worker alone.
     assert hook.index("${ifNot} ${isUpdated}") < hook.index("remove-background.ps1")
-    assert '-File "$PLUGINSDIR\\remove-background.ps1" -InstallRoot "$INSTDIR"' in hook
+    assert '!insertmacro openProgramHook remove-background.ps1 ""' in hook
     assert "Quit" not in hook and "Abort" not in hook, "a stuck worker must not block the uninstall"
 
     assert 'Join-Path $env:USERPROFILE ".openprogram"' in helper
@@ -163,13 +208,14 @@ def test_uninstall_helper_spares_the_uninstaller_that_runs_it_in_place(tmp_path:
     # the helper and waits for it.
     uninstaller = install / "Uninstall OpenProgram.exe"
     shutil.copy2(command, uninstaller)
-    helper = ROOT / "apps" / "desktop" / "build" / "remove-background.ps1"
+    hook, env = _hook_command(powershell, "remove-background.ps1", "-StateDir $env:OPENPROGRAM_TEST_STATE")
 
     done = subprocess.run(
-        [str(uninstaller), "/d", "/c", powershell, "-NoLogo", "-NoProfile", "-NonInteractive",
-         "-ExecutionPolicy", "Bypass", "-File", str(helper),
-         "-InstallRoot", str(install), "-StateDir", str(state)],
+        [str(uninstaller), "/d", "/c", *hook],
         stdin=subprocess.DEVNULL, capture_output=True, timeout=120,
+        env={**os.environ, **env, "OPENPROGRAM_INSTALL_ROOT": str(install), "OPENPROGRAM_TEST_STATE": str(state),
+             # No script file may run, as under a Group Policy; the hook still does.
+             "PSExecutionPolicyPreference": "Restricted"},
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
 
@@ -216,25 +262,12 @@ def test_desktop_upgrade_helper_stops_embedded_process_and_removes_long_file(
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
     try:
+        hook, env = _hook_command(powershell, "prepare-upgrade.ps1")
         completed = subprocess.run(
-            [
-                powershell,
-                "-NoLogo",
-                "-NoProfile",
-                "-NonInteractive",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                str(
-                    ROOT
-                    / "apps"
-                    / "desktop"
-                    / "build"
-                    / "prepare-upgrade.ps1"
-                ),
-                "-InstallRoot",
-                str(root),
-            ],
+            hook,
+            env={**os.environ, **env, "OPENPROGRAM_INSTALL_ROOT": str(root),
+                 # No script file may run, as under a Group Policy; the hook still does.
+                 "PSExecutionPolicyPreference": "Restricted"},
             check=False,
             capture_output=True,
             text=True,
@@ -295,7 +328,7 @@ def test_the_last_uninstall_offers_to_delete_the_version_store_unticked() -> Non
 
     install = installer[installer.index("!macro customInstall"):]
     install = install[: install.index("!macroend")]
-    assert '-File "$PLUGINSDIR\\runtime-users.ps1" -Action add -InstallRoot "$INSTDIR"' in install
+    assert '!insertmacro openProgramHook runtime-users.ps1 "-Action add"' in install
 
     hook = installer[installer.index("!macro customUnInstall"):]
     hook = hook[: hook.index("!macroend")]
@@ -312,3 +345,23 @@ def test_the_last_uninstall_offers_to_delete_the_version_store_unticked() -> Non
     assert len(removals) == 1 and "Remove-Item -LiteralPath $Store -Recurse" in removals[0]
     assert '$Store = Join-Path ([IO.Path]::GetFullPath($StateDir)) "runtime"' in helper
     assert 'Get-InstallId "app" $InstallRoot' in helper
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows installer contract")
+def test_hook_exit_codes_reach_the_installer_under_a_restricted_policy(tmp_path: Path) -> None:
+    """runtime-users.ps1 answers the uninstaller with exit 10 and the size;
+    through -Command that code is still the process's."""
+    powershell = shutil.which("powershell.exe")
+    assert powershell
+    store = tmp_path / "state" / "runtime"
+    store.mkdir(parents=True)
+    (store / "blob").write_bytes(b"x" * 1024)
+    hook, env = _hook_command(powershell, "runtime-users.ps1", "-Action remove -StateDir $env:OPENPROGRAM_TEST_STATE")
+    done = subprocess.run(
+        hook, capture_output=True, text=True, timeout=120,
+        env={**os.environ, **env, "OPENPROGRAM_INSTALL_ROOT": str(tmp_path / "OpenProgram"),
+             "OPENPROGRAM_TEST_STATE": str(tmp_path / "state"), "PSExecutionPolicyPreference": "Restricted"},
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+    assert done.returncode == 10, done.stderr or done.stdout
+    assert done.stdout == "0"

@@ -3,6 +3,7 @@ from .test_project_files import _run
 from . import test_project_files as _test_project_files
 from openprogram.interfaces.server.ws_actions import files as ws_files
 import os
+import time
 import pytest
 
 # Shared pytest fixtures, bound at module level so pytest collects them here.
@@ -328,3 +329,92 @@ def test_mutation_invalidates_project_root_sample_and_scan(project_root, monkeyp
     finally:
         with metadata._LOCK:
             metadata._drop(active['token'])
+
+
+def _counting_walk(metadata, monkeypatch):
+    walks = []
+    real = metadata._walk
+
+    def walk(*args):
+        walks.append(args)
+        return real(*args)
+    monkeypatch.setattr(metadata, '_walk', walk)
+    return walks
+
+
+def test_measure_answers_a_folder_in_one_request_and_reuses_the_sample(project_root, monkeypatch):
+    from openprogram.interfaces.server.ws_actions.files import metadata
+    walks = _counting_walk(metadata, monkeypatch)
+    cmd = {'project_id': 'p1', 'path': 'src', 'operation': 'measure'}
+    first = _run(ws_files.handle_project_folder_size, cmd)['data']
+    assert first['state'] == 'complete'
+    assert first['bytes'] == len(b"print('hi')\n")
+    again = _run(ws_files.handle_project_folder_size, cmd)['data']
+    assert again['state'] == 'cached' and again['bytes'] == first['bytes']
+    assert len(walks) == 1, 'a saved sample answers without walking the folder again'
+    (project_root / 'src' / 'more.txt').write_bytes(b'12345')
+    fresh = _run(ws_files.handle_project_folder_size, {**cmd, 'fresh': True})['data']
+    assert fresh['state'] == 'complete' and fresh['bytes'] == first['bytes'] + 5
+    assert len(walks) == 2, 'refresh walks once'
+
+
+def test_measure_saves_a_budget_limited_sample_for_the_next_view(project_root, monkeypatch):
+    from openprogram.interfaces.server.ws_actions.files import metadata
+    monkeypatch.setattr(metadata, '_BATCH', 1)
+    monkeypatch.setattr(metadata, '_MEASURE_BUDGET', 0)
+    for n in range(5):
+        (project_root / 'src' / f'{n}.txt').write_bytes(b'123')
+    walks = _counting_walk(metadata, monkeypatch)
+    cmd = {'project_id': 'p1', 'path': 'src', 'operation': 'measure'}
+    try:
+        partial = _run(ws_files.handle_project_folder_size, cmd)['data']
+        assert partial['state'] == 'partial' and partial['token']
+        metadata._CACHE.clear()
+        monkeypatch.setattr(metadata, '_CACHE_FILE', None)
+        cached = _run(ws_files.handle_project_folder_size, cmd)['data']
+        assert cached['state'] == 'cached'
+        assert cached['complete'] is False and cached['token'] is None
+        assert cached['bytes'] == partial['bytes']
+        assert len(walks) == 1
+        assert metadata.cached_size('p1', 'src') is None, 'size sorting uses complete samples only'
+        # Details can still continue the walk the measure left open.
+        page = partial
+        while page.get('token'):
+            page = _run(ws_files.handle_project_folder_size, {'project_id': 'p1', 'path': 'src', 'operation': 'continue', 'token': page['token']})['data']
+        assert page['state'] == 'complete'
+    finally:
+        with metadata._LOCK:
+            for token in list(metadata._SCANS):
+                metadata._drop(token)
+
+
+def test_measure_partial_does_not_replace_a_newer_sample(project_root, monkeypatch):
+    from openprogram.interfaces.server.ws_actions.files import metadata
+    monkeypatch.setattr(metadata, '_BATCH', 1)
+    monkeypatch.setattr(metadata, '_MEASURE_BUDGET', 0)
+    for n in range(5):
+        (project_root / 'src' / f'{n}.txt').write_bytes(b'123')
+    real = metadata.folder_size
+    newer = {}
+
+    def folder_size(project_id, path, operation='peek', token=None, fresh=False):
+        result = real(project_id, path, operation, token, fresh)
+        if operation == 'start':
+            # Another request finishes a full count while this one is walking.
+            info = metadata.file_info(project_id, path)
+            with metadata._LOCK:
+                newer.update({'state': 'complete', 'bytes': 999, 'entries': 9, 'skipped': 0, 'complete': True,
+                              'token': None, 'updated_at': time.time() + 60, 'revision': info['revision']})
+                metadata._store(info['absolute_path'], dict(newer))
+        return result
+    monkeypatch.setattr(metadata, 'folder_size', folder_size)
+    try:
+        partial = _run(ws_files.handle_project_folder_size,
+                       {'project_id': 'p1', 'path': 'src', 'operation': 'measure', 'fresh': True})['data']
+        assert partial['state'] == 'partial'
+        cached = real('p1', 'src', 'peek')
+        assert cached['bytes'] == 999 and cached['complete'] is True
+    finally:
+        with metadata._LOCK:
+            for token in list(metadata._SCANS):
+                metadata._drop(token)

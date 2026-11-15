@@ -102,11 +102,11 @@
 <thead class="sr"><tr><th scope="col">情况</th><th scope="col">显示</th></tr></thead>
 <tbody>
 <tr><th scope="row">文件</th><td>字节数。</td></tr>
-<tr><th scope="row">可见文件夹</th><td>有界后台统计，共用队列同时运行两个任务。状态：缓存、扫描中、完整、部分、取消、错误。搜索忽略的目录（如 <code translate="no">.cache</code>、<code translate="no">node_modules</code>）仍有元数据和大小。</td></tr>
+<tr><th scope="row">可见文件夹</th><td>每个文件夹只发一次 <code translate="no">project_folder_size</code> 请求（<code translate="no">measure</code>）：有保存的样本就直接返回，否则服务器遍历最多一秒并保存结果，无论是否完成。只有刷新或 Files 修改后才再次请求，不再逐块追问。共用队列同时运行两个。状态：缓存、扫描中、完整、部分、取消、错误。搜索忽略的目录（如 <code translate="no">.cache</code>、<code translate="no">node_modules</code>）仍有元数据和大小。</td></tr>
 <tr><th scope="row">列表中</th><td>只显示数值，不附加 <code translate="no">≈</code> 或 <code translate="no">≥</code>。</td></tr>
 <tr><th scope="row">统计中</th><td>已有数值继续更新，并以灰色缓慢明暗变化；统计停止后恢复正常。不新增文字或图标。</td></tr>
 <tr><th scope="row">暂无数值</th><td>留空，不显示横线。</td></tr>
-<tr><th scope="row">详细信息</th><td>估算、下界、时间和完整性；可继续统计。</td></tr>
+<tr><th scope="row">详细信息</th><td>估算、下界、时间和完整性。只有重新计算和继续统计才分块统计。</td></tr>
 </tbody>
 </table>
 
@@ -115,10 +115,10 @@
 <thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
 <tbody>
 <tr><th scope="row">复用</th><td>已结束的样本在视图重新挂载和 worker 重启后保留，显示时不递归读取。最多 256 条，存于默认 profile 状态。大小排序保持近期完整样本规则。</td></tr>
-<tr><th scope="row">新扫描</th><td>只有刷新和重新计算。</td></tr>
+<tr><th scope="row">新扫描</th><td>只有无样本文件夹的首次显示、刷新、Files 修改和重新计算。</td></tr>
 <tr><th scope="row">失效</th><td>Files 修改成功后，从内存和磁盘清除受影响的祖先与子目录样本，并取消相关活动扫描，包含根目录重叠的项目。</td></tr>
 <tr><th scope="row">键</th><td>验证后的绝对路径。设备和 inode 也须一致，因此项目重绑定或目录替换不会读到另一目录的结果。</td></tr>
-<tr><th scope="row">不完整扫描</th><td>保持不完整，保留跳过条目的记录。活动扫描 token 不保存。</td></tr>
+<tr><th scope="row">不完整扫描</th><td>保持不完整，保留跳过条目的记录。因时间上限中断的遍历保存为下界，下次显示时不再遍历。活动扫描 token 不保存。</td></tr>
 <tr><th scope="row">过期样本</th><td>深层编辑可能使样本过期；详细信息显示时间和完整性。不增加文件监听、递归新鲜度检查、内容读取或额外 profile。</td></tr>
 <tr><th scope="row">存储</th><td>现有原子 JSON 写入函数：私有临时文件加原子替换。缓存损坏或不可用时回到扫描。</td></tr>
 </tbody>

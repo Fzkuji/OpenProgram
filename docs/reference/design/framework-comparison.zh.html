@@ -23,8 +23,8 @@
 </details>
 <details><summary>最弱：证据</summary>
 <ul>
-<li>已有：内置、动态社区与自定义 provider，MCP client，skills，plugins，供外部调用工具的认证 stdio MCP server，驱动会话的 ACP server。</li>
-<li>未确认：OpenAI 兼容端点、稳定的版本化远程控制 SDK、完整公开的 headless 事件协议、自维护 IDE 扩展。Owner 认证的 WebSocket 与 Python 库入口属内部或内嵌接口，不承诺外部兼容。</li>
+<li>已有：内置、动态社区与自定义 provider，MCP client，skills，plugins，供外部调用工具的认证 stdio MCP server，驱动会话的 ACP server，Worker 上 OpenAI 兼容的 <code translate="no">/v1/chat/completions</code>。</li>
+<li>未确认：稳定的版本化远程控制 SDK、完整公开的 headless 事件协议、自维护 IDE 扩展。Owner 认证的 WebSocket 与 Python 库入口属内部或内嵌接口，不承诺外部兼容。</li>
 <li>OpenProgram 和 OpenClaw 都把 agent 指引放在 agent workspace。OpenClaw 有 <code translate="no">migrate-claude</code>、<code translate="no">migrate-hermes</code>；Codex 桌面版与 CLI 能导入 Claude Code、Cursor 的配置和近期工作。OpenProgram 没有外部会话、配置或 skills 的导入器。</li>
 </ul>
 <p><code translate="no">extensions/mcp/server/server.py</code> · <code translate="no">interfaces/acp/server.py</code> · <code translate="no">interfaces/cli/commands/mcp.py</code> · <code translate="no">runtime/agent_registry/workspace.py</code></p>
@@ -129,7 +129,7 @@
 <tr><th scope="row">观测与计费</th><td>轨迹导出加OTel加Prometheus</td><td>日志脱敏加Langfuse，拉供应商配额</td><td>一个日志文件</td></tr>
 </tbody></table>
 </details>
-<p class="note">OpenProgram、OpenClaw、Hermes 都用常驻服务承载多入口。剩余差距：渠道广度、稳定远程 SDK、OpenAI 兼容端点、跨 worker 会话放置、完整版本化 headless 事件契约。未固定的 star、fork、skill 数量不算证据。</p>
+<p class="note">OpenProgram、OpenClaw、Hermes 都用常驻服务承载多入口。剩余差距：渠道广度、稳定远程 SDK、跨 worker 会话放置、完整版本化 headless 事件契约。未固定的 star、fork、skill 数量不算证据。</p>
 
 <h2 id="more">独立页面</h2>
 <table class="stack fixed">

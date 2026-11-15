@@ -8,7 +8,7 @@ test("provider detail sections never share a React key", () => {
   // Siblings keyed alike made React leave a second API Base URL block behind.
   const detail = read("components/settings/providers/detail.tsx");
   const keys = [...detail.matchAll(/key=\{`\$\{provider\.id\}:([a-z-]+)`\}/g)].map(m => m[1]);
-  assert.deepEqual(keys, ["accounts", "base-url", "check"]);
+  assert.deepEqual(keys, ["setup", "usage", "keys", "check", "models"]);
   assert.doesNotMatch(detail, /key=\{provider\.id\}/);
 });
 

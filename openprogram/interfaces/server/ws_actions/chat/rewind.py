@@ -85,7 +85,7 @@ async def handle_rewind(ws, cmd: dict):
             target_msg_id = points[idx - 1]["msg_id"]
         mode = (cmd.get("mode") or "code_and_conversation").strip()
         if phase == "plan":
-            recover = not _s._is_run_active(session_id)
+            recover = not await asyncio.to_thread(_s._is_run_active, session_id)
             result = await loop.run_in_executor(
                 None, lambda: plan_rewind(
                     session_id, target_msg_id, mode=mode, recover=recover,
@@ -125,9 +125,7 @@ async def handle_rewind(ws, cmd: dict):
             return
         # The transaction moves HEAD only after every file action verifies.
         # Mirror that committed CAS, including a valid move to ``None``.
-        if result.get("head_changed"):
-            _s._set_active_head(session_id, result.get("new_head_id"))
-            _s.refresh_context_stats(session_id)
+        await asyncio.to_thread(mirror_rewound_head, _s, session_id, result)
         await ws.send_text(json.dumps({
             "type": "rewind_result",
             "data": {**result, "session_id": session_id},
@@ -140,7 +138,27 @@ async def handle_rewind(ws, cmd: dict):
         }))
     finally:
         if phase == "apply":
-            _s._release_run_reservation(session_id, reservation)
+            await asyncio.to_thread(_s._release_run_reservation, session_id, reservation)
+
+
+def mirror_rewound_head(_s, session_id: str, result: dict) -> None:
+    """Mirror a committed rewind's head and re-measure its context; this
+    takes the conversation's lock, so callers run it off the event loop.
+
+    The request that applied the rewind does it before it frees the slot a
+    repeat waits on. A repeat (``replayed``) reports the same outcome and
+    mirrors only while the stored head is still the one the rewind left: a
+    conversation that has moved on since is never pulled back.
+    """
+    if not result.get("head_changed"):
+        return
+    head_id = result.get("new_head_id")
+    if result.get("replayed"):
+        from openprogram.runtime.context.session_db import default_db
+        if (default_db().get_session(session_id) or {}).get("head_id") != head_id:
+            return
+    _s._set_active_head(session_id, head_id)
+    _s.refresh_context_stats(session_id)
 
 
 def rewind_slot_key(idempotency_key) -> str | None:

@@ -58,6 +58,8 @@ The optional touch-points, only when something can't be derived:
 ## Files in this directory
 
 - **`credentials.py`** — Unified provider-credential validation
+- **`detected.py`** — What Add provider offers before anything is typed
+- **`key_check.py`** — A key's check as one line, and what connecting a provider turns on
 - **`listing.py`** — Catalog listing
 - **`probe_log.py`** — The requests OpenProgram sends a provider on its own behalf
 - **`provider_models.py`** — models.dev enrichment for the live browse path

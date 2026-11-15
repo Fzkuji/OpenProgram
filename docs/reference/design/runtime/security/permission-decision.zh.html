@@ -21,7 +21,7 @@
 <tr><th scope="row">6. Owner 的 allow 规则</th><td>allow：<code translate="no">RULE_ALLOW</code></td></tr>
 <tr><th scope="row">7. Bypass permissions</th><td>allow：<code translate="no">MODE_UNRESTRICTED</code></td></tr>
 <tr><th scope="row">8. Plan，工具是 <code translate="no">exit_plan_mode</code></th><td>ask：<code translate="no">PLAN_EXIT</code></td></tr>
-<tr><th scope="row">9. 无需判定的调用</th><td>allow：<code translate="no">SURFACE_GRANT</code>、<code translate="no">SESSION_POLL</code>、<code translate="no">APP_GRANT_FREE</code>、<code translate="no">SCHEDULED_MEMORY</code>、<code translate="no">SAFE_TOOL</code></td></tr>
+<tr><th scope="row">9. 无需判定的调用</th><td>allow：<code translate="no">SURFACE_GRANT</code>、<code translate="no">SESSION_POLL</code>、<code translate="no">APP_GRANT_FREE</code>、<code translate="no">SCHEDULED_MEMORY</code>、<code translate="no">SAFE_TOOL</code>（读取、计划，以及回复本轮自己的对话；<code translate="no">send_file</code> 属于这一类，在这里附上文件就是回复，所以 Auto 不送它去审查；见<a href="../../ui/chat/chat-attachments.zh.html#approval">聊天附件</a>）</td></tr>
 <tr><th scope="row">10. Accept edits，工作目录内的安全编辑</th><td>allow：<code translate="no">SAFE_EDIT</code></td></tr>
 <tr><th scope="row">11. Auto</th><td>之前的审查已覆盖同一屏幕时 allow：<code translate="no">AUTO_APP_GRANT</code>；否则模型审查：<code translate="no">AUTO_CLASSIFY</code></td></tr>
 <tr><th scope="row">12. 其余</th><td>ask：<code translate="no">MODE_APPROVAL</code></td></tr>

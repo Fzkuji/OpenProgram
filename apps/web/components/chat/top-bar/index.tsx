@@ -36,6 +36,8 @@ import {
 import { HoverTip, TipBody } from "@/components/ui/tooltip";
 
 import { AgentSelector } from "./menus/agent-selector";
+import { TriggerMark } from "./menus/provider-quota";
+import { PICKER_QUERY_KEY, triggerMark } from "@/lib/models/provider-state";
 import { ModelMark } from "./chips/model-mark";
 import { MENU_PANEL } from "@/components/ui/menu/menu-styles";
 import { useBoundChat } from "./bound-chat";
@@ -132,13 +134,18 @@ export function AgentBadge({
   }
 
   // Enabled-models list (shared cache with the AgentSelector dropdown —
-  // same queryKey, so this adds no extra fetch) → id-to-display-name map
+  // same PICKER_QUERY_KEY, so the menu adds no extra fetch) → id-to-display-name map
   // so the chip shows "GPT-5.5" instead of "openai-codex:gpt-5.5". Keyed
   // both by "provider:id" and bare "id" for whichever form the chip has.
-  const { data: enabledModels } = useQuery({
-    queryKey: ["models-enabled"],
-    queryFn: api.listEnabledModels,
+  // The same read carries each provider's picker state for the mark.
+  const { data: picker } = useQuery({
+    queryKey: PICKER_QUERY_KEY,
+    queryFn: api.listPickerModels,
   });
+  const enabledModels = picker?.models;
+  // A small mark on the chip only when this model's provider needs action
+  // or its quota warns; the tooltip says which.
+  const mark = triggerMark(provider ? picker?.providers[provider] : undefined, text);
   const nameById = useMemo(() => {
     const m = new Map<string, string>();
     for (const mdl of enabledModels ?? []) {
@@ -155,7 +162,9 @@ export function AgentBadge({
   const tipBody = (
     <TipBody
       title={text(`Model: ${label || "none"}`, `模型：${label || "未选择"}`)}
-      detail={text("Talks with you and plans the work. Click to change model.", "和你对话并规划工作。点击更换模型。")}
+      detail={mark
+        ? `${(provider && enabledModels?.find((m) => m.provider === provider)?.providerLabel) || provider} · ${mark.detail}`
+        : text("Talks with you and plans the work. Click to change model.", "和你对话并规划工作。点击更换模型。")}
     />
   );
   return (
@@ -167,7 +176,16 @@ export function AgentBadge({
             id={id}
             className={cn(buttonVariants({ variant: "elevated", size: "sm" })) + " runtime-badge agent-badge" + (locked ? " locked" : "")}
           >
-            <ModelMark provider={provider} />
+            {mark ? (
+              <span className="relative inline-flex">
+                <ModelMark provider={provider} />
+                <TriggerMark tone={mark.tone} />
+                {/* The dot is drawn only; its meaning is read out here. */}
+                <span className="sr-only">{mark.detail}</span>
+              </span>
+            ) : (
+              <ModelMark provider={provider} />
+            )}
             {label ? <span className="badge-details">{label}</span> : null}
           </button>
         </DropdownMenuTrigger>

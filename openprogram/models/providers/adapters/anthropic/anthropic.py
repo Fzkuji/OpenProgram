@@ -573,6 +573,14 @@ def _build_messages(
             while j < len(all_msgs) and isinstance(all_msgs[j], ToolResultMessage):
                 tool_results.append(_convert_tool_result_block(all_msgs[j], is_oauth, references))
                 j += 1
+            # A result sent as references alone drops its text; what the
+            # search said beyond its loads goes beside it (``tool_loads.NOTE``).
+            if references:
+                from openprogram.models.providers.shared.tool_loads import search_note
+                for sent in all_msgs[i:j]:
+                    note = search_note(sent.details) if _reference_records(sent) else ""
+                    if note:
+                        tool_results.append({"type": "text", "text": sanitize_surrogates(note)})
             # The instructions those calls brought along go after the
             # results, in the same user message (``tool_attachments``).
             while j < len(all_msgs) and isinstance(all_msgs[j], AttachmentMessage):

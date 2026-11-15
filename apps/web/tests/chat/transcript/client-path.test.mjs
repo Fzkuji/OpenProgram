@@ -101,6 +101,26 @@ test("an ack with published rows re-ids the local row and mints no reply; the tu
   assert.deepEqual(order(), ["u0", "u1", "u1_reply"]);
 });
 
+test("the ack of a /goal message turns its bubble into the labelled objective", () => {
+  setPendingUserText(SID, "/goal ship it", 5, { messageId: "local1", requestId: "R1" });
+  appendLocalUserTurn(SID, "local1", "/goal ship it", undefined, 5, "pending", undefined, "R1");
+  applyChatWsMessage({ type: "chat_ack", data: {
+    session_id: SID, msg_id: "u1", client_request_id: "R1", text: "ship it", starts_goal: true,
+  } });
+  assert.equal(row("u1").content, "ship it");
+  assert.equal(row("u1").startsGoal, true);
+});
+
+test("a /goal sent with no bubble gets its labelled one from the ack", () => {
+  setPendingUserText(SID, "/goal ship it", 5, { requestId: "R2" });
+  applyChatWsMessage({ type: "chat_ack", data: {
+    session_id: SID, msg_id: "u2", client_request_id: "R2", text: "ship it", starts_goal: true,
+  } });
+  assert.deepEqual(order(), ["u0", "u2"]);
+  assert.equal(row("u2").content, "ship it");
+  assert.equal(row("u2").startsGoal, true);
+});
+
 test("a reconnect after a lost ack leaves one user row", () => {
   pendingSend("local1", "R1");
   clearPendingUserText(SID);

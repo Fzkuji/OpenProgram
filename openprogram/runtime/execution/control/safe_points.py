@@ -822,9 +822,14 @@ class SafePointsOperations:
             if execution.status in TERMINAL_EXECUTION_STATUSES:
                 self._forget_cancel_delivery(execution.execution_id)
         if execution.status in TERMINAL_EXECUTION_STATUSES:
-            hooks.settle_terminal(self.executions, execution)
-            if execution.status is ExecutionStatus.CANCELLED:
-                self._observe_terminal(execution)
+            try:
+                hooks.settle_terminal(self.executions, execution)
+            finally:
+                # The execution is already terminal: a stopped turn's
+                # cancelled reply and resource release never wait on the
+                # engine's settlement.
+                if execution.status is ExecutionStatus.CANCELLED:
+                    self._observe_terminal(execution)
         return AttemptCompletion(
             execution=execution,
             attempt=ended,

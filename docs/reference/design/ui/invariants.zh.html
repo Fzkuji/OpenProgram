@@ -56,6 +56,7 @@
 <thead><tr><th scope="col">界面</th><th scope="col">来源</th></tr></thead>
 <tbody>
 <tr><th scope="row">顶栏 chat 和 exec chip</th><td>门控后的 <code translate="no">GET /api/agent_settings</code></td></tr>
+<tr><th scope="row">对这个接口的读取</th><td>每个对话和分支同时只有一个请求在途（<code translate="no">lib/agents/agent-settings-request.ts</code>）：连接建立、对话加载和输入框挂载共用它的回答，回答之后不保留。收到 <code translate="no">agent_settings_changed</code> 或本页自己写入后，之后的调用方重新请求</td></tr>
 <tr><th scope="row">模型选择下拉</th><td><code translate="no">/api/models/enabled</code></td></tr>
 <tr><th scope="row">发送时的默认解析</th><td><code translate="no">_resolve_session_provider_model</code>，包括 <code translate="no">agent.json</code> 的模型路径</td></tr>
 <tr><th scope="row">函数执行</th><td>exec runtime</td></tr>

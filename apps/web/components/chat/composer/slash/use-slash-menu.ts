@@ -62,6 +62,9 @@ interface UnifiedCommand {
 
 const ANIM_MS = 380;
 
+/** What the submitting composer supplies: its run state and send paths. */
+type Submitter = Pick<SlashContext, "busy" | "sendChat" | "sendCommand">;
+
 interface UseSlashMenuArgs {
   input: string;
   textareaRef: RefObject<HTMLTextAreaElement>;
@@ -92,7 +95,7 @@ export interface SlashMenuHook {
    *  so `/compact 5000` still runs after the space closed the menu while
    *  prose that merely starts with `/` is sent as a normal turn. The
    *  submitter supplies the run state and its send path. */
-  runCommand: (text: string, submitter: Pick<SlashContext, "busy" | "sendChat">) => SlashOutcome;
+  runCommand: (text: string, submitter: Submitter) => SlashOutcome;
 }
 
 export function useSlashMenu({ input, textareaRef, send, openContextPanel, boundSessionId }: UseSlashMenuArgs): SlashMenuHook {
@@ -216,21 +219,15 @@ export function useSlashMenu({ input, textareaRef, send, openContextPanel, bound
         description:
           c.description || `${c.source_label || c.source} command`,
         args: c.argument_hint || undefined,
-        run(rest, { setInput, sessionId, send }) {
+        run(rest, { setInput, sessionId, sendCommand }) {
           const text = "/" + c.name + (rest ? " " + rest : "");
           // Local builtins are stateful host actions. Send the original
           // command through the chat WS, whose backend owns the handler;
           // /api/commands/invoke is render-only and deliberately does not
-          // execute local handlers.
-          // The server runs them before it reserves a turn, so they work
-          // during a run too, and they never get a chat_ack.
-          if (c.type === "local") {
-            return send({
-              action: "chat",
-              ...(sessionId ? { session_id: sessionId } : {}),
-              text,
-            });
-          }
+          // execute local handlers. They go out as this composer's
+          // conversation (a draft's own id and settings), never as a bare
+          // frame the server would give a conversation of its own.
+          if (c.type === "local") return sendCommand(text);
           void fetch("/api/commands/invoke", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -324,7 +321,7 @@ export function useSlashMenu({ input, textareaRef, send, openContextPanel, bound
     [matches.length],
   );
 
-  const slashContext = useMemo<Omit<SlashContext, "busy" | "sendChat">>(
+  const slashContext = useMemo<Omit<SlashContext, keyof Submitter>>(
     () => ({
       sessionId: currentSessionId,
       send,
@@ -372,7 +369,7 @@ export function useSlashMenu({ input, textareaRef, send, openContextPanel, bound
   );
 
   const runCommand = useCallback(
-    (text: string, submitter: Pick<SlashContext, "busy" | "sendChat">): SlashOutcome => {
+    (text: string, submitter: Submitter): SlashOutcome => {
       const hit = resolve(text);
       if (!hit) return null;
       if (hit.cmd.ignoredWhileBusy && submitter.busy) return "failed";

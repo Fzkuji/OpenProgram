@@ -165,3 +165,16 @@ test("the card is the only occluder, on the shared Popover with no backdrop", ()
   assert.doesNotMatch(source, /inset:\s*0/);
   assert.doesNotMatch(source, /createPortal/);
 });
+
+test("a ring whose window is unknown stays empty, with no made-up limit", async () => {
+  useSessionStore.getState().setContextStats("ring", { total_used: 134_300 }, 0);
+  await mount("ring");
+  const arc = ring().querySelectorAll("circle")[1];
+  const C = 2 * Math.PI * 5;
+  assert.equal(Number(arc.getAttribute("stroke-dashoffset")), C, "no fill");
+  assert.doesNotMatch(ring().outerHTML, /NaN/);
+
+  await view.act(() => useSessionStore.getState().setContextStats("ring", { total_used: 134_300 }, 500_000));
+  const filled = Number(ring().querySelectorAll("circle")[1].getAttribute("stroke-dashoffset"));
+  assert.ok(Math.abs(filled - C * (1 - 134_300 / 500_000)) < 1e-9, "a known window fills its share");
+});

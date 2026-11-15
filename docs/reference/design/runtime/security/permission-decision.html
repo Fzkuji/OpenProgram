@@ -21,7 +21,7 @@
 <tr><th scope="row">6. Owner allow rule</th><td>allow: <code translate="no">RULE_ALLOW</code></td></tr>
 <tr><th scope="row">7. Bypass permissions</th><td>allow: <code translate="no">MODE_UNRESTRICTED</code></td></tr>
 <tr><th scope="row">8. Plan, tool is <code translate="no">exit_plan_mode</code></th><td>ask: <code translate="no">PLAN_EXIT</code></td></tr>
-<tr><th scope="row">9. Call needs no decision</th><td>allow: <code translate="no">SURFACE_GRANT</code>, <code translate="no">SESSION_POLL</code>, <code translate="no">APP_GRANT_FREE</code>, <code translate="no">SCHEDULED_MEMORY</code>, <code translate="no">SAFE_TOOL</code></td></tr>
+<tr><th scope="row">9. Call needs no decision</th><td>allow: <code translate="no">SURFACE_GRANT</code>, <code translate="no">SESSION_POLL</code>, <code translate="no">APP_GRANT_FREE</code>, <code translate="no">SCHEDULED_MEMORY</code>, <code translate="no">SAFE_TOOL</code> (reads, plans, and replies to the turn's own conversation; <code translate="no">send_file</code> is one, because attaching a file there is replying, so Auto never sends it to review; see <a href="../../ui/chat/chat-attachments.html#approval">Chat attachments</a>)</td></tr>
 <tr><th scope="row">10. Accept edits, safe edit inside the working directories</th><td>allow: <code translate="no">SAFE_EDIT</code></td></tr>
 <tr><th scope="row">11. Auto</th><td>allow: <code translate="no">AUTO_APP_GRANT</code>, when an earlier review held the same screen; otherwise model review: <code translate="no">AUTO_CLASSIFY</code></td></tr>
 <tr><th scope="row">12. Everything else</th><td>ask: <code translate="no">MODE_APPROVAL</code></td></tr>

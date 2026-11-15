@@ -10,7 +10,9 @@ it loads (``openprogram.programs._host.lower_layers``).
 Owned here, so there is one definition of each:
 
 * :class:`GoalConflictError`, :class:`GoalStateUnavailable` — the Goal's
-  two refusals, raised by the ledger and the Goal tool alike;
+  two refusals, raised by the ledger and the Goal tool alike, with the two
+  conflicts that decide nothing about the Goal: :class:`GoalBusy` (the lock
+  was held) and :class:`GoalVersionConflict` (the write met a newer Goal);
 * :data:`turn_goal` — the Goal identity bound to the running chat turn.
 
 Registered by the Goal tool, with the answer of a process where no Goal
@@ -28,6 +30,23 @@ from typing import Any, Optional
 
 class GoalConflictError(ValueError):
     """A stale controller attempted to replace a newer Goal snapshot."""
+
+
+class GoalBusy(GoalConflictError):
+    """The session's Goal lock stayed held for the whole wait.
+
+    Nothing about the Goal was decided: a caller that only keeps the Goal's
+    books (usage, elapsed time, a finished turn's accounting) defers or
+    retries, and never fails the reply it belongs to.
+    """
+
+
+class GoalVersionConflict(GoalConflictError):
+    """A Goal write met a version newer than the one it read.
+
+    The write changed nothing. A writer without the lock reads again and
+    redoes its step.
+    """
 
 
 class GoalStateUnavailable(RuntimeError):
@@ -57,7 +76,8 @@ def register(**providers: Callable[..., Any]) -> None:
 
 @contextmanager
 def locked(session_id: str) -> Iterator[None]:
-    """Hold the session's Goal lock for the block."""
+    """Hold the session's Goal lock for the block; :class:`GoalBusy` when it
+    stays held for the whole wait."""
     provider = _providers.get("locked")
     if provider is None:
         yield
@@ -95,8 +115,10 @@ def accumulate_goal_usage(session_id: str, goal: dict) -> None:
 
 __all__ = [
     "BEHAVIOURS",
+    "GoalBusy",
     "GoalConflictError",
     "GoalStateUnavailable",
+    "GoalVersionConflict",
     "accumulate_goal_usage",
     "load_goal",
     "locked",

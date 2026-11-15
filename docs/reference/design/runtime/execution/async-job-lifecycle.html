@@ -141,6 +141,8 @@
 <li>A Job runs in exactly one session, <code translate="no">parent_session_id</code>, and that never changes. A caller in another session is <code translate="no">caller_session_id</code>, with a linked mirror for visibility and ownership checks.</li>
 <li>Output lands as a branch of that session, or a new root with <code translate="no">context="clean"</code>.</li>
 <li>An attach node (<code translate="no">function="attach"</code>) is written after admission with status <code translate="no">running</code> and the <code translate="no">job_id</code>. The runner updates that same node at each terminal state. A cross-session card lives in the source session and names the target.</li>
+<li>A synchronous caller settles the same card when its wait ends. Each writer merges only its own fields into the card as it stands inside the conversation's write lock (<code translate="no">SessionStore.merge_node</code>), never a copy read earlier.</li>
+<li>That wait ends when this process's runner has finished the Job (status, card, notice), not when the status is first written, so the tool result and the card agree.</li>
 <li>Context rendering skips a running card. A finished one becomes one sub-agent report with its task, final reply and transcript address.</li>
 </ul>
 

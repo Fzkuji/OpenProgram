@@ -271,21 +271,17 @@ def test_restored_session_function_run_uses_its_agent_model(monkeypatch):
     from openprogram.interfaces.server import server
     from openprogram.interfaces.server.routes import chat as routes_chat
 
-    class Persist:
-        def list_sessions(self):
-            return [("agent-custom", "restored-s1")]
+    class Stored:
+        def get_branch(self, session_id):
+            return []
 
-        def load_session(self, agent_id, session_id):
-            return {
-                "agent_id": agent_id,
-                "title": "restored",
-                "messages": [],
-            }
+        def get_session(self, session_id):
+            return {"agent_id": "agent-custom", "title": "restored"}
 
-    monkeypatch.setattr(server, "_persist", Persist())
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: Stored())
     monkeypatch.setattr(server, "_sessions", {})
-    server._restore_sessions()
-    conv = server._sessions["restored-s1"]
+    # A conversation is read from the store the first time it is asked for.
+    conv = server._get_or_create_session("restored-s1")
 
     monkeypatch.setattr(rm, "_enabled_model_keys", lambda: {
         ("agent-provider", "agent-model"),

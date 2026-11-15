@@ -5,7 +5,8 @@
 <h2 id="running">Running</h2>
 <details>
 <summary>Port 18100 is in use</summary>
-<pre translate="no"><code>openprogram ports                 # current port
+<p>Unless you set a port, OpenProgram takes the next free one by itself, so another program or another account on the same computer on 18100 needs nothing from you. A port you set is never moved: the App and <code translate="no">openprogram web</code> name the program holding it.</p>
+<pre translate="no"><code>openprogram worker status         # this account's port, or who holds it
 openprogram ports --port 18110    # persistent, next start
 lsof -ti:18100 | xargs kill       # free it from a leftover process, then restart</code></pre>
 <p>For one run: <code translate="no">OPENPROGRAM_WEB_PORT</code>.</p>

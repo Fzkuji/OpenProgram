@@ -301,7 +301,8 @@ def run_in_process(session_id: str, text: str, *, agent_id: str,
                    project_binding: bool = True,
                    no_web: bool = False,
                    on_event: Any = None,
-                   on_admitted: Any = None) -> PrintRun:
+                   on_admitted: Any = None,
+                   starts_goal: bool = False) -> PrintRun:
     """Run one turn of ``session_id`` in this process and wait for its end.
 
     ``model`` (``--model``), ``effort`` (``--effort``) and
@@ -311,7 +312,8 @@ def run_in_process(session_id: str, text: str, *, agent_id: str,
     new conversation out of ``cwd``; ``no_web`` (``--no-web``) gives the
     turn no web tool and no provider search. ``on_event`` receives the turn's
     frames as the Worker would broadcast them; ``on_admitted`` is called
-    with the run once its execution is admitted. Returns the run with
+    with the run once its execution is admitted. ``starts_goal`` marks the
+    message as the one that sets a Goal (``/goal <objective>``). Returns the run with
     ``ended`` set; a failed turn is returned, not raised. Raises
     :class:`PrintTurnError` when the turn could not be admitted or started.
     """
@@ -344,6 +346,7 @@ def run_in_process(session_id: str, text: str, *, agent_id: str,
         **no_web_fields(run.no_web),
         **slash_request_fields(text),
         **target_fields(target),
+        **({"starts_goal": True} if starts_goal else {}),
     )
     run.permission_mode = getattr(request, "permission_mode", None)
     adapter = CanonicalAgentAdapter(

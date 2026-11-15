@@ -189,6 +189,7 @@ class ExecutionOperations:
                 chain = job_context.get("chain")
                 if isinstance(chain, shared.Mapping):
                     from openprogram.programs.tools.agents.send_message.send_message.depth import (
+                        set_chain_ancestors,
                         set_chain_generations,
                         set_chain_messages,
                     )
@@ -196,16 +197,24 @@ class ExecutionOperations:
                     job_tokens.extend((
                         set_chain_messages(int(chain.get("messages") or 0)),
                         set_chain_generations(int(chain.get("generations") or 0)),
+                        set_chain_ancestors(chain.get("ancestors") or ()),
                     ))
                 # A helper forked with the conversation keeps its parent's
                 # tool list (shared prompt cache); depth.forked_turn tells
                 # the agent tool to stay listed and refuse at run time.
                 from openprogram.programs.tools.agents.send_message.send_message.depth import (
                     set_forked_turn,
+                    set_helper_turn,
                 )
                 job_tokens.append(set_forked_turn(
                     bool(job.creates_agent) and job.context_mode == "inherit"
                     and job.parent_msg_id is not None
+                ))
+                # A helper started with ``agent`` (not a message delivered to
+                # an existing conversation) loses the scheduling, channel
+                # and memory-writing tools (loop_runner.delegate_blocked).
+                job_tokens.append(set_helper_turn(
+                    bool(job.creates_agent) and (job.source or "agent_spawn") == "agent_spawn"
                 ))
                 worktree_id = job_context.get("worktree_id")
                 if isinstance(worktree_id, str) and worktree_id:

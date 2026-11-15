@@ -220,9 +220,16 @@ AGENT_NAME_MAX = 48
 def agent_name(description: str | None) -> str:
     """A sub-agent's name: its ``description`` as written, on one line and
     at most ``AGENT_NAME_MAX`` characters, cut at a word boundary when one
-    falls in the second half. send_message reaches it by this exact text
-    (spaces included); see addressing.name_key for the looser match."""
-    text = " ".join((description or "").split())
+    falls in the second half. Spaces stay as typed, two in a row included,
+    as Claude Code keeps an Agent call's description; only a line break or
+    tab, with the indentation around it, becomes one space. send_message
+    reaches it by this exact text; see addressing.name_key for the looser
+    match that folds spaces."""
+    import re
+    # Every line boundary str.splitlines knows (U+2028, NEL and the rest),
+    # and tabs, so the name is one line whatever the description held.
+    breaks = "\t\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029"
+    text = re.sub(f" *[{breaks}][ {breaks}]*", " ", description or "").strip()
     if len(text) <= AGENT_NAME_MAX:
         return text
     cut = text[:AGENT_NAME_MAX + 1]
@@ -237,18 +244,21 @@ def _isolated_worktree(session_id: str, label: str, job_id: str):
 
     Made from the repository of the folder this turn works in, so a
     sub-agent of a branch that itself runs in a worktree nests inside it
-    and merges back into it. Returns ``(worktree, error_text)``."""
+    and merges back into it. That folder is the turn's worktree, else the
+    conversation's project folder, else the configured default folder —
+    never the server process's working directory, which is wherever the
+    worker happened to start (a checkout of OpenProgram itself, under a
+    test run). Returns ``(worktree, error_text)``."""
     import subprocess
+    from openprogram.runtime.conversation.workdir import project_workdir_for
+    from openprogram.state.paths import configured_workdir
     from openprogram.state.worktree.context import current_worktree_path
     from openprogram.state.worktree.manager import WorktreeError, get_manager
     from openprogram.state.worktree.store import current_branch_for
     base = current_worktree_path()
     if not base:
-        try:
-            from openprogram.state.paths import get_default_workdir
-            base = str(get_default_workdir())
-        except Exception:
-            base = None
+        folder = project_workdir_for(session_id)
+        base = str(folder) if folder is not None else configured_workdir()
     top = None
     if base:
         try:
@@ -312,7 +322,8 @@ def _resolve_agent(ref: str, parent_agent: str | None) -> tuple[str, object, str
         except Exception:
             return own, None, None
     try:
-        specs = manager.list_all()
+        # Saved Agents and the project's Markdown agent files.
+        specs = delegation.delegatable()
     except Exception:
         specs = []
     spec = delegation.find(ref, specs)
@@ -369,6 +380,14 @@ def _agent_impl(
     chosen_agent, spec, agent_error = _resolve_agent(agent or agent_id, parent_agent)
     if agent_error:
         return agent_error
+    # A specialist runs on its own model (Explorer on the utility tier); the
+    # helper's conversation is the caller's, whose model would win otherwise.
+    try:
+        from openprogram.runtime.agent_registry.delegation import delegate_model
+        helper_model = delegate_model(spec, caller_agent=parent_agent or "main")  # type: ignore[arg-type]
+    except Exception:  # noqa: BLE001 - the caller's model serves
+        _log.debug("delegate model not resolved for %s", chosen_agent, exc_info=True)
+        helper_model = None
 
     # The agent's name as people and the model read it. Identifiers made
     # from it (a worktree's ref and folder) are slugged where they are made.
@@ -502,7 +521,8 @@ def _agent_impl(
             return
         try:
             from openprogram.state.worktree.manager import get_manager as _wt_manager
-            _wt_manager().discard_worktree(worktree.id, force=True)
+            # The spawn failed, so no helper writes there.
+            _wt_manager().discard_worktree(worktree.id, force=True, owner_done=True)
         except Exception:
             _log.debug("isolated worktree not removed after a failed spawn", exc_info=True)
 
@@ -568,6 +588,10 @@ def _agent_impl(
                 on_accepted=_on_accepted,
                 authority=caller_authority,
                 worktree_id=worktree.id if worktree is not None else None,
+                # On the Job too, so a card rebuilt after a crash pairs
+                # with this call (jobs/handoff.ensure_attach_placeholder).
+                tool_call_id=tool_call_id,
+                model_override=helper_model,
             )
         except Exception as e:  # noqa: BLE001
             _drop_worktree()
@@ -655,6 +679,8 @@ def _agent_impl(
                 attach_pointer_id=_card_id,
                 job_id=isolated_job_id,
                 worktree_id=worktree.id if worktree is not None else None,
+                tool_call_id=_tool_call_id,
+                model_override=helper_model,
             )
         finally:
             for _token in _chain_tokens:

@@ -12,9 +12,12 @@ so call sites keep the POSIX exception pattern::
 
 Windows semantics:
 
-* The lock is on byte 0 of the file; ``lseek`` to 0 runs before each call so
-  a later ``seek``/``write`` on the same fd is unaffected (all callers either
-  don't write or seek explicitly after acquiring).
+* The lock is on one byte far past the end of any data (``_LOCK_OFFSET``).
+  msvcrt refuses reads and writes that overlap a byte another handle has
+  locked; a lock on a data byte would make the file unreadable to every other
+  process, which POSIX ``flock`` never does. A lock file therefore stays
+  readable while it is held (``worker.lock`` names its holder that way). The
+  fd's position is put back after each call.
 * A blocking acquire (``LOCK_EX`` without ``LOCK_NB``) retries every 100 ms
   because ``msvcrt.LK_LOCK`` gives up after about 10 seconds.
 * The lock is per process and per fd. Re-acquiring the same byte on the same
@@ -46,24 +49,26 @@ except ImportError:  # Windows
     LOCK_NB = 0x4
     LOCK_UN = 0x8
 
-    # Lock a single byte at offset 0 of the file. msvcrt.locking takes
-    # bytes-from-current-position, so we always lseek(0) first.
+    # One byte at a fixed offset no locked file of ours reaches (they are
+    # small lock and state files). Windows allows locking past the end of a
+    # file, and msvcrt.locking starts at the current position, so each call
+    # seeks there and back. Below 2**31, where every CRT's offset fits.
+    _LOCK_OFFSET = 0x7FFFFFFE
     _LOCK_NBYTES = 1
     _RETRY_INTERVAL = 0.1
 
-    def _seek_zero(fd: int) -> None:
+    def _locking(fd: int, operation: int) -> None:
+        position = _os.lseek(fd, 0, _os.SEEK_CUR)
+        _os.lseek(fd, _LOCK_OFFSET, _os.SEEK_SET)
         try:
-            _os.lseek(fd, 0, _os.SEEK_SET)
-        except OSError:
-            # Some pseudo-files (rare for our lock files) don't seek;
-            # locking will still operate at the current position.
-            pass
+            _msvcrt.locking(fd, operation, _LOCK_NBYTES)
+        finally:
+            _os.lseek(fd, position, _os.SEEK_SET)
 
     def flock(fd: int, mode: int) -> None:
         if mode & LOCK_UN:
-            _seek_zero(fd)
             try:
-                _msvcrt.locking(fd, _msvcrt.LK_UNLCK, _LOCK_NBYTES)
+                _locking(fd, _msvcrt.LK_UNLCK)
             except OSError:
                 # Match POSIX: releasing a lock we don't hold is a
                 # silent no-op for our callers.
@@ -71,9 +76,8 @@ except ImportError:  # Windows
             return
 
         if mode & LOCK_NB:
-            _seek_zero(fd)
             try:
-                _msvcrt.locking(fd, _msvcrt.LK_NBLCK, _LOCK_NBYTES)
+                _locking(fd, _msvcrt.LK_NBLCK)
             except OSError as e:
                 # msvcrt raises PermissionError (EACCES) on contention.
                 # Re-raise as BlockingIOError to match the exception
@@ -86,9 +90,8 @@ except ImportError:  # Windows
         # Blocking acquire. LK_LOCK retries for ~10s internally; loop
         # forever in case the holder is slow to release.
         while True:
-            _seek_zero(fd)
             try:
-                _msvcrt.locking(fd, _msvcrt.LK_LOCK, _LOCK_NBYTES)
+                _locking(fd, _msvcrt.LK_LOCK)
                 return
             except OSError as e:
                 if e.errno not in (_errno.EACCES, _errno.EAGAIN, _errno.EDEADLK):

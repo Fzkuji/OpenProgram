@@ -20,7 +20,6 @@ from .. import shared
         "  todo_id: id of the todo to update.\n"
         "  status: pending | in_progress | completed (optional).\n"
         "  subject: new title (optional).\n"
-        "  owner: who is claiming this todo, free text (optional).\n"
         "  description: new details (optional)."
     ),
     toolset=["core"],
@@ -30,18 +29,16 @@ def todo_update(
     todo_id: str,
     status: str = "",
     subject: str = "",
-    owner: str = "",
     description: str = "",
 ) -> str:
     """Update fields of a todo entry."""
-    return _todo_update_impl(todo_id, status, subject, owner, description)
+    return _todo_update_impl(todo_id, status, subject, description)
 
 
 def _todo_update_impl(
     todo_id: str,
     status: str = "",
     subject: str = "",
-    owner: str = "",
     description: str = "",
 ) -> str:
     """Implementation body — kept apart from the @function binding so
@@ -66,7 +63,6 @@ def _todo_update_impl(
         for field, value in (
             ("status", status),
             ("subject", subject),
-            ("owner", owner),
             ("description", description),
         ):
             if value and entry.get(field) != value:

@@ -9,6 +9,7 @@ import logging
 import asyncio
 
 from fastapi.responses import JSONResponse
+from openprogram.state.store.session.conversation_work import run_for_conversation
 
 _log = logging.getLogger(__name__)
 
@@ -321,9 +322,42 @@ def register(app):
         _save_profiles(body or {})
         return JSONResponse(content={"ok": True})
 
+    # The session reads below take the conversation's lock, which a turn or a
+    # cold load can hold for a while: they run in a worker thread so a held
+    # conversation delays its own request, never the event loop.
+    def _known_conversation(session_id: str) -> bool:
+        """Whether ``session_id`` names a conversation, as ``load_session``
+        decides it: one the server holds (a draft's first Send is held
+        before the store writes it) or one the store has. A deleted id and
+        one nobody created are not conversations."""
+        from openprogram.interfaces.server import server as _s
+        from openprogram.runtime.context.session_db import default_db
+
+        with _s._sessions_lock:
+            if session_id in _s._sessions:
+                return True
+        return default_db().get_session(session_id) is not None
+
+    async def _conversation_read(session_id: str, fn, *args) -> JSONResponse:
+        """``fn(*args)`` as the answer of a read of ``session_id``, or 404
+        ``session_not_found`` when there is no such conversation: every
+        read below would otherwise describe an empty conversation."""
+        def read():
+            if not _known_conversation(session_id):
+                return None
+            return {"body": fn(*args)}
+
+        found = await run_for_conversation(session_id, read)
+        if found is None:
+            return JSONResponse(content={"error": "session_not_found"}, status_code=404)
+        return JSONResponse(content=found["body"])
+
     @app.get("/api/sessions/{session_id}/branches/tokens")
     async def get_branches_tokens(session_id: str):
         """Lightweight token summary for every branch tip in this session."""
+        return await _conversation_read(session_id, _branches_tokens, session_id)
+
+    def _branches_tokens(session_id: str) -> dict:
         from openprogram.runtime.context.session_db import default_db
         from openprogram.models.providers.catalog.enabled_models import ENABLED_MODELS
 
@@ -356,12 +390,17 @@ def register(app):
                 "cache_read_total": stats.get("cache_read_total", 0),
                 "model": mid,
             })
-        return JSONResponse(content={"branches": out})
+        return {"branches": out}
 
     @app.get("/api/sessions/{session_id}/tokens")
     async def get_session_tokens(session_id: str, head_id: str | None = None,
                                  model: str | None = None,
                                  provider: str | None = None):
+        return await _conversation_read(
+            session_id, _session_tokens, session_id, head_id, model, provider)
+
+    def _session_tokens(session_id: str, head_id: str | None, model: str | None,
+                        provider: str | None) -> dict:
         from openprogram.runtime.context.session_db import default_db
         from openprogram.models.providers.catalog.enabled_models import ENABLED_MODELS
 
@@ -395,7 +434,7 @@ def register(app):
                         stats["current_tokens"] / stats["context_window"]
                     )
 
-        return JSONResponse(content=stats)
+        return stats
 
     @app.get("/api/sessions/{session_id}/context-range")
     async def get_context_range(session_id: str, head_id: str | None = None):
@@ -421,6 +460,9 @@ def register(app):
         Both flags come from the same functions the real render calls,
         so the graph never guesses at semantics the backend owns.
         """
+        return await _conversation_read(session_id, _context_range, session_id, head_id)
+
+    def _context_range(session_id: str, head_id: str | None) -> dict:
         from openprogram.runtime.context.session_db import default_db
         from openprogram.runtime.context.persistence import rendered_history
 
@@ -434,12 +476,12 @@ def register(app):
             db, session_id, head_id,
             [m["id"] for m in branch if m.get("id")],
         )
-        return JSONResponse(content={
+        return {
             "session_id": session_id,
             "node_ids": node_ids,
             "count": len(node_ids),
             "nodes": _coverage_nodes(db, session_id, node_ids),
-        })
+        }
 
     @app.get("/api/context/draft")
     async def get_draft_context(
@@ -462,7 +504,7 @@ def register(app):
                 status_code=200,
                 content={"error": f"{type(e).__name__}: {e}", "tools": []},
             )
-        window = int(bd.get("context_window") or 0)
+        window = int(bd.get("context_window") or 0) or None
         return JSONResponse(content=_cs.finalize_breakdown(bd, {
             "total_used": int(bd.get("input_used") or 0),
             "window": window,
@@ -478,6 +520,9 @@ def register(app):
         ``window`` / ``basis`` triple on top of it is the same record the
         composer ring reads, so panel and ring never disagree.
         """
+        return await _conversation_read(session_id, _session_context, session_id, head_id)
+
+    def _session_context(session_id: str, head_id: str | None) -> dict:
         from openprogram.runtime.context import session_stats as _cs
         from openprogram.interfaces.server import server as _s
 
@@ -500,43 +545,41 @@ def register(app):
                 conv.get("_context_rev") or 0
             )
             if same_head and same_rev:
+                # The snapshot's rows are reused; its window is not — the
+                # window is resolved from the session's model now, so one
+                # saved with a wrong window cannot stick.
                 occupancy = _s.session_context_stats(
                     session_id,
                     head_id=head_id,
                     estimated_total=int(stored.get("input_used") or 0),
-                    window=int(
-                        stored.get("window")
-                        or stored.get("context_window")
-                        or 0
-                    ) or None,
                 )
-                return JSONResponse(content=_cs.finalize_breakdown(stored, occupancy))
+                return _cs.finalize_breakdown(stored, occupancy)
             bd = _cs.compute_breakdown(
                 session_id,
                 head_id,
-                context_window=_s._conv_context_window(conv),
+                context_window=_s._conv_context_window(conv, head_id),
             )
+            from openprogram.interfaces.server.server_runtime.context_stats import _branch_at_head
+            if _branch_at_head(conv, head_id) is not None:
+                # A branch that is not selected: the model named beside
+                # the window is that branch's too.
+                bd["model"] = _s._conv_model(conv, head_id)[1] or ""
         except Exception as e:
-            return JSONResponse(
-                status_code=200,
-                content={"error": f"{type(e).__name__}: {e}", "tools": []},
-            )
+            return {"error": f"{type(e).__name__}: {e}", "tools": []}
         occupancy = _s.session_context_stats(
             session_id,
             head_id=head_id,
             estimated_total=int(bd.get("input_used") or 0),
-            window=int(bd.get("context_window") or 0),
+            window=int(bd.get("context_window") or 0) or None,
         )
-        return JSONResponse(content=_cs.finalize_breakdown(bd, occupancy))
+        return _cs.finalize_breakdown(bd, occupancy)
 
     @app.get("/api/sessions/{session_id}/dag")
     async def get_session_dag(session_id: str):
         """Full session session DAG as a TNode tree (step 8)."""
         from openprogram.runtime.execution.dag import build_session_dag
-        tree = build_session_dag(session_id)
-        if tree is None:
-            return JSONResponse(content={"tree": None})
-        return JSONResponse(content={"tree": tree})
+        return await _conversation_read(
+            session_id, lambda: {"tree": build_session_dag(session_id)})
 
     @app.get("/api/programs/meta")
     async def get_programs_meta():

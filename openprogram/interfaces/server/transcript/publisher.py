@@ -127,7 +127,9 @@ def _view_session(view_key: str) -> str:
 class TranscriptPublisher:
     def __init__(self, send: Callable[[Any, str], bool]) -> None:
         self._send = send
-        self._queue: queue.SimpleQueue = queue.SimpleQueue()
+        # A Queue, not a SimpleQueue: its count of unfinished items is what
+        # ``idle`` reads.
+        self._queue: queue.Queue = queue.Queue()
         self._lock = threading.RLock()
         self._holders: dict[str, set[Any]] = {}
         self._sessions: dict[str, set[str]] = {}
@@ -255,9 +257,10 @@ class TranscriptPublisher:
         while not self._stopping.is_set():
             self._wait_and_drain()
             for session_id in self._due_sessions():
+                # Busy before the pop, so ``idle`` never sees neither.
+                self._busy = True
                 dirty = self._dirty.pop(session_id)
                 self._last_tick[session_id] = time.monotonic()
-                self._busy = True
                 try:
                     self._publish_session(session_id, dirty)
                 except Exception:  # noqa: BLE001  # one bad session must not stop the rest
@@ -279,8 +282,13 @@ class TranscriptPublisher:
                 return
 
     def _take(self, item: tuple | None) -> None:
-        if item is None:
-            return
+        try:
+            if item is not None:
+                self._mark_dirty(item)
+        finally:
+            self._queue.task_done()
+
+    def _mark_dirty(self, item: tuple) -> None:
         session_id, record_type, node_ids, keys = item
         if session_id not in self._sessions:
             return
@@ -330,8 +338,11 @@ class TranscriptPublisher:
 
     @property
     def idle(self) -> bool:
-        """Nothing queued, nothing due and nothing being sent."""
-        return self._queue.empty() and not self._dirty and not self._busy
+        """Nothing queued, nothing due and nothing being sent. Exact: a
+        notice counts as unfinished from its put until it is in ``_dirty``
+        (an item the worker has dequeued is in neither the queue nor
+        ``_dirty``), and a tick is busy from before it takes its session."""
+        return not self._queue.unfinished_tasks and not self._dirty and not self._busy
 
     # What a tick sends
 

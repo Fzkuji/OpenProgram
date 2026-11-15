@@ -5,8 +5,14 @@ rem
 rem Python runs in UTF-8 mode here, as the launcher and the other installed
 rem commands start it. The console reads what it prints as UTF-8 for the length
 rem of the command and gets its own code page back, with Python's exit status.
+rem The launcher on PATH hands over to this file after it has already switched
+rem the console, so it passes the caller's code page in
+rem _OPENPROGRAM_CALLER_CODEPAGE; the preamble is the one Write-CmdLauncher in
+rem scripts/release/install-release.ps1 writes.
 setlocal DisableDelayedExpansion
-for /f "tokens=2 delims=:." %%P in ('chcp') do set "_OPENPROGRAM_CODEPAGE=%%P"
+set "_OPENPROGRAM_CODEPAGE=%_OPENPROGRAM_CALLER_CODEPAGE%"
+set "_OPENPROGRAM_CALLER_CODEPAGE="
+if not defined _OPENPROGRAM_CODEPAGE for /f "tokens=2 delims=:." %%P in ('chcp') do set "_OPENPROGRAM_CODEPAGE=%%P"
 chcp 65001 >nul
 set "ROOT=%~dp0.."
 for /f "usebackq tokens=1,* delims==" %%A in ("%ROOT%\current") do (

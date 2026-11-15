@@ -15,6 +15,12 @@ from openprogram.state.authority import AuthorityDecision, decide_capability, no
 _READ_TOOLS = {
     "read", "read_file", "grep", "glob", "list", "list_files",
     "read_conversation", "list_agents", "list_jobs",
+    # Attaching a file to the turn's own conversation is replying with it,
+    # not a send to a third party. It shows the file's bytes to whoever
+    # the turn answers, the same reach as reading it and quoting it, so it
+    # needs ``fs.read``: the owner has it, and a paired chat-app speaker,
+    # who may not read the owner's files, may not be sent them either.
+    "send_file",
 }
 # Reads that stay inside the memory workspace. They reach no other part
 # of the filesystem, so they are gated on ``memory.read`` rather than on
@@ -28,7 +34,7 @@ _PROCESS_TOOLS = {
     "bash", "exec", "shell", "execute_code", "write_stdin", "agent",
 }
 _NETWORK_TOOLS = {
-    "send_message", "send_file", "web_search", "list_mcp_resources",
+    "send_message", "web_search", "list_mcp_resources",
     "read_mcp_resource", "list_mcp_prompts", "get_mcp_prompt",
 }
 # Posting into the chat the turn came from is the same act as the reply

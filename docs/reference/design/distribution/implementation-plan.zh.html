@@ -64,7 +64,8 @@
 <details>
 <summary><code translate="no">verify-product-runtime.py</code> 检查什么</summary>
 <ul>
-<li>启动无头 Chromium 页面；产物只有在 <code translate="no">--allow-deferred-browser</code> 下才能把 <code translate="no">browser_probe</code> 记为 deferred。</li>
+<li>启动无头 Chromium 页面；产物只有在 <code translate="no">--allow-deferred-browser</code> 下才能把 <code translate="no">browser_probe</code> 记为 deferred。终端安装在缺少 Chromium 系统库的 Linux 上传这个参数，启动 Chromium 留到浏览器工具首次使用。</li>
+<li>构建时（<code translate="no">--write</code>、<code translate="no">--probe-only</code>）读取每个 Mach-O 和 ELF 文件的加载命令：从运行时和系统之外加载的库（例如 runner 上 Homebrew 的 OpenSSL），或要求比 <code translate="no">macosMinimum</code> 更新的 macOS 的文件，都让构建失败。它自己解析文件，不需要 <code translate="no">otool</code>。</li>
 <li>导入 channel 和 search 依赖，检查 Web 资源。</li>
 <li>对生成的 PDF 运行两条内置提取路径，探测 Rich 渲染。</li>
 <li>要求已安装的 OpenProgram 元数据版本等于运行时 manifest 版本。</li>
@@ -87,6 +88,11 @@
 <thead class="sr"><tr><th scope="col">事实</th><th scope="col">处理</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">semble</code></th><td><code translate="no">&gt;=0.5.3</code>，其 <code translate="no">semble-grammars</code> 为每个目标发布所需的原生 wheel</td></tr>
+<tr><th scope="row">Wheel 目标</th><td><code translate="no">build-base.sh</code> 和 <code translate="no">.ps1</code> 用 <code translate="no">--only-binary :all:</code> 和 <code translate="no">--python-platform</code> 按最旧的受支持系统安装（<code translate="no">macosMinimum</code> 13.5 经 <code translate="no">MACOSX_DEPLOYMENT_TARGET</code>，<code translate="no">glibcMinimum</code> 2.35），从不按 runner 的系统。<code translate="no">runtime-wheels.py check</code> 在构建前从 <code translate="no">uv.lock</code> 证明每个目标都有全部 wheel。目标取打包所用 Python 自己的构建，不取 runner 的机器：Windows on Arm 上的 x64 Python 和 Rosetta 下的 x86_64 构建都装 x86_64 wheel，内置 Git 也按同一个答案选（<code translate="no">runtime-wheels.py target</code>）</td></tr>
+<tr><th scope="row">复用的 base</th><td>Python 版本没变的 base 直接复制，再用 <code translate="no">uv pip sync</code> 对齐新的锁文件；它把依赖文件当位置参数，固定版本的 uv 在这里拒绝 <code translate="no">--requirements</code>，而 <code translate="no">uv pip install</code> 必须用它。组件测试用这个 uv 离线把两个脚本的装包步骤装进临时环境，CI 也安装这个 uv</td></tr>
+<tr><th scope="row">构建用的 profile</th><td>自更新构建有自己的 <code translate="no">HOME</code>、<code translate="no">USERPROFILE</code>、<code translate="no">LOCALAPPDATA</code> 和 <code translate="no">APPDATA</code>；缺了后两个，PowerShell 会把模块缓存写进工作树，下一次构建就以有未提交改动拒绝</td></tr>
+<tr><th scope="row">源码构建</th><td>只有 <code translate="no">product-runtime.json</code> 里 <code translate="no">sourceBuilds</code> 列出的包，各自链接所在构建线准备的静态库：Intel macOS 上的 cryptography（没有 x86_64 wheel；<code translate="no">prepare-macos-native-deps.sh</code> 用 vcpkg 为 macOS 13.5 构建静态 OpenSSL），以及 Windows on Arm 上的四个包。列出的包一旦有了 wheel，检查就失败</td></tr>
+<tr><th scope="row">最旧的 macOS</th><td>13.5，因为 Playwright 自带的 Node 需要它；App 的 <code translate="no">LSMinimumSystemVersion</code>（electron-builder 的 <code translate="no">minimumSystemVersion</code>）和安装页写的一样，终端安装程序拒绝更旧的 Mac 并说明去哪里更新。本地 App 刷新用这台机器自己的包就地组装运行时，所以传 <code translate="no">--this-machine</code>，原生文件按这台 Mac 的 macOS 检查；发布构建从不传它</td></tr>
 <tr><th scope="row">Intel macOS 与 torch</th><td>没有打过补丁的 torch wheel，所以 <code translate="no">embedding</code> extra 排除该平台</td></tr>
 <tr><th scope="row">架构命名</th><td>运行时归档用 <code translate="no">x86_64</code>，electron-builder 用 <code translate="no">x64</code>（<code translate="no">release-matrix.py</code>）</td></tr>
 <tr><th scope="row">运行时 manifest</th><td>格式化 JSON，shell 解析容忍空白</td></tr>
@@ -99,7 +105,7 @@
 </details>
 
 <h2 id="public-installer">公开安装器</h2>
-<pre><code translate="no">curl -fsSL https://openprogram.io/install | sh</code></pre>
+<pre><code translate="no">curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh</code></pre>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">部分</th><th scope="col">约定</th></tr></thead>
 <tbody>

@@ -29,7 +29,7 @@
 </p>
 
 <p align="center">
-  <a href="https://openprogram.io">官網</a> · <a href="#install">安裝</a> · <a href="https://openprogram.io/docs/">文件</a>
+  <a href="https://fuzzykuji.github.io/openprogram-site/">官網</a> · <a href="#install">安裝</a> · <a href="https://fuzzykuji.github.io/openprogram-site/docs/">文件</a>
 </p>
 
 <p align="center">
@@ -47,10 +47,10 @@
 ## 安裝
 
 ```bash
-curl -fsSL https://openprogram.io/install | sh
+curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh
 ```
 
-Windows（v1.2.0 起）：`irm https://openprogram.io/install.ps1 | iex`。macOS 桌面 App 是 DMG，可在[發行頁](https://github.com/FuzzyKuji/OpenProgram/releases)下載；Linux App 是同一頁上的 deb 和 AppImage，Windows App 從 v1.2.0 起提供。openprogram.io 無法連線時：`curl -fsSL https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/main/docs/_static_root/install.sh | sh`。更多方式見[安裝說明](https://openprogram.io/docs/install/install.html)（英文）。
+Windows（v1.2.0 起）：`irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex`。macOS 桌面 App 是 DMG，可在[發行頁](https://github.com/FuzzyKuji/OpenProgram/releases)下載；Linux App 是同一頁上的 deb 和 AppImage，Windows App 從 v1.2.0 起提供。網站無法連線時：`curl -fsSL https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/main/docs/_static_root/install.sh | sh`。更多方式見[安裝說明](https://fuzzykuji.github.io/openprogram-site/docs/install/install.html)（英文）。
 
 ## 快速開始
 
@@ -86,48 +86,48 @@ class SupportAgent(Agent):
 
 | | |
 |---|---|
-| **[Agent 類別](https://openprogram.io/docs/reference/design/function/agentic-program.html)** | Agent 是一個 Python 類別；分支、重試和檢查都是程式碼，`self(...)` 是一次模型呼叫。 |
-| **[執行 DAG](https://openprogram.io/docs/reference/design/runtime/dag/overview.html)** | 每則使用者訊息、模型呼叫和函式呼叫都是節點，可以檢視、分支和重播。 |
-| **[上下文](https://openprogram.io/docs/reference/design/context/overview.html)** | 每次呼叫讀取挑選出的節點，而不是不斷變長的對話記錄，並會自動壓縮。 |
-| **[自我程式設計](https://openprogram.io/docs/reference/design/runtime/workflows/workflow.html)** | Agent 把新方法寫進自己的類別，下一輪起就能當作工具使用。 |
-| **[受檢查的決策](https://openprogram.io/docs/reference/design/runtime/execution/next-step-decision.html)** | 模型從固定選項中挑選，程式碼先驗證再執行。 |
-| **[子 Agent](https://openprogram.io/docs/reference/design/runtime/collaboration/agent-collaboration.html)** | 子 Agent 在自己的分支上執行，可使用獨立的 Git worktree，只交回結果。 |
-| **[事件](https://openprogram.io/docs/reference/design/proactive/event-layer.html)** | 型別化事件匯流排；外掛可以觀察事件或攔截工具呼叫。 |
-| **[常駐 Agent](https://openprogram.io/docs/reference/design/runtime/always-on-agents.html)** | 在背景持續執行、對事件做出反應的 Agent。 |
-| **[目標與復原](https://openprogram.io/docs/reference/design/runtime/reliability/goal-and-recovery.html)** | 長期目標在重新啟動後繼續，從中斷處復原。 |
-| **[容錯](https://openprogram.io/docs/reference/design/providers/reliability/llm-fault-tolerance.html)** | 每次模型呼叫都有重試、逾時和錯誤分類。 |
+| **[Agent 類別](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/function/agentic-program.html)** | Agent 是一個 Python 類別；分支、重試和檢查都是程式碼，`self(...)` 是一次模型呼叫。 |
+| **[執行 DAG](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/dag/overview.html)** | 每則使用者訊息、模型呼叫和函式呼叫都是節點，可以檢視、分支和重播。 |
+| **[上下文](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/context/overview.html)** | 每次呼叫讀取挑選出的節點，而不是不斷變長的對話記錄，並會自動壓縮。 |
+| **[自我程式設計](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/workflows/workflow.html)** | Agent 把新方法寫進自己的類別，下一輪起就能當作工具使用。 |
+| **[受檢查的決策](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/execution/next-step-decision.html)** | 模型從固定選項中挑選，程式碼先驗證再執行。 |
+| **[子 Agent](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/collaboration/agent-collaboration.html)** | 子 Agent 在自己的分支上執行，可使用獨立的 Git worktree，只交回結果。 |
+| **[事件](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/proactive/event-layer.html)** | 型別化事件匯流排；外掛可以觀察事件或攔截工具呼叫。 |
+| **[常駐 Agent](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/always-on-agents.html)** | 在背景持續執行、對事件做出反應的 Agent。 |
+| **[目標與復原](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/reliability/goal-and-recovery.html)** | 長期目標在重新啟動後繼續，從中斷處復原。 |
+| **[容錯](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/providers/reliability/llm-fault-tolerance.html)** | 每次模型呼叫都有重試、逾時和錯誤分類。 |
 
 ### 工作區
 
 | | |
 |---|---|
-| **[桌面與網頁介面](https://openprogram.io/docs/reference/design/ui/README.html)** | macOS 和 Linux 上用 App，v1.2.0 起 Windows 也有 App；網頁介面可在這些系統或伺服器上使用。 |
-| **[分割畫面](https://openprogram.io/docs/reference/design/ui/workspace/center-tabs-and-split-layout.html)** | 聊天、檔案、終端機和網頁並排呈現。 |
-| **[內建瀏覽器](https://openprogram.io/docs/reference/design/ui/browser/built-in-browser.html)** | Agent 能讀取和操作網頁，你在一旁觀看。 |
-| **[整合終端機](https://openprogram.io/docs/reference/design/ui/workspace/integrated-terminal.html)** | 工作區裡的終端機，與 Agent 共用。 |
-| **[Computer use](https://openprogram.io/docs/reference/design/integrations/computer-and-browser-use.html)** | 操作桌面應用程式、瀏覽器頁面或遠端虛擬機。 |
-| **[CLI 與終端介面](https://openprogram.io/docs/reference/design/cli/README.html)** | 在終端機裡使用同一個 Agent。 |
-| **[遠端存取](https://openprogram.io/docs/reference/design/ui/remote-web-access.html)** | 從其他裝置存取你自己的實例，僅限本人。 |
+| **[桌面與網頁介面](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/README.html)** | macOS 和 Linux 上用 App，v1.2.0 起 Windows 也有 App；網頁介面可在這些系統或伺服器上使用。 |
+| **[分割畫面](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/workspace/center-tabs-and-split-layout.html)** | 聊天、檔案、終端機和網頁並排呈現。 |
+| **[內建瀏覽器](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/browser/built-in-browser.html)** | Agent 能讀取和操作網頁，你在一旁觀看。 |
+| **[整合終端機](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/workspace/integrated-terminal.html)** | 工作區裡的終端機，與 Agent 共用。 |
+| **[Computer use](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/integrations/computer-and-browser-use.html)** | 操作桌面應用程式、瀏覽器頁面或遠端虛擬機。 |
+| **[CLI 與終端介面](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/cli/README.html)** | 在終端機裡使用同一個 Agent。 |
+| **[遠端存取](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/remote-web-access.html)** | 從其他裝置存取你自己的實例，僅限本人。 |
 
 ### Agent 與安全
 
 | | |
 |---|---|
-| **[Agent 設定](https://openprogram.io/docs/reference/design/runtime/agent-configuration/agent-configuration-ui.html)** | 把模型、指令、工具和記憶權限儲存成可重複使用的 Agent。 |
-| **[記憶](https://openprogram.io/docs/reference/design/memory/overview.html)** | 有來源依據的記憶，支援檢索和背景寫入。 |
-| **[權限與沙箱](https://openprogram.io/docs/reference/design/runtime/security/sandbox-architecture.html)** | 批准或拒絕工具呼叫並附上說明；指令在沙箱中執行。 |
-| **[Programs](https://openprogram.io/docs/reference/design/runtime/programs/programs-architecture.html)** | 工具和應用程式都是可安裝的 Program。 |
+| **[Agent 設定](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/agent-configuration/agent-configuration-ui.html)** | 把模型、指令、工具和記憶權限儲存成可重複使用的 Agent。 |
+| **[記憶](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/memory/overview.html)** | 有來源依據的記憶，支援檢索和背景寫入。 |
+| **[權限與沙箱](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/security/sandbox-architecture.html)** | 批准或拒絕工具呼叫並附上說明；指令在沙箱中執行。 |
+| **[Programs](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/programs/programs-architecture.html)** | 工具和應用程式都是可安裝的 Program。 |
 
 ### 模型與整合
 
 | | |
 |---|---|
-| **[模型服務](https://openprogram.io/docs/reference/design/providers/README.html)** | Anthropic、OpenAI、Gemini 等，每個服務商可設定多個帳號。 |
-| **[本機模型](https://openprogram.io/docs/reference/design/providers/local-models.html)** | 本機推論服務，可選用身分驗證。 |
-| **[MCP](https://openprogram.io/docs/reference/design/integrations/mcp-integration.html)** | 使用 MCP 伺服器，或把 OpenProgram 作為 MCP 伺服器提供。 |
-| **[Skills 與外掛](https://openprogram.io/docs/reference/design/integrations/skills-and-plugins.html)** | 擴充 Agent 的知識和可呼叫的工具。 |
-| **[聊天頻道](https://openprogram.io/docs/reference/design/channels/README.html)** | 在 Telegram、Discord、Slack 和微信裡與 Agent 對話。 |
-| **[自動更新](https://openprogram.io/docs/reference/design/distribution/automatic-updates.html)** | 經過簽署的發行版本，原地更新。 |
+| **[模型服務](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/providers/README.html)** | Anthropic、OpenAI、Gemini 等，每個服務商可設定多個帳號。 |
+| **[本機模型](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/providers/local-models.html)** | 本機推論服務，可選用身分驗證。 |
+| **[MCP](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/integrations/mcp-integration.html)** | 使用 MCP 伺服器，或把 OpenProgram 作為 MCP 伺服器提供。 |
+| **[Skills 與外掛](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/integrations/skills-and-plugins.html)** | 擴充 Agent 的知識和可呼叫的工具。 |
+| **[聊天頻道](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/channels/README.html)** | 在 Telegram、Discord、Slack 和微信裡與 Agent 對話。 |
+| **[自動更新](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/distribution/automatic-updates.html)** | 經過簽署的發行版本，原地更新。 |
 
 ## 引用
 
@@ -143,7 +143,7 @@ class SupportAgent(Agent):
 
 ## 授權
 
-[AGPL-3.0](LICENSE) © 2026 Fzkuji。使用、修改、散布及網路服務的義務以授權條款全文為準。
+[AGPL-3.0](LICENSE) © 2026 FuzzyKuji。使用、修改、散布及網路服務的義務以授權條款全文為準。
 
 ## 致謝
 

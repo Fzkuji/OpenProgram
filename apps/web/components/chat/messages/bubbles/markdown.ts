@@ -20,6 +20,7 @@ import {
   unescapeHtml,
 } from "@/lib/chat/markdown/a2ui";
 import { markOpenVisualFence, withVisuals } from "@/lib/chat/markdown/visual";
+import { localPathHref } from "@/lib/files/prose-file-paths";
 
 export function renderMarkdown(src: string, { cache = true }: { cache?: boolean } = {}): string {
   if (typeof window === "undefined") return escapeHtml(src);
@@ -144,6 +145,14 @@ function withCodeChrome(html: string, cache = true): string {
 }
 
 if (typeof document !== "undefined") {
+  // A link in rendered prose to a local file is not a page of the app:
+  // stop it before the shell's router takes the path as a route. The
+  // reply's own handler opens the file (prose-file-links.tsx).
+  document.addEventListener("click", (event) => {
+    const target = event.target as Element | null;
+    const anchor = typeof target?.closest === "function" ? target.closest<HTMLAnchorElement>(".md-rendered a[href]") : null;
+    if (anchor && localPathHref(anchor.getAttribute("href") ?? "")) event.preventDefault();
+  }, true);
   document.addEventListener("click", (event) => {
     const target = event.target as Element | null;
     const tab = typeof target?.closest === "function" ? target.closest<HTMLElement>(".a2ui-tab") : null;

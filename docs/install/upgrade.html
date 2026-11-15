@@ -7,14 +7,14 @@
 <thead><tr><th scope="col">Installed as</th><th scope="col">Update</th><th scope="col">Go back</th></tr></thead>
 <tbody>
 <tr><th scope="row">macOS App</th><td data-label="Update"><strong>Settings → General → Application → Check now</strong> (also checked automatically), then <strong>Download and open installer</strong>. Save the DMG, quit OpenProgram with Command-Q, drag it onto the copy in Applications and choose <strong>Replace</strong>.</td><td data-label="Go back">Download that version's DMG from <a href="https://github.com/FuzzyKuji/OpenProgram/releases">GitHub Releases</a> and replace the App the same way.</td></tr>
-<tr><th scope="row">Windows or Linux App<span class="arg">from v1.2.0</span></th><td data-label="Update">Same two buttons; the new version installs in place. When a release needs a newer App:<br>Windows: run the installer the button opens.<br>deb: <code translate="no">sudo apt install ./OpenProgram-X.Y.Z-linux-amd64.deb</code><br>AppImage: the file replaces itself and restarts.</td><td data-label="Go back"><strong>Settings → Versions → Go back</strong>. <a href="#app-recovery">If the App can't start</a>.</td></tr>
+<tr><th scope="row">Windows or Linux App</th><td data-label="Update">Same two buttons; the new version installs in place. When a release needs a newer App:<br>Windows: run the installer the button opens.<br>deb: <code translate="no">sudo apt install ./OpenProgram-X.Y.Z-linux-amd64.deb</code><br>AppImage: the file replaces itself and restarts.</td><td data-label="Go back"><strong>Settings → Versions → Go back</strong>. <a href="#app-recovery">If the App can't start</a>.</td></tr>
 <tr><th scope="row">Terminal or server, every system</th><td data-label="Update"><code translate="no">openprogram upgrade</code>, then <code translate="no">openprogram worker restart</code></td><td data-label="Go back"><a href="install.html#exact-version">Install the older version</a> with its exact number, then <code translate="no">openprogram worker restart</code></td></tr>
 <tr><th scope="row">Source checkout</th><td data-label="Update"><a href="development-checkout.html"><code translate="no">openprogram dev deploy</code>, then <code translate="no">promote</code></a>, or <a href="../server/upgrading.html"><code translate="no">openprogram upgrade</code></a>. Restarts by itself.</td><td data-label="Go back"><a href="conversational-self-update.html#undoing-a-change">Undo a change</a></td></tr>
 </tbody>
 </table>
 <p class="note">Stable installations move only between published versions and never follow <code translate="no">origin/main</code>. State under <code translate="no">~/.openprogram</code> is left unchanged. If the terminal command itself is broken, reinstall the latest version:</p>
-<pre translate="no"><code>curl -fsSL https://openprogram.io/install | sh
-irm https://openprogram.io/install.ps1 | iex</code></pre>
+<pre translate="no"><code>curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh
+irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex</code></pre>
 
 <details>
 <summary>What the App updater does</summary>
@@ -107,7 +107,7 @@ irm https://openprogram.io/install.ps1 | iex</code></pre>
 </details>
 
 <h2 id="official-updates">Official updates on a version-store installation</h2>
-<p>Takes a release as signed files and carries your own commits over. The Windows and Linux Apps update this way from v1.1.0. The macOS App and plain terminal installs use the routes above.</p>
+<p>Takes a release as signed files and carries your own commits over. The Windows and Linux Apps update this way. The macOS App and plain terminal installs use the routes above.</p>
 <pre translate="no"><code>openprogram upgrade --check
 openprogram upgrade
 openprogram upgrade --from &lt;directory&gt;     # files already on this computer</code></pre>

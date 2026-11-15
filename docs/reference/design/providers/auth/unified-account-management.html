@@ -43,7 +43,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Surface</th><th scope="col">Component</th></tr></thead>
 <tbody>
-<tr><th scope="row">Web</th><td>One <code translate="no">account-manager.tsx</code> for every provider. Backends differ only in how to add and what an identity looks like.</td></tr>
+<tr><th scope="row">Web</th><td>One keys panel (<code translate="no">detail/keys-panel.tsx</code>) for every provider. Backends differ only in how to add and what an identity looks like.</td></tr>
 <tr><th scope="row">TUI</th><td><code translate="no">providerAccounts.tsx</code>, <code translate="no">providerLoginFlow.tsx</code> over <code translate="no">/login/*</code>; <code translate="no">/login &lt;provider&gt;</code> works for any provider</td></tr>
 <tr><th scope="row">CLI</th><td><code translate="no">providers use &lt;provider&gt; [profile]</code>; <code translate="no">← active</code> in <code translate="no">providers list</code></td></tr>
 </tbody>

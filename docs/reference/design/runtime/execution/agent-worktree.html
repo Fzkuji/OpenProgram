@@ -141,9 +141,10 @@
 <h2 id="source">Choosing the repository</h2>
 <ol>
 <li>The <code translate="no">source_repo</code> argument.</li>
-<li>The session's default workdir (the selected Project).</li>
-<li><code translate="no">git rev-parse --show-toplevel</code> from the worker's cwd.</li>
+<li>The conversation's project folder (the selected Project).</li>
+<li>The configured default folder: <code translate="no">OPENPROGRAM_WORKDIR</code>, then <code translate="no">default_workdir</code>.</li>
 </ol>
+<p class="note">Never the worker's own cwd: that is wherever the worker started, a checkout of OpenProgram under a test run, and an installed app has no checkout. An <code translate="no">isolation="worktree"</code> sub-agent uses the same chain after the turn's own worktree.</p>
 <p class="note">None found: <code translate="no">source_repo_not_resolved</code>. OpenProgram never runs <code translate="no">git init</code> for the user. A dirty source repository is fine: the worktree starts from <code translate="no">base_ref</code>. Function forms hold only parameters; the Project stays the source.</p>
 
 <h2 id="isolation">Isolation and commits</h2>

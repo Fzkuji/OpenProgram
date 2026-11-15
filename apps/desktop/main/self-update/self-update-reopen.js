@@ -1,5 +1,7 @@
 "use strict";
 
+const { isChosenWebPort } = require("../worker/web-port");
+
 const FLAG = "--openprogram-self-update=";
 const REOPEN_PROTOCOL = 1;
 const UPDATE_ID = /^su_[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
@@ -119,7 +121,7 @@ function createSelfUpdateReopen({ argv, origin, fetchImpl = globalThis.fetch }) 
       bootstrap = new URL(startUrl);
       if (bootstrap.protocol === "data:") return startUrl;
       const expected = new URL(origin);
-      if (bootstrap.origin !== origin || expected.protocol !== "http:" || expected.port !== "18100" ||
+      if (bootstrap.origin !== origin || expected.protocol !== "http:" || !isChosenWebPort(expected.port) ||
           !["127.0.0.1", "localhost", "[::1]"].includes(expected.hostname) ||
           bootstrap.username || bootstrap.password || !/^#token=[A-Za-z0-9_-]{43}$/.test(bootstrap.hash)) {
         throw new Error("owner_auth_unavailable");

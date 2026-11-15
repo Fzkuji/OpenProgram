@@ -8,21 +8,21 @@
 <meta name="theme-color" content="#f8f9fc" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0e0f17" media="(prefers-color-scheme: dark)">
 <meta name="color-scheme" content="dark light">
-<link rel="canonical" href="https://openprogram.io/">
-<link rel="icon" href="/favicon.ico" sizes="any">
-<link rel="icon" type="image/svg+xml" href="/docs/assets/mark.svg">
+<link rel="canonical" href="https://fuzzykuji.github.io/openprogram-site/">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="docs/assets/mark.svg">
 <link rel="alternate" type="application/atom+xml" title="OpenProgram releases" href="https://github.com/FuzzyKuji/OpenProgram/releases.atom">
-<link rel="preload" href="/docs/assets/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
-<script src="/docs/assets/theme.js"></script>
+<link rel="preload" href="docs/assets/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<script src="docs/assets/theme.js"></script>
 
 <meta property="og:type" content="website">
 <meta property="og:locale" content="en_US">
 <meta property="og:site_name" content="OpenProgram">
-<meta property="og:url" content="https://openprogram.io/">
+<meta property="og:url" content="https://fuzzykuji.github.io/openprogram-site/">
 <meta property="og:title" content="OpenProgram: Self-Programming AI Agent Framework">
 <meta property="og:description" content="Build self-programming AI agents that create and refine their own workflows with an open-source runtime for models, tools, memory, context, and multi-agent collaboration.">
-<meta property="og:image" content="https://openprogram.io/docs/images/openprogram-social-card.png">
-<meta property="og:image:secure_url" content="https://openprogram.io/docs/images/openprogram-social-card.png">
+<meta property="og:image" content="https://fuzzykuji.github.io/openprogram-site/docs/images/openprogram-social-card.png">
+<meta property="og:image:secure_url" content="https://fuzzykuji.github.io/openprogram-site/docs/images/openprogram-social-card.png">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -30,7 +30,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="OpenProgram: Self-Programming AI Agent Framework">
 <meta name="twitter:description" content="Build self-programming AI agents that create and refine their own workflows with an open-source runtime for models, tools, memory, context, and multi-agent collaboration.">
-<meta name="twitter:image" content="https://openprogram.io/docs/images/openprogram-social-card.png">
+<meta name="twitter:image" content="https://fuzzykuji.github.io/openprogram-site/docs/images/openprogram-social-card.png">
 <meta name="twitter:image:alt" content="OpenProgram: Self-Programming AI Agent Framework">
 
 <script type="application/ld+json">
@@ -39,7 +39,7 @@
   "@type": "SoftwareSourceCode",
   "name": "OpenProgram",
   "description": "Build self-programming AI agents that create and refine their own workflows with an open-source runtime for models, tools, memory, context, and multi-agent collaboration.",
-  "url": "https://openprogram.io/",
+  "url": "https://fuzzykuji.github.io/openprogram-site/",
   "codeRepository": "https://github.com/FuzzyKuji/OpenProgram",
   "license": "https://github.com/FuzzyKuji/OpenProgram/blob/main/LICENSE",
   "programmingLanguage": "Python",
@@ -54,7 +54,7 @@
 <style>
 @font-face{
   font-family:Inter;
-  src:url("/docs/assets/fonts/inter-latin-wght-normal.woff2") format("woff2");
+  src:url("docs/assets/fonts/inter-latin-wght-normal.woff2") format("woff2");
   font-style:normal;
   font-weight:100 900;
   font-display:swap;
@@ -323,21 +323,21 @@ footer{border-top:1px solid var(--border-soft);padding:36px 0;color:var(--faint)
   .btn,.paper,.point,.capability{transition:none}
 }
 </style>
-<link rel="describedby" href="https://openprogram.io/llms.txt">
+<link rel="describedby" href="https://fuzzykuji.github.io/openprogram-site/llms.txt">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
 
 <nav aria-label="Primary navigation">
   <div class="wrap navin">
-    <a class="brand" href="/" aria-label="OpenProgram home">
-      <img class="when-dark" src="/docs/images/logo-lockup-dark.svg" alt="OpenProgram" width="776" height="174">
-      <img class="when-light" src="/docs/images/logo-lockup-light.svg" alt="OpenProgram" width="776" height="174">
+    <a class="brand" href="./" aria-label="OpenProgram home">
+      <img class="when-dark" src="docs/images/logo-lockup-dark.svg" alt="OpenProgram" width="776" height="174">
+      <img class="when-light" src="docs/images/logo-lockup-light.svg" alt="OpenProgram" width="776" height="174">
     </a>
     <div class="navlinks">
       <a href="#mechanisms">How it works</a>
       <a href="#use-cases">Agents</a>
-      <a href="/docs/">Docs</a>
+      <a href="docs/">Docs</a>
       <a href="https://github.com/FuzzyKuji/OpenProgram">GitHub</a>
       <div class="theme-wrap">
         <button type="button" id="theme-toggle" aria-label="Theme" aria-haspopup="menu" aria-controls="theme-menu" aria-expanded="false">
@@ -364,22 +364,22 @@ footer{border-top:1px solid var(--border-soft);padding:36px 0;color:var(--faint)
       <p class="hero-copy">OpenProgram agents are Python classes that can write new methods into their own code. Python owns the control flow and checks, and the model is called only where judgment is needed. Run them in one workspace with chat, files, a terminal, and a browser side by side.</p>
       <div class="actions">
         <a class="btn btn-primary" href="#quick-start">Install OpenProgram</a>
-        <a class="btn btn-secondary" href="/docs/">Read the docs</a>
+        <a class="btn btn-secondary" href="docs/">Read the docs</a>
       </div>
-      <button class="install-pill" type="button" data-copy="curl -fsSL https://openprogram.io/install | sh">
-        <span class="command"><span class="prompt">$ </span>curl -fsSL https://openprogram.io/install | sh</span>
+      <button class="install-pill" type="button" data-copy="curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh">
+        <span class="command"><span class="prompt">$ </span>curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh</span>
         <span class="copy">copy</span>
       </button>
 
       <figure class="hero-shot">
         <div class="window">
           <picture class="when-dark">
-            <source srcset="/docs/images/chat_hero-home.avif" type="image/avif" width="1600" height="1000">
-            <img src="/docs/images/chat_hero.png" alt="OpenProgram workspace showing an agent session that ran two sub-agents" width="3024" height="1890" fetchpriority="high">
+            <source srcset="docs/images/chat_hero-home.avif" type="image/avif" width="1600" height="1000">
+            <img src="docs/images/chat_hero.png" alt="OpenProgram workspace showing an agent session that ran two sub-agents" width="3024" height="1890" fetchpriority="high">
           </picture>
           <picture class="when-light">
-            <source srcset="/docs/images/chat_hero-home-light.avif" type="image/avif" width="1600" height="1000">
-            <img src="/docs/images/chat_hero_light.png" alt="OpenProgram workspace showing an agent session that ran two sub-agents" width="3024" height="1890">
+            <source srcset="docs/images/chat_hero-home-light.avif" type="image/avif" width="1600" height="1000">
+            <img src="docs/images/chat_hero_light.png" alt="OpenProgram workspace showing an agent session that ran two sub-agents" width="3024" height="1890">
           </picture>
         </div>
         <figcaption>Hand parts of a task to sub-agents and get back only their results.</figcaption>
@@ -419,19 +419,19 @@ footer{border-top:1px solid var(--border-soft);padding:36px 0;color:var(--faint)
         <ol class="points">
           <li class="point">
             <span class="point-num">1</span>
-            <div><h3>A graph, not a transcript</h3><p>User turns, model calls, and function calls are nodes in one graph. Each call reads a selection of earlier nodes, so a sub-agent works on its own branch and hands back only its result.</p><a class="link" href="/docs/capabilities/agentic-programming/README.html">Context documentation →</a></div>
+            <div><h3>A graph, not a transcript</h3><p>User turns, model calls, and function calls are nodes in one graph. Each call reads a selection of earlier nodes, so a sub-agent works on its own branch and hands back only its result.</p><a class="link" href="docs/capabilities/agentic-programming/README.html">Context documentation →</a></div>
           </li>
           <li class="point">
             <span class="point-num">2</span>
-            <div><h3>Agents that program themselves</h3><p>An agent writes and revises the methods of its own class with ordinary file tools. A watcher reloads the change, and the new method is a tool from the next turn.</p><a class="link" href="/docs/capabilities/workflows/README.html#self-programming-workflows">Workflows →</a></div>
+            <div><h3>Agents that program themselves</h3><p>An agent writes and revises the methods of its own class with ordinary file tools. A watcher reloads the change, and the new method is a tool from the next turn.</p><a class="link" href="docs/capabilities/workflows/README.html#self-programming-workflows">Workflows →</a></div>
           </li>
           <li class="point">
             <span class="point-num">3</span>
-            <div><h3>Checked decisions</h3><p>When the model picks a step, code checks the pick before anything runs and sends a bad one back for another try.</p><a class="link" href="/docs/capabilities/agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decisions →</a></div>
+            <div><h3>Checked decisions</h3><p>When the model picks a step, code checks the pick before anything runs and sends a bad one back for another try.</p><a class="link" href="docs/capabilities/agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decisions →</a></div>
           </li>
           <li class="point">
             <span class="point-num">4</span>
-            <div><h3>Events</h3><p>One process-wide bus carries typed events from the agent loop, context, files, channels, and memory. Plugins can gate a tool call before it runs.</p><a class="link" href="/docs/reference/design/proactive/overview.html">Event design →</a></div>
+            <div><h3>Events</h3><p>One process-wide bus carries typed events from the agent loop, context, files, channels, and memory. Plugins can gate a tool call before it runs.</p><a class="link" href="docs/reference/design/proactive/overview.html">Event design →</a></div>
           </li>
         </ol>
       </div>
@@ -452,27 +452,27 @@ footer{border-top:1px solid var(--border-soft);padding:36px 0;color:var(--faint)
       </div>
       <figure class="panel reveal" role="tabpanel" id="panel-graph" aria-labelledby="tab-graph">
         <div class="window">
-          <img class="when-dark" src="/docs/images/code_hero.png" alt="OpenProgram context graph of a session with two user turns and their model calls" loading="lazy" width="3024" height="1890">
-          <img class="when-light" src="/docs/images/code_hero_light.png" alt="OpenProgram context graph of a session with two user turns and their model calls" loading="lazy" width="3024" height="1890">
+          <img class="when-dark" src="docs/images/code_hero.png" alt="OpenProgram context graph of a session with two user turns and their model calls" loading="lazy" width="3024" height="1890">
+          <img class="when-light" src="docs/images/code_hero_light.png" alt="OpenProgram context graph of a session with two user turns and their model calls" loading="lazy" width="3024" height="1890">
         </div>
         <figcaption>Every user turn, model call, and function call is a node you can open, branch from, or retry.</figcaption>
       </figure>
       <figure class="panel" role="tabpanel" id="panel-chat" aria-labelledby="tab-chat" hidden>
         <div class="window">
-          <img class="when-dark" src="/docs/images/chat_edit.png" alt="OpenProgram chat where the agent updates a dashboard page in the project" loading="lazy" width="3024" height="1890">
-          <img class="when-light" src="/docs/images/chat_edit_light.png" alt="OpenProgram chat where the agent updates a dashboard page in the project" loading="lazy" width="3024" height="1890">
+          <img class="when-dark" src="docs/images/chat_edit.png" alt="OpenProgram chat where the agent updates a dashboard page in the project" loading="lazy" width="3024" height="1890">
+          <img class="when-light" src="docs/images/chat_edit_light.png" alt="OpenProgram chat where the agent updates a dashboard page in the project" loading="lazy" width="3024" height="1890">
         </div>
         <figcaption>The agent edits files in the project folder and reports what changed.</figcaption>
       </figure>
       <figure class="panel" role="tabpanel" id="panel-browser" aria-labelledby="tab-browser" hidden>
         <div class="window">
-          <img class="when-dark" src="/docs/images/browser_hero.png" alt="OpenProgram built-in browser showing the dashboard page the agent built" loading="lazy" width="3024" height="1890">
-          <img class="when-light" src="/docs/images/browser_hero_light.png" alt="OpenProgram built-in browser showing the dashboard page the agent built" loading="lazy" width="3024" height="1890">
+          <img class="when-dark" src="docs/images/browser_hero.png" alt="OpenProgram built-in browser showing the dashboard page the agent built" loading="lazy" width="3024" height="1890">
+          <img class="when-light" src="docs/images/browser_hero_light.png" alt="OpenProgram built-in browser showing the dashboard page the agent built" loading="lazy" width="3024" height="1890">
         </div>
         <figcaption>Open what the agent built, or let it read and operate pages while you watch.</figcaption>
       </figure>
       <div class="surface-list" aria-label="Interfaces">
-        <a href="/docs/interfaces/desktop.html">Desktop App</a><a href="/docs/interfaces/web.html">Web UI</a><a href="/docs/interfaces/tui.html">Terminal UI</a><a href="/docs/interfaces/cli.html">CLI</a><a href="/docs/interfaces/acp.html">ACP</a>
+        <a href="docs/interfaces/desktop.html">Desktop App</a><a href="docs/interfaces/web.html">Web UI</a><a href="docs/interfaces/tui.html">Terminal UI</a><a href="docs/interfaces/cli.html">CLI</a><a href="docs/interfaces/acp.html">ACP</a>
       </div>
     </div>
   </section>
@@ -497,7 +497,7 @@ footer{border-top:1px solid var(--border-soft);padding:36px 0;color:var(--faint)
               <li>One tool drives desktop apps, the built-in browser or your own Chrome or Edge, and a remote VM, step by step or as a task handed to a new agent.</li>
             </ul>
             <div class="agent-links">
-              <a class="link" href="/docs/capabilities/computer-use.html">Computer use docs →</a>
+              <a class="link" href="docs/capabilities/computer-use.html">Computer use docs →</a>
             </div>
           </div>
         </article>
@@ -510,8 +510,8 @@ footer{border-top:1px solid var(--border-soft);padding:36px 0;color:var(--faint)
             <span class="command-body"><span class="prompt">$ </span>openprogram programs install owner/repo</span>
           </button>
           <div class="agent-links">
-            <a class="link" href="/docs/capabilities/installing-programs.html">Program guide →</a>
-            <a class="source" href="/docs/capabilities/agentic-programming/writing-functions/agent.html">Writing agents →</a>
+            <a class="link" href="docs/capabilities/installing-programs.html">Program guide →</a>
+            <a class="source" href="docs/capabilities/agentic-programming/writing-functions/agent.html">Writing agents →</a>
           </div>
         </article>
       </div>
@@ -526,28 +526,28 @@ footer{border-top:1px solid var(--border-soft);padding:36px 0;color:var(--faint)
         <p class="lead">Use the whole runtime or only the parts your workflow needs. Everything is configurable from Python, the workspace, and the command line.</p>
       </div>
       <div class="cap-grid reveal">
-        <a class="capability" href="/docs/models/providers.html">
+        <a class="capability" href="docs/models/providers.html">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></svg>
           <h3>Any model</h3><p>Anthropic, OpenAI, Gemini, and local inference servers, with several accounts per provider.</p></a>
-        <a class="capability" href="/docs/capabilities/tools.html">
+        <a class="capability" href="docs/capabilities/tools.html">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z"/></svg>
           <h3>Tools and MCP</h3><p>Built-in file, shell, and browser tools, plus MCP servers and plugins for everything else.</p></a>
-        <a class="capability" href="/docs/capabilities/permissions.html">
+        <a class="capability" href="docs/capabilities/permissions.html">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg>
           <h3>Approvals</h3><p>Approve or deny a tool call before it runs. A denial can carry a note, and the model adjusts to it.</p></a>
-        <a class="capability" href="/docs/capabilities/memory.html">
+        <a class="capability" href="docs/capabilities/memory.html">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5.5" rx="7.5" ry="2.5"/><path d="M4.5 5.5v6c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5v-6M4.5 11.5v6c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5v-6"/></svg>
           <h3>Memory</h3><p>Stored evidence, retrieval, and background writing that carry knowledge across conversations.</p></a>
-        <a class="capability" href="/docs/capabilities/skills.html">
+        <a class="capability" href="docs/capabilities/skills.html">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4.5A1.5 1.5 0 0 1 5.5 3H20v15H5.5A1.5 1.5 0 0 0 4 19.5z"/><path d="M4 19.5A1.5 1.5 0 0 0 5.5 21H20v-3M8 7h8M8 11h5"/></svg>
           <h3>Skills and saved agents</h3><p>Reusable instructions, and Agents that save a model, instructions, tools, and memory access together.</p></a>
-        <a class="capability" href="/docs/capabilities/goal.html">
+        <a class="capability" href="docs/capabilities/goal.html">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M6 8.5v7M8.3 7.2l7.4 3.6M8.3 16.8l7.4-3.6"/></svg>
           <h3>Long-running work</h3><p>Keep a goal alive across conversations and hand parts of it to sub-agents, each in its own Git worktree.</p></a>
-        <a class="capability" href="/docs/integrations/channels.html">
+        <a class="capability" href="docs/integrations/channels.html">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l1-4.2A8 8 0 1 1 20 12z"/></svg>
           <h3>Chat channels</h3><p>Talk to your agents from Telegram, Discord, Slack, and WeChat.</p></a>
-        <a class="capability" href="/docs/capabilities/installing-programs.html">
+        <a class="capability" href="docs/capabilities/installing-programs.html">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.5l8.5 4.5v10L12 21.5 3.5 17V7z"/><path d="M3.5 7L12 11.5 20.5 7M12 11.5v10"/></svg>
           <h3>Installable programs</h3><p>Install a packaged agent from GitHub with <code>openprogram programs install</code>.</p></a>
       </div>
@@ -560,20 +560,20 @@ footer{border-top:1px solid var(--border-soft);padding:36px 0;color:var(--faint)
         <p class="kicker">Quick start</p>
         <h2>Install, then run.</h2>
         <p>The installer brings its own Python. The first <code>openprogram</code> run walks you through connecting a model provider, either by importing a signed-in Claude Code, Codex, or Gemini CLI or by pasting an API key. <code>openprogram web</code> then opens the workspace at http://localhost:18100.</p>
-        <p>Prefer an app? The macOS App is a <a href="/docs/install/download.html">DMG download</a>; the Linux App is a deb or AppImage there too, and the Windows App arrives in v1.1.1.</p>
-        <a class="link" href="/docs/install/install.html">Platform and developer installation →</a>
+        <p>Prefer an app? The macOS App is a <a href="docs/install/download.html">DMG download</a>; the Linux App is a deb or AppImage there too, and the Windows App arrives in v1.1.1.</p>
+        <a class="link" href="docs/install/install.html">Platform and developer installation →</a>
       </div>
       <ol class="steps reveal">
         <li class="step">
           <span class="step-num">1</span>
           <div class="step-body">
-            <button class="command-card" type="button" data-copy="curl -fsSL https://openprogram.io/install | sh">
+            <button class="command-card" type="button" data-copy="curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh">
               <span class="command-head"><span>Install on macOS or Linux</span><span class="copy">copy</span></span>
-              <span class="command-body"><span class="prompt">$ </span>curl -fsSL https://openprogram.io/install | sh</span>
+              <span class="command-body"><span class="prompt">$ </span>curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh</span>
             </button>
-            <button class="command-card" type="button" data-copy="irm https://openprogram.io/install.ps1 | iex">
+            <button class="command-card" type="button" data-copy="irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex">
               <span class="command-head"><span>Or on Windows from v1.2.0, in PowerShell</span><span class="copy">copy</span></span>
-              <span class="command-body"><span class="prompt">PS&gt; </span>irm https://openprogram.io/install.ps1 | iex</span>
+              <span class="command-body"><span class="prompt">PS&gt; </span>irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex</span>
             </button>
           </div>
         </li>
@@ -628,7 +628,7 @@ footer{border-top:1px solid var(--border-soft);padding:36px 0;color:var(--faint)
       <h2>Build your next agent with OpenProgram.</h2>
       <p class="lead">Install it, connect a model, and start from a shipped agent or your own Python class.</p>
       <div class="actions">
-        <a class="btn btn-primary" href="/docs/start/GETTING_STARTED.html">Getting started</a>
+        <a class="btn btn-primary" href="docs/start/GETTING_STARTED.html">Getting started</a>
         <a class="btn btn-secondary" href="https://github.com/FuzzyKuji/OpenProgram">View on GitHub</a>
       </div>
     </div>
@@ -639,13 +639,13 @@ footer{border-top:1px solid var(--border-soft);padding:36px 0;color:var(--faint)
   <div class="wrap footer-in">
     <span>OpenProgram · AGPL-3.0</span>
     <div class="footer-links">
-      <a href="/docs/">Documentation</a>
+      <a href="docs/">Documentation</a>
       <a href="https://github.com/FuzzyKuji/OpenProgram">GitHub</a>
       <a href="https://github.com/FuzzyKuji/OpenProgram/releases">Releases</a>
       <a href="https://github.com/FuzzyKuji/OpenProgram/discussions">Discussions</a>
       <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/.github/CONTRIBUTING.md">Contribute</a>
       <a href="#papers">Related papers</a>
-      <a href="/sitemap.xml">Sitemap</a>
+      <a href="sitemap.xml">Sitemap</a>
     </div>
   </div>
 </footer>

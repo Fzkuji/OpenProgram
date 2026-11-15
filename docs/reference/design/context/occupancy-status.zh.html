@@ -18,6 +18,21 @@
 </table>
 <p class="note">缓存只按 HEAD 取键时的症状：<code translate="no">/compact</code> 报告 40.7k，面板仍显示 Messages 125k。摘要已存，快照是旧的。</p>
 
+<h2 id="window">窗口</h2>
+<p>分母是请求所用模型的上下文窗口，和压缩对同一个 Model 读到的数相同。每次显示时现场解析，不从保存的记录里读回。</p>
+<table class="stack">
+<thead><tr><th scope="col">何时</th><th scope="col">模型</th></tr></thead>
+<tbody>
+<tr><th scope="row">运行中的轮次里一次请求报告用量</th><td>轮次解析出的 Model。报告带 <code translate="no">provider/model</code> 和它的窗口；对话记下两者，供轮次结束时的报告使用</td></tr>
+<tr><th scope="row">图变化、重新加载、面板</th><td>按顺序取第一个给出模型的来源：选择器固定的模型、上一轮解析出的模型、运行中的 runtime、会话行的固定模型、跟随 Agent 的对话取 Agent 当前的模型、会话行里上一轮写下的 <code translate="no">model</code></td></tr>
+<tr><th scope="row">读的是未选中的分支</th><td>GET <code translate="no">/context?head_id=</code> 指向另一个已记录分支的末端时，用那个分支自己在 <code translate="no">branch_config</code> 里的模型，没有就用它的 Agent 的模型。不看选中分支的固定模型、上一轮和 runtime</td></tr>
+<tr><th scope="row">选中了另一个分支</th><td>上一轮解析出的模型和窗口随 runtime 一起丢弃：它们属于离开的那个分支。没有自选模型的分支随后读它的 Agent 的模型</td></tr>
+<tr><th scope="row">任何存下的模型字符串</th><td><code translate="no">provider/model</code> 和 <code translate="no">provider:model</code> 在第一个分隔符处拆开（<code translate="no">split_model_ref</code>）；不带 provider 的 id 用会话的 provider</td></tr>
+<tr><th scope="row">给出的模型解析不到</th><td>没有窗口。圆环和面板只显示 token 数，不显示上限和百分比。只有压缩保留 128k 默认值，让它提早触发</td></tr>
+</tbody>
+</table>
+<p class="note">查找失败时保存的记录带着 128k。加载对话、面板路由和下一次广播都会换成当时解析出的窗口。</p>
+
 <h2 id="outcomes">压缩结果</h2>
 <ol>
 <li>准备：从渲染历史构建提示，计算 <code translate="no">budget_pct</code>。</li>
@@ -40,6 +55,11 @@
 <thead class="sr"><tr><th scope="col">状态</th><th scope="col">显示</th></tr></thead>
 <tbody>
 <tr><th scope="row">正常</th><td>中性轨道，弧线按比例着色。没有建议边框或建议状态。点击打开面板</td></tr>
+<tr><th scope="row">来源</th><td>圆环、提示和面板标题读同一份快照（<code translate="no">lib/chat/context-occupancy.ts</code>）：会话最近一次 <code translate="no">context_stats</code>；第一次到达前用面板缓存的快照（新对话的估算，标 est.）；还没有会话时用草稿估算。三处永远显示同一个数</td></tr>
+<tr><th scope="row">草稿变成会话</th><td>第一条消息的确认（ack）让草稿以自己的键成为会话。草稿估算复制进这个会话的快照，同时开始取它的 GET <code translate="no">/context</code>，所以数字和窗口一直保留，先被会话估算、再被 <code translate="no">context_stats</code> 替换，不会掉到 0</td></tr>
+<tr><th scope="row">分支还没有快照</th><td>缓存对没有记录的分支回答会话最近一份快照，那是按另一个分支的模型算的。圆环先显示它，同时立即读这个分支自己的 GET <code translate="no">/context</code>（<code translate="no">hasContextBreakdown</code>）</td></tr>
+<tr><th scope="row">窗口未知</th><td>弧线为空；提示和面板标题只显示 token 数。分类行仍显示占总量的比例</td></tr>
+<tr><th scope="row">终端客户端</th><td>底栏按对话记下 <code translate="no">context_stats</code> 里的窗口。帧里的 <code translate="no">context_window</code> 为 null 时删掉它：底栏只显示 token 数，不显示上限和百分比，和圆环一致</td></tr>
 <tr><th scope="row">压缩中</th><td>分支正在运行的是 <code translate="no">compact</code> 操作，或处在压缩阶段的轮次时（<code translate="no">isCompacting</code>，从 <code translate="no">compaction_started</code> 到结束或失败）：圆环忙碌，面板按钮禁用</td></tr>
 <tr><th scope="row">压缩对话</th><td>面板行发送 <code translate="no">{action:"compact", session_id}</code>，与 <code translate="no">/compact</code> 同一 WebSocket 路径。无会话或压缩中时禁用。刚压缩完仍可点，服务端回答没有可压缩的内容</td></tr>
 </tbody>
@@ -62,6 +82,9 @@
 <li>成功后，圆环和面板总量下降，并与 <code translate="no">compaction_finished.tokens_after</code> 一致。</li>
 <li>重复压缩不调用摘要模型，报告无可压缩，绝不显示“盖住 0 条，X → X”。</li>
 <li>任何占用下都没有建议边框。</li>
+<li>圆环的上限等于压缩所用 Model 的 <code translate="no">real_context_window</code>：自选模型的对话和跟随 Agent 的对话都一样，轮次进行中和重新加载后也一样。</li>
+<li>自选模型的分支显示该模型的窗口：选中它时如此，选中别的分支而读它的末端时也如此。</li>
+<li>模型换成窗口未知的之后，终端底栏不显示上限。</li>
 <li>压缩期间圆环忙碌、按钮禁用，完成后恢复。</li>
 </ul>
 
@@ -70,16 +93,19 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">文件</th><th scope="col">作用</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">openprogram/runtime/context/session_stats.py</code></th><td>占用度量</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/session_stats.py</code></th><td>占用度量；<code translate="no">model_ref_window</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/models/providers/catalog/models.py</code></th><td><code translate="no">split_model_ref</code>、<code translate="no">find_model_ref</code></td></tr>
+<tr><th scope="row"><code translate="no">tokens.py</code></th><td>显示用 <code translate="no">known_context_window</code>，压缩用 <code translate="no">real_context_window</code></td></tr>
 <tr><th scope="row"><code translate="no">engine.py</code></th><td><code translate="no">compact</code>、<code translate="no">no_op</code>、<code translate="no">tokens_before</code>、<code translate="no">tokens_after</code></td></tr>
 <tr><th scope="row"><code translate="no">compaction/summarize.py</code></th><td><code translate="no">find_cut_index</code>；可在调用模型前短路</td></tr>
 <tr><th scope="row"><code translate="no">persistence.py</code></th><td><code translate="no">rendered_history</code>；插入时保留旧轮次</td></tr>
-<tr><th scope="row"><code translate="no">openprogram/interfaces/server/server_runtime/context_stats.py</code></th><td><code translate="no">_context_rev</code>、刷新、实测复用</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/server/server_runtime/context_stats.py</code></th><td><code translate="no">_context_rev</code>、刷新、实测复用、<code translate="no">_conv_model_ref</code>、<code translate="no">_branch_at_head</code></td></tr>
 <tr><th scope="row"><code translate="no">ws_actions/chat/commands.py</code></th><td>手动压缩后刷新</td></tr>
 <tr><th scope="row"><code translate="no">ws_actions/chat/context_usage.py</code></th><td>每次实测请求后刷新，含自动压缩</td></tr>
 <tr><th scope="row"><code translate="no">routes/files/tree.py</code></th><td><code translate="no">GET /api/sessions/{id}/context</code></td></tr>
 <tr><th scope="row"><code translate="no">apps/web/components/chat/badges/</code></th><td><code translate="no">context-badge.tsx</code>、<code translate="no">context-breakdown-panel.tsx</code></td></tr>
 <tr><th scope="row"><code translate="no">apps/web/lib/runtime-bridge/session/chat-handlers.ts</code></th><td>压缩事件</td></tr>
+<tr><th scope="row"><code translate="no">apps/cli/src/screens/repl/wsHandlers/handleChatResponse.ts</code></th><td>终端底栏按对话记下的窗口</td></tr>
 </tbody>
 </table>
 </details>

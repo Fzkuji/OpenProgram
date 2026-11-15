@@ -1,7 +1,8 @@
 # What a new Windows user does with the App's installer, on a real Windows:
 # install without elevation, start the App, let its first run unpack the seed
 # and start the worker. The user's folder has a name outside every Western code
-# page, as on a Chinese Windows.
+# page, as on a Chinese Windows. The installer runs under a Group Policy that
+# allows only signed PowerShell scripts, as on a company PC.
 #
 #   smoke-windows-desktop.ps1 -Installer SETUP.exe [-ExpectedVersion X.Y.Z]
 #       [-UserHome DIR] [-HealthOnly] [-ToolCall [-Python PYTHON]] [-Uninstall]
@@ -62,6 +63,32 @@ function Test-Healthy {
     }
 }
 
+# The stable App's DevTools port (apps/desktop/main/instance.js).
+$DebugPort = 9223
+
+function Get-AppPages {
+    try {
+        return @(Invoke-RestMethod -Uri "http://127.0.0.1:$DebugPort/json" -TimeoutSec 5 |
+            Where-Object { $_.type -eq "page" } | ForEach-Object { $_.url })
+    } catch {
+        return @()
+    }
+}
+
+# The App's window has to reach the chat page signed in, not just the worker
+# answer /healthz: a window that never gets its sign-in address waits forever.
+function Wait-AppChat([string]$What) {
+    $Until = (Get-Date).AddSeconds(180)
+    $Pages = @()
+    do {
+        $Pages = @(Get-AppPages)
+        if (@($Pages | Where-Object { $_ -like "http://127.0.0.1:$Port/chat*" }).Count -gt 0) { return }
+        Start-Sleep -Seconds 2
+    } while ((Get-Date) -lt $Until)
+    $Shown = @($Pages | ForEach-Object { if ($_.Length -gt 120) { $_.Substring(0, 120) + "..." } else { $_ } })
+    Add-Failure "${What}: the App's window never reached /chat (pages: $($Shown -join ', '))"
+}
+
 if (-not $UserHome) {
     # U+7528 U+6237: "user" in Chinese.
     $UserHome = Join-Path $env:RUNNER_TEMP ("op-" + [char]0x7528 + [char]0x6237 + "-home")
@@ -75,10 +102,35 @@ $env:HOME = $UserHome
 Remove-Item Env:OPENPROGRAM_WEB_PORT -ErrorAction SilentlyContinue
 Remove-Item Env:OPENPROGRAM_STATE_DIR -ErrorAction SilentlyContinue
 
-# /S is silent, /currentuser installs for this user with no elevation, and /D
-# has to come last and unquoted.
-$Setup = Start-Process -FilePath $Installer -ArgumentList "/S", "/currentuser", "/D=$Install" -Wait -PassThru
-if ($Setup.ExitCode -ne 0) { throw "the installer exited with code $($Setup.ExitCode)" }
+# A company PC may allow only signed PowerShell scripts by Group Policy, which
+# -ExecutionPolicy Bypass cannot override. The App's installer runs under that
+# policy here, set where Group Policy writes it; an older release is installed
+# without it, since it is only the base the newer one installs over.
+$PolicyKey = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell"
+$PolicyKeyExisted = Test-Path -LiteralPath $PolicyKey
+try {
+    # Inside the try, so a policy that did not take is removed again too.
+    if (-not $HealthOnly) {
+        New-Item -Path $PolicyKey -Force | Out-Null
+        New-ItemProperty -Path $PolicyKey -Name EnableScripts -PropertyType DWord -Value 1 -Force | Out-Null
+        New-ItemProperty -Path $PolicyKey -Name ExecutionPolicy -PropertyType String -Value AllSigned -Force | Out-Null
+        $Policy = & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive `
+            -Command "Get-ExecutionPolicy -Scope MachinePolicy"
+        if ("$Policy".Trim() -ne "AllSigned") { throw "the Group Policy execution policy did not take: $Policy" }
+    }
+    # /S is silent, /currentuser installs for this user with no elevation, and /D
+    # has to come last and unquoted.
+    $Setup = Start-Process -FilePath $Installer -ArgumentList "/S", "/currentuser", "/D=$Install" -Wait -PassThru
+} finally {
+    if (-not $HealthOnly) {
+        if ($PolicyKeyExisted) {
+            Remove-ItemProperty -Path $PolicyKey -Name EnableScripts, ExecutionPolicy -ErrorAction SilentlyContinue
+        } else {
+            Remove-Item -Path $PolicyKey -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+if ($Setup.ExitCode -ne 0) { throw "the installer exited with code $($Setup.ExitCode) (12: it could not stop the background worker)" }
 $Exe = Join-Path $Install "OpenProgram.exe"
 if (-not (Test-Path -LiteralPath $Exe -PathType Leaf)) { throw "OpenProgram.exe is missing after the install" }
 $Installed = (Get-Item -LiteralPath $Exe).VersionInfo.ProductVersion
@@ -150,6 +202,39 @@ try {
     Write-Host "version $Installed is healthy under $UserHome"
 
     if (-not $HealthOnly) {
+        # A healthy worker is not yet a usable App: the window gets its
+        # signed-in address from `web auth-url`, run from outside the worker,
+        # which has to recognise the worker through its lock and command line.
+        # The window is checked over the App's DevTools port.
+        $Command = Join-Path $Root "bin\openprogram.cmd"
+        $SignIn = (& $Command web auth-url --base-url "http://127.0.0.1:$Port" 2>&1 | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0 -or $SignIn -notmatch '#token=[A-Za-z0-9_-]{43}$') {
+            Add-Failure "'web auth-url' gave no sign-in address (exit $LASTEXITCODE): $SignIn"
+        }
+        $Status = (& $Command worker status 2>&1 | Out-String)
+        if ($Status -notmatch 'running \(PID \d+') { Add-Failure "'worker status' does not see the App's worker: $Status" }
+        $Recorded = (Get-Content -LiteralPath (Join-Path $State "web-port") -TotalCount 1 -ErrorAction SilentlyContinue)
+        if ("$Recorded".Trim() -ne "$Port") { Add-Failure "the first start recorded port '$Recorded', not $Port" }
+        Wait-AppChat "the first start"
+
+        # Closing the App leaves the worker running. The worker must not hold
+        # the App's DevTools socket it inherited, or the reopened App cannot
+        # open that port and the browser tool loses the App's tabs.
+        Get-Process -Name OpenProgram -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 3
+        if (-not (Test-Healthy)) { Add-Failure "closing the App stopped the worker" }
+        $Held = @(Get-NetTCPConnection -LocalPort $DebugPort -State Listen -ErrorAction SilentlyContinue)
+        if ($Held.Count -gt 0) {
+            Add-Failure "with the App closed, port $DebugPort still listens (process $(($Held | ForEach-Object { $_.OwningProcess }) -join ', '))"
+        }
+        $App = Start-Process -FilePath $Exe -PassThru
+        Wait-AppChat "the reopened App"
+        $Owners = @(Get-NetTCPConnection -LocalPort $DebugPort -State Listen -ErrorAction SilentlyContinue |
+            ForEach-Object { (Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue).ProcessName })
+        if ($Owners.Count -eq 0 -or @($Owners | Where-Object { $_ -ne "OpenProgram" }).Count -gt 0) {
+            Add-Failure "the reopened App does not own port $DebugPort (owners: $($Owners -join ', '))"
+        }
+
         foreach ($Name in "current", "identity\openprogram-launcher.exe", "bin\openprogram.cmd", "bootstrap\versions.py") {
             if (-not (Test-Path -LiteralPath (Join-Path $Root $Name) -PathType Leaf)) { Add-Failure "the first run left no runtime\$Name" }
         }

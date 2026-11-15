@@ -649,6 +649,8 @@ def _add_sessions_command(sub):
         help="Only conversations active in the last DAYS days")
     p_ss_imp.add_argument("--list", action="store_true", dest="list_only",
         help="List what would be imported, and what already was, without importing")
+    p_ss_imp.add_argument("--dry-run", action="store_true", dest="dry_run",
+        help="Show only what this import would create or append to, and import nothing")
     return p_sessions
 
 

@@ -20,7 +20,17 @@ _locked_session: ContextVar[str | None] = ContextVar("chat_goal_lock", default=N
 # when a conversation has one waiting; a continuation yields to it for at most
 # USER_TURN_GRACE_S, so a closed window cannot hold a Goal forever.
 USER_TURN_GRACE_S = 15.0
-ADMITTED_TURN_LOCK_WAIT_S = 5.0
+# The longest anything waits for the Goal lock. Not the expected wait: holders
+# keep it for milliseconds. It bounds a holder stuck behind the conversation's
+# own write lock.
+GOAL_LOCK_WAIT_S = 30.0
+# A usage refresh only redraws what the ledger already holds, and runs on a
+# provider stream's thread: it gives up this soon instead of holding the
+# stream behind a lock that stays held.
+REFRESH_LOCK_WAIT_S = 2.0
+# A running turn's step redoes its Goal write this often when it runs without
+# the lock and meets a change it did not read.
+UNLOCKED_STEP_TRIES = 5
 _waiting_users: dict[str, float | None] = {}  # session -> first deferral time
 _waiting_lock = threading.Lock()
 
@@ -65,48 +75,110 @@ def goal_branch_tip(session_id: str, goal: dict | None) -> str | None:
     return ref.get("head_id") if isinstance(ref, dict) and ref.get("status") != "aborted" else None
 
 
+class _Queue:
+    """Threads of this process waiting for one session's Goal lock."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.users = 0
+
+
+_queues: dict[str, _Queue] = {}
+_queues_guard = threading.Lock()
+
+
 @contextmanager
-def locked(session_id):
-    if _locked_session.get() == session_id:
-        yield
-        return
-    from .ownership import goal_owner
-    with goal_owner(goals._db(), session_id) as acquired:
-        if not acquired:
-            raise goals.GoalConflictError("Goal admission or mutation is already in progress")
-        token = _locked_session.set(session_id)
+def _queued(session_id: str, deadline: float):
+    """One thread of this process at a time, in line instead of polling."""
+    with _queues_guard:
+        queue = _queues.setdefault(session_id, _Queue())
+        queue.users += 1
+    try:
+        if not queue.lock.acquire(timeout=max(0.0, deadline - time.monotonic())):
+            raise goals.GoalBusy("Goal admission or mutation is already in progress")
         try:
             yield
         finally:
-            _locked_session.reset(token)
+            queue.lock.release()
+    finally:
+        with _queues_guard:
+            queue.users -= 1
+            if not queue.users and _queues.get(session_id) is queue:
+                del _queues[session_id]
+
+
+def _warm(session_id: str) -> None:
+    """Read the conversation's log before waiting for the lock, never under it.
+
+    A Goal lives in the conversation's meta, which is folded from its log. A
+    first read in a process, or one after the checkpoint went stale, reads
+    the log (seconds for a log of hundreds of megabytes). Done here, the read
+    under the lock finds the fold cached or only a few new lines behind.
+    """
+    try:
+        db = goals._db()
+        read = getattr(db, "read_disk_meta", None)
+        if callable(read):
+            read(session_id)
+        db.get_session(session_id)
+    except Exception:
+        logging.getLogger(__name__).debug("Goal read of %s not warmed", session_id, exc_info=True)
 
 
 @contextmanager
-def locked_when_free(session_id):
-    """Take the Goal lock from inside a turn that was already admitted.
+def locked(session_id, *, wait: float | None = None):
+    """Hold the session's Goal lock: wait in line for it, :class:`GoalBusy`
+    after ``wait`` seconds (:data:`GOAL_LOCK_WAIT_S` when not given).
 
-    The admission or checkpoint that let this turn start can still be letting
-    go of the lock when its runner gets here, and the turn's own steps (its
-    verifier's reads, its closing checkpoint) meet the same brief holders, so
-    a short wait replaces failing a turn nothing is competing with.
+    Holders read and write the Goal's own state and nothing slow, so a
+    waiter gets its turn in milliseconds; failing at once made a reply fail
+    whenever two writers of one conversation met.
     """
     if _locked_session.get() == session_id:
         yield
         return
     from .ownership import goal_owner
-    deadline = time.monotonic() + ADMITTED_TURN_LOCK_WAIT_S
-    while True:
-        with goal_owner(goals._db(), session_id) as acquired:
-            if acquired:
-                token = _locked_session.set(session_id)
-                try:
-                    yield
-                finally:
-                    _locked_session.reset(token)
-                return
-        if time.monotonic() >= deadline:
-            raise goals.GoalConflictError("Goal admission or mutation is already in progress")
-        time.sleep(0.01)
+    _warm(session_id)
+    deadline = time.monotonic() + (GOAL_LOCK_WAIT_S if wait is None else wait)
+    with _queued(session_id, deadline):
+        while True:
+            # Another process (a CLI, the channels worker) is polled for.
+            with goal_owner(goals._db(), session_id) as acquired:
+                if acquired:
+                    token = _locked_session.set(session_id)
+                    try:
+                        yield
+                    finally:
+                        _locked_session.reset(token)
+                    return
+            if time.monotonic() >= deadline:
+                raise goals.GoalBusy("Goal admission or mutation is already in progress")
+            time.sleep(0.01)
+
+
+def turn_step(session_id, step):
+    """Run one Goal step of a turn that is already running; its result.
+
+    Under the Goal lock. A lock that stays held does not fail the turn: the
+    step runs without it. Its Goal write is a compare-and-set on the Goal's
+    version, so it cannot overwrite a change it did not read; when it meets
+    one, the whole step (read, check, write) is done again.
+    """
+    from contextlib import ExitStack
+    with ExitStack() as stack:
+        try:
+            stack.enter_context(locked(session_id))
+        except goals.GoalBusy:
+            logging.getLogger(__name__).warning(
+                "Goal lock of %s stayed held; a running turn's step went on without it", session_id)
+        else:
+            return step()
+    for _ in range(UNLOCKED_STEP_TRIES - 1):
+        try:
+            return step()
+        except goals.GoalVersionConflict:
+            time.sleep(0.01)
+    return step()
 
 
 def serialized(function):
@@ -149,10 +221,11 @@ def used_tools(store, execution_id: str) -> bool:
     execution = store.get_execution(execution_id)
     if execution is None or not execution.session_id:
         return False
+    # Only the decision lines are parsed; the rest of the log is skipped by bytes.
     return any(
         record["type"] == DECISION
         and any(item.get("type") == "toolCall" for item in record["data"]["message"].get("content") or ())
-        for record in default_db().read_turn_records(execution.session_id, execution_id)
+        for record in default_db().read_turn_records(execution.session_id, execution_id, DECISION)
     )
 
 
@@ -254,17 +327,37 @@ def project_todos(session_id: str, goal: dict) -> list[dict]:
             for item in todos(session_id, goal)]
 
 
-@serialized
+_refresh_waiting: set[str] = set()  # sessions with a usage refresh in line
+_refresh_guard = threading.Lock()
+
+
 def refresh_usage(session_id: str) -> None:
-    """Publish durable receipts, including after pause, edit or completion."""
-    goal = goals.load_goal(session_id)
-    if not goal or goal.get("execution_mode") != "chat":
-        return
-    if goal.get("usage_mode") != "requests" and goal.get("status") != "active":
-        return
-    goals.accumulate_goal_usage(session_id, goal)
-    goals.checkpoint_active_elapsed(goal)
-    publish(session_id, goal)
+    """Publish durable receipts, including after pause, edit or completion.
+
+    Every usage event of a conversation asks for this, from each provider
+    stream's own thread. One refresh in line covers the ones asked for while
+    it waits: it reads the ledger only after it holds the lock.
+    """
+    if _locked_session.get() != session_id:
+        with _refresh_guard:
+            if session_id in _refresh_waiting:
+                return
+            _refresh_waiting.add(session_id)
+    try:
+        with locked(session_id, wait=REFRESH_LOCK_WAIT_S):
+            with _refresh_guard:
+                _refresh_waiting.discard(session_id)
+            goal = goals.load_goal(session_id)
+            if not goal or goal.get("execution_mode") != "chat":
+                return
+            if goal.get("usage_mode") != "requests" and goal.get("status") != "active":
+                return
+            goals.accumulate_goal_usage(session_id, goal)
+            goals.checkpoint_active_elapsed(goal)
+            publish(session_id, goal)
+    finally:
+        with _refresh_guard:
+            _refresh_waiting.discard(session_id)
 
 
 @serialized
@@ -331,6 +424,7 @@ def resume(session_id: str, expected: dict | None = None) -> dict:
                 run_id=uuid.uuid4().hex, run_turns=0, idle_turns=0, stop_requested=False,
                 pause_reason="", active_started_at=None, last_reason="")
     goal.pop("automatic_resumes", None)
+    goal.pop("failure", None)
     goal["goal_id"] = goal.get("goal_id") or uuid.uuid4().hex
     goal.pop("continuation_restart", None)
     goal.pop("verification", None)
@@ -519,32 +613,37 @@ def verify_from_controls(session_id: str, expected: dict | None = None) -> dict:
 def turn_context(session_id: str, execution_id: str, expected: dict | None = None):
     goal = goals.load_goal(session_id)
     token = _turn_goal.set(dict(expected or {}))
+
+    def begin():
+        goal = goals.load_goal(session_id)
+        goals.check_goal_preconditions(goal or {}, expected)
+        if goal.get("status") != "active" or goal.get("execution_id") != execution_id:
+            raise goals.GoalConflictError("Goal changed before the admitted turn started")
+        candidate = goal.get("verification") or {}
+        phase = "verifying" if candidate.get("execution_id") == execution_id and candidate.get("status") == "pending" else "working"
+        goals.checkpoint_active_elapsed(goal, stop=True)
+        from openprogram.runtime.execution import default_store
+        execution = default_store().get_execution(execution_id)
+        goal.update(phase=phase, active_started_at=time.time(),
+                    active_attempt_id=execution.current_attempt_id)
+        goal["continuation_policy"] = continuation_policy()
+        publish(session_id, goal)
+
+    def end():
+        latest = goals.load_goal(session_id)
+        if latest and latest.get("execution_id") == execution_id:
+            goals.accumulate_goal_usage(session_id, latest)
+            goals.checkpoint_active_elapsed(latest, stop=True)
+            publish(session_id, latest)
+
     try:
         if expected:
-            with locked_when_free(session_id):
-                goal = goals.load_goal(session_id)
-                goals.check_goal_preconditions(goal or {}, expected)
-                if goal.get("status") != "active" or goal.get("execution_id") != execution_id:
-                    raise goals.GoalConflictError("Goal changed before the admitted turn started")
-                candidate = goal.get("verification") or {}
-                phase = "verifying" if candidate.get("execution_id") == execution_id and candidate.get("status") == "pending" else "working"
-                goals.checkpoint_active_elapsed(goal, stop=True)
-                from openprogram.runtime.execution import default_store
-                execution = default_store().get_execution(execution_id)
-                goal.update(phase=phase, active_started_at=time.time(),
-                            active_attempt_id=execution.current_attempt_id)
-                goal["continuation_policy"] = continuation_policy()
-                publish(session_id, goal)
+            turn_step(session_id, begin)
         yield
     finally:
         try:
             if _turn_goal.get():
-                with locked_when_free(session_id):
-                    latest = goals.load_goal(session_id)
-                    if latest and latest.get("execution_id") == execution_id:
-                        goals.accumulate_goal_usage(session_id, latest)
-                        goals.checkpoint_active_elapsed(latest, stop=True)
-                        publish(session_id, latest)
+                turn_step(session_id, end)
         except Exception:
             # Terminal accounting has a durable retry path. Never change a
             # successful chat outcome because this elapsed-time checkpoint failed.
@@ -597,7 +696,9 @@ def admit(entry, **kwargs):
         if goals.budget_exhausted(goal):
             raise goals.GoalConflictError("Goal budget is exhausted")
         from openprogram.runtime.execution.foreground import active_foreground_task
-        foreground = active_foreground_task(entry.store, sid)
+        # The Goal's own branch: a turn running on another branch of the
+        # conversation neither holds the Goal's turn back nor is held by it.
+        foreground = active_foreground_task(entry.store, sid, selected_branch=goal.get("branch_id"))
         if foreground and foreground["execution_id"] != continuation_id:
             raise goals.GoalConflictError("Conversation already has an active execution")
         request = dict(request, goal_context=identity(goal))
@@ -660,6 +761,22 @@ def after_terminal(store, execution):
         return
     sid = execution.session_id
     completed_verification = bool(request.get("goal_verification")) and execution.status == ExecutionStatus.COMPLETED
+    # What reads the conversation's log or the user's files is read before the
+    # lock: the turn is over, so neither answer changes while this waits.
+    seen = goals.load_goal(sid)
+    if (not seen or seen.get("execution_mode") != "chat"
+            or seen.get("execution_id") != execution.execution_id):
+        return
+    from . import verification
+    idle_turn = bool(
+        not request.get("goal_verification") and request.get("goal_trigger")
+        and execution.status == ExecutionStatus.COMPLETED
+        and seen.get("accounted_execution_id") != execution.execution_id
+        and not used_tools(store, execution.execution_id))
+    digests = verification.evidence_digests(seen) if request.get("goal_verification") else {}
+    failure = (turn_failure(store, execution)
+               if execution.status == ExecutionStatus.FAILED
+               and seen.get("accounted_execution_id") != execution.execution_id else {})
     with locked(sid):
         goal = goals.load_goal(sid)
         if (not goal or goal.get("execution_mode") != "chat"
@@ -682,14 +799,16 @@ def after_terminal(store, execution):
             goal["checklist"] = project_todos(sid, goal)
             if execution.status == ExecutionStatus.COMPLETED:
                 goal.pop("automatic_resumes", None)
+                goal.pop("failure", None)
             if not request.get("goal_verification"):
                 # Only an automatic turn can spin; a user turn starts the count over.
-                idle = (request.get("goal_trigger") and execution.status == ExecutionStatus.COMPLETED
-                        and not used_tools(store, execution.execution_id))
-                goal["idle_turns"] = int(goal.get("idle_turns") or 0) + 1 if idle else 0
+                goal["idle_turns"] = int(goal.get("idle_turns") or 0) + 1 if idle_turn else 0
             if execution.status != ExecutionStatus.COMPLETED and goal.get("status") == "active" and not stale_revision:
                 goal.update(status="paused_recoverable", phase="paused", pause_reason="execution_failed",
                             last_reason=execution.reason_code or execution.status.value)
+                # What stopped the turn decides whether the Goal goes on by
+                # itself (``continue_after_failure``).
+                goal["failure"] = failure
             if goal.get("status") == "active" and not stale_revision:
                 exhausted = goals.budget_exhausted(goal)
                 if request.get("permission_mode") == "plan":
@@ -706,14 +825,17 @@ def after_terminal(store, execution):
             charge_daily_budget(sid, goal, execution.execution_id)
         if goal.get("status") != "active" or stale_revision:
             return
-        from . import verification
         if request.get("goal_verification"):
-            verification.finish(store, execution, goal, request)
-            # A limit prevents another paid turn, not acceptance of evidence
-            # produced by the last already-admitted verification turn.
-            exhausted = goals.budget_exhausted(goal)
-            if goal.get("status") == "active" and exhausted:
-                goal.update(status="budget_exhausted", phase="terminal", last_reason=exhausted)
+            # A verification turn that failed has its candidate submitted
+            # again from it (``_resume_failed``); a repeated notice of that
+            # turn starts the new verification and judges nothing.
+            if (goal.get("verification") or {}).get("previous_execution_id") != execution.execution_id:
+                verification.finish(store, execution, goal, request, digests)
+                # A limit prevents another paid turn, not acceptance of evidence
+                # produced by the last already-admitted verification turn.
+                exhausted = goals.budget_exhausted(goal)
+                if goal.get("status") == "active" and exhausted:
+                    goal.update(status="budget_exhausted", phase="terminal", last_reason=exhausted)
         else:
             verification.prepare(store, execution, goal)
             idle = int(goal.get("idle_turns") or 0)
@@ -725,6 +847,286 @@ def after_terminal(store, execution):
         if goal.get("status") != "active":
             return
     start_next(store, execution.execution_id, expected=identity(goal))
+
+
+# A finished turn's Goal accounting that could not land is tried again: at
+# once a few times, then off-thread. After that the next read of the Goal
+# settles it (``recover_unsettled``), in this worker or the next.
+SETTLE_INLINE_DELAYS = (0.1, 0.1, 0.1, 0.1)
+SETTLE_BACKGROUND_DELAYS = (1.0, 2.0, 5.0, 10.0, 30.0, 60.0)
+_settling: set[str] = set()
+_settling_lock = threading.Lock()
+
+
+def _settle_once(store, execution) -> Exception | None:
+    """None when nothing is left to retry, else what the retry waits out."""
+    try:
+        after_terminal(store, execution)
+        continue_after_failure(execution.session_id)
+    except (goals.GoalConflictError, goals.GoalStateUnavailable) as exc:
+        logging.getLogger(__name__).debug(
+            "Goal accounting of %s not settled yet", execution.execution_id, exc_info=True)
+        return exc
+    except Exception:
+        logging.getLogger(__name__).exception("Goal completion notice for %s failed", execution.execution_id)
+    return None
+
+
+def settle_terminal(store, execution, *, background: bool = False) -> None:
+    """Account a finished turn in its Goal and start what follows; a Goal
+    that is busy or unavailable is retried, never dropped.
+
+    ``background`` returns at once and does every attempt off-thread.
+    """
+    key = execution.execution_id
+    with _settling_lock:
+        if key in _settling:
+            return
+        _settling.add(key)
+
+    def later(delays):
+        from openprogram.runtime.conversation.run_control import is_worker_stopping
+        try:
+            for delay in delays:
+                time.sleep(delay)
+                if is_worker_stopping():
+                    return
+                if _settle_once(store, execution) is None:
+                    return
+            logging.getLogger(__name__).warning(
+                "Goal completion notice for %s is still pending; the next read of the Goal settles it", key)
+        finally:
+            with _settling_lock:
+                _settling.discard(key)
+
+    delays = SETTLE_BACKGROUND_DELAYS
+    if background:
+        delays = (0.0, *delays)
+    else:
+        try:
+            pending = _settle_once(store, execution)
+            for delay in SETTLE_INLINE_DELAYS:
+                # A lock that stayed held for the whole wait is not waited
+                # for again on the thread that still has the turn to close.
+                if pending is None or isinstance(pending, goals.GoalBusy):
+                    break
+                time.sleep(delay)
+                pending = _settle_once(store, execution)
+            if pending is None:
+                delays = ()
+        except BaseException:
+            with _settling_lock:
+                _settling.discard(key)
+            raise
+    if not delays:
+        with _settling_lock:
+            _settling.discard(key)
+        return
+    try:
+        threading.Thread(target=later, args=(delays,), daemon=True, name="goal-settle").start()
+    except Exception:
+        with _settling_lock:
+            _settling.discard(key)
+        raise
+
+
+def recover_unsettled(session_id: str, goal: dict | None) -> bool:
+    """Settle a Goal left waiting on a turn that already ended; True when one
+    was found.
+
+    An active Goal names the turn it runs. When that turn is over and the
+    Goal was never told (the worker stopped, or every retry met a busy
+    Goal), the Goal would show "working" with nothing running and never
+    continue. Whoever reads the Goal calls this; the settling runs
+    off-thread.
+    """
+    if (not goal or goal.get("execution_mode") != "chat" or goal.get("status") != "active"
+            or not goal.get("execution_id")):
+        return False
+    try:
+        from openprogram.runtime.execution import default_store
+        from openprogram.runtime.execution.model import TERMINAL_EXECUTION_STATUSES
+        store = default_store()
+        execution = store.get_execution(goal["execution_id"])
+        if (execution is None or execution.session_id != session_id
+                or execution.status not in TERMINAL_EXECUTION_STATUSES):
+            return False
+        if goal.get("accounted_execution_id") == execution.execution_id and goal.get("usage_pending_until") is None:
+            if goal.get("phase") != "idle" or user_waiting(session_id):
+                # Its verification or next turn is already on the way, or the
+                # continuation is giving way to a queued message.
+                return False
+        settle_terminal(store, execution, background=True)
+        return True
+    except Exception:
+        logging.getLogger(__name__).debug("Goal of %s not checked for an unsettled turn", session_id, exc_info=True)
+        return False
+
+
+#: How many times in a row a Goal goes on by itself after a turn that failed
+#: (a provider error, a lost connection, the worker's own fault). A completed
+#: turn starts the count over; a turn someone stopped is never continued.
+AUTOMATIC_FAILURE_RESUMES = 3
+#: The wait before the first, the second and the third of those
+#: continuations. It lives in this process only: after a restart the next
+#: read of the Goal starts the wait again.
+FAILURE_RESUME_DELAYS_S = (5.0, 30.0, 120.0)
+#: A provider's own "retry after" replaces a shorter wait; one longer than
+#: this keeps the pause.
+FAILURE_RETRY_AFTER_LIMIT_S = 300.0
+#: Failures the next turn would meet again at once, so the pause stays for a
+#: person: a rejected or unauthorised credential, a refused address, a
+#: request the provider will not take, a context that does not fit, a
+#: content refusal (``ErrorReason`` values); a spent quota or balance, a bad
+#: key, a model the plan or region does not serve (``errors.failure_cause``);
+#: and a budget refusal (the Goal's own, or its Job's).
+REPEATING_FAILURE_REASONS = frozenset({"auth", "authz", "blocked", "invalid", "context", "policy"})
+REPEATING_FAILURE_CAUSES = frozenset({"quota_exhausted", "invalid_key", "not_available"})
+REPEATING_FAILURE_TYPES = frozenset({"QuotaExceeded"})
+_continuing: set[str] = set()
+
+
+def turn_failure(store, execution) -> dict:
+    """What a failed turn's reply row says stopped it: the provider's
+    ``reason``, its ``retry_after_s``, the ``cause`` (which limit or refusal)
+    and the exception ``type``. Empty when the turn left no such row, as
+    when the worker itself failed. Reads the conversation, so the caller
+    asks before it takes the Goal lock."""
+    try:
+        source = store.get_execution_input(execution.execution_id)
+        reply = getattr(source, "assistant_message_id", None)
+        rows = goals._db().get_messages_by_id(execution.session_id, [reply]) if reply else []
+    except Exception:
+        logging.getLogger(__name__).debug(
+            "failure of turn %s not read", execution.execution_id, exc_info=True)
+        return {}
+    row = rows[0] if rows else {}
+    cause = row.get("error_cause")
+    found = {"reason": row.get("error_reason"), "retry_after_s": row.get("error_retry_after_s"),
+             "cause": cause.get("cause") if isinstance(cause, dict) else None,
+             "type": row.get("error_type")}
+    return {key: value for key, value in found.items() if value is not None}
+
+
+def failure_repeats(failure: dict | None) -> bool:
+    """Whether the turn after this failure would fail the same way at once."""
+    failure = failure or {}
+    after = failure.get("retry_after_s")
+    return (failure.get("reason") in REPEATING_FAILURE_REASONS
+            or failure.get("cause") in REPEATING_FAILURE_CAUSES
+            or failure.get("type") in REPEATING_FAILURE_TYPES
+            or (isinstance(after, (int, float)) and after > FAILURE_RETRY_AFTER_LIMIT_S))
+
+
+def failure_resume_delay(goal: dict) -> float:
+    """Seconds before this Goal's next automatic continuation: longer after
+    each failure in a row, and never shorter than the provider asked for."""
+    count = int(goal.get("automatic_resumes") or 0)
+    delay = FAILURE_RESUME_DELAYS_S[min(count, len(FAILURE_RESUME_DELAYS_S) - 1)]
+    after = (goal.get("failure") or {}).get("retry_after_s")
+    return max(delay, float(after)) if isinstance(after, (int, float)) else delay
+
+
+def continues_after_failure(session_id: str, goal: dict | None) -> bool:
+    """Whether a Goal paused by a failed turn goes on by itself.
+
+    The pause stays for a turn the user stopped or a restart cut (the
+    execution is not ``failed``), a failure that would repeat at once
+    (:func:`failure_repeats`), a spent budget, a Goal that already failed
+    ``AUTOMATIC_FAILURE_RESUMES`` times in a row, and a Goal nobody typed:
+    its Agent's wake restarts that one, under the Agent's daily budget.
+    """
+    if (not goal or goal.get("execution_mode") != "chat" or goal.get("status") != "paused_recoverable"
+            or goal.get("pause_reason") != "execution_failed"
+            or int(goal.get("automatic_resumes") or 0) >= AUTOMATIC_FAILURE_RESUMES
+            or failure_repeats(goal.get("failure"))):
+        return False
+    from openprogram.runtime.conversation.always_on.runtime import UNATTENDED_GOAL_ORIGINS
+    if goal.get("origin") in UNATTENDED_GOAL_ORIGINS:
+        return False
+    try:
+        if goals.budget_exhausted(goal):
+            return False
+        observed = goals.goal_execution_state(goal, session_id)
+        return observed["status"] == "failed" and bool(observed.get("finished"))
+    except Exception:
+        logging.getLogger(__name__).debug("Goal of %s not checked for a failed turn", session_id, exc_info=True)
+        return False
+
+
+@serialized
+def _resume_failed(session_id: str, execution_id: str, count: int) -> dict | None:
+    """After the wait, under the lock: resume the Goal when it is still the
+    one the wait was for. Its identity for the next turn; None when someone
+    continued, edited or ended it meanwhile, or it cannot go on.
+
+    A verification turn that failed has its completion candidate submitted
+    again, so the next turn verifies instead of doing the work over.
+    """
+    goal = goals.load_goal(session_id)
+    if (not continues_after_failure(session_id, goal) or goal.get("execution_id") != execution_id
+            or int(goal.get("automatic_resumes") or 0) != count):
+        return None
+    candidate = goal.get("verification") or {}
+    verifying = candidate.get("status") == "pending" and candidate.get("execution_id") == execution_id
+    goal = resume(session_id)
+    goal["automatic_resumes"] = count + 1
+    if verifying:
+        from openprogram.runtime.execution import default_store
+        from . import verification
+        store = default_store()
+        goal["completion_requested"] = identity(goal)
+        # May pause the Goal instead, with its own reason (work still
+        # running, an operation with an unknown result).
+        verification.prepare(store, store.get_execution(execution_id), goal)
+    publish(session_id, goal)
+    return identity(goal) if goal.get("status") == "active" else None
+
+
+def continue_after_failure(session_id: str, goal: dict | None = None) -> bool:
+    """Go on with a Goal whose turn failed; True when a continuation is on
+    its way (:func:`continues_after_failure` says which Goals go on).
+
+    The continuation waits first (:func:`failure_resume_delay`), then
+    resumes the Goal and starts the turn that would have followed the
+    failed one: the same envelope and branch, the continuation prompt, a
+    queued user message first. A start that is refused leaves an active
+    Goal on an ended turn, which the next read settles (``recover_unsettled``).
+    """
+    goal = goal or goals.load_goal(session_id)
+    if not continues_after_failure(session_id, goal):
+        return False
+    execution_id = goal["execution_id"]
+    count = int(goal.get("automatic_resumes") or 0)
+    delay = failure_resume_delay(goal)
+    with _settling_lock:
+        if session_id in _continuing:
+            return True
+        _continuing.add(session_id)
+
+    def run():
+        from openprogram.runtime.conversation.run_control import is_worker_stopping
+        try:
+            time.sleep(delay)
+            if is_worker_stopping():
+                return
+            expected = _resume_failed(session_id, execution_id, count)
+            if expected is not None:
+                from openprogram.runtime.execution import default_store
+                start_next(default_store(), execution_id, expected=expected)
+        except Exception:
+            logging.getLogger(__name__).info("Goal of %s not continued after its failed turn", session_id, exc_info=True)
+        finally:
+            with _settling_lock:
+                _continuing.discard(session_id)
+
+    try:
+        threading.Thread(target=run, daemon=True, name="goal-continue").start()
+    except Exception:
+        with _settling_lock:
+            _continuing.discard(session_id)
+        return False
+    return True
 
 
 @serialized

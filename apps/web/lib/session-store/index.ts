@@ -778,6 +778,11 @@ export const useSessionStore = createWithEqualityFn<ConvState>((set) => ({
       }
       if (typeof ctxWindow === "number" && ctxWindow > 0) {
         next.contextWindow = { ...s.contextWindow, [sessionId]: ctxWindow };
+      } else if (ctxWindow === 0 && sessionId in s.contextWindow) {
+        // The server resolved no window for the model: drop the old one
+        // instead of showing it against a different model.
+        const { [sessionId]: _dropped, ...rest } = s.contextWindow;
+        next.contextWindow = rest;
       }
       return next;
     }),

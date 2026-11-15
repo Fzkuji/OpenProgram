@@ -955,13 +955,25 @@ def test_cancel_propagates_to_tool(
     tmp_db: SessionDB, captured, collector, fresh_registry,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from openprogram.runtime.agent.loop import lifecycle
+    from openprogram.runtime.conversation.turn_runtime import loop_runner
+    from openprogram.runtime.execution.run_control.wakeups import set_and_fire
+
     saw_cancel = threading.Event()
     finished = threading.Event()
     cancelled_by_caller = threading.Event()
+    tool_started = threading.Event()
+
+    # Only the wakeup a Stop fires may reach the tool: the polling backstop
+    # (for code that sets the signal without firing it) would otherwise
+    # deliver it later and hide a Stop that is not delivered at once.
+    monkeypatch.setattr(loop_runner, "_STOP_BACKSTOP_S", 60.0)
+    monkeypatch.setattr(lifecycle, "_STOP_BACKSTOP_S", 60.0)
 
     @function(name="slowprobe", description="Slow")
     async def slowprobe(cancel: asyncio.Event = None) -> str:
         """Long-running tool that polls cancel."""
+        tool_started.set()
         try:
             for _ in range(100):
                 if cancel is not None and cancel.is_set():
@@ -983,9 +995,13 @@ def test_cancel_propagates_to_tool(
     cancel_flag = threading.Event()
 
     def _trigger_cancel():
-        time.sleep(0.05)
+        # Stop while the tool runs. A Stop that comes before the first model
+        # call ends the turn before any tool starts, so a fixed delay would
+        # race the turn's start (a cold first turn takes over a second).
+        if not tool_started.wait(30):
+            return
         cancelled_by_caller.set()
-        cancel_flag.set()
+        set_and_fire(cancel_flag)
 
     threading.Thread(target=_trigger_cancel, daemon=True).start()
 

@@ -76,9 +76,11 @@ def packages_dir() -> Path:
     """Where the on-demand packages live, one directory per interpreter."""
     from openprogram.state.paths import get_state_dir
 
+    from openprogram.host._platform.architecture import interpreter_architecture
+
     tag = (
         f"py{sys.version_info.major}{sys.version_info.minor}"
-        f"-{sys.platform}-{platform.machine()}"
+        f"-{sys.platform}-{interpreter_architecture()}"
     )
     return get_state_dir() / "extras" / "embedding" / tag
 

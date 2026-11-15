@@ -112,12 +112,22 @@ export function ProjectMenu({
       setProjects(data.projects);
       setCurrentId(data.current_project_id ?? null);
     } else if (!data) {
-      setProjects([]);
+      // No answer: an empty first listing, but a re-list never wipes
+      // what the open menu already shows.
+      setProjects((shown) => shown ?? []);
     }
   }, [sessionId]);
 
+  // The open menu follows the registry: a project created, renamed,
+  // relocated or removed anywhere (another tab, the CLI, an agent)
+  // arrives as `project-changed` and re-lists in place. Rows are keyed
+  // by project id inside the same scrolling list, so its scroll position
+  // stays where it was.
   useEffect(() => {
-    refresh();
+    void refresh();
+    const onChanged = () => void refresh();
+    window.addEventListener("project-changed", onChanged);
+    return () => window.removeEventListener("project-changed", onChanged);
   }, [refresh]);
 
   useEffect(() => {

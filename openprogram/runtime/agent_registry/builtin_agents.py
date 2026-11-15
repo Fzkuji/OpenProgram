@@ -121,6 +121,25 @@ _SPECIALISTS: tuple[dict[str, Any], ...] = (
     },
 )
 
+# The utility model tier: Agents whose work is cheap reading and reporting
+# run on the Lightweight helper's model when they have no model of their own
+# (Codex explorer, Claude Code Explore and OpenCode explore all default to the
+# small model). The Lightweight helper itself is the tier's model.
+UTILITY_AGENT_ID = "utility"
+UTILITY_TIER = frozenset({"explorer"})
+
+
+def utility_tier_model(spec: manager.AgentSpec) -> tuple[str, str] | None:
+    """``(provider, model_id)`` a utility-tier Agent without its own model
+    runs on: the Lightweight helper's model, or None (the usual fallback)."""
+    if spec.id not in UTILITY_TIER or (spec.model.provider and spec.model.id):
+        return None
+    helper = manager.get(UTILITY_AGENT_ID)
+    if helper is None or not (helper.model.provider and helper.model.id):
+        return None
+    return helper.model.provider, helper.model.id
+
+
 # The always-on core: a general Agent with every tool, like Assistant, that
 # schedules its own wakes. The job Agents below are its specialisations.
 _BUTLER: dict[str, Any] = {

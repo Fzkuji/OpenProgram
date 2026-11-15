@@ -133,6 +133,31 @@ export function useChatSubmit({
     return sendChatMessage({ text, sessionId: owner, ...settings });
   }, [activeChatKey, currentSessionId, thinking, webSearchEnabled, fastEnabled, fastSupported, bound, isRunning]);
 
+  // A backend-run command (/goal, /rename …) belongs to this composer's
+  // conversation like a typed message does. When idle it takes the same
+  // send: a draft's local_* id and its permission mode, Agent, project and
+  // folders ride along, so the server runs it in the draft (creating the
+  // conversation under that id when it starts a turn) and the bubble shows
+  // as soon as the server accepts it as a message (chat_ack): a command
+  // that only answers (/goal status) leaves its reply line and no bubble.
+  // During a run or a waiting request it goes now, beside the turn: the
+  // server runs it before it reserves one.
+  const sendSlashCommand = useCallback((text: string): boolean => {
+    const owner = activeChatKey ?? currentSessionId;
+    if (isRunning || openDecisionFor(owner)) {
+      return send({ action: "chat", ...(owner ? { session_id: owner } : {}), text });
+    }
+    return sendChatMessage({
+      text,
+      sessionId: owner,
+      thinking,
+      webSearchEnabled,
+      serviceTier: fastEnabled && fastSupported ? "priority" : "default",
+      background: bound !== null,
+      bubble: false,
+    });
+  }, [activeChatKey, currentSessionId, thinking, webSearchEnabled, fastEnabled, fastSupported, bound, isRunning, send]);
+
   /** Run `text` as a slash command. False when it names no command; true
    *  when it was one (the draft is cleared only when it ran). */
   const runSlash = useCallback((text: string): boolean => {
@@ -140,6 +165,7 @@ export function useChatSubmit({
     const outcome = slash.runCommand(text, {
       busy: isRunning || Boolean(openDecisionFor(owner)),
       sendChat: sendSlashChat,
+      sendCommand: sendSlashCommand,
     });
     if (!outcome) return false;
     if (outcome === "ran") {
@@ -148,7 +174,7 @@ export function useChatSubmit({
     }
     slash.close();
     return true;
-  }, [activeChatKey, currentSessionId, slash, isRunning, sendSlashChat, setComposerInputFor, setHistoryIndex]);
+  }, [activeChatKey, currentSessionId, slash, isRunning, sendSlashChat, sendSlashCommand, setComposerInputFor, setHistoryIndex]);
 
   const submit = useCallback(async (runningMode: RunningSendMode = "steer") => {
     const submitOwnerKey = activeChatKey ?? currentSessionId;

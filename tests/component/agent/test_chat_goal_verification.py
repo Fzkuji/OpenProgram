@@ -263,7 +263,7 @@ def test_completion_prerequisites_prevent_verifier_admission(runtime, monkeypatc
     assert not goal.get("verification")
 
 
-def test_admitted_turn_waits_for_the_goal_lock_and_gives_up_when_it_stays_held(tmp_path, monkeypatch):
+def test_the_goal_lock_is_waited_for_and_given_up_when_it_stays_held(tmp_path, monkeypatch):
     import threading
     import time
     from types import SimpleNamespace
@@ -273,7 +273,7 @@ def test_admitted_turn_waits_for_the_goal_lock_and_gives_up_when_it_stays_held(t
     from openprogram.programs.tools.planning.goal import chat
     from openprogram.programs.tools.planning.goal.ownership import goal_owner
 
-    store = SimpleNamespace(root_path=tmp_path)
+    store = SimpleNamespace(root_path=tmp_path, get_session=lambda _sid: None)
     monkeypatch.setattr(chat.goals, "_db", lambda: store)
     held, release = threading.Event(), threading.Event()
 
@@ -287,17 +287,15 @@ def test_admitted_turn_waits_for_the_goal_lock_and_gives_up_when_it_stays_held(t
     thread.start()
     assert held.wait(30)
     try:
-        with pytest.raises(chat.goals.GoalConflictError):
+        monkeypatch.setattr(chat, "GOAL_LOCK_WAIT_S", 0.05)
+        with pytest.raises(chat.goals.GoalBusy):
             with chat.locked("s"):
                 pass
-        monkeypatch.setattr(chat, "ADMITTED_TURN_LOCK_WAIT_S", 0.05)
-        with pytest.raises(chat.goals.GoalConflictError):
-            with chat.locked_when_free("s"):
-                pass
-        monkeypatch.setattr(chat, "ADMITTED_TURN_LOCK_WAIT_S", 30.0)
+        assert chat.turn_step("s", lambda: "ran") == "ran"  # a running turn's step is not failed
+        monkeypatch.setattr(chat, "GOAL_LOCK_WAIT_S", 30.0)
         threading.Timer(0.1, release.set).start()
         started = time.monotonic()
-        with chat.locked_when_free("s"):
+        with chat.locked("s"):
             assert time.monotonic() - started < 30
     finally:
         release.set()

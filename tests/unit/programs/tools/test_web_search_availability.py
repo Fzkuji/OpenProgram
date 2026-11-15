@@ -23,8 +23,8 @@ _RESULTS_PAGE = """
 <div class="result results_links results_links_deep web-result ">
   <div class="links_main links_deep result__body">
     <h2 class="result__title"><a rel="nofollow" class="result__a"
-      href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fgithub.com%2Ffzkuji2026%2Fctxpress&amp;rut=abc">fzkuji2026/<b>ctxpress</b> &amp; friends</a></h2>
-    <a class="result__url" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fgithub.com%2Ffzkuji2026%2Fctxpress">github.com</a>
+      href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fgithub.com%2Fexample-org%2Fctxpress&amp;rut=abc">example-org/<b>ctxpress</b> &amp; friends</a></h2>
+    <a class="result__url" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fgithub.com%2Fexample-org%2Fctxpress">github.com</a>
     <a class="result__snippet" href="//duckduckgo.com/l/?uddg=x">Context <b>compression</b>
       for   agents.</a>
   </div>
@@ -37,7 +37,7 @@ _RESULTS_PAGE = """
 </div>
 <div class="result results_links results_links_deep web-result ">
   <h2 class="result__title"><a class="result__a"
-    href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fgithub.com%2Ffzkuji2026%2Fctxpress">Duplicate</a></h2>
+    href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fgithub.com%2Fexample-org%2Fctxpress">Duplicate</a></h2>
 </div>
 <div class="result results_links results_links_deep web-result ">
   <h2 class="result__title"><a class="result__a"
@@ -59,11 +59,11 @@ def test_duckduckgo_parser_keeps_organic_hits_and_decodes_redirects():
     results = duckduckgo.parse_results(_RESULTS_PAGE, 10)
 
     assert [(r.title, r.url) for r in results] == [
-        ("fzkuji2026/ctxpress & friends", "https://github.com/fzkuji2026/ctxpress"),
+        ("example-org/ctxpress & friends", "https://github.com/example-org/ctxpress"),
         ("Guide", "https://docs.example.org/guide"),
     ]
     assert results[0].snippet == "Context compression for agents."
-    assert duckduckgo.parse_results(_RESULTS_PAGE, 1)[0].title.startswith("fzkuji2026")
+    assert duckduckgo.parse_results(_RESULTS_PAGE, 1)[0].title.startswith("example-org")
 
 
 def test_duckduckgo_parser_distinguishes_empty_challenge_and_unknown_pages():
@@ -85,7 +85,7 @@ def test_duckduckgo_search_uses_the_managed_fixed_endpoint(monkeypatch):
 
     results = duckduckgo.DuckDuckGoProvider().search("ctxpress", num_results=3)
 
-    assert [r.url for r in results][0] == "https://github.com/fzkuji2026/ctxpress"
+    assert [r.url for r in results][0] == "https://github.com/example-org/ctxpress"
     assert calls[0][0] == "https://html.duckduckgo.com/html/"
     assert calls[0][1]["params"] == {"q": "ctxpress"}
 

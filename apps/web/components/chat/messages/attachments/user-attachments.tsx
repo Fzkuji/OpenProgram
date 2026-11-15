@@ -79,9 +79,9 @@ function recordingAttr(attrs: string, name: string): string {
 // Current path-bearing markers use an escaped JSON string so legal path
 // delimiters and trailing spaces round-trip. `extractAttachmentMentions`
 // also accepts historical unquoted markers and optimistic path-less uploads.
-// Fallback mention with no size/ext: "[attachment: name @ path]" (current)
-// or "[attached file: name @ path]" (legacy).
-const ATTACHED_FILE = /\[attach(?:ment|ed file):\s*([^(@\]]+?)\s*@\s*([^\]]+)\]/g;
+// Nothing else names a file: a reply's markers are checked on the server
+// against the same lexicon, so a form only this parser knew would let the
+// model's own text draw a card for any path.
 
 /** Split raw message content into attachment chips + the cleaned prose.
  *  Same lexicon in both directions, so the assistant's own ``send_file``
@@ -140,18 +140,6 @@ export function parseAttachments(
     });
   }
   text = extracted.text;
-
-  // [attached file: NAME @ PATH] — backend fallback with no size/ext.
-  text = text.replace(ATTACHED_FILE, (_m, name: string, path?: string) => {
-    attachments.push({
-      ...(includeRaw ? { raw: _m } : {}),
-      filename: (name || "").trim() || "file",
-      meta: "",
-      kind: "binary",
-      path: (path || "").trim(),
-    });
-    return "";
-  });
 
   // The prefix was joined with "\n" and separated from the prose by
   // "\n\n"; after removing the markers, collapse the leftover blank lines.

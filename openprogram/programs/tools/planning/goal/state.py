@@ -11,7 +11,9 @@ from typing import Callable, Optional
 
 # The two refusals are defined by the usage ledger's Goal port, which raises
 # them too; one class each keeps ``except`` clauses on either side matching.
-from openprogram.models.usage.goal_port import GoalConflictError, GoalStateUnavailable
+from openprogram.models.usage.goal_port import (  # noqa: F401
+    GoalBusy, GoalConflictError, GoalStateUnavailable, GoalVersionConflict,
+)
 
 # Cross-function calls go through the package object so monkeypatches on
 # ``openprogram.programs.tools.planning.goal`` (the tests' seam) hit every internal call
@@ -240,7 +242,7 @@ def save_goal(session_id: str, goal: dict) -> dict:
     compare = getattr(db, "compare_and_set_session_dict", None)
     if callable(compare):
         if not compare(session_id, "goal", version=expected, value=candidate):
-            raise GoalConflictError(
+            raise GoalVersionConflict(
                 f"Goal version conflict: expected {expected}"
             )
     else:

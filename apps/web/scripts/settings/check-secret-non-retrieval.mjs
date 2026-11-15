@@ -10,7 +10,8 @@ import ts from "typescript";
 const root = new URL("../../", import.meta.url);
 const targetPaths = [
   "components/settings/providers/auth/api-key.tsx",
-  "components/settings/providers/auth/account-manager.tsx",
+  "components/settings/providers/detail/keys-panel.tsx",
+  "components/settings/providers/add/key-entry.tsx",
   "lib/net/api.ts",
 ];
 

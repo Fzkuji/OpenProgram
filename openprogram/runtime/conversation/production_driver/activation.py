@@ -186,6 +186,21 @@ class ActivationOperations:
         attempt: AttemptRecord,
         activation: ActivationInput | None,
     ) -> DriverBinding[shared.AgentDriverHandle]:
+        """Start the attempt's owner thread and return its binding.
+
+        Everything before that reads or writes the conversation (its
+        journal, its nodes, its model pin) under the conversation's lock,
+        so it runs in a worker thread: a continue or an answer awaited on
+        the Worker's event loop does not hold the loop while it waits."""
+        from openprogram.runtime.execution.control.shared import off_loop
+
+        return await off_loop(attempt.execution_id, self._activate_blocking, attempt, activation)
+
+    def _activate_blocking(
+        self,
+        attempt: AttemptRecord,
+        activation: ActivationInput | None,
+    ) -> DriverBinding[shared.AgentDriverHandle]:
         if self.executions is None:
             raise shared.AgentDriverError("store_required", "Agent activation requires an execution store")
         execution = self.executions.get_execution(attempt.execution_id)

@@ -95,6 +95,15 @@ class ProviderAuthConfig:
     # (provider_id, account_id) pairs in order. If they're exhausted
     # too, the manager raises :class:`AuthPoolExhaustedError`.
     fallback_chain: list[tuple[str, str]] = field(default_factory=list)
+    # Read every stored login of this provider again, where it lives (its
+    # own store, another CLI's file): refresh what is about to expire, mark
+    # what can no longer be refreshed, clear the mark of one that was signed
+    # in again. What the Providers page's Refresh runs before it reads the
+    # quota. ``None`` for a provider whose keys never change by themselves.
+    reread_login: Optional[Callable[[], None]] = None
+    # The plan name the active sign-in carries ("plus", "pro"), read from
+    # what is already stored; never a request. ``None`` when it has none.
+    plan: Optional[Callable[[], Optional[str]]] = None
 
 
 # Process-wide provider config registry. Populated by explicit adapter
@@ -257,6 +266,16 @@ class CredentialProvider:
         return _run_sync(lambda: self._maybe_refresh(cred, pool, force=True),
                          f"force_refresh-{cred.provider_id}-{cred.account_id}")
 
+    def refresh_if_stale_sync(self, cred: Credential) -> Credential:
+        """Refresh ``cred`` when its access token is past or near expiry,
+        whatever the pool would pick: a refusal of its refresh token marks
+        it ``needs_reauth``. Read-only credentials come back unchanged."""
+        pool = self._store.find_pool(cred.provider_id, cred.account_id)
+        if pool is None or cred.read_only or cred.kind not in ("oauth", "device_code"):
+            return cred
+        return _run_sync(lambda: self._maybe_refresh(cred, pool),
+                         f"refresh_if_stale-{cred.provider_id}-{cred.account_id}")
+
     async def acquire(self, provider_id: str, account_id: Optional[str] = None) -> Credential:
         """Return a usable credential for ``(provider, account)``.
 
@@ -401,12 +420,16 @@ class CredentialProvider:
             # Wait on the in-flight one; do not start a second request.
             return await future
 
+        from . import refresh_lock
+
         try:
-            async with self._store.async_lock(cred.provider_id, cred.account_id):
-                # Under the lock, re-check disk — a cross-process refresh
-                # may have already happened (mtime-watch will rehydrate
-                # the pool). If our credential is no longer stale in the
-                # fresh view, just use it.
+            async with self._store.async_lock(cred.provider_id, cred.account_id), \
+                    refresh_lock.held_async(self._store.pool_file(cred.provider_id, cred.account_id)):
+                # Under the cross-process lock, re-check disk — another
+                # process (a second worker, a cron subprocess) may have
+                # spent the refresh token already; its result is on disk
+                # (``find_pool`` reloads a changed file). If our credential
+                # is no longer stale in the fresh view, just use it.
                 fresh_pool = self._store.find_pool(cred.provider_id, cred.account_id)
                 if fresh_pool is not None:
                     for fc in fresh_pool.credentials:

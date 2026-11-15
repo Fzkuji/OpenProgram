@@ -18,7 +18,7 @@ cd OpenProgram
 uv sync --locked --extra dev
 ```
 
-The [documentation](https://openprogram.io/docs/) covers the architecture,
+The [documentation](https://fuzzykuji.github.io/openprogram-site/docs/) covers the architecture,
 public APIs, installation profiles, and current capabilities.
 
 ## Pull requests
@@ -121,8 +121,9 @@ done
 
 - Follow the patterns in the surrounding module before introducing a new abstraction.
 - Use type hints and document public APIs.
-- Keep documentation examples executable and use canonical `openprogram.io` and
-  `github.com/FuzzyKuji/OpenProgram` links.
+- Keep documentation examples executable. Link between documentation pages
+  with relative links; elsewhere use the website address in
+  `openprogram/operations/project_site.py` and `github.com/FuzzyKuji/OpenProgram`.
 - Do not commit credentials, private logs, generated build directories, or local paths.
 
 By participating, you agree that your contribution is licensed under the

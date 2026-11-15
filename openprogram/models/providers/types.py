@@ -334,7 +334,8 @@ class AssistantMessage(BaseModel):
     error_retryable_inferred: bool = False
     error_retry_after_s: float | None = None
     # Which limit or refusal stopped the reply (``errors.failure_cause``):
-    # ``{"cause", "http_status", "provider", "limit", "resets_at"}`` with
+    # ``{"cause", "http_status", "provider", "limit", "resets_at", "account",
+    # "other_limits"}`` with
     # cause ``quota_exhausted`` / ``invalid_key`` / ``not_available`` /
     # ``unreachable``; ``None`` for any other failure.
     error_cause: dict[str, Any] | None = None

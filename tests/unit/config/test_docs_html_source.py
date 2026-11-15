@@ -92,7 +92,8 @@ def test_a_declared_prototype_keeps_its_rendering_and_generated_markdown_its_own
 def test_markdown_rendition_keeps_content_and_counts_figures_once():
     build._SLUG_DEDUP = {}
     body = html_source.article_markup(PAGE).replace('href="other.html"', 'href="/docs/o.html"')
-    text = html_source.to_markdown(body, origin='https://example.org/')
+    text = html_source.to_markdown(
+        body, link_base='/docs/', public_base='https://example.org/site/docs/')
     assert text.startswith('# Update flow\n')
     assert 'Wide label' not in text and 'Commit, then deploy' not in text
     assert '`dev deploy`' in text
@@ -100,7 +101,7 @@ def test_markdown_rendition_keeps_content_and_counts_figures_once():
     assert '| `status` (`--json`) |' in text
     assert '| Both \\| columns | Both \\| columns |' in text
     assert '**Rare**' in text and '```\na < b\n  c\n```' in text
-    assert '[Other](https://example.org/docs/o.html)' in text
+    assert '[Other](https://example.org/site/docs/o.html)' in text
 
 
 def test_figure_without_a_narrow_twin_is_read_through_its_description():

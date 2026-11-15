@@ -45,6 +45,14 @@ test('a delivered message names its sender', () => {
   assert.equal(readReceipt('hello'), null);
 });
 
+test('a stored hand-off between conversations names the conversation that sent it', () => {
+  const sent = readReceipt('📨 Message from “Butler” (conv_8a1f):\n\nCheck the deploy.\n\n(Another of your conversations handed this to you. Handle it here; your final answer goes back to it on its own.)');
+  assert.deepEqual(sent, { kind: 'message', address: 'conv_8a1f', from: 'Butler', body: 'Check the deploy.' });
+  const back = readReceipt('↩️ Reply from “Butler” (conv_8a1f) to the message you sent it:\n\nYes, 3 files.');
+  assert.deepEqual(back, { kind: 'reply', address: 'conv_8a1f', from: 'Butler', body: 'Yes, 3 files.' });
+  assert.equal(readReceipt('I saw 📨 Message from “Butler” (x): earlier'), null);
+});
+
 // The same notice since every result comes back in an <agent> block
 // (runtime/jobs/agent_result.py render), with a stalled agent among them.
 const blocked = [

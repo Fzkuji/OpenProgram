@@ -5,6 +5,21 @@ import time
 from openprogram.runtime.jobs.runner import shared
 
 
+def _card_attach(node) -> tuple[dict, dict]:
+    """An attach card's ``attach`` dict and its ``extra`` JSON, as copies.
+    The top-level ``metadata.attach`` wins; ``extra.attach`` is where older
+    cards kept it."""
+    md = node.metadata or {}
+    extra_raw = md.get("extra")
+    try:
+        extra_json = json.loads(extra_raw) if isinstance(extra_raw, str) else dict(extra_raw or {})
+    except Exception:
+        extra_json = {}
+    if not isinstance(extra_json, dict):
+        extra_json = {}
+    return dict(md.get("attach") or extra_json.get("attach") or {}), extra_json
+
+
 class ProgressOperations:
     def _budget_loop(self) -> None:
         while not self._shutdown_event.wait(self._budget_poll_seconds):
@@ -223,25 +238,23 @@ class ProgressOperations:
             node = idx.nodes_by_id.get(job.attach_pointer_id)
             if not node:
                 return
-            md = dict(node.metadata or {})
-            extra_raw = md.get("extra")
-            try:
-                extra_json = json.loads(extra_raw) if isinstance(extra_raw, str) else (extra_raw or {})
-            except Exception:
-                extra_json = {}
-            attach = dict(
-                md.get("attach") or extra_json.get("attach") or {}
-            )
+            # The fields this runner owns. A synchronous caller settles the
+            # same card when its wait ends (write_attach_pointer_for_spawn),
+            # so they are merged into the card as it is at the write.
+            attach: dict = {}
             attach["session_id"] = target_session
             attach["job_id"] = job.id
             attach["status"] = job.status.value
             if shared.is_terminal(job.status):
-                # The result block's usage, kept on the card for the
-                # interface; the caller's prompt is not re-rendered.
+                # The result block's usage and changed files, kept on the card
+                # for the interface; the caller's prompt is not re-rendered.
                 try:
-                    from openprogram.runtime.jobs.agent_result import status_of, usage_of
+                    from openprogram.runtime.jobs.agent_result import files_of, status_of, usage_of
                     attach["usage"] = usage_of(job, ledger=self._governor.ledger)
                     attach["result_status"], attach["result_reason"] = status_of(job)
+                    files = files_of(job)
+                    if files:
+                        attach["files"] = files
                 except Exception:
                     shared._log.debug("usage of job %s not stored", job.id, exc_info=True)
             execution = self._execution_store.get_execution(job.id)
@@ -259,7 +272,8 @@ class ProgressOperations:
             # When the job completes, fill source_commit_id from the
             # ContextCommit that ended up on its branch. The existing
             # _run_spawn does this in synchronous mode — we mirror.
-            if job.head_id and not attach.get("source_commit_id"):
+            source_commit_id = None
+            if job.head_id and not _card_attach(node)[0].get("source_commit_id"):
                 try:
                     from openprogram.state.store.session.context_commit.store import (
                         load_commit_for_head,
@@ -268,20 +282,10 @@ class ProgressOperations:
                         db, target_session, job.head_id,
                     )
                     if src is not None:
-                        attach["source_commit_id"] = src.id
+                        source_commit_id = src.id
                 except Exception:
                     # The attach still records the session; only the commit link is missing.
                     shared._log.debug("source commit not found for job %s", job.id, exc_info=True)
-            extra_json["attach"] = attach
-            md["extra"] = json.dumps(extra_json, default=str)
-            # Mirror the same attach dict onto the top-level
-            # ``metadata.attach`` field. The frontend's _readAttach
-            # helper checks the top-level field first (set by the
-            # spawn path) and only falls back to extra-json; if we
-            # only patch extra, the panel keeps showing the stale
-            # "running" status long after the job completes.
-            md["attach"] = attach
-
             # Stamp the spawned branch's tip with the human label so
             # the Branches panel and DAG figure show "fox-research"
             # instead of the chain-tail fallback name (which picked
@@ -310,25 +314,32 @@ class ProgressOperations:
             # errored / cancelled jobs remain visible so the user
             # can see what failed.
             # A /spawn the user waited on keeps its branch listed.
-            keeps_branch = job.wait and not attach.get("tool_call_id")
+            keeps_branch = job.wait and not _card_attach(node)[0].get("tool_call_id")
             if job.head_id and job.status == shared.JobStatus.COMPLETED and not keeps_branch:
                 try:
                     db.mark_merged(target_session, [job.head_id])
                 except Exception:
                     # The sub-branch stays visible in the Branches panel.
                     shared._log.warning("branch of job %s not marked merged", job.id, exc_info=True)
-            # Update the persisted node's metadata + output text.
-            output = (
-                job.result_text or error_text or job.error or node.output or ""
-            )
+            # Update the persisted node's metadata + output text, merged
+            # into the card as it is now.
+            def settle(current) -> dict:
+                card, extra_json = _card_attach(current)
+                card.update(attach)
+                if source_commit_id and not card.get("source_commit_id"):
+                    card["source_commit_id"] = source_commit_id
+                extra_json["attach"] = card
+                return {
+                    "output": job.result_text or error_text or job.error or current.output or "",
+                    # The same attach dict goes on the top-level
+                    # ``metadata.attach`` field, which readers check first,
+                    # and into ``extra``, the older place for it.
+                    "metadata": {"extra": json.dumps(extra_json, default=str), "attach": card},
+                }
+
             try:
                 from openprogram.state.store import SessionNodeWriter
-                shim = SessionNodeWriter(db, card_session)
-                shim.update(
-                    job.attach_pointer_id,
-                    output=output,
-                    metadata=md,
-                )
+                SessionNodeWriter(db, card_session).merge(job.attach_pointer_id, settle)
             except Exception:
                 # The context refresh below still runs.
                 shared._log.warning("attach card %s not updated for job %s", job.attach_pointer_id, job.id, exc_info=True)
@@ -452,6 +463,14 @@ class ProgressOperations:
                 # Best-effort — don't blow up if the caller session is
                 # gone or the dispatcher errors.
                 shared._log.warning("job notice turn failed for %s", deliver_session, exc_info=True)
+            finally:
+                # An answer held for these replies (a message this
+                # conversation passed on, notices.hold) goes on now.
+                from openprogram.runtime.jobs.notices import answered
+                try:
+                    answered(deliver_session, [j.id for j in jobs])
+                except Exception:
+                    shared._log.warning("answered replies not recorded for %s", deliver_session, exc_info=True)
 
         def _serial():
             # A fresh thread starts with empty ContextVars, so the chain

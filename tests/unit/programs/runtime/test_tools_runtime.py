@@ -1121,8 +1121,10 @@ def test_tool_search_handles_unknown_names() -> None:
         "c1", {"select": "select:no_such_tool"}, None, None
     ))
     text = result.content[0].text
-    assert "Loaded 0" in text
-    assert "no_such_tool" in text
+    assert "Loaded" not in text
+    assert text.startswith("No tool named no_such_tool is offered")
+    # The same words travel as the note, for a wire that sends no text.
+    assert result.details == {"note": text}
 
 
 def test_tool_search_capitalized_names_use_only_current_scope() -> None:
@@ -1145,9 +1147,9 @@ def test_tool_search_capitalized_names_use_only_current_scope() -> None:
     finally:
         runtime._allowed_tool_names.reset(token)
 
-    assert "Tool 'bash' is already in this turn's tool list" in text
-    assert "Tool 'read' is already in this turn's tool list" in text
-    assert "Write" in text and "Tool 'write'" not in text
+    assert "`bash` is already callable" in text
+    assert "`read` is already callable" in text
+    assert "No tool named Write is offered" in text and "`write`" not in text
 
 
 def test_tool_search_cannot_load_program_outside_resolved_scope() -> None:
@@ -1175,7 +1177,7 @@ def test_tool_search_cannot_load_program_outside_resolved_scope() -> None:
     finally:
         R._allowed_tool_names.reset(token)
 
-    assert "Loaded 0" in explicit
+    assert explicit.startswith("No tool named private_report is offered")
     assert "private_report" not in keyword
     assert "allowed_report" in keyword
 

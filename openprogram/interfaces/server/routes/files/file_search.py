@@ -23,6 +23,9 @@ Two endpoints:
 * ``POST /api/file-reveal?path=...`` — select that absolute path in the
   worker machine's file manager (same root check as file-raw).
 
+* ``GET /api/file-paths?path=...&path=...`` — which of a reply's
+  path-looking strings name a file the chat can open (stat only).
+
 * ``GET /api/file-raw?path=...`` — the BYTES behind an absolute path, so
   the chat can render an attachment the user or the agent sent. The
   files panel's ``/files/raw`` deliberately refuses absolute paths (it
@@ -37,13 +40,14 @@ asking for ``root=/etc``.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import mimetypes
 import os
 from pathlib import Path
 from typing import Any
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse
 
 from openprogram.state import attachments as _attach
@@ -63,6 +67,10 @@ _SKIP_DIRS: set[str] = {
 # file doesn't blow the LLM context (and the WS frame).
 _READ_MAX_BYTES = 256_000
 
+# Paths one ``/api/file-paths`` request may ask about: a reply's links and
+# code spans, deduplicated by the client.
+_PATHS_MAX = 64
+
 
 def register(app) -> None:
     @app.get("/api/file-search")
@@ -76,8 +84,11 @@ def register(app) -> None:
     ):
         """Return up to ``limit`` paths matching ``q`` under ``root``, or
         under the chat's working directory."""
-        cwd = _resolve_root(root, session_id, project_id)
-        matches = _walk(cwd, q, int(limit), int(max_scan))
+        # Only finding the folder needs the conversation's lane; the walk
+        # itself runs outside it, so typing an @-mention never queues a
+        # Send or Stop of this chat behind a slow folder.
+        cwd = await _off_loop(session_id, lambda: _resolve_root(root, session_id, project_id))
+        matches = await asyncio.to_thread(_walk, cwd, q, int(limit), int(max_scan))
         return JSONResponse(content={
             "root": str(cwd),
             "matches": matches,
@@ -230,6 +241,23 @@ def register(app) -> None:
             raise HTTPException(status_code=500, detail=result["error"])
         return JSONResponse(content={"ok": True})
 
+    @app.get("/api/file-paths")
+    async def file_paths(path: list[str] = Query(default=[]), session_id: str = ""):
+        """Which of these paths name a file the chat can open, and where.
+
+        Backs the clickable file paths in a reply: the client sends every
+        path-looking string of a reply in one request and links only the
+        ones that come back. An absolute or ``~`` path is checked against
+        the same roots as ``/api/file-raw``; a relative one is first joined
+        to the chat's working directory. Stat only, never reads bytes;
+        answers ``null`` for a path that is missing, a folder or outside
+        every root, so the response never says which of those it was.
+        """
+        asked = list(dict.fromkeys(p for p in path if p))[:_PATHS_MAX]
+        found = await _off_loop(session_id, lambda: _existing_files(asked, session_id))
+        return JSONResponse(content={"files": found},
+                            headers={"Cache-Control": "no-store"})
+
     @app.get("/api/file-resolve")
     async def file_resolve(path: str, root: str | None = None,
                            session_id: str = "", project_id: str = ""):
@@ -245,21 +273,61 @@ def register(app) -> None:
         A ``session_id`` / ``project_id`` resolves the path in that chat's
         working directory, as ``/api/file-search`` found it.
         """
-        cwd = _resolve_root(root, session_id, project_id)
-        target = (cwd / path).resolve()
+        def resolve() -> dict:
+            cwd = _resolve_root(root, session_id, project_id)
+            target = (cwd / path).resolve()
+            try:
+                if not target.is_relative_to(cwd):
+                    raise HTTPException(status_code=400,
+                                        detail="path escapes root")
+            except ValueError:
+                raise HTTPException(status_code=400, detail="path escapes root")
+            if not target.is_file():
+                raise HTTPException(status_code=404, detail="not a file")
+            try:
+                size = target.stat().st_size
+            except OSError as e:
+                raise HTTPException(status_code=500, detail=str(e))
+            return {"path": str(target), "size": size}
+
+        return JSONResponse(content=await _off_loop(session_id, resolve))
+
+
+async def _off_loop(session_id: str, fn):
+    """Run ``fn`` in a worker thread: a chat's working directory is read
+    under its conversation lock, which a turn may hold, and a folder walk
+    is slow on its own, so neither may stall the event loop. A named chat
+    waits in that conversation's lane, as every conversation read does."""
+    if session_id:
+        from openprogram.state.store.session.conversation_work import run_for_conversation
+        return await run_for_conversation(session_id, fn)
+    return await asyncio.to_thread(fn)
+
+
+def _existing_files(paths: list[str], session_id: str) -> dict[str, str | None]:
+    """``/api/file-paths``: each asked path mapped to the absolute file it
+    names inside the readable roots, or ``None``."""
+    session = session_id or None
+    roots = _attach.readable_roots(session)
+    chat_root = _chat_root(session_id, "") if session_id else None
+    found: dict[str, str | None] = {}
+    for asked in paths:
+        found[asked] = None
+        if "\0" in asked or len(asked) > 1024:
+            continue
+        if asked.startswith("~") or os.path.isabs(asked):
+            candidate = asked
+        elif chat_root is not None:
+            candidate = str(chat_root / asked)
+        else:
+            continue
         try:
-            if not target.is_relative_to(cwd):
-                raise HTTPException(status_code=400,
-                                    detail="path escapes root")
-        except ValueError:
-            raise HTTPException(status_code=400, detail="path escapes root")
-        if not target.is_file():
-            raise HTTPException(status_code=404, detail="not a file")
-        try:
-            size = target.stat().st_size
-        except OSError as e:
-            raise HTTPException(status_code=500, detail=str(e))
-        return JSONResponse(content={"path": str(target), "size": size})
+            target = _attach.resolve_session_attachment(candidate, session, roots, allow_missing=True)
+            if target is not None and target.is_file():
+                found[asked] = str(target)
+        except (OSError, ValueError):
+            continue
+    return found
 
 
 def _resolve_root(root: str | None, session_id: str = "",

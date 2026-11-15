@@ -12,6 +12,7 @@ from .shared import (
     ControlDispatch,
     WaitSuspension,
     _log,
+    off_loop,
 )
 
 
@@ -28,18 +29,13 @@ class WaitsOperations:
         answer: Any,
     ) -> ControlDispatch:
         """Commit one exact durable answer through the canonical command log."""
-        from ..waits import DurableWaitStore
-
-        waits = DurableWaitStore(self.executions)
-        command, wait, duplicate = waits.resolve_with_command(
+        command, wait, execution = await off_loop(
+            execution_id, self._resolve_wait,
             command_id=command_id, execution_id=execution_id,
             expected_version=expected_version, actor=actor,
             kind=CommandKind.WAIT_ANSWER, wait_id=wait_id,
             generation=generation, answer=answer,
         )
-        execution = self.executions.get_execution(execution_id)
-        if execution is None:
-            raise ExecutionConflict("not_found", f"execution not found: {execution_id}")
         execution = await self._resume_wait_if_required(wait=wait, execution=execution)
         return ControlDispatch(command=command, execution=execution, delivered=False)
 
@@ -56,20 +52,29 @@ class WaitsOperations:
         reason: Any = None,
     ) -> ControlDispatch:
         """Commit one exact durable decline through the canonical command log."""
-        from ..waits import DurableWaitStore
-
-        waits = DurableWaitStore(self.executions)
-        command, wait, duplicate = waits.resolve_with_command(
+        command, wait, execution = await off_loop(
+            execution_id, self._resolve_wait,
             command_id=command_id, execution_id=execution_id,
             expected_version=expected_version, actor=actor,
             kind=CommandKind.WAIT_DECLINE, wait_id=wait_id,
             generation=generation, answer=reason,
         )
+        execution = await self._resume_wait_if_required(wait=wait, execution=execution)
+        return ControlDispatch(command=command, execution=execution, delivered=False)
+
+
+    def _resolve_wait(self, *, execution_id: str, **resolution: Any):
+        """Write a wait's answer or decline with its command, in a worker
+        thread: ``(command, wait, execution)``."""
+        from ..waits import DurableWaitStore
+
+        command, wait, _duplicate = DurableWaitStore(self.executions).resolve_with_command(
+            execution_id=execution_id, **resolution,
+        )
         execution = self.executions.get_execution(execution_id)
         if execution is None:
             raise ExecutionConflict("not_found", f"execution not found: {execution_id}")
-        execution = await self._resume_wait_if_required(wait=wait, execution=execution)
-        return ControlDispatch(command=command, execution=execution, delivered=False)
+        return command, wait, execution
 
 
     async def _resume_wait_if_required(
@@ -110,7 +115,9 @@ class WaitsOperations:
                 scheduled = scheduler(wait, execution)
                 if inspect.isawaitable(scheduled):
                     await scheduled
-                latest = self.executions.get_execution(execution.execution_id)
+                latest = await off_loop(
+                    execution.execution_id, self.executions.get_execution, execution.execution_id,
+                )
                 return latest or execution
             # This is an internal command, not a second public protocol.
             # Its deterministic id makes recovery idempotent after an
@@ -123,7 +130,8 @@ class WaitsOperations:
             )
             return resume.execution
         if disposition == "fail":
-            return self.executions.transition_execution(
+            return await off_loop(
+                execution.execution_id, self.executions.transition_execution,
                 execution.execution_id,
                 expected_version=execution.status_version,
                 target=ExecutionStatus.FAILED,

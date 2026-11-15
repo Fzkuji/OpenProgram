@@ -25,6 +25,8 @@
 <tr><th scope="row">构建输出中</th><td>只有公开的证书身份。密钥和凭据不进仓库</td></tr>
 <tr><th scope="row">本地源码构建</th><td>单独的开发身份。源码更新不得悄悄用它替换已安装的正式身份</td></tr>
 <tr><th scope="row">薄 App 的 helper</th><td>第二个签名 bundle，<code translate="no">Contents/Resources/seed/helper/OpenProgram.app</code>，标识符 <code translate="no">ai.openprogram.runtime</code>。它关闭库验证，因为 libpython 在 bundle 之外（<code translate="no">entitlements.mac.helper.plist</code>）；用 <code translate="no">entitlements.mac.inherit.plist</code> 签名的二进制也关闭，因为在用户机器上编译的包只有 ad-hoc 签名。隐私授权绑定它唯一的路径和签名，切换版本不影响授权。base 里的二进制在打包 seed 之前签名一次</td></tr>
+<tr><th scope="row">完整 App 的 Worker</th><td>内置运行时的 Python 和它的命名 helper（<code translate="no">runtime-manifest.json</code> 里的 <code translate="no">python</code> 和 <code translate="no">worker_python</code>）用 <code translate="no">entitlements.mac.helper.plist</code> 签名：关闭库验证，App 的其他授权保留。Program 的编译依赖和语义记忆的 torch 在签名之后安装，不带 Developer ID，开着库验证的 Worker 会拒绝加载它们</td></tr>
+<tr><th scope="row">代价</th><td>Electron 应用和其他所有可执行文件仍开着库验证，强化运行时也照样忽略 <code translate="no">DYLD_*</code> 变量，所以代价是：能写用户 OpenProgram 文件夹的代码，可以带着 Worker 的隐私授权在 Worker 里运行。薄 App 的 helper 也是同样的取舍。公证之后，打包运行时冒烟测试用签名后的 Python 导入一个 ad-hoc 签名的模块</td></tr>
 <tr><th scope="row">Windows</th><td>Authenticode，另行处理：<a href="windows-support.zh.html">Windows 支持</a></td></tr>
 </tbody>
 </table>

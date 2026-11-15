@@ -1,0 +1,58 @@
+<title>Session import</title>
+<meta name="description" content="Bring Claude Code and Codex conversations into OpenProgram; importing again adds only what is new.">
+<h1>Session import</h1>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 120" role="img" aria-label="Claude Code transcripts in ~/.claude/projects and Codex rollouts in ~/.codex/sessions are read, credentials are removed, and each becomes one OpenProgram conversation in the project of the folder it ran in.">
+  <defs><marker id="si-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="34">Claude Code</text>
+  <text class="t-soft" x="0" y="56">~/.claude/projects</text>
+  <text class="t-big" x="0" y="92">Codex</text>
+  <text class="t-soft" x="0" y="114">~/.codex/sessions</text>
+  <line class="ln" x1="170" y1="62" x2="250" y2="62" marker-end="url(#si-a)"/>
+  <text class="t-big" x="262" y="56">Credentials removed</text>
+  <text class="t-soft" x="262" y="80">host context dropped</text>
+  <line class="ln" x1="440" y1="62" x2="500" y2="62" marker-end="url(#si-a)"/>
+  <text class="t-big" x="512" y="56">Conversation</text>
+  <text class="t-soft" x="512" y="80">in its folder's project</text>
+</svg>
+</figure>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">From</th><th scope="col">Do</th></tr></thead>
+<tbody>
+<tr><th scope="row">Web UI</th><td><strong>Settings</strong> › <strong>Import</strong>: one list per agent, <strong>Import</strong> or <strong>Update</strong> on each row</td></tr>
+<tr><th scope="row">CLI</th><td><code translate="no">openprogram sessions import</code><span class="arg"><code translate="no">--from all|claude-code|codex</code>, default <code translate="no">all</code></span><span class="arg"><code translate="no">--since DAYS</code></span><span class="arg"><code translate="no">--dry-run</code>: what would be created or appended, decided as the import decides, nothing imported</span><span class="arg"><code translate="no">--list</code>: every conversation found, with its state</span><span class="arg"><code translate="no">PATH ...</code>: only these transcript files</span></td></tr>
+<tr><th scope="row">HTTP</th><td><code translate="no">GET /api/sessions/import/candidates</code>, <code translate="no">POST /api/sessions/import</code></td></tr>
+</tbody>
+</table>
+<p class="note">Claude Code is read from <code translate="no">$CLAUDE_CONFIG_DIR</code> when set, Codex from <code translate="no">$CODEX_HOME</code>.</p>
+
+<h2>What comes across</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Title</th><td>The name the agent shows: a renamed title, its generated title, else the first message</td></tr>
+<tr><th scope="row">Messages</th><td>What you typed, with each reply's text, thinking and tool calls with their results, at their original times</td></tr>
+<tr><th scope="row">Model</th><td>Recorded on each reply</td></tr>
+<tr><th scope="row">Folder</th><td>The conversation joins the project of the folder it ran in, which is added when missing; the home folder or a folder that is gone means the default project</td></tr>
+<tr><th scope="row">Rewound Claude Code turns</th><td>Only the branch you last saw</td></tr>
+<tr><th scope="row">Left out</th><td>System reminders, environment and <code translate="no">AGENTS.md</code> context, sub-agent transcripts, conversations with no reply</td></tr>
+</tbody>
+</table>
+
+<h2>Credentials</h2>
+<p>Sign-in files (<code translate="no">~/.claude/.credentials.json</code>, <code translate="no">~/.codex/auth.json</code>) are never read. Inside transcripts, provider keys, GitHub, Slack, AWS and Google tokens, JWTs, private keys, <code translate="no">Bearer …</code> and <code translate="no">password=…</code> values, and tool arguments named like <code translate="no">api_key</code> or <code translate="no">token</code> become <code translate="no">[secret removed]</code>, in titles and in the listing's cache as well. The original transcripts are not changed.</p>
+
+<h2>Importing again</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Since the last import</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Nothing new</th><td>Skipped, nothing written</td></tr>
+<tr><th scope="row">New messages</th><td>Appended to the same conversation</td></tr>
+<tr><th scope="row">Rewound in the other agent, or continued here</th><td>A new conversation; nothing already here is rewritten</td></tr>
+<tr><th scope="row">Imported conversation deleted here</th><td>Imported again as new</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="session-export.html">Session export</a> · <a href="cli.html">CLI commands</a></p>

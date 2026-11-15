@@ -18,9 +18,10 @@ graph both redraw.
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import uuid
+
+from openprogram.state.store.session.conversation_work import run_for_conversation
 
 
 def _after_graph_change(session_id: str, head_after) -> None:
@@ -31,6 +32,16 @@ def _after_graph_change(session_id: str, head_after) -> None:
     # conv["messages"] (invalidating alone leaves the deleted rows in it).
     _s._set_active_head(session_id, head_after)
     _s.refresh_context_stats(session_id)
+
+
+def _apply(session_id: str, op) -> dict:
+    """Run ``op`` and refresh what the graph change touched."""
+    from openprogram.runtime.context.session_db import default_db
+
+    journal = op(session_id)
+    head = (default_db().get_session(session_id) or {}).get("head_id")
+    _after_graph_change(session_id, head)
+    return journal
 
 
 async def _run(ws, cmd: dict, reply_type: str, op, node_ids=None) -> None:
@@ -45,24 +56,24 @@ async def _run(ws, cmd: dict, reply_type: str, op, node_ids=None) -> None:
     data = {"session_id": session_id, "ok": False, "error": None}
     owners: list[str] = []
     refusal = None
+    # Every step below takes the conversation's lock: each runs in the
+    # conversation's lane, off the event loop.
     if session_id and node_ids is not None:
-        touched = await asyncio.to_thread(_s.branches_through, session_id, node_ids)
-        refusal, owners = await asyncio.to_thread(
-            _s.reserve_branches_operation, session_id, touched, "branch", f"delete-{uuid.uuid4().hex}")
+        touched = await run_for_conversation(session_id, _s.branches_through, session_id, node_ids)
+        refusal, owners = await run_for_conversation(
+            session_id, _s.reserve_branches_operation, session_id, touched, "branch",
+            f"delete-{uuid.uuid4().hex}")
     if not session_id:
         data["error"] = "session_id required"
     elif refusal is not None:
         # The turn on that branch may be writing under the nodes we'd remove.
         data.update(error=refusal["error"], code=refusal.get("code"),
                     blocking=refusal.get("blocking"))
-    elif node_ids is None and _s._is_run_active(session_id):
+    elif node_ids is None and await run_for_conversation(session_id, _s._is_run_active, session_id):
         data["error"] = _s.RUN_ACTIVE_ERROR
     else:
         try:
-            journal = await asyncio.to_thread(op, session_id)
-            from openprogram.runtime.context.session_db import default_db
-            head = (default_db().get_session(session_id) or {}).get("head_id")
-            _after_graph_change(session_id, head)
+            journal = await run_for_conversation(session_id, _apply, session_id, op)
             data.update(ok=True, op_id=journal.get("op_id"),
                         deleted=len(journal.get("deleted") or []))
         except NodeDeletionError as e:
@@ -70,7 +81,7 @@ async def _run(ws, cmd: dict, reply_type: str, op, node_ids=None) -> None:
         except Exception as e:  # noqa: BLE001
             data["error"] = f"{type(e).__name__}: {e}"
     if owners:
-        await asyncio.to_thread(_s.release_branches_operation, session_id, owners)
+        await run_for_conversation(session_id, _s.release_branches_operation, session_id, owners)
     await ws.send_text(json.dumps({"type": reply_type, "data": data}, default=str))
 
 

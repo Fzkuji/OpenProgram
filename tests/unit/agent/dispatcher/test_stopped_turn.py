@@ -50,7 +50,7 @@ def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionDB:
     return store
 
 
-def _turn(text: str, stream_fn, cancel_event=None):
+def _turn(text: str, stream_fn, cancel_event=None, on_event=None):
     original = D._run_loop_blocking
 
     def wrapped(*, req, history, on_event, cancel_event, stream_fn=None, **_extra):
@@ -61,7 +61,7 @@ def _turn(text: str, stream_fn, cancel_event=None):
     with patch.object(D, "_run_loop_blocking", wrapped):
         return D.process_user_turn(
             agent_turn_request.TurnRequest(session_id="c1", user_text=text, agent_id="main", source="tui"),
-            cancel_event=cancel_event,
+            cancel_event=cancel_event, on_event=on_event,
         )
 
 
@@ -75,6 +75,38 @@ def _stopped_mid_text(cancel_event: threading.Event):
         set_and_fire(cancel_event)
         await asyncio.Event().wait()
     return stream
+
+
+def _cut_with_an_unread_delta(cancel_event: threading.Event | None, fail: BaseException | None = None):
+    """A provider that mutates one partial, as the real ones do, and has
+    already added a delta the loop never reads when the response is cut."""
+    async def stream(model, context, options):
+        from openprogram.runtime.execution.run_control.wakeups import set_and_fire
+
+        partial = _message([TextContent(text="")])
+        yield EventStart(partial=partial)
+        yield EventTextStart(content_index=0, partial=partial)
+        partial.content[0].text = "Once upon"
+        yield EventTextDelta(content_index=0, delta="Once upon", partial=partial)
+        partial.content[0].text += " a time"
+        if fail is not None:
+            raise fail
+        set_and_fire(cancel_event)
+        await asyncio.Event().wait()
+    return stream
+
+
+def _frames(events: list[dict], kind: str) -> list[dict]:
+    return [e["data"] for e in events if e.get("type") == "chat_response" and e["data"].get("type") == kind]
+
+
+def _streamed_text(events: list[dict]) -> str:
+    return "".join(f["event"].get("text") or "" for f in _frames(events, "stream_event")
+                   if f["event"].get("type") == "text")
+
+
+def _block_text(blocks: list[dict]) -> str:
+    return "".join(b.get("text") or "" for b in blocks if b.get("type") == "text")
 
 
 def _answer(seen: list):
@@ -120,6 +152,54 @@ def test_a_reply_stopped_mid_text_keeps_its_text_and_the_next_message_says_so(db
     assert STOPPED_NOTE not in _text(third[0][-1])
 
 
+def test_a_stopped_reply_is_the_same_in_the_stream_the_result_frame_the_row_and_the_result(db) -> None:
+    stop = threading.Event()
+    events: list[dict] = []
+    result = _turn("tell me a story", _cut_with_an_unread_delta(stop), cancel_event=stop, on_event=events.append)
+
+    reply = db.get_messages("c1")[-1]
+    frame = _frames(events, "result")[-1]
+    # A delta the loop never read was never sent, so it is not kept either.
+    assert _streamed_text(events) == "Once upon"
+    assert reply["content"] == "Once upon"
+    assert _block_text(json.loads(reply["extra"])["blocks"]) == "Once upon"
+    # A client that reads only the text (CLI --print, a channel) gets it.
+    assert frame["content"] == "Once upon" and result.final_text == "Once upon"
+    assert _block_text(frame["blocks"]) == "Once upon"
+    assert result.stopped is True
+
+
+def test_a_stopped_reply_with_a_file_keeps_its_text_before_the_file(db, monkeypatch) -> None:
+    from openprogram.programs.tools.interaction import send_file
+    from openprogram.state.attachments import find_markers
+
+    sent = {"name": "notes.txt", "path": "/work/notes.txt", "size": 3}
+    monkeypatch.setattr(send_file, "outbound_files", lambda tool_calls, session_id: [dict(sent)])
+    stop = threading.Event()
+    events: list[dict] = []
+    result = _turn("tell me a story", _cut_with_an_unread_delta(stop), cancel_event=stop, on_event=events.append)
+
+    reply = db.get_messages("c1")[-1]
+    frame = _frames(events, "result")[-1]
+    assert reply["content"].startswith("Once upon\n\n")
+    assert [path for _name, _meta, path in find_markers(reply["content"])] == ["/work/notes.txt"]
+    assert frame["content"] == reply["content"] == result.final_text
+    assert result.attached_files == ["/work/notes.txt"]
+
+
+def test_a_reply_that_fails_mid_stream_keeps_only_what_was_sent(db) -> None:
+    events: list[dict] = []
+    result = _turn("tell me a story", _cut_with_an_unread_delta(None, fail=ValueError("provider broke")),
+                   on_event=events.append)
+
+    reply = db.get_messages("c1")[-1]
+    frame = _frames(events, "error")[-1]
+    assert result.failed is True and reply["status"] in ("error", "failed"), reply
+    assert _streamed_text(events) == "Once upon"
+    assert _block_text(json.loads(reply["extra"])["blocks"]) == "Once upon"
+    assert frame["content"] == reply["content"]
+
+
 def test_a_stop_while_tools_ran_keeps_the_response_and_closes_every_call() -> None:
     from openprogram.runtime.conversation.turn_runtime.loop_runner import _TurnTally, _keep_stopped_response
 
@@ -148,6 +228,10 @@ def test_a_stream_cut_mid_call_drops_the_call_and_its_reasoning_signature() -> N
         TextContent(text="Let me"),
         ToolCall(id="c", name="bash", arguments={}),
     ])
+    tally.forwarded = [
+        {"type": "thinking", "index": 0, "text": "half a thought"},
+        {"type": "text", "index": 1, "text": "Let me"},
+    ]
     ordered: list[dict] = []
 
     _keep_stopped_response(tally, ordered)

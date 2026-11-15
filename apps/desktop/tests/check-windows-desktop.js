@@ -85,6 +85,13 @@ assert.equal(packageConfig.build.nsis.include, "installer.nsh");
 assert.match(installerSource, /!macro customInit/);
 assert.match(installerSource, /prepare-upgrade\.ps1/);
 assert.match(installerSource, /SetErrorLevel 12/);
+// A fresh install runs no PowerShell before it installs, and no hook is a
+// script file, which a Group Policy execution policy would refuse.
+assert.match(
+  installerSource,
+  /!macro customInit\s+\$\{If\} \$\{FileExists\} "\$INSTDIR\\OpenProgram\.exe"\s+\$\{AndIf\} \$\{FileExists\} "\$INSTDIR\\resources\\app\.asar"[\s\S]*openProgramHook prepare-upgrade\.ps1[\s\S]*\$\{EndIf\}\s+!macroend/,
+);
+assert.doesNotMatch(installerSource.replace(/^\s*;.*$/gm, ""), /-File|-ExecutionPolicy/);
 assert.doesNotMatch(installerSource, /customCheckAppRunning/);
 assert.match(upgradePrepSource, /Get-CimInstance Win32_Process/);
 assert.match(upgradePrepSource, /ConvertTo-ExtendedPath/);

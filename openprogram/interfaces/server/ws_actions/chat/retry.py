@@ -1,6 +1,7 @@
 """The ``retry_function`` action: re-running a selected function call."""
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 
@@ -79,7 +80,9 @@ async def handle_retry_function(ws, cmd: dict):
             "retry_request_id": cmd.get("retry_request_id"),
         })
 
-    node = _retry_call_node(session_id, cmd.get("node_id"), func_name)
+    # Every store read and the run's admission take the conversation's
+    # lock: off the event loop, so a held conversation delays this only.
+    node = await asyncio.to_thread(_retry_call_node, session_id, cmd.get("node_id"), func_name)
     if node is None:
         _fail(f"no matching {func_name!r} call node found in this session.")
         return
@@ -168,8 +171,8 @@ async def handle_retry_function(ws, cmd: dict):
     request_id = client_request_id_of(cmd)
     if request_id:
         options["client_request_id"] = request_id
-    result = run_agent_method_call(
-        func_name, kwargs, session_id, **options,
+    result = await asyncio.to_thread(
+        run_agent_method_call, func_name, kwargs, session_id, **options,
     )
     if "error" in result:
         _fail(result["error"])

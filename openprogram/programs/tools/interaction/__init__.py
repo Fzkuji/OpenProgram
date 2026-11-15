@@ -4,6 +4,6 @@
 question and wait for the answer; it registers no tool of its own.
 """
 
-from . import always_on_preference, always_on_report, always_on_schedule, ask_user, canvas, chat_send, clarify, handoff, send_file
+from . import always_on_preference, always_on_report, always_on_schedule, ask_user, canvas, chat_send, clarify, send_file
 
-__all__ = ["always_on_preference", "always_on_report", "always_on_schedule", "ask_user", "canvas", "chat_send", "clarify", "handoff", "send_file"]
+__all__ = ["always_on_preference", "always_on_report", "always_on_schedule", "ask_user", "canvas", "chat_send", "clarify", "send_file"]

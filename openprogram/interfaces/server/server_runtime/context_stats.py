@@ -175,15 +175,21 @@ def _broadcast_context_stats(session_id: str, msg_id: str, chat_runtime=None, ex
                 "cache_create": eu.get("cache_create", 0),
             }
 
-    # Include provider name so frontend can apply provider-specific formatting
-    provider_name = conv.get("provider_name", state.runtime_management._default_provider) or ""
-
-    # Best-effort context window for the current model — frontend uses this
-    # to render the input/output % bar. Falls back to None on unknown.
-    chat_model = getattr(chat_runtime, "model", None) if chat_runtime else None
-
-    context_window = (state._resolve_context_window(provider_name, chat_model)
-                      or state._conv_context_window(conv))
+    # The window is the one of the model the request ran on: the turn
+    # hands its resolved Model's window (``context_window``) and
+    # ``provider/model`` with the usage. A caller without them falls back
+    # to the conversation's current model. Unknown stays None: the ring
+    # and panel then show tokens without a limit.
+    turn_model = getattr(chat_runtime, "model", None) if chat_runtime else None
+    if turn_model:
+        from openprogram.models.providers.catalog.models import split_model_ref
+        provider_name, chat_model = split_model_ref(turn_model, _conv_provider(conv))
+        context_window = (int(getattr(chat_runtime, "context_window", None) or 0)
+                          or state._resolve_context_window(provider_name, turn_model))
+    else:
+        provider_name, chat_model = state._conv_model(conv)
+        context_window = state._conv_context_window(conv)
+    provider_name = provider_name or ""
 
     # The request that just finished measured the real prompt size, so the
     # occupancy record switches to the ``measured`` basis and stores the
@@ -192,6 +198,7 @@ def _broadcast_context_stats(session_id: str, msg_id: str, chat_runtime=None, ex
     occupancy = state._build_context_occupancy(
         session_id, conv, measured_total=measured, window=context_window,
         request_input_estimate=int((conv.get("_chat_usage") or {}).get("request_input_estimate") or 0),
+        running_turn=bool(getattr(chat_runtime, "running_turn", False)),
     )
 
     stats = {
@@ -201,7 +208,7 @@ def _broadcast_context_stats(session_id: str, msg_id: str, chat_runtime=None, ex
         "exec": exec_stats,
         "provider": provider_name,
         "model": chat_model,
-        "context_window": occupancy["window"] or context_window,
+        "context_window": occupancy["window"],
         **occupancy,
         "_context_rev": int(conv.get("_context_rev") or 0),
     }
@@ -213,30 +220,22 @@ def _broadcast_context_stats(session_id: str, msg_id: str, chat_runtime=None, ex
 
 
 def _resolve_context_window(provider_name, model) -> int | None:
-    """Real context window for ``provider:model`` from the model registry.
+    """Real context window for a model reference from the model registry.
 
     The runtime object carries no window of its own, so the registry is the
-    single place both the ring and the ``/context`` panel look it up. A
-    ``provider:model`` string splits on the colon; a bare id uses the
-    session's provider.
+    single place both the ring and the ``/context`` panel look it up.
+    ``provider/model`` and ``provider:model`` both name their provider
+    (``catalog.models.split_model_ref``); a bare id uses ``provider_name``.
+    ``None`` when the model does not resolve.
     """
-    if not model:
-        return None
-    try:
-        from openprogram.models.providers.catalog.models import get_model as _get_model
-        from openprogram.runtime.context.tokens import real_context_window
-        prov, mid = provider_name, str(model)
-        if ":" in mid:
-            prov, mid = mid.split(":", 1)
-        m = _get_model(prov, mid) if prov and mid else None
-        return real_context_window(m) if m is not None else None
-    except Exception:
-        return None
+    from openprogram.runtime.context.session_stats import model_ref_window
+    return model_ref_window(str(model) if model else None, provider_name or None)
 
 
 def _build_context_occupancy(session_id, conv, *, measured_total=None,
                              window=None, estimated_total=None,
-                             request_input_estimate=None, calibration=None) -> dict:
+                             request_input_estimate=None, calibration=None,
+                             running_turn=False) -> dict:
     """``{window, total_used, basis, estimated[, calibration]}`` for a session.
 
     Falls back to the last broadcast record when the estimate cannot be
@@ -263,7 +262,10 @@ def _build_context_occupancy(session_id, conv, *, measured_total=None,
                             "calibration", "calibration_source")
                 if key in occupancy
             }
-            finalized = _cs.finalize_breakdown(snapshot, occ)
+            finalized = _cs.finalize_breakdown(
+                snapshot, occ, running_turn=running_turn,
+                request_estimate=request_input_estimate,
+            )
             finalized["head_id"] = conv.get("head_id")
             finalized["_context_rev"] = int(conv.get("_context_rev") or 0)
             conv["_last_context_breakdown"] = finalized
@@ -273,7 +275,8 @@ def _build_context_occupancy(session_id, conv, *, measured_total=None,
         if prev.get("context_usage_version") != 2:
             prev = {}
         return {
-            "window": int(window or prev.get("window") or 0),
+            # The window is resolved by the caller, never carried over.
+            "window": int(window or 0) or None,
             "total_used": int(measured_total or prev.get("total_used") or 0),
             "basis": "measured" if measured_total else
                      (prev.get("basis") or "estimated"),
@@ -281,20 +284,148 @@ def _build_context_occupancy(session_id, conv, *, measured_total=None,
         }
 
 
-def _conv_context_window(conv) -> int | None:
-    """Window for whatever model the session is pointed at right now.
+def with_window(record: dict, window: int | None) -> dict:
+    """``record`` (stats or a breakdown snapshot) against ``window``.
 
-    Reads the picker override first — a model switch writes it
-    immediately, while the session's persisted model only catches up on
-    the next save — then the live runtime.
+    A saved record keeps the window it was computed with; this replaces
+    it with the one resolved now and recomputes what follows from it.
+    """
+    window = int(window or 0) or None
+    out = {**record, "window": window, "context_window": window}
+    if "free_space" in record or "input_used_pct" in record:
+        total = int(record.get("total_used") or record.get("input_used") or 0)
+        out["free_space"] = max(0, window - total) if window else None
+        out["input_used_pct"] = round(total / window, 4) if window else None
+    return out
+
+
+def _conv_provider(conv) -> str:
+    """The provider a bare model id on this conversation belongs to."""
+    conv = conv or {}
+    return (conv.get("provider_override")
+            or conv.get("provider_name")
+            or state.runtime_management._default_provider) or ""
+
+
+def _branch_at_head(conv, head_id) -> dict | None:
+    """Stored settings of the recorded branch whose tip is ``head_id``, when
+    that branch is not the selected one.
+
+    ``None`` for the selected head, no head named, or a head no recorded
+    branch ends at: the conversation's own model then answers.
     """
     conv = conv or {}
-    provider = (conv.get("provider_override")
-                or conv.get("provider_name")
-                or state.runtime_management._default_provider) or ""
-    model = conv.get("model_override") or getattr(
-        conv.get("runtime"), "model", None,
+    if not head_id or not conv.get("id") or head_id == conv.get("head_id"):
+        return None
+    from openprogram.state.store.session.branch_config import (
+        BranchConfigConflict, config_for_branch,
     )
+    try:
+        from openprogram.runtime.context.session_db import default_db
+        row = default_db().get_session(conv["id"]) or {}
+    except Exception:
+        return None
+    active = row.get("active_branch_id")
+    for branch_id, ref in (row.get("branch_refs") or {}).items():
+        if (not isinstance(ref, dict) or branch_id == active
+                or ref.get("head_id") != head_id or ref.get("status") == "aborted"):
+            continue
+        try:
+            return config_for_branch(row, branch_id)
+        except BranchConfigConflict:
+            continue
+    return None
+
+
+def _branch_model_ref(conv, branch: dict) -> tuple[str | None, str]:
+    """``_conv_model_ref`` for a branch that is not selected: its own model
+    (``branch_config``), else its Agent's as it is now. The selected
+    branch's pin, turn and runtime say nothing about it."""
+    provider = (branch.get("provider_override")
+                or state.runtime_management._default_provider) or ""
+    if branch.get("model_override"):
+        return str(branch["model_override"]), provider
+    try:
+        from openprogram.runtime.conversation.session_model import (
+            new_session_chat_model, override_string,
+        )
+        agent_ref = override_string(*new_session_chat_model(
+            branch.get("agent_id") or (conv or {}).get("agent_id")))
+        if agent_ref:
+            return agent_ref, provider
+    except Exception:
+        state._log("context window: agent model unavailable")
+    return None, provider
+
+
+def _conv_model_ref(conv, head_id=None) -> tuple[str | None, str]:
+    """``(model reference, provider for a bare id)`` the session runs on now.
+
+    ``head_id`` names the branch tip a reader looks at. A recorded branch
+    that is not the selected one answers with its own settings
+    (``_branch_model_ref``), so its window is its model's, not the
+    selected branch's.
+
+    Otherwise the first source that names a model decides, in the order the
+    next request would pick it (``session_model.ensure_session_chat_model``):
+
+    1. the picker pin (``model_override``) — a model switch writes it
+       immediately, while the persisted model catches up on the next save;
+    2. the model the turn last resolved (``_turn_model_ref``, set from the
+       turn's own usage report, dropped when another branch is selected);
+    3. the live runtime's model;
+    4. the session row's pin;
+    5. for a chat that follows its Agent, the Agent's model as it is now;
+    6. the model the session's last turn ran (row ``model``,
+       ``provider/model``).
+    """
+    conv = conv or {}
+    other = _branch_at_head(conv, head_id)
+    if other is not None:
+        return _branch_model_ref(conv, other)
+    provider = _conv_provider(conv)
+    for model in (conv.get("model_override"), conv.get("_turn_model_ref"),
+                  getattr(conv.get("runtime"), "model", None)):
+        if model:
+            return str(model), provider
+    row: dict = {}
+    if conv.get("id"):
+        try:
+            from openprogram.runtime.context.session_db import default_db
+            row = default_db().get_session(conv["id"]) or {}
+        except Exception:
+            row = {}
+    if row.get("model_override"):
+        return str(row["model_override"]), (row.get("provider_override") or provider)
+    try:
+        from openprogram.runtime.conversation.session_model import (
+            new_session_chat_model, override_string,
+        )
+        agent_id = conv.get("agent_id") or row.get("agent_id")
+        agent_ref = override_string(*new_session_chat_model(agent_id))
+        if agent_ref:
+            return agent_ref, provider
+    except Exception:
+        state._log("context window: agent model unavailable")
+    if row.get("model"):
+        return str(row["model"]), (row.get("provider_name") or provider)
+    return None, provider
+
+
+def _conv_model(conv, head_id=None) -> tuple[str, str | None]:
+    """``(provider, bare model id)`` of the session's current model, or of
+    the branch ending at ``head_id``."""
+    from openprogram.models.providers.catalog.models import split_model_ref
+    model, provider = _conv_model_ref(conv, head_id)
+    found_provider, model_id = split_model_ref(model, provider)
+    return found_provider or provider or "", model_id
+
+
+def _conv_context_window(conv, head_id=None) -> int | None:
+    """Window for whatever model the session is pointed at right now, or
+    the branch ending at ``head_id`` is (``_conv_model_ref``); ``None`` when
+    that model does not resolve."""
+    model, provider = _conv_model_ref(conv, head_id)
     return state._resolve_context_window(provider, model)
 
 
@@ -311,8 +442,14 @@ def session_context_stats(
     to the ring's. A measured reading stays measured only while the graph
     has not moved since; ``refresh_context_stats`` is what flips it back to
     ``estimated`` when it has.
+
+    The window is resolved now from the model of the branch ``head_id``
+    ends (the session's selected one without it), never taken from the
+    stored record: a record saved while the lookup failed carried the
+    128k default, and that number must not outlive the fix.
     """
     conv = state._sessions.get(session_id) or {}
+    window = int(window or 0) or state._conv_context_window(conv, head_id)
     prev = conv.get("_last_context_stats") or {}
     same_rev = int(prev.get("_context_rev") or 0) == int(
         conv.get("_context_rev") or 0
@@ -330,13 +467,12 @@ def session_context_stats(
                 out["calibration"] = round(
                     int(out.get("total_used") or 0) / int(estimated_total), 4
                 )
-        if window:
-            out["window"] = int(window)
+        out["window"] = int(window or 0) or None
         return out
     return state._build_context_occupancy(
         session_id,
         {**conv, "head_id": head_id or conv.get("head_id")},
-        window=window or state._conv_context_window(conv),
+        window=window,
         estimated_total=estimated_total,
     )
 
@@ -376,9 +512,7 @@ def refresh_context_stats(session_id: str, msg_id: str = "") -> None:
     except (ValueError, TypeError, AttributeError, OSError):
         pass
     prev = conv.get("_last_context_stats") or {}
-    current_provider = (conv.get("provider_override") or conv.get("provider_name")
-                        or state.runtime_management._default_provider) or ""
-    current_model = conv.get("model_override") or getattr(conv.get("runtime"), "model", None)
+    current_provider, current_model = state._conv_model(conv)
     reusable_calibration = (
         prev.get("calibration")
         if (not measured_total and prev.get("context_usage_version") == 2
@@ -400,7 +534,8 @@ def refresh_context_stats(session_id: str, msg_id: str = "") -> None:
         "session_id": session_id,
         "provider": current_provider,
         "model": current_model,
-        "context_window": occupancy["window"] or prev.get("context_window"),
+        # Resolved now; the stored record's window is never carried over.
+        "context_window": occupancy["window"],
         **occupancy,
         "_context_rev": conv["_context_rev"],
     }

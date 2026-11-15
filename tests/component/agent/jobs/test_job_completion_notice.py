@@ -58,9 +58,12 @@ def test_background_agent_reports_back_once_with_only_its_report(store, monkeypa
     from openprogram.runtime.jobs import get_runner, JobStatus, notices
     from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult, write_attach_placeholder_for_spawn
 
+    from openprogram.runtime.jobs.types import mint_job_id
+    # As agent() writes it: the card names its Job from the start.
+    job_id = mint_job_id()
     attach_id = write_attach_placeholder_for_spawn(
         session_id="p1", caller_msg_id="a1", label="scout",
-        prompt="read the worker log", chosen_agent="main",
+        prompt="read the worker log", chosen_agent="main", job_id=job_id,
     )
 
     seen: dict = {}
@@ -91,6 +94,7 @@ def test_background_agent_reports_back_once_with_only_its_report(store, monkeypa
     )
     runner = get_runner()
     job_id = runner.spawn_job(
+        job_id=job_id,
         session_id="p1", prompt="read the worker log", agent_id="main",
         subject="scout", description="read the worker log",
         parent_msg_id="a1", label="scout", attach_pointer_id=attach_id, wait=False,
@@ -110,7 +114,11 @@ def test_background_agent_reports_back_once_with_only_its_report(store, monkeypa
     assert req.session_id == "p1" and req.source == "job_followup"
     assert "automated notice, not a message from the user" in req.user_text
     assert f"Agent \"scout\" finished (job {job_id})." in req.user_text
-    assert "(its report is attached above)" in req.user_text
+    # The card stays as written (the caller's prompt only grows by
+    # appending), so the report travels in the notice, without the child's
+    # transcript.
+    assert "the log is clean" in req.user_text and "attached above" not in req.user_text
+    assert "TOOL NOISE" not in req.user_text
     assert seen["on_event"] is not None, "the notice turn must stream to the chat"
     assert [i["kind"] for i in req.notice] == ["report"]
 
@@ -119,7 +127,10 @@ def test_background_agent_reports_back_once_with_only_its_report(store, monkeypa
     runner._update_attach_card(runner.get_job(job_id) or final)
     assert notices._load(path)[0] == []
 
-    # The caller's context carries the report, not the child's transcript.
+    # The caller's line holds the card, not the child's transcript; the card
+    # is one whose prompt text stays as written (render._attach_report).
     from openprogram.runtime.context.persistence import rendered_history
-    seen_text = repr(rendered_history(store, "p1", head_id=attach_id))
-    assert "the log is clean" in seen_text and "TOOL NOISE" not in seen_text
+    rows = rendered_history(store, "p1", head_id=attach_id)
+    assert "TOOL NOISE" not in repr(rows)
+    card = next(row for row in rows if row.get("id") == attach_id)
+    assert card["attach"]["result_in"] == "notice" and card["attach"]["status"] == "completed"

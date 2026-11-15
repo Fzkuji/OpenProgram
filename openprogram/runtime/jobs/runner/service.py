@@ -120,6 +120,11 @@ class JobRunner(AdmissionOperations, ProjectionOperations, BorrowedOperations, C
         self._execution_control.set_wait_resume_scheduler(
             self._queue_wait_resume,
         )
+        # Maintenance is read from the same profile as the stores above, for
+        # the runner's whole life: the dispatch loop claims every 0.5 s and
+        # must not follow a state directory that changes after it started.
+        from openprogram.operations.self_update.store import SelfUpdateStore
+        self._self_update_store = SelfUpdateStore()
         self._claim_only_job_id: str | None = None
         self._claim_scope_lock = shared.threading.Lock()
         self._dispatch_wake = shared.threading.Event()
@@ -509,7 +514,8 @@ class JobRunner(AdmissionOperations, ProjectionOperations, BorrowedOperations, C
         if cur is None:
             return None
         if shared.is_terminal(cur.status):
-            return cur
+            self._await_local_settle(job_id, None if timeout is None else time.monotonic() + timeout)
+            return self.get_job(job_id)
         with self._lock:
             done = self._done_events.get(job_id)
         if done is None:
@@ -542,8 +548,11 @@ class JobRunner(AdmissionOperations, ProjectionOperations, BorrowedOperations, C
         next_check = 0.0
         while True:
             job = self.get_job(job_id)
-            if job is None or shared.is_terminal(job.status):
+            if job is None:
                 return job
+            if shared.is_terminal(job.status):
+                self._await_local_settle(job_id, deadline)
+                return self.get_job(job_id)
             if time.monotonic() >= next_check:
                 next_check = time.monotonic() + 1.0
                 if self.stopped_execution(job_id) is not None:
@@ -553,6 +562,30 @@ class JobRunner(AdmissionOperations, ProjectionOperations, BorrowedOperations, C
             if on_poll is not None:
                 on_poll()
             time.sleep(0.05)
+
+
+    def _await_local_settle(self, job_id: str, deadline: shared.Optional[float]) -> None:
+        """Wait while this process's runner is still ending a Job whose
+        terminal status is already written.
+
+        The runner writes the status first, then settles the attach card and
+        queues the notice, then sets the Job's done event. A caller that goes
+        on from the status alone races that work: it writes the same card
+        and its turn reads it. A Job another process runs is not waited for.
+        """
+        with self._lock:
+            entry = self._jobs.get(job_id)
+            done = self._done_events.get(job_id)
+            local = entry is not None and (
+                entry.get("future") is not None or entry.get("attempt_id") is not None)
+        if done is None or not local:
+            return
+        while not done.wait(0.05):
+            with self._lock:
+                if self._done_events.get(job_id) is not done:
+                    return
+            if deadline is not None and time.monotonic() >= deadline:
+                return
 
 
     def stopped_execution(self, job_id: str):

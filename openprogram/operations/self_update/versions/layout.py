@@ -278,3 +278,19 @@ def apply_base_environment(environ: dict[str, str] | None = None) -> None:
         present = existing.split(os.pathsep)
         added = [entry for entry in entries if entry not in present]
         target["PATH"] = os.pathsep.join([*added, existing] if existing else added)
+
+
+def disk_shortfall(required: int, available: int) -> str:
+    """How much disk space is missing, in the unit that shows it.
+
+    A need and a free amount within the same tenth of a gigabyte print as
+    the same figure ("needs 5.0 GB and 5.0 GB is free"), so every disk-space
+    message names the difference: megabytes under a gigabyte, gigabytes above.
+    """
+    missing = max(0, int(required) - int(available))
+    if missing < 1024 ** 2:
+        return "less than 1 MB"
+    if missing < 1024 ** 3:
+        return f"{missing / 1024 ** 2:.0f} MB"
+    return f"{missing / 1024 ** 3:.1f} GB"
+

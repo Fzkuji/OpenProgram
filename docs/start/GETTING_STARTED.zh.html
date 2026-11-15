@@ -3,14 +3,13 @@
 <h1>快速开始</h1>
 
 <h2 id="install">1. 安装</h2>
-<pre translate="no"><code>curl -fsSL https://openprogram.io/install | sh        # macOS、Linux
-irm https://openprogram.io/install.ps1 | iex          # Windows x64（v1.2.0 起），PowerShell</code></pre>
+<pre translate="no"><code>curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh        # macOS、Linux
+irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex          # Windows x64，PowerShell</code></pre>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">主题</th><th scope="col">事实</th></tr></thead>
 <tbody>
-<tr><th scope="row">已包含</th><td>Python 和 Web UI；不需要 Node.js</td></tr>
-<tr><th scope="row">Git</th><td>v1.0.0 需要，用于会话和 Memory 历史；<code translate="no">openprogram doctor</code> 会报告</td></tr>
-<tr><th scope="row">App</th><td>macOS 是 DMG，Linux 是 deb 或 AppImage；Windows 从 v1.2.0 起提供</td></tr>
+<tr><th scope="row">已包含</th><td>Python、Node.js、Git 和 Web UI；不用另装别的</td></tr>
+<tr><th scope="row">App</th><td>macOS 是 DMG，Linux 是 deb 或 AppImage，Windows 是安装程序：<a href="../install/install.zh.html#choose">安装</a></td></tr>
 <tr><th scope="row">Windows 沙箱</th><td>执行是单独的</td></tr>
 </tbody>
 </table>
@@ -18,8 +17,9 @@ irm https://openprogram.io/install.ps1 | iex          # Windows x64（v1.2.0 起
 
 <h2 id="connect-a-provider">2. 连接 provider</h2>
 <table class="stack fixed">
-<thead class="sr"><tr><th scope="col">命令</th><th scope="col">作用</th></tr></thead>
+<thead class="sr"><tr><th scope="col">在哪</th><th scope="col">作用</th></tr></thead>
 <tbody>
+<tr><th scope="row">App 或 Web：<strong>设置 → 大模型 Provider → 添加 Provider</strong></th><td>三步：选服务商，登录或粘贴它的密钥（环境变量里已有的密钥会直接列出），再选默认模型，点<strong>开始对话</strong></td></tr>
 <tr><th scope="row"><code translate="no">openprogram</code></th><td>首次运行打开设置向导：导入 Claude Code、Codex 或 Gemini CLI 登录，或粘贴 API key，结束后进入终端聊天</td></tr>
 <tr><th scope="row"><code translate="no">openprogram setup</code></th><td>重新运行向导</td></tr>
 </tbody>

@@ -199,3 +199,20 @@ def test_a_repeated_send_is_answered_as_that_send(world, monkeypatch):
             assert ("retry_query" in data) is (code == "run_active")
     finally:
         server._release_run_reservation(session_id, "first-turn")
+
+
+def test_a_repeat_whose_first_attempt_just_ended_is_not_refused(monkeypatch):
+    """The first attempt can end between the refusal and the look for the
+    slot carrying its key; the repeat then asks again and takes the slot."""
+    from openprogram.interfaces.server.server_runtime import session_lifecycle
+
+    answers = [{"code": "run_active", "kind": "rewind", "error": "busy"}, None]
+    monkeypatch.setattr(session_lifecycle, "_reserve_operation_once",
+                        lambda *args, **kwargs: answers.pop(0))
+    monkeypatch.setattr(session_lifecycle, "_outwait_finishing", lambda *args: False)
+    monkeypatch.setattr(session_lifecycle, "keyed_slot", lambda *args: None)
+
+    assert session_lifecycle.reserve_operation("s-repeat-ended", "rewind", "owner", key="k") is None
+    # Something else in the way, with no slot for this key, is still refused.
+    answers[:] = [{"code": "run_active", "kind": "reply", "error": "busy"}] * 2
+    assert session_lifecycle.reserve_operation("s-repeat-ended", "rewind", "owner", key="k")["code"] == "run_active"

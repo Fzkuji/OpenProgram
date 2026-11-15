@@ -1,11 +1,11 @@
 {
   "name": "openprogram-desktop",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "private": true,
   "description": "Electron desktop shell for OpenProgram",
-  "author": "Fzkuji",
+  "author": "FuzzyKuji",
   "license": "AGPL-3.0-or-later",
-  "homepage": "https://openprogram.io/",
+  "homepage": "https://fuzzykuji.github.io/openprogram-site/",
   "repository": "https://github.com/FuzzyKuji/OpenProgram",
   "main": "shell/loader.js",
   "desktopName": "ai.openprogram.OpenProgram.desktop",
@@ -13,10 +13,11 @@
     "postinstall": "node scripts/check-native-dependencies.js",
     "dev": "electron .",
     "check:shell-metadata": "node --test tests/check-shell-metadata.cjs",
+    "check:open-default": "node --test tests/check-open-default.cjs",
     "check:shell-pty": "node --test tests/check-shell-pty.cjs",
     "check:packaged-files": "node tests/check-packaged-files.js",
     "check:native-menu": "node tests/check-native-context-menu.js && node --test tests/check-bookmark-menu-cache.cjs",
-    "check": "npm run check:packaged-files && npm run check:preload-fanout && npm run check:pointer-follow && npm run check:pane-recording && npm run check:agent-control && npm run check:native-menu && npm run check:webtabs && npm run check:webtab-user-agent && npm run check:no-browser-extensions && npm run check:webtab-zoom-bounds && npm run check:web-corners && npm run check:tab-transfer-store && npm run check:window-state && npm run check:tab-detach-placement && npm run check:window-lifecycle && npm run check:theme-chrome && npm run check:window-chrome && npm run check:browser-import && npm run check:installed-transfer-client && npm run check:worker-auth && npm run check:worker-recovery && npm run check:packaged-runtime && npm run check:updates && npm run check:attention && npm run check:windows && npm run check:terminal-resources && npm run check:shell-metadata",
+    "check": "npm run check:packaged-files && npm run check:preload-fanout && npm run check:pointer-follow && npm run check:pane-recording && npm run check:agent-control && npm run check:native-menu && npm run check:webtabs && npm run check:webtab-user-agent && npm run check:no-browser-extensions && npm run check:webtab-zoom-bounds && npm run check:web-corners && npm run check:tab-transfer-store && npm run check:window-state && npm run check:tab-detach-placement && npm run check:window-lifecycle && npm run check:theme-chrome && npm run check:window-chrome && npm run check:browser-import && npm run check:installed-transfer-client && npm run check:worker-auth && npm run check:worker-recovery && npm run check:packaged-runtime && npm run check:updates && npm run check:attention && npm run check:windows && npm run check:terminal-resources && npm run check:shell-metadata && npm run check:open-default",
     "check:preload-fanout": "node tests/check-preload-fanout.js",
     "check:pointer-follow": "node tests/check-pointer-follow.js",
     "check:pane-recording": "node tests/check-pane-recording.js",
@@ -35,7 +36,7 @@
     "check:browser-import": "node tests/check-browser-profile-import.js",
     "check:installed-transfer-client": "node tests/check-installed-tab-transfer-client.js",
     "check:worker-auth": "node tests/check-worker-start-url.js && node tests/check-self-update-reopen.js && node tests/check-self-update-ui-guard.js && node tests/check-self-update-ui.js",
-    "check:worker-recovery": "node tests/check-worker-recovery.js && node tests/check-install-lock.js",
+    "check:worker-recovery": "node tests/check-worker-recovery.js && node tests/check-web-port.js && node tests/check-install-lock.js",
     "check:packaged-runtime": "node tests/check-packaged-runtime.js && node tests/check-instance.js && node tests/check-thin-shell.js && node tests/check-recovery-stop.js",
     "check:updates": "node tests/check-update-service.js",
     "check:attention": "node tests/check-attention-service.js && node tests/check-session-windows.js",
@@ -96,6 +97,7 @@
         "zip"
       ],
       "icon": "build/icon.icns",
+      "minimumSystemVersion": "13.5",
       "identity": null,
       "signIgnore": [
         "/Contents/Resources/runtime/assets/playwright/"
@@ -141,7 +143,7 @@
       "category": "Development",
       "synopsis": "Agent workspace",
       "description": "Agent workspace",
-      "maintainer": "OpenProgram <noreply@openprogram.io>",
+      "maintainer": "FuzzyKuji <9404270+FuzzyKuji@users.noreply.github.com>",
       "desktop": {
         "entry": {
           "Name": "OpenProgram",

@@ -190,6 +190,9 @@ export interface TextFrame {
   offset: number;
   type: "text" | "thinking";
   text: string;
+  /** What the row's flat text takes before this frame's text: the blank line
+   *  between two passages a tool call came between (the server's `reply_text`). */
+  separator?: string;
 }
 
 const JOIN_FIELD = { text: "content", thinking: "thinking" } as const;
@@ -206,8 +209,10 @@ function placeFrame(held: ChatMsg, frame: TextFrame): FramePlacement {
   if (!fresh) return { row: held, gap: false };
   blocks[frame.itemIndex] = { ...(block ?? { type: frame.type }), id: block?.id ?? frame.itemId, text: current + fresh } as never;
   const field = JOIN_FIELD[frame.type];
+  // The frame that opens a block names what separates it from the text before.
+  const lead = frame.separator && !current && frame.offset === 0 ? frame.separator : "";
   // New output ends the wait a retry notice was showing.
-  return { row: { ...held, blocks, retryStatus: undefined, [field]: `${(held[field] as string | undefined) ?? ""}${fresh}` }, gap: false };
+  return { row: { ...held, blocks, retryStatus: undefined, [field]: `${(held[field] as string | undefined) ?? ""}${lead}${fresh}` }, gap: false };
 }
 
 /** Apply a frame to a view. A frame past the block's end means one was lost and

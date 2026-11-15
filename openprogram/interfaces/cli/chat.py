@@ -330,6 +330,7 @@ def _print_oneshot_in_process(session_id: str, text: str, *, response_format=Non
 
     agent = ensure_default_agent()
     command = local_commands.resolve(text, session_id)
+    starts_goal = False
     if command is not None:
         outcome = local_commands.run(command, session_id)
         if outcome.invoke is not None:
@@ -339,6 +340,7 @@ def _print_oneshot_in_process(session_id: str, text: str, *, response_format=Non
             sys.exit(1)
         if outcome.send_text:
             text = outcome.send_text
+            starts_goal = outcome.starts_goal
         else:
             run.local_command = outcome.command
             run.ended = _print_turn.ENDED_COMPLETED
@@ -361,9 +363,11 @@ def _print_oneshot_in_process(session_id: str, text: str, *, response_format=Non
         if not isinstance(data, dict) or data.get("type") != "stream_event":
             return
         event = data.get("event")
-        if isinstance(event, dict) and event.get("type") in ("text", "thinking"):
-            stream.delta(run, "text" if event["type"] == "text" else "reasoning",
-                         str(event.get("text") or ""))
+        if isinstance(event, dict) and event.get("type") == "text":
+            from openprogram.state.reply_text import stream_text
+            stream.delta(run, "text", stream_text(event))
+        elif isinstance(event, dict) and event.get("type") == "thinking":
+            stream.delta(run, "reasoning", str(event.get("text") or ""))
 
     try:
         _print_turn.run_in_process(
@@ -373,6 +377,7 @@ def _print_oneshot_in_process(session_id: str, text: str, *, response_format=Non
             project_binding=project_binding, no_web=no_web,
             on_event=_on_event if stream is not None else None,
             on_admitted=stream.init if stream is not None else None,
+            starts_goal=starts_goal,
             **({"effort": effort} if effort else {}),
         )
     except KeyboardInterrupt:

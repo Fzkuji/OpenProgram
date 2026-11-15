@@ -53,6 +53,8 @@ export interface JobResource {
       cost_usd: string | null;
       cost_unknown_events: number | null;
     };
+    /** This Job and every helper it started. */
+    subtree?: { tokens: number | null; cost_usd: string | null };
   };
   reservation?: Record<string, unknown> | null;
 }

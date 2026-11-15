@@ -388,6 +388,8 @@ class QuotaStore:
         self._limits: dict[tuple[str, str], dict[str, QuotaLimit]] = {}
         self._dirty: dict[tuple[str, str], set[str]] = {}
         self._written: dict[tuple[str, str], float] = {}
+        #: The plan each key's replies last named (Codex ``plan_type``); memory only.
+        self._plans: dict[tuple[str, str], str] = {}
         self._loaded = False
         self._listener: Optional[Listener] = None
 
@@ -471,6 +473,22 @@ class QuotaStore:
             except Exception:
                 _log.debug("quota listener failed", exc_info=True)
 
+    def note_plan(self, provider: str, account: str, plan: Optional[str]) -> None:
+        """Remember the plan a key's reply named."""
+        if provider and isinstance(plan, str) and plan.strip():
+            with self._lock:
+                self._plans[(provider, account or "")] = plan.strip().lower()
+
+    def plan(self, provider: str, accounts: Optional[Iterable[str]] = None) -> Optional[str]:
+        """The plan a provider's replies last named, for one of ``accounts``
+        (any key when ``None``); ``None`` when no reply has said."""
+        wanted = None if accounts is None else set(accounts)
+        with self._lock:
+            for (p, account), plan in self._plans.items():
+                if p == provider and (wanted is None or account in wanted):
+                    return plan
+        return None
+
     def flush(self) -> None:
         """Write every observation still held in memory only."""
         with self._lock:
@@ -510,6 +528,7 @@ class QuotaStore:
             self._limits.clear()
             self._dirty.clear()
             self._written.clear()
+            self._plans.clear()
             self._loaded = False
 
 
@@ -542,10 +561,14 @@ def observe_codex_frame(provider: str, token: Optional[str], frame: Any) -> list
     """Record a Codex ``codex.rate_limits`` WebSocket frame. Never raises."""
     try:
         family = parse_codex_rate_limit_frame(frame)
-        if family is None or not family.present:
+        if family is None:
+            return []
+        account = account_for_token(provider, token) or ""
+        default_store.note_plan(provider, account, family.plan_type)
+        if not family.present:
             return []
         limits = codex_limits([family], source=SOURCE_FRAME, now=time.time())
-        default_store.observe(provider, account_for_token(provider, token) or "", limits)
+        default_store.observe(provider, account, limits)
         return limits
     except Exception:
         _log.debug("codex rate-limit frame not read", exc_info=True)
@@ -554,14 +577,24 @@ def observe_codex_frame(provider: str, token: Optional[str], frame: Any) -> list
 
 def exhausted_limit(provider: str, account: Optional[str] = None) -> Optional[QuotaLimit]:
     """The spent limit of a provider's key that resets last, if any is spent."""
+    found = exhausted_report(provider, account)
+    return found[1] if found else None
+
+
+def exhausted_report(provider: str, account: Optional[str] = None) -> Optional[tuple[str, QuotaLimit, list[QuotaLimit]]]:
+    """``(account, spent limit, the key's other limits)`` for the spent limit that resets last."""
     spent = [
-        limit
+        (report, limit)
         for report in default_store.reports(provider)
         if account is None or report.account == account
         for limit in report.limits
         if limit.status == STATUS_EXHAUSTED
     ]
-    return max(spent, key=lambda limit: limit.resets_at or 0.0, default=None)
+    if not spent:
+        return None
+    report, limit = max(spent, key=lambda pair: pair[1].resets_at or 0.0)
+    others = [other for other in _ordered(report.limits) if other.limit_key != limit.limit_key]
+    return report.account, limit, others
 
 
 __all__ = [
@@ -580,6 +613,7 @@ __all__ = [
     "codex_limits",
     "default_store",
     "exhausted_limit",
+    "exhausted_report",
     "header_limits",
     "limit_status",
     "observe_codex_frame",

@@ -885,6 +885,22 @@ def test_sdk_cancellation_reaches_prompt_handler_without_application_result():
         service._on_question_asked, types={"question.asked"}
     )
 
+    # The SDK answers "Request cancelled" itself, before the handler has
+    # finished; what must hold is that the handler does not return until the
+    # turn is cancelled and the request released.
+    call_tool = server.request_handlers[mcp_types.CallToolRequest]
+    handler_done = threading.Event()
+    active_at_handler_exit = {}
+
+    async def observed_call_tool(request):
+        try:
+            return await call_tool(request)
+        finally:
+            active_at_handler_exit.update(service._active_by_request)
+            handler_done.set()
+
+    server.request_handlers[mcp_types.CallToolRequest] = observed_call_tool
+
     async def scenario():
         client_to_server_send, server_read = anyio.create_memory_object_stream(0)
         server_write, client_from_server_recv = anyio.create_memory_object_stream(0)
@@ -926,6 +942,8 @@ def test_sdk_cancellation_reaches_prompt_handler_without_application_result():
                 with pytest.raises(Exception) as caught:
                     await call
                 assert "cancel" in str(caught.value).lower()
+                assert await asyncio.to_thread(handler_done.wait, 5)
+                assert active_at_handler_exit == {}
                 assert service._active_by_request == {}
                 assert current_token(session_id) is None
                 assert len(audit) == 1

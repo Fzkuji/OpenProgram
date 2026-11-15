@@ -174,6 +174,21 @@ def test_the_stored_row_is_at_or_ahead_of_every_frame(store):
     assert seen == [("Hel", "Hel"), ("Hello ", "Hello "), ("Hello there", "Hello there")]
 
 
+def test_a_marker_the_model_streams_is_stored_as_its_name(store):
+    """The row's text mid-turn is what a reply cut off by a worker restart
+    keeps; a marker in it was never recorded, so it reads the name, even
+    split across frames. The live frames and blocks are left as streamed."""
+    from openprogram.state.attachments import format_marker
+    sent = []
+    tap = _tap(store, sent.append)
+    forged = format_marker("id_rsa", "/home/me/.ssh/id_rsa", 1)
+    tap(_frame({"type": "text", "text": "Here: " + forged[:20]}))
+    tap(_frame({"type": "text", "text": forged[20:] + " ok"}))
+
+    assert _stored_text(store) == "Here: id_rsa ok"
+    assert "".join(f["data"]["event"]["text"] for f in sent) == "Here: " + forged + " ok"
+
+
 def test_text_frames_name_their_item_and_utf16_offset(store):
     sent = []
     tap = _tap(store, sent.append)
@@ -219,7 +234,8 @@ def test_a_restarted_response_leaves_the_row_before_the_new_one_arrives(store):
     assert [b.get("text") for b in tap.blocks if b["type"] == "text"] == ["first answer", "done"]
     # The new text starts its block: nothing is appended to the dropped one.
     assert (sent[-1]["data"]["item_index"], sent[-1]["data"]["offset"]) == (2, 0)
-    assert _stored_text(store) == "first answerdone"
+    # A tool call came between the two passages (``reply_text``).
+    assert _stored_text(store) == "first answer\n\ndone"
 
 
 def test_a_restart_cuts_only_the_response_being_sent_again(store):
@@ -330,22 +346,22 @@ def test_a_stop_after_a_finished_message_stores_the_partial_text(store):
     stop.set()
     req = TurnRequest(session_id="s", user_text="hi", agent_id="main", source="web", user_msg_id="u")
     # What the loop holds after the Stop: the finished response, then the cut
-    # one's text as one last unsigned response.
+    # one's text as one last unsigned response, and the text of both.
     ordered = [
         {"type": "text", "text": "finished"},
         {"type": "text", "text": "partial", "partial": True, "round_start": True},
     ]
 
     msg, blocks, _tools, _usage = persist_assistant_message(
-        db=store, req=req, session=store.get_session("s"), usage={}, final_text="finished",
+        db=store, req=req, session=store.get_session("s"), usage={}, final_text="finishedpartial",
         history=[], tool_calls=[], _ordered_blocks=final_blocks(tap, ordered, stop),
         _agentic_tool_names=set(), _placeholder_inserted=True, cancel_event=stop,
         assistant_msg_id="u_reply", user_msg_id="u",
     )
 
     assert [b.get("text") for b in blocks if b["type"] == "text"] == ["finished", "partial"]
-    # The stored text is what was shown, the cut text included.
-    assert "partial" in msg["content"]
+    # The stored text is the turn's text as the loop returned it.
+    assert msg["content"] == "finishedpartial"
 
 
 # ---- ids and origin --------------------------------------------------
@@ -447,3 +463,84 @@ def test_a_delivery_carries_its_origin_through_the_job():
     restored = Job.from_dict(Job(id="j", parent_session_id="s", prompt="p", agent_id="main",
                                  message_origin="agent_delivery").to_dict())
     assert restored.message_origin == "agent_delivery"
+
+
+def _reopened_reply(store):
+    """The reply as a process that never saw it written reads it from the log."""
+    reread = SessionStore(store.root_path)
+    try:
+        return next(n for n in reread.get_nodes("s") if n.id == "u_reply")
+    finally:
+        reread.close()
+
+
+def test_a_long_reply_writes_what_it_added_not_its_whole_trace_again(store):
+    """Each write used to repeat the reply's whole trace, so a reply with
+    many deltas and large tool results wrote hundreds of times its size."""
+    import random
+    noise = random.Random(7)
+    tap = _tap(store, lambda _env: None)
+    for call in range(40):
+        for piece in range(30):
+            tap(_frame({"type": "text", "text": f"step {call}.{piece} "}))
+        tid = f"t{call}"
+        tap(_frame({"type": "tool_use", "tool": "read", "tool_call_id": tid, "input": {"n": call}}))
+        tap(_frame({"type": "tool_result", "tool": "read", "tool_call_id": tid,
+                    "result": "r" * 2000, "full_output": noise.randbytes(10000).hex()}))
+    tap.flush()
+
+    live = next(n for n in store.get_nodes("s") if n.id == "u_reply")
+    trace = len(live.metadata["extra"])
+    log = store._session_dir("s") / "main.jsonl"
+    # The tool nodes hold each result again; the trace itself is written
+    # about once, not once per delta.
+    assert log.stat().st_size < 4 * trace
+    reopened = _reopened_reply(store)
+    assert (reopened.output, reopened.metadata["extra"]) == (live.output, live.metadata["extra"])
+
+
+def test_every_kind_of_change_reads_back_as_the_reply_held_it(store):
+    tap = _tap(store, lambda _env: None)
+    tap(_frame({"type": "thinking", "text": "plan"}))
+    tap(_frame({"type": "text", "text": "Hello"}))
+    tap(_frame({"type": "text", "text": " world"}))
+    tap(_frame({"type": "text_end", "citations": [{"url": "u"}]}))
+    tap(_frame({"type": "tool_use", "tool": "read", "tool_call_id": "a", "input": {}}))
+    tap(_frame({"type": "retry", "reason": "provider"}))
+    tap(_frame({"type": "text", "text": "cut"}))
+    # The request goes out again: the text since the last response ends.
+    tap(_frame({"type": "retry", "restart": True}))
+    tap(_frame({"type": "text", "text": "again"}))
+    tap(_frame({"type": "tool_result", "tool": "read", "tool_call_id": "a", "result": "ok"}))
+    tap({"type": "chat_response", "data": {
+        "type": "user_message", "steering": True, "assistant_msg_id": "u_reply",
+        "session_id": "s", "msg_id": "steer-1", "content": "also this"}})
+    tap(_frame({"type": "web_search", "provider_executed": True}))
+    tap(_frame({"type": "tool_result", "tool": "web_search", "tool_call_id": "w",
+                "provider_executed": True, "input": {"q": "x"}, "result": "found"}))
+    tap(_frame({"type": "text", "text": "done [file: a.txt]"}))
+    tap.flush()
+
+    live = next(n for n in store.get_nodes("s") if n.id == "u_reply")
+    reopened = _reopened_reply(store)
+    assert (reopened.output, json.loads(reopened.metadata["extra"])) == (
+        live.output, json.loads(live.metadata["extra"]))
+    kinds = [block["type"] for block in json.loads(live.metadata["extra"])["blocks"]]
+    assert kinds[:3] == ["thinking", "text", "tool"] and "steering" in kinds
+
+
+def test_a_reply_cut_off_keeps_each_finished_passage_on_one_log_line(store):
+    """Cross-conversation search greps the log. A reply that never got its
+    closing write (the worker died) must still be found by words that
+    arrived in different deltas."""
+    tap = _tap(store, lambda _env: None)
+    for piece in ("the quar", "terly rep", "ort is ready"):
+        tap(_frame({"type": "text", "text": piece}))
+    tap(_frame({"type": "tool_use", "tool": "read", "tool_call_id": "a", "input": {}}))
+
+    log = (store._session_dir("s") / "main.jsonl").read_text(encoding="utf-8")
+    assert "the quarterly report is ready" in log
+    live = next(n for n in store.get_nodes("s") if n.id == "u_reply")
+    reopened = _reopened_reply(store)
+    assert (reopened.output, json.loads(reopened.metadata["extra"])) == (
+        live.output, json.loads(live.metadata["extra"]))

@@ -10,6 +10,7 @@ from ..model import CommandKind, CommandStatus, ControlCommand, ExecutionRecord,
 
 from .shared import (
     Activator,
+    off_loop,
 )
 
 
@@ -175,14 +176,9 @@ class ActivationOperations:
         if attempt is None:
             return False, None
         if checkpoint is None and attempt.execution_id:
-            child_execution = self.executions.get_execution(attempt.execution_id)
-            if child_execution is not None:
-                checkpoint_id = (
-                    child_execution.checkpoint_head_id
-                    or child_execution.source_checkpoint_id
-                )
-                if checkpoint_id is not None:
-                    checkpoint = self.checkpoints.get(checkpoint_id)
+            checkpoint = await off_loop(
+                attempt.execution_id, self._resume_checkpoint, attempt.execution_id,
+            )
         callback = activator or self.activator
         if callback is None and driver is not None:
             callback = driver.activate
@@ -205,10 +201,10 @@ class ActivationOperations:
                         "invalid_binding",
                         "activation returned a binding for a different attempt",
                     )
-                self._bind_driver(result)
+                await off_loop(attempt.execution_id, self._bind_driver, result)
             elif isinstance(result, tuple) and len(result) == 2:
                 driver, handle = result
-                self._bind_driver(
+                await off_loop(attempt.execution_id, self._bind_driver,
                     DriverBinding(
                         execution_id=attempt.execution_id,
                         attempt_id=attempt.attempt_id,
@@ -218,7 +214,7 @@ class ActivationOperations:
                     )
                 )
             elif driver is not None:
-                self._bind_driver(
+                await off_loop(attempt.execution_id, self._bind_driver,
                     DriverBinding(
                         execution_id=attempt.execution_id,
                         attempt_id=attempt.attempt_id,
@@ -239,6 +235,18 @@ class ActivationOperations:
                 exc_info=not isinstance(issue, str),
             )
             return False, issue if issue == "continuation_contract_mismatch" else "activation_failed"
+
+
+    def _resume_checkpoint(self, execution_id: str) -> CheckpointManifest | None:
+        """The checkpoint an attempt resumes from when none was passed."""
+        child_execution = self.executions.get_execution(execution_id)
+        if child_execution is None:
+            return None
+        checkpoint_id = (
+            child_execution.checkpoint_head_id
+            or child_execution.source_checkpoint_id
+        )
+        return self.checkpoints.get(checkpoint_id) if checkpoint_id is not None else None
 
 
     def _bind_driver(self, binding: DriverBinding[Any]) -> None:

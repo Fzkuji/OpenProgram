@@ -289,3 +289,40 @@ def test_running_report_says_so_and_sync_report_is_left_to_the_tool_result():
     msgs = render_dag_messages(g, [running.id, sync.id])
     assert len(msgs) == 1
     assert "Still running" in _texts(msgs)[0] and "read_conversation" not in _texts(msgs)[0]
+
+
+def test_a_running_helpers_card_renders_the_same_bytes_when_it_ends():
+    """C3: the caller's prompt only grows by appending. The card's live state
+    (status, reply, usage, head) stays on the node; the result is the notice."""
+    import hashlib
+    import json
+
+    def prefix(**attach):
+        g = Graph()
+        u = g.add(Call(role=ROLE_USER, output="check the logs"))
+        card = _attach(g, attach.pop("output", "(running)"), **attach)
+        msgs = render_dag_messages(g, [u.id, card.id])
+        return hashlib.sha256(json.dumps(_texts(msgs)).encode()).hexdigest(), _texts(msgs)
+
+    started = dict(session_id="s1", label="scout", prompt="read the worker log", job_id="job_1",
+                   result_in="notice")
+    before, texts = prefix(status="running", head_id=None, **started)
+    after, _ = prefix(status="completed", output="the log is clean", head_id="h9",
+                      usage={"tokens": 1200, "cost_usd": "0.01"}, execution_id="job_1",
+                      status_version=4, **started)
+    assert before == after
+    assert texts[1].startswith('[Sub-agent "scout" started]')
+    assert 'read_conversation(session_id="job_1")' in texts[1]
+    assert "the log is clean" not in texts[1]
+
+
+def test_a_card_from_before_results_moved_into_the_notice_keeps_its_report():
+    """Older conversations: their notice said the report is "attached above",
+    so a card without ``result_in`` still renders its final reply."""
+    g = Graph()
+    u = g.add(Call(role=ROLE_USER, output="check the logs"))
+    card = _attach(g, "the log is clean", session_id="s1", head_id="h9", label="scout",
+                   prompt="read the worker log", status="completed", job_id="job_1")
+    report = _texts(render_dag_messages(g, [u.id, card.id]))[1]
+    assert report.startswith('[Report from sub-agent "scout"]')
+    assert "Final reply (completed):\nthe log is clean" in report

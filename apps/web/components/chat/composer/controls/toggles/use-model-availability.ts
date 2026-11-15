@@ -23,7 +23,7 @@ export function useModelAvailability() {
         tone: "warn",
         link: {
           label: text("Open Providers →", "去配置 Provider →"),
-          href: "/settings/providers",
+          href: "/settings/providers?add=1",
         },
       },
     );

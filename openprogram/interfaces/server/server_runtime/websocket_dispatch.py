@@ -3,11 +3,43 @@ from __future__ import annotations
 
 import logging
 import queue
+import time
 import uuid
 
 from .. import server as state
 
 _log = logging.getLogger(__name__)
+
+#: An action that takes this long is logged by name.
+SLOW_ACTION_SECONDS = 2.0
+
+#: Read-only actions whose reply the client matches by its own request id.
+#: They run beside the connection's ordered lane, so a slow one never delays
+#: a later ``chat`` or ``stop``. Every other action keeps the connection's
+#: order: it starts only after the frames before it finish. A read still
+#: sees every ordered action sent before it (it starts after them), and two
+#: frames of the same read action answer in the order sent.
+#: ``list_projects`` stays ordered: the web matches ``projects_list`` by
+#: type, so a listing begun before a ``create_project`` and answered after
+#: it would be taken as the reply to the re-list that follows the create.
+#: ``load_session`` runs here too: the web matches ``session_loaded`` and
+#: ``session_history_page`` by request id, a turn's row frames for the
+#: conversation are parked until the read's frame is queued
+#: (``ReadParking``), and the run frames that follow carry ``run_seq``, so a
+#: chat or stop sent after a slow first read of a long conversation starts
+#: at once instead of waiting for it.
+CONCURRENT_ACTIONS = frozenset({
+    "load_session",
+    "project_folder_size",
+    "project_file_info",
+    "project_file_tree",
+    "project_file_search",
+})
+
+#: At most this many side reads in flight per connection. A client that
+#: sends more waits in the receive loop until one finishes, so a flood of
+#: reads is held back by the socket instead of piling up tasks.
+MAX_SIDE_TASKS = 32
 
 
 async def _send_operation_error(
@@ -85,10 +117,53 @@ def _socket_closed_by_server(ws) -> bool:
     return application_state is not None and getattr(application_state, "name", "") != "CONNECTED"
 
 
+async def _run_command(ws, cmd: dict) -> None:
+    """Run one frame's action and answer its failure on the wire."""
+    from starlette.websockets import WebSocketDisconnect
+    from openprogram.interfaces.server.ws_errors import OperationError
+
+    try:
+        await state._handle_ws_command(ws, cmd)
+    except WebSocketDisconnect:
+        raise
+    except OperationError as operation_error:
+        await state._send_operation_error(
+            ws,
+            cmd,
+            code=operation_error.code,
+            retryable=operation_error.retryable,
+            scope=operation_error.scope,
+            severity=operation_error.severity,
+        )
+    except Exception as exc:
+        await state._send_operation_error(
+            ws,
+            cmd,
+            code="handler_error",
+            exc=exc,
+        )
+
+
+async def _run_side_command(ws, cmd: dict, previous) -> None:
+    """A read-only frame beside the ordered lane, after the previous frame
+    of the same action. A closed socket ends it quietly: the receive loop
+    sees the close and tears the connection down."""
+    from starlette.websockets import WebSocketDisconnect
+
+    if previous is not None:
+        await state.asyncio.wait([previous])
+    try:
+        await _run_command(ws, cmd)
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        # Answering the failure itself failed; the frame has nowhere to go.
+        _log.debug("side websocket action %r failed", cmd.get("action"), exc_info=True)
+
+
 async def _websocket_handler(ws):
     """WebSocket endpoint for real-time chat streaming."""
     from starlette.websockets import WebSocketDisconnect
-    from openprogram.interfaces.server.ws_errors import OperationError
 
     await ws.accept()
 
@@ -99,6 +174,11 @@ async def _websocket_handler(ws):
 
     with state._ws_lock:
         state._ws_connections.append(ws)
+    # Read-only actions in flight beside the ordered lane: the last task per
+    # action (the next frame of that action waits for it) and all of them
+    # (cancelled when the connection ends).
+    side_lanes: dict = {}
+    side_tasks: set = set()
     try:
         # Off the event loop: a page connecting must not stall the others.
         functions = await state.asyncio.to_thread(state._discover_functions)
@@ -159,26 +239,24 @@ async def _websocket_handler(ws):
                         scope="system",
                     )
                     continue
-                try:
-                    await state._handle_ws_command(ws, cmd)
-                except WebSocketDisconnect:
-                    raise
-                except OperationError as operation_error:
-                    await state._send_operation_error(
-                        ws,
-                        cmd,
-                        code=operation_error.code,
-                        retryable=operation_error.retryable,
-                        scope=operation_error.scope,
-                        severity=operation_error.severity,
-                    )
-                except Exception as exc:
-                    await state._send_operation_error(
-                        ws,
-                        cmd,
-                        code="handler_error",
-                        exc=exc,
-                    )
+                action = cmd.get("action")
+                if isinstance(action, str) and action in CONCURRENT_ACTIONS:
+                    # The connection's protocol is known before any later
+                    # frame runs, as it would be for an ordered action.
+                    _note_history_protocol(ws, cmd)
+                    # Chained behind the previous frame of the same action
+                    # only; the receive loop goes on to the next frame.
+                    while len(side_tasks) >= MAX_SIDE_TASKS:
+                        await state.asyncio.wait(
+                            set(side_tasks), return_when=state.asyncio.FIRST_COMPLETED)
+                    previous = side_lanes.get(action)
+                    task = state.asyncio.create_task(
+                        _run_side_command(ws, cmd, previous))
+                    side_lanes[action] = task
+                    side_tasks.add(task)
+                    task.add_done_callback(side_tasks.discard)
+                    continue
+                await _run_command(ws, cmd)
 
     except WebSocketDisconnect as e:
         # Normal client departure (refresh/close, codes 1000/1001/1005) —
@@ -189,6 +267,10 @@ async def _websocket_handler(ws):
         # structured + carries the traceback; never dumps a raw trace to stdout
         logging.getLogger("openprogram.interfaces.server").exception("[ws] connection error")
     finally:
+        for task in list(side_tasks):
+            task.cancel()
+        if side_tasks:
+            await state.asyncio.gather(*side_tasks, return_exceptions=True)
         from openprogram.programs._host.framework.interface import release
         release(ws)
         from openprogram.interfaces.server.ws_actions.webtab import release_connection
@@ -276,6 +358,12 @@ def _build_ws_action_registry() -> dict:
     return table
 
 
+def _note_history_protocol(ws, cmd: dict) -> None:
+    """The web reads turns (history protocol 3); every other client gets plain rows."""
+    if cmd.get("action") in ("list_sessions", "load_session") and cmd.get("history_version") == 3:
+        ws._history_protocol = 3
+
+
 def _valid_uuid_request_id(value: object) -> bool:
     if not isinstance(value, str):
         return False
@@ -321,9 +409,7 @@ async def _handle_ws_command(ws, cmd: dict):
 
         raise OperationError("invalid_request", scope="system")
     state._validate_file_request(cmd, action)
-    # The web reads turns (history protocol 3); every other client gets plain rows.
-    if action in ("list_sessions", "load_session") and cmd.get("history_version") == 3:
-        ws._history_protocol = 3
+    _note_history_protocol(ws, cmd)
     # A client that says who it is (``handshake.client_identity``), kept for
     # the connection's log lines.
     if "client" in cmd and getattr(ws, "_client_identity", None) is None:
@@ -337,13 +423,21 @@ async def _handle_ws_command(ws, cmd: dict):
 
     h = state.WS_ACTIONS.get(action)
     if h is not None:
-        # load_session cannot be moved wholesale to asyncio.to_thread: it
-        # awaits session_loaded, running_task, and question replay frames at
-        # different points. Its blocking models.dev lookup is SWR, and cold
-        # context accounting is offloaded inside the handler. The remaining
-        # DB/graph hydration stays synchronous until computation and sends can
-        # be separated without changing the frame contract.
-        await h(ws, cmd)
+        started = time.monotonic()
+        try:
+            await h(ws, cmd)
+        finally:
+            # An ordered action holds the connection, so its next frame (a
+            # chat send included) waited this long. Naming the slow action
+            # traces a send acknowledged late to what held the socket.
+            elapsed = time.monotonic() - started
+            if elapsed >= SLOW_ACTION_SECONDS:
+                _log.warning(
+                    "ws action %s took %.1fs (session %s); %s",
+                    action, elapsed, cmd.get("session_id") or "-",
+                    "it ran beside the connection's other frames"
+                    if action in CONCURRENT_ACTIONS
+                    else "later frames on this connection waited")
         return
 
     # Unknown action. Silently dropping these is how a frontend command

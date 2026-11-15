@@ -71,11 +71,16 @@ def invalidate_all() -> None:
 # ---------------------------------------------------------------------------
 
 def _model_for(agent: AgentSpec) -> Tuple[str, str]:
-    """The Agent's own model, else the model the user ran last."""
+    """The Agent's own model, else the utility tier's (Explorer), else the
+    model the user ran last."""
     provider = agent.model.provider or ""
     model_id = agent.model.id or ""
     if provider and model_id:
         return provider, model_id
+    from openprogram.runtime.agent_registry.builtin_agents import utility_tier_model
+    pair = utility_tier_model(agent)
+    if pair:
+        return pair
     from openprogram.models.providers.catalog.last_used import read_last_used_model
     return read_last_used_model() or ("", "")
 

@@ -79,6 +79,20 @@
 </tbody>
 </table>
 
+<h2 id="the-reference-card">The reference card</h2>
+<p>An agent that runs in another conversation, and a branch attached by hand, are not steps of this turn. They keep a card (<code translate="no">rowKind: external_reference</code>), one row until it is opened.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Part</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Row</th><td>The agent's character and name, a state badge, the first line of its task, then time and cost: counted from the card's time while it runs with the Job's subtree cost, and <code translate="no">attach.usage</code> once it ended. A cost with an unknown price is left out. The row is a button; Enter or Space opens it.</td></tr>
+<tr><th scope="row">State</th><td>Needs approval or Needs input while a question of its execution is open (it comes before Running), Waiting while it is queued, Running, Cancelling, Failed, Stopped, Done; Attached for a reference nobody ran. The states the Activity roster also names wear its badge and its words, and cost is written the same way. Approval and failure show on the closed row.</td></tr>
+<tr><th scope="row">Hover tip</th><td>What kind of reference it is (Spawned, Attached, Imported from) and where from, why a limit or the person ended it, tokens and tool calls</td></tr>
+<tr><th scope="row">Opened</th><td>The final reply, the files it changed with their branch (<code translate="no">attach.files</code>, only for an agent with its own worktree), the automatic follow-up, then the actions: <strong>Switch</strong> (checks out the agent's branch; <strong>Open</strong> for another conversation, <em>current</em> when already there), <strong>Cancel execution</strong> while it runs, and the time.</td></tr>
+<tr><th scope="row">Live</th><td>The card is patched in place: an open card stays open when its agent ends</td></tr>
+<tr><th scope="row">Find</th><td>A match inside a closed card opens it (<code translate="no">onFindReveal</code>)</td></tr>
+</tbody>
+</table>
+
 <h2>The way back</h2>
 <p>On an agent's branch the sub-agent branch banner shows the agent's name and <strong>Back to main conversation</strong>, leading to the newest turn below the spawning reply. The reply itself would hide later turns. The Spawned-from card stays out while that branch is on screen.</p>
 <details>
@@ -99,6 +113,7 @@
 <ul>
 <li><code translate="no">apps/web/components/chat/messages/execution/execution-strip.tsx</code> (<code translate="no">SubAgentStep</code>), <code translate="no">tool-group-summary.ts</code></li>
 <li><code translate="no">apps/web/components/chat/messages/cards/sub-agent-transcript.tsx</code></li>
+<li><code translate="no">apps/web/components/chat/messages/cards/attach-card.tsx</code>, <code translate="no">agent-event-row.tsx</code>, <code translate="no">apps/web/lib/chat/transcript/agent-card.ts</code></li>
 <li><code translate="no">apps/web/lib/chat/transcript/sub-agent-transcripts.ts</code></li>
 <li><code translate="no">apps/web/lib/runtime-bridge/session/transcript-updates.ts</code> (<code translate="no">applyTranscriptUpdate</code>)</li>
 <li><code translate="no">openprogram/runtime/conversation/production_driver/execution.py</code> (<code translate="no">_turn_event_sink</code>)</li>

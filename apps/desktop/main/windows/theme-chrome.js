@@ -410,27 +410,75 @@ function recordThemeEvent(userDataPath, payload = {}) {
   } catch { /* Best-effort diagnostics. */ }
 }
 
-/** The two reasons the App shows its waiting page instead of the UI. */
-const WAIT_PHASES = ["waiting", "updating"];
+/** The reasons the App shows its waiting page instead of the UI. */
+const WAIT_PHASES = ["waiting", "updating", "port"];
+
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"']/g, (char) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]
+  ));
+}
+
+// The `port` page in English and Chinese; {port}, {holder} and {setting}
+// are filled in. `setting` names where the user set the port.
+const PORT_TEXT = {
+  en: {
+    title: "Port {port} is in use",
+    held: "OpenProgram is set to use port {port}, but {holder} is using it.",
+    wait: "Quit that program and OpenProgram connects by itself.",
+    settings: "Or choose another port for OpenProgram:",
+    env: "Or start OpenProgram without OPENPROGRAM_WEB_PORT, or with a free port in it.",
+    instance: "Or stop the program on that port; this instance's port is fixed in its instance.json.",
+  },
+  zh: {
+    title: "端口 {port} 已被占用",
+    held: "OpenProgram 设定使用端口 {port}，但{holder}正在使用它。",
+    wait: "退出那个程序后，OpenProgram 会自动连上。",
+    settings: "也可以给 OpenProgram 换一个端口：",
+    env: "也可以去掉 OPENPROGRAM_WEB_PORT，或在其中填一个空闲端口后再启动 OpenProgram。",
+    instance: "也可以停掉占用该端口的程序；这个实例的端口写死在它的 instance.json 里。",
+  },
+};
+
+function portPageBody(c, detail = {}) {
+  const text = PORT_TEXT[detail.chinese ? "zh" : "en"];
+  const fill = (line) => escapeHtml(line)
+    .replaceAll("{port}", escapeHtml(detail.port ?? ""))
+    .replaceAll("{holder}", `<b>${escapeHtml(detail.holder || (detail.chinese ? "另一个程序或账户" : "another program or account"))}</b>`);
+  const how = detail.setting === "env"
+    ? `<p>${fill(text.env)}</p>`
+    : detail.setting === "instance"
+      ? `<p>${fill(text.instance)}</p>`
+      : `<p>${fill(text.settings)}</p>
+        <pre style="background:${c.surface};padding:0.8em;border-radius:6px">openprogram config set ui.web_port &lt;port&gt;</pre>`;
+  return `<h2>${fill(text.title)}</h2>
+        <p>${fill(text.held)}</p>
+        <p>${fill(text.wait)}</p>
+        ${how}`;
+}
 
 /**
  * The page shown while the backend is unreachable. `waiting` is the plain
  * case (the worker is starting or has to be started by hand); `updating`
  * is shown while an installer holds the App install lock and is replacing
- * the App and its runtime, which the App must sit out.
+ * the App and its runtime, which the App must sit out; `port` says that a
+ * port the user set is held by another program or account (`detail` names
+ * the port, the holder and where the port was set).
  */
-function buildErrorPageHtml(chrome, workerCommand, phase = "waiting") {
+function buildErrorPageHtml(chrome, workerCommand, phase = "waiting", detail = {}) {
   const c = chrome || chromeForTheme("beige-dark");
-  const updating = phase === "updating";
-  const body = updating
+  const shown = WAIT_PHASES.includes(phase) ? phase : "waiting";
+  const body = shown === "updating"
     ? `<h2>Updating OpenProgram...</h2>
         <p>An installer is replacing the App and its backend.</p>
         <p>OpenProgram will reconnect automatically when it finishes.</p>`
-    : `<h2>Waiting for backend to start...</h2>
+    : shown === "port"
+      ? portPageBody(c, detail)
+      : `<h2>Waiting for backend to start...</h2>
         <p>OpenProgram will reconnect automatically when the backend is ready.</p>
         <p>If it does not start, run:</p>
         <pre style="background:${c.surface};padding:0.8em;border-radius:6px">${workerCommand}</pre>`;
-  return `<body data-openprogram-wait="${updating ? "updating" : "waiting"}" style="background:${c.bg};color:${c.text};font-family:-apple-system,sans-serif;
+  return `<body data-openprogram-wait="${shown}" style="background:${c.bg};color:${c.text};font-family:-apple-system,sans-serif;
         display:flex;align-items:center;justify-content:center;height:100vh;margin:0;color-scheme:${c.colorScheme}">
       <div style="max-width:32rem;text-align:center">
         ${body}
@@ -438,9 +486,9 @@ function buildErrorPageHtml(chrome, workerCommand, phase = "waiting") {
     </body>`;
 }
 
-function buildErrorPageUrl(chrome, workerCommand, phase = "waiting") {
+function buildErrorPageUrl(chrome, workerCommand, phase = "waiting", detail = {}) {
   return "data:text/html;charset=utf-8," + encodeURIComponent(
-    buildErrorPageHtml(chrome, workerCommand, phase),
+    buildErrorPageHtml(chrome, workerCommand, phase, detail),
   );
 }
 

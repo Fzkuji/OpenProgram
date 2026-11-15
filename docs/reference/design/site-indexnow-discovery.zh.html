@@ -7,7 +7,7 @@
 <figure>
 <ol class="flow">
 <li><strong>构建</strong><small>可信的文档构建器写出 <code translate="no">_publish/sitemap.xml</code></small></li>
-<li><strong>校验</strong><small>严格的 sitemap 0.9 <code translate="no">loc</code> 元素；HTTPS 且主机恰为 <code translate="no">openprogram.io</code>；空输入或外部主机在联网前失败</small></li>
+<li><strong>校验</strong><small>严格的 sitemap 0.9 <code translate="no">loc</code> 元素；HTTPS 且位于配置的网站地址之下；空输入或外部主机在联网前失败</small></li>
 <li><strong>分批</strong><small>去重，每次请求 10,000 个 URL，写入临时 runner 目录；清除旧批次</small></li>
 <li class="flow-end"><strong>提交</strong><small>标准库客户端，有超时和重试；某批失败不跳过后续批次，全部尝试后才报告失败</small></li>
 </ol>

@@ -375,3 +375,24 @@ def test_windows_without_windows_powershell_posts_nothing(monkeypatch, _no_syste
     monkeypatch.setattr(reminders.shutil, "which", lambda _name: None)
     monkeypatch.setattr(reminders.subprocess, "run", lambda *_a, **_k: pytest.fail("ran a command"))
     assert _no_system_notifications.system_notify("OpenProgram", "Stand up") is False
+
+
+def test_a_wake_whose_conversation_stays_locked_tries_again_when_it_is_free(monkeypatch):
+    """A long load or a move holding the conversation is not a turn running:
+    the wake keeps trying within its wait instead of failing."""
+    from openprogram.runtime.conversation import owner_turn
+    from openprogram.runtime.conversation import run_control
+    from openprogram.state.store.session.session_lock import SessionLockTimeout
+
+    attempts = []
+
+    def start(session_id, agent_id, text, **_options):
+        attempts.append(session_id)
+        if len(attempts) == 1:
+            raise SessionLockTimeout(session_id, 60.0, "another process")
+        return "exec-2"
+
+    monkeypatch.setattr(run_control, "is_turn_running", lambda _sid: False)
+    monkeypatch.setattr(owner_turn, "start_owner_turn", start)
+    assert owner_turn.start_owner_turn_when_free("s", "main", "wake", wait_s=5, poll_s=0.01) == "exec-2"
+    assert attempts == ["s", "s"]

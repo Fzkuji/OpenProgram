@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-OPENPROGRAM_VERSION="${OPENPROGRAM_VERSION:-1.2.0}"
+OPENPROGRAM_VERSION="${OPENPROGRAM_VERSION:-1.3.0}"
 OPENPROGRAM_REPOSITORY="${OPENPROGRAM_REPOSITORY:-FuzzyKuji/OpenProgram}"
 state_root="${OPENPROGRAM_STATE_DIR:-$HOME/.openprogram}"
 runtime_root="$state_root/runtime/cli"
@@ -46,6 +46,30 @@ if [ "$platform" = "macos" ] && [ "$arch" = "x86_64" ] &&
   [ "$(sysctl -n sysctl.proc_translated 2>/dev/null || true)" = "1" ]; then
   arch="arm64"
   printf 'This terminal runs under Rosetta on an Apple Silicon Mac. Installing the Apple Silicon version.\n'
+fi
+
+# The oldest macOS the runtime runs on: product-runtime.json's macosMinimum,
+# which the App's own minimum and the install page also name.
+macos_minimum="13.5"
+if [ "$platform" = "macos" ]; then
+  macos_version="$(sw_vers -productVersion 2>/dev/null || true)"
+  case "$macos_version" in
+    *.*) macos_rest="${macos_version#*.}" ;;
+    *) macos_rest="0" ;;
+  esac
+  macos_major="${macos_version%%.*}"
+  macos_minor="${macos_rest%%.*}"
+  case "$macos_major$macos_minor" in
+    ''|*[!0-9]*) ;;
+    *)
+      if [ "$macos_major" -lt "${macos_minimum%%.*}" ] ||
+        { [ "$macos_major" -eq "${macos_minimum%%.*}" ] && [ "$macos_minor" -lt "${macos_minimum#*.}" ]; }; then
+        printf 'OpenProgram needs macOS %s or later, and this Mac runs macOS %s.\n' "$macos_minimum" "$macos_version" >&2
+        printf 'Update macOS in System Settings > General > Software Update, then run this command again.\n' >&2
+        exit 1
+      fi
+      ;;
+  esac
 fi
 
 linux_preflight() {
@@ -96,6 +120,10 @@ linux_preflight() {
       "libgbm.so.1:libgbm1" \
       "libpango-1.0.so.0:libpango-1.0-0" \
       "libcairo.so.2:libcairo2" \
+      "libX11.so.6:libx11-6" \
+      "libxcb.so.1:libxcb1" \
+      "libXext.so.6:libxext6" \
+      "libatspi.so.0:libatspi2.0-0$time64_suffix" \
       "libasound.so.2:libasound2$time64_suffix"; do
       case "$linker_cache" in
         *"${library_and_package%%:*}"*) ;;
@@ -103,12 +131,14 @@ linux_preflight() {
       esac
     done
   fi
+  # Only the browser tool needs these, so their absence never stops the
+  # install: the runtime check below then leaves the Chromium launch to the
+  # browser tool's first use.
   if [ -n "$missing_packages" ]; then
-    printf 'The browser tool needs system libraries this computer does not have yet. The rest of OpenProgram works without them.\n' >&2
     if command -v apt-get >/dev/null 2>&1; then
-      printf 'To add them, run: sudo apt-get update && sudo apt-get install -y%s\n' "$missing_packages" >&2
+      printf 'The browser tool will not work until the system libraries Chromium needs are added; everything else does. Add them any time with: sudo apt-get update && sudo apt-get install -y%s\n' "$missing_packages" >&2
     else
-      printf 'Install the packages your system names for:%s\n' "$missing_packages" >&2
+      printf 'The browser tool will not work until the system libraries Chromium needs are added; everything else does. Add them any time with your package manager:%s\n' "$missing_packages" >&2
     fi
   fi
 
@@ -135,6 +165,16 @@ human_size() {
   awk -v bytes="$1" 'BEGIN {
     if (bytes >= 1073741824) { printf "%.1f GB", bytes / 1073741824 }
     else { printf "%.0f MB", bytes / 1048576 }
+  }'
+}
+
+# The missing amount in the unit that shows it: a need and a free amount within
+# the same tenth of a gigabyte print as the same figure.
+human_shortfall() {
+  awk -v bytes="$1" 'BEGIN {
+    if (bytes >= 1073741824) { printf "%.1f GB", bytes / 1073741824 }
+    else if (bytes >= 1048576) { printf "%.0f MB", bytes / 1048576 }
+    else { printf "less than 1 MB" }
   }'
 }
 
@@ -166,9 +206,10 @@ require_free_space() {
   esac
   needed_bytes=$((archive_bytes * (archive_copies_on_disk + 4) + 536870912 - already_downloaded))
   if [ "$((available_kilobytes * 1024))" -lt "$needed_bytes" ]; then
-    printf 'Not enough free disk space. OpenProgram needs %s on %s (room for the %s archive, about four times that once unpacked, and 512 MB to spare), and %s is free.\n' \
+    printf 'Not enough free disk space. OpenProgram needs %s on %s (room for the %s archive, about four times that once unpacked, and 512 MB to spare), and %s is free, %s short.\n' \
       "$(human_size "$needed_bytes")" "$space_directory" "$(human_size "$archive_bytes")" \
-      "$(human_size "$((available_kilobytes * 1024))")" >&2
+      "$(human_size "$((available_kilobytes * 1024))")" \
+      "$(human_shortfall "$((needed_bytes - available_kilobytes * 1024))")" >&2
     printf 'Free up some space, then run this command again.\n' >&2
     exit 1
   fi
@@ -195,7 +236,7 @@ resolve_release_url() {
     case "$resolved_url" in
       # The same fixed hosts as _RELEASE_HOSTS in github_release/github.py. A signed
       # update source can add hosts for the fetcher; this script cannot check one.
-      https://github.com/*|https://release-assets.githubusercontent.com/*|https://openprogram.io/*) ;;
+      https://github.com/*|https://release-assets.githubusercontent.com/*|https://fuzzykuji.github.io/*) ;;
       *) printf 'release URL is not allowed: %s\n' "$resolved_url" >&2; exit 1 ;;
     esac
     headers="$(mktemp "$header_directory/.openprogram-headers.XXXXXX")"
@@ -826,7 +867,12 @@ test "$manifest_version" = "$OPENPROGRAM_VERSION" || {
     "${manifest_version:-<missing>}" "$OPENPROGRAM_VERSION" >&2
   exit 1
 }
-"$python_bin" -I "$candidate_dir/bin/verify-product-runtime.py" "$candidate_dir"
+verify_options=""
+if [ -n "${missing_packages:-}" ]; then
+  verify_options="--allow-deferred-browser"
+fi
+# shellcheck disable=SC2086 # one optional flag, or none
+"$python_bin" -I "$candidate_dir/bin/verify-product-runtime.py" "$candidate_dir" $verify_options
 "$python_bin" -I -m openprogram --version
 
 playwright_path="$candidate_dir/assets/playwright"

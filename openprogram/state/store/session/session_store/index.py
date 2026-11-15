@@ -121,11 +121,13 @@ class IndexOperations:
                     self._index = data
                     self._reset_running_status()
                     self._startup_cleanup()
+                    self._sweep_deleted_leftovers()
                     return
             except (OSError, shared.json.JSONDecodeError):
                 shared._log.warning("index.json corrupted, rebuilding from session logs")
         self._rebuild_index()
         self._startup_cleanup()
+        self._sweep_deleted_leftovers()
 
 
     def _rebuild_index(self) -> None:
@@ -176,6 +178,55 @@ class IndexOperations:
         for entry in self._index.values():
             if entry.get("status") == "running":
                 entry["status"] = "idle"
+
+
+    def _sweep_deleted_leftovers(self) -> None:
+        """Remove what deleted conversations left outside their folders.
+
+        A delete removes its lock files and releases its file history
+        itself. This pass takes what a delete could not (a lock file another
+        process had open, a delete that stopped half way) and the lock
+        files made since by anything that locked an id with no
+        conversation. Delete marks stay: they are what keeps a deleted id
+        from coming back.
+
+        Opening the store only reads the two lock folders' names. The
+        removals run on a thread of their own (``_leftover_sweep``): the
+        store may be opened on a server's event loop, and nothing waits
+        for them. They touch no conversation: an idle lock file holds
+        nothing, and a file history goes only when every conversation
+        listed in it carries a delete mark of this store.
+        """
+        self._leftover_sweep = None
+        try:
+            with self._index_lock:
+                known = set(self._index)
+            stale = shared.stale_lock_files(self.root_path, known)
+        except Exception:
+            shared._log.warning("leftovers of deleted conversations not listed", exc_info=True)
+            return
+        # The shadow repositories live beside the default store only.
+        histories = None
+        if not self._explicit_root:
+            from openprogram.state.store.shadow_git import store as shadow_git
+            histories = shadow_git._shadow_root()
+            if not histories.is_dir():
+                histories = None
+        if not stale and histories is None:
+            return
+        root = self.root_path
+
+        def sweep() -> None:
+            try:
+                shared.sweep_lock_files(stale)
+                if histories is not None:
+                    shadow_git.sweep_released(lambda sid: shared.is_deleted(root, sid), histories)
+            except Exception:
+                shared._log.warning("leftovers of deleted conversations not swept", exc_info=True)
+
+        self._leftover_sweep = shared.threading.Thread(
+            target=sweep, name="openprogram-leftover-sweep", daemon=True)
+        self._leftover_sweep.start()
 
 
     def _startup_cleanup(self) -> None:

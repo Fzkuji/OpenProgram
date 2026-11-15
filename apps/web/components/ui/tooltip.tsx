@@ -75,6 +75,9 @@ function HoverTip({ label, children, side = "top", avoidCollisions }: HoverTipPr
           if (
             next &&
             (triggerRef.current?.getAttribute("aria-expanded") === "true" ||
+              // A tip on a wrapper (a Select keeps its own trigger) stays
+              // away while the control inside has its popup open.
+              triggerRef.current?.querySelector('[aria-expanded="true"]') != null ||
               !pointerInside.current ||
               document.querySelector(
                 '[data-radix-popper-content-wrapper] :is([role="dialog"],[role="menu"])',

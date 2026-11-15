@@ -64,7 +64,8 @@
 <details>
 <summary>What <code translate="no">verify-product-runtime.py</code> checks</summary>
 <ul>
-<li>Launches a headless Chromium page; an artifact may record <code translate="no">browser_probe</code> as deferred only under <code translate="no">--allow-deferred-browser</code>.</li>
+<li>Launches a headless Chromium page; an artifact may record <code translate="no">browser_probe</code> as deferred only under <code translate="no">--allow-deferred-browser</code>. The terminal installer passes that flag on a Linux machine without Chromium's system libraries, so the launch waits for the browser tool's first use.</li>
+<li>While building (<code translate="no">--write</code>, <code translate="no">--probe-only</code>), reads every Mach-O and ELF file's load commands: a library loaded from outside the runtime and the system (a runner's Homebrew OpenSSL, say), or a macOS file needing a newer macOS than <code translate="no">macosMinimum</code>, fails the build. It parses the files itself, so it needs no <code translate="no">otool</code>.</li>
 <li>Imports channel and search dependencies; checks Web assets.</li>
 <li>Runs both built-in PDF extraction paths on a generated PDF; probes Rich rendering.</li>
 <li>Requires installed OpenProgram metadata to equal the runtime manifest version.</li>
@@ -87,6 +88,11 @@
 <thead class="sr"><tr><th scope="col">Fact</th><th scope="col">Handling</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">semble</code></th><td><code translate="no">&gt;=0.5.3</code>, whose <code translate="no">semble-grammars</code> publishes the native wheels every target needs</td></tr>
+<tr><th scope="row">Wheel target</th><td><code translate="no">build-base.sh</code> and <code translate="no">.ps1</code> install with <code translate="no">--only-binary :all:</code> and <code translate="no">--python-platform</code> for the oldest supported system (<code translate="no">macosMinimum</code> 13.5 through <code translate="no">MACOSX_DEPLOYMENT_TARGET</code>, <code translate="no">glibcMinimum</code> 2.35), never the runner's. <code translate="no">runtime-wheels.py check</code> proves from <code translate="no">uv.lock</code>, before any build, that each target has every wheel. The target is the packaging Python's own build, not the runner's machine: x64 Python on Windows on Arm and an x86_64 build under Rosetta install x86_64 wheels, and the bundled Git follows the same answer (<code translate="no">runtime-wheels.py target</code>)</td></tr>
+<tr><th scope="row">Reused base</th><td>A base whose Python pin is unchanged is copied and brought to the new lock with <code translate="no">uv pip sync</code>, which takes the requirements file as an argument: the pinned uv refuses <code translate="no">--requirements</code> there, while <code translate="no">uv pip install</code> needs it. A component test runs both scripts' package step against that uv, offline, into a throwaway environment, and CI installs that uv.</td></tr>
+<tr><th scope="row">Build profile</th><td>The self-update build runs with its own <code translate="no">HOME</code>, <code translate="no">USERPROFILE</code>, <code translate="no">LOCALAPPDATA</code> and <code translate="no">APPDATA</code>; without the last two PowerShell writes its module cache into the worktree, and the next build refuses it as uncommitted</td></tr>
+<tr><th scope="row">Source builds</th><td>Only what <code translate="no">sourceBuilds</code> in <code translate="no">product-runtime.json</code> names, each against a static library its leg prepares: cryptography on Intel macOS (no x86_64 wheel; <code translate="no">prepare-macos-native-deps.sh</code> builds static OpenSSL with vcpkg for macOS 13.5) and four packages on Windows on Arm. A listed package that gains a wheel fails the check</td></tr>
+<tr><th scope="row">Oldest macOS</th><td>13.5, because Playwright's bundled Node needs it; the App's <code translate="no">LSMinimumSystemVersion</code> (electron-builder <code translate="no">minimumSystemVersion</code>) and the install page say the same, and the terminal installer refuses an older Mac with where to update. The local App refresh assembles its runtime in place from this machine's own packages, so it passes <code translate="no">--this-machine</code> and its native files are held to this Mac's macOS; a release build never passes it</td></tr>
 <tr><th scope="row">Intel macOS and torch</th><td>No patched torch wheel exists, so the <code translate="no">embedding</code> extra excludes that platform</td></tr>
 <tr><th scope="row">Architecture names</th><td>Runtime archives use <code translate="no">x86_64</code>; electron-builder takes <code translate="no">x64</code> (<code translate="no">release-matrix.py</code>)</td></tr>
 <tr><th scope="row">Runtime manifest</th><td>Formatted JSON; shell parsers tolerate whitespace</td></tr>
@@ -99,7 +105,7 @@
 </details>
 
 <h2 id="public-installer">Public installer</h2>
-<pre><code translate="no">curl -fsSL https://openprogram.io/install | sh</code></pre>
+<pre><code translate="no">curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh</code></pre>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">Contract</th></tr></thead>
 <tbody>

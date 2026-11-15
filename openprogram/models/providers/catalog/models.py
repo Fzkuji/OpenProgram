@@ -47,6 +47,45 @@ def get_model(provider: str, model_id: str) -> Model | None:
     return None
 
 
+def split_model_ref(
+    value: str | None, provider: str | None = None,
+) -> tuple[str | None, str | None]:
+    """``(provider, model id)`` named by a stored model reference.
+
+    Sessions and Agents store ``provider/model`` (``override_string``); a
+    runtime id is ``provider:model``. The reference splits at whichever of
+    the two comes first, and everything after it is the id, which may hold
+    ``/`` or ``:`` itself (``openrouter/anthropic/claude-x``,
+    ``ollama:llama3:8b``). A reference with neither is a bare id under
+    ``provider``, and so is one that ``provider`` registers whole
+    (``llama3:8b`` or ``meta-llama/llama-3:free`` stored with their
+    provider beside them).
+    """
+    value = (value or "").strip()
+    if not value:
+        return (provider or None), None
+    cut = min((i for i in (value.find("/"), value.find(":")) if i > 0), default=-1)
+    if cut > 0 and value[cut + 1:]:
+        if provider and value[:cut] != provider and get_model(provider, value) is not None:
+            return provider, value
+        return value[:cut], value[cut + 1:]
+    return (provider or None), value
+
+
+def find_model_ref(value: str | None, provider: str | None = None) -> Model | None:
+    """The registry Model a stored reference names, or ``None``.
+
+    A bare id whose own text holds a separator (``llama3:8b`` under
+    ``ollama``) is also tried whole under ``provider``.
+    """
+    prov, model_id = split_model_ref(value, provider)
+    found = get_model(prov, model_id) if prov and model_id else None
+    whole = (value or "").strip()
+    if found is None and provider and whole and (prov, model_id) != (provider, whole):
+        found = get_model(provider, whole)
+    return found
+
+
 def get_providers() -> list[str]:
     """Return list of all registered providers."""
     seen: set[str] = set()

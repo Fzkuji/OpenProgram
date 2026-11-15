@@ -34,7 +34,7 @@
 <tr><th scope="row">归档，WebSocket</th><td><code translate="no">{"action": "update_session_flags", "session_id": ..., "archived": true}</code></td></tr>
 <tr><th scope="row">归档，REST</th><td><code translate="no">POST /api/sessions/archive</code>、<code translate="no">POST /api/sessions/unarchive</code>，请求体 <code translate="no">{"session_id": ...}</code></td></tr>
 <tr><th scope="row">归档，CLI</th><td><code translate="no">openprogram sessions archive &lt;id&gt;</code>、<code translate="no">openprogram sessions unarchive &lt;id&gt;</code></td></tr>
-<tr><th scope="row">删除的落盘步骤</th><td>在 <code translate="no">.deleted/</code> 记录删除意图；销毁 session 目录和记录的其他位置；清除运行表；移除 <code translate="no">.file-recovery/&lt;id&gt;</code></td></tr>
+<tr><th scope="row">删除的落盘步骤</th><td>在 <code translate="no">.deleted/</code> 记录删除意图；销毁 session 目录和记录的其他位置；清除运行表；移除 <code translate="no">.file-recovery/&lt;id&gt;</code>；释放文件历史；移除锁文件。见<a href="#after-delete">删除之后</a></td></tr>
 </tbody>
 </table>
 </details>
@@ -55,6 +55,38 @@
 </tbody>
 </table>
 <p class="note">不确定就保留：没有 <code translate="no">created_at</code>、已归档或有墓碑、不可达的非默认位置、迁移行不在 <code translate="no">done</code> 或 <code translate="no">deleted</code>、journal 不可读（整轮跳过）、锁被占用、文件系统错误。不删除文件；<code translate="no">.quarantine</code> 保留到手动移除。没有过期和数量上限。</p>
+
+<h2 id="after-delete">删除之后</h2>
+<p>删除不可撤销，没有回收站文件夹。只留下一个小文件。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">对话留下的东西</th><th scope="col">删除之后</th></tr></thead>
+<tbody>
+<tr><th scope="row">删除标记 <code translate="no">.deleted/&lt;id&gt;</code></th><td>永久保留：约 80 字节，按名字读取，从不列目录。迟到的写入、迁移、渠道路由或残留副本想让这个 id 复活时，靠它拒绝</td></tr>
+<tr><th scope="row">锁文件：<code translate="no">.locks/&lt;id&gt;.lock</code>、<code translate="no">.locks/.operations-&lt;id&gt;.lock</code>、<code translate="no">.locks/.migration-&lt;id&gt;.lock</code>、<code translate="no">.goal-locks/&lt;hash&gt;.lock</code></th><td>删除时在对话锁内移除，先写标记再移除</td></tr>
+<tr><th scope="row">文件历史 <code translate="no">shadow-git/&lt;hash&gt;/</code></th><td>仓库属于一个目录。它在 <code translate="no">.git/openprogram-sessions/</code> 里列出向它提交过的对话，列表里最后一个对话被删除时，仓库一起移除。移除清空后的列表目录就是认领：列表里还有对话时它会失败，所以恰好在这时登记的对话保住仓库</td></tr>
+<tr><th scope="row">对该 id 的 REST 读取</th><td><code translate="no">/context</code>、<code translate="no">/tokens</code>、<code translate="no">/branches/tokens</code>、<code translate="no">/context-range</code> 和 <code translate="no">/dag</code> 返回 <code translate="no">404 session_not_found</code>，和从未创建的 id 一样。服务端内存里已有的对话算存在，所以草稿第一次发送后的读取有回答</td></tr>
+</tbody>
+</table>
+<p>存储打开时，移除没有对应对话的空闲锁文件，并释放中途停下的删除留下的文件历史。被持有的锁文件保留。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">清扫</th><th scope="col">做法</th></tr></thead>
+<tbody>
+<tr><th scope="row">在哪里运行</th><td>打开时只读 <code translate="no">.locks/</code> 和 <code translate="no">.goal-locks/</code> 里的文件名。移除在单独的线程里做，在服务端事件循环上打开存储也不用等它</td></tr>
+<tr><th scope="row">索引漏掉的对话</th><td>什么都不丢。能被移除的只有空闲锁文件，它不保存状态，下一次给这个 id 加锁时会重新建出来</td></tr>
+<tr><th scope="row">文件历史</th><td>只有列表里每个对话在本存储都有删除标记时才移除。没有列表的仓库、列着别的存储的 id 的仓库都保留</td></tr>
+<tr><th scope="row">范围</th><td>存储自己的根目录，以及所在状态目录的 <code translate="no">shadow-git/</code>，两者在存储打开时就确定。绝不读取其他 profile 的状态目录</td></tr>
+</tbody>
+</table>
+<details><summary>为什么这样设计</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">决定</th><th scope="col">依据</th></tr></thead>
+<tbody>
+<tr><th scope="row">标记不过期</th><td>锁文件之所以能安全移除，是因为下一个拿到锁的人会看到标记并停下。标记过期后，等待者或残留副本就能把这个 id 再写出来。Claude Code 和 OpenCode 就地删除、不留标记，一个对话只在一处有一份；这里另一个进程、渠道路由和移动过的存放位置都可能把同一个 id 再写出来</td></tr>
+<tr><th scope="row">锁文件可以移除</th><td>每次加锁成功后都检查路径指向的是否仍是刚锁住的文件，不是就重新打开路径。没有这项检查时，移除锁文件会出现两个持有者，所以以前锁文件一直留着</td></tr>
+<tr><th scope="row">文件历史和写它的对话同寿</th><td>Claude Code 按对话保存文件历史，随对话记录一起删除。OpenCode 每个项目一个快照仓库，按时间修剪。一个目录共用的仓库无法只去掉某个对话的提交，其他对话的 diff 读的是同一段历史，所以随最后一个写入者移除</td></tr>
+</tbody>
+</table>
+</details>
 
 <h2 id="main-project-binding">主项目绑定</h2>
 <figure>
@@ -95,7 +127,7 @@
 <tr><th scope="row">动作</th><td><code translate="no">move_session_to_project {session_id, project_id}</code></td><td><code translate="no">relocate_project {session_id, project_id, path}</code></td></tr>
 <tr><th scope="row">改变</th><td>session 的项目。<code translate="no">SessionStore.move_session</code>，持 session 锁：丢弃缓存的仓库；把 <code translate="no">projects/&lt;old&gt;/chats/&lt;id&gt;</code> 和 <code translate="no">.file-recovery/&lt;id&gt;</code> 重命名到 <code translate="no">projects/&lt;new&gt;/chats/</code>；记录位置，重新绑定注册表，设置 <code translate="no">meta.project_id</code>；旧项目追加到 <code translate="no">meta.project_history</code></td><td>项目路径，不是绑定，所以冻结后仍合法。<code translate="no">project_store.relocate_project</code> 校验，改写路径，保留 id。</td></tr>
 <tr><th scope="row">拒绝</th><td>轮次运行中（<code translate="no">RUNNING_ERROR</code>）；目标已存在；文件夹<a href="#held-folder">被其他程序占用</a>。同一项目：不变，不写节点。</td><td>默认项目：每次 <code translate="no">get_default_project</code> 读取都把显示路径恢复为主目录，也没有项目 Git 仓库</td></tr>
-<tr><th scope="row">回复</th><td><code translate="no">session_moved {ok, from_project_id, project_id, node_id}</code>、给所有客户端的 <code translate="no">projects_changed</code>、新的 <code translate="no">projects_list</code></td><td><code translate="no">project_relocated {ok, old_path, path, node_id}</code>、新的 <code translate="no">projects_list</code></td></tr>
+<tr><th scope="row">回复</th><td>先给所有客户端发 <code translate="no">projects_changed</code>，再给请求方发 <code translate="no">session_moved {ok, from_project_id, project_id, node_id}</code> 和新的 <code translate="no">projects_list</code></td><td>先给所有客户端发 <code translate="no">projects_changed</code>，再给请求方发 <code translate="no">project_relocated {ok, old_path, path, node_id}</code> 和新的 <code translate="no">projects_list</code></td></tr>
 <tr id="relocate-node"><th scope="row">节点 <code translate="no">name</code></th><td><code translate="no">project/move</code>，由 <code translate="no">record_move</code> 写</td><td><code translate="no">project/relocate</code>，由 <code translate="no">record_relocate</code> 写</td></tr>
 <tr><th scope="row"><code translate="no">output</code></th><td>旧项目名 → 新项目名</td><td>旧路径 → 新路径</td></tr>
 <tr><th scope="row"><code translate="no">metadata</code></th><td><code translate="no">old_project_id</code>、<code translate="no">new_project_id</code></td><td><code translate="no">display: "runtime"</code>、<code translate="no">project_id</code>、<code translate="no">old_path</code>、<code translate="no">new_path</code></td></tr>

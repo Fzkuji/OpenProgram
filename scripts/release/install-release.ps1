@@ -18,7 +18,7 @@ function Assert-AllowedUrl {
     $AllowedHosts = @(
         "github.com",
         "release-assets.githubusercontent.com",
-        "openprogram.io"
+        "fuzzykuji.github.io"
     )
     if ($Parsed.Scheme -ne "https" -or $Parsed.UserInfo -or $Parsed.Host -notin $AllowedHosts) {
         throw "release URL is not allowed: $Url"
@@ -50,6 +50,20 @@ function Format-ByteSize {
         return ("{0:N1} GB" -f ($Bytes / 1GB))
     }
     return ("{0:N0} MB" -f ($Bytes / 1MB))
+}
+
+# The missing amount in the unit that shows it: a need and a free amount within
+# the same tenth of a gigabyte print as the same figure.
+function Format-Shortfall {
+    param([Parameter(Mandatory = $true)][long]$Bytes)
+
+    if ($Bytes -ge 1GB) {
+        return ("{0:N1} GB" -f ($Bytes / 1GB))
+    }
+    if ($Bytes -ge 1MB) {
+        return ("{0:N0} MB" -f ($Bytes / 1MB))
+    }
+    return "less than 1 MB"
 }
 
 function Get-FileLength {
@@ -92,7 +106,7 @@ function Assert-FreeDiskSpace {
     if ($Available -lt $Needed) {
         throw ("Not enough free disk space. OpenProgram needs $(Format-ByteSize $Needed) on $Root " +
             "(room for the $(Format-ByteSize $ArchiveBytes) archive, about four times that once unpacked, and 512 MB to spare), " +
-            "and $(Format-ByteSize $Available) is free. Free up some space, then run this command again.")
+            "and $(Format-ByteSize $Available) is free, $(Format-Shortfall ($Needed - $Available)) short. Free up some space, then run this command again.")
     }
 }
 
@@ -412,6 +426,51 @@ function ConvertTo-CmdBatchLiteral {
     return $Value.Replace("%", "%%")
 }
 
+# Every .cmd this installer writes goes through here, because every one names a
+# path and cmd.exe parses a batch file in the console's code page: a profile
+# folder with an accented or Chinese name, written as UTF-8 and read as code
+# page 437, is a folder that does not exist. The file is BOM-free UTF-8 whose first lines are ASCII:
+# they note the caller's code page and switch the console to UTF-8 before any
+# path is read. With -Run the last lines give the caller its code page back
+# with the exit status of those lines. With -HandOffTo the launcher starts
+# another launcher that has the same preamble and never returns: it passes the
+# caller's code page on in _OPENPROGRAM_CALLER_CODEPAGE, and the launcher it
+# starts restores it. That launcher is started without `call`, which would
+# double every caret inside a quoted argument and expand percent signs a second
+# time. %* is expanded as text, so non-ASCII arguments arrive unchanged in any
+# code page. scripts/release/bootstrap/bin-openprogram.cmd and scripts/install.ps1
+# carry the same preamble; a test keeps the three equal.
+function Write-CmdLauncher {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [string[]]$Run = @(),
+        [string]$HandOffTo = ""
+    )
+
+    $Lines = @(
+        "@echo off",
+        "setlocal DisableDelayedExpansion",
+        'set "_OPENPROGRAM_CODEPAGE=%_OPENPROGRAM_CALLER_CODEPAGE%"',
+        'set "_OPENPROGRAM_CALLER_CODEPAGE="',
+        'if not defined _OPENPROGRAM_CODEPAGE for /f "tokens=2 delims=:." %%P in (''chcp'') do set "_OPENPROGRAM_CODEPAGE=%%P"',
+        "chcp 65001 >nul"
+    )
+    if ($HandOffTo) {
+        $Lines += @(
+            'set "_OPENPROGRAM_CALLER_CODEPAGE=%_OPENPROGRAM_CODEPAGE%"',
+            "`"$(ConvertTo-CmdBatchLiteral $HandOffTo)`" %*"
+        )
+    } else {
+        $Lines += $Run
+        $Lines += @(
+            'set "_OPENPROGRAM_EXIT=%ERRORLEVEL%"',
+            "chcp %_OPENPROGRAM_CODEPAGE% >nul",
+            "exit /b %_OPENPROGRAM_EXIT%"
+        )
+    }
+    Write-Utf8NoBom $Path (($Lines -join "`r`n") + "`r`n")
+}
+
 function Get-Sha256 {
     param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -565,7 +624,7 @@ function Invoke-WorkerProbe {
     }
 }
 
-$Version = if ($env:OPENPROGRAM_VERSION) { $env:OPENPROGRAM_VERSION } else { "1.2.0" }
+$Version = if ($env:OPENPROGRAM_VERSION) { $env:OPENPROGRAM_VERSION } else { "1.3.0" }
 $Repository = if ($env:OPENPROGRAM_REPOSITORY) { $env:OPENPROGRAM_REPOSITORY } else { "FuzzyKuji/OpenProgram" }
 if ($Version -notmatch "^\d+\.\d+\.\d+$") {
     throw "invalid OpenProgram version: $Version"
@@ -652,8 +711,7 @@ function Publish-StoreLauncher {
         [Parameter(Mandatory = $true)][string]$Bin
     )
 
-    $Command = Join-Path $Store "bin\openprogram.cmd"
-    Write-Utf8NoBom (Join-Path $Bin "openprogram.cmd") "@echo off`r`ncall `"$Command`" %*`r`nexit /b %ERRORLEVEL%`r`n"
+    Write-CmdLauncher (Join-Path $Bin "openprogram.cmd") -HandOffTo (Join-Path $Store "bin\openprogram.cmd")
     Remove-PowerShellLaunchers $Bin
     if (-not $env:OPENPROGRAM_BIN_DIR) {
         Add-DirectoryToUserPath $Bin
@@ -691,6 +749,40 @@ function Update-ExistingStore {
 # plain runtime below.
 # The base is unpacked beside the store and moved in only when complete, so an
 # interrupted run never leaves a half base that the next run would accept.
+# Windows' tar.exe (bsdtar) reads its arguments in the ANSI code page, so a
+# path with a character outside it, such as a Chinese user name on English
+# Windows, reaches it as '?' and the unpack fails. It therefore runs inside the
+# destination and is given only a relative path to the archive, which below the
+# profile folder is plain ASCII. An archive no ASCII relative path reaches (on
+# another drive, or under such a folder) is copied in first.
+function Expand-TarArchive {
+    param(
+        [Parameter(Mandatory = $true)][string]$Archive,
+        [Parameter(Mandatory = $true)][string]$Destination
+    )
+
+    $From = @([IO.Path]::GetFullPath($Destination).TrimEnd('\').Split('\'))
+    $To = @([IO.Path]::GetFullPath($Archive).Split('\'))
+    $Common = 0
+    while ($Common -lt $From.Count -and $Common -lt ($To.Count - 1) -and $From[$Common] -ieq $To[$Common]) {
+        $Common++
+    }
+    $Relative = (@(@('..') * ($From.Count - $Common)) + @($To[$Common..($To.Count - 1)])) -join '\'
+    $Copied = $null
+    if ($Common -eq 0 -or $Relative -match '[^\x20-\x7E]') {
+        $Copied = Join-Path $Destination (".archive-" + [guid]::NewGuid().ToString("N") + ".tar.gz")
+        Copy-Item -LiteralPath $Archive -Destination $Copied
+        $Relative = Split-Path -Leaf $Copied
+    }
+    Push-Location -LiteralPath $Destination
+    try {
+        Invoke-Native (Join-Path $env:SystemRoot "System32\tar.exe") -xzf $Relative
+    } finally {
+        Pop-Location
+        if ($Copied) { Remove-Item -LiteralPath $Copied -Force -ErrorAction SilentlyContinue }
+    }
+}
+
 function Install-SeedBase {
     param(
         [Parameter(Mandatory = $true)][string]$Store,
@@ -705,7 +797,7 @@ function Install-SeedBase {
     [IO.Directory]::CreateDirectory($BaseWork) | Out-Null
     [IO.Directory]::CreateDirectory((Join-Path $Store "bases")) | Out-Null
     try {
-        Invoke-Native "tar.exe" -xzf $Archive -C $BaseWork
+        Expand-TarArchive $Archive $BaseWork
         $Unpacked = Join-Path $BaseWork "bases\$BaseId"
         # Antivirus scanners hold new files briefly, which refuses the move.
         for ($Attempt = 1; ; $Attempt++) {
@@ -765,7 +857,7 @@ function Install-FromSeed {
             }
             throw "seed archive checksum mismatch. The damaged download was removed. Run this command again."
         }
-        Invoke-Native "tar.exe" -xzf $Archive -C $Work
+        Expand-TarArchive $Archive $Work
         $Seed = Join-Path $Work "seed"
         $Manifest = Get-Content -LiteralPath (Join-Path $Seed "seed.json") -Raw -Encoding UTF8 | ConvertFrom-Json
         if ($Manifest.base -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$') { throw "invalid seed" }
@@ -942,24 +1034,13 @@ $CmdTemporary = Join-Path $BinDir (".openprogram-" + [guid]::NewGuid().ToString(
 $CmdPython = ConvertTo-CmdBatchLiteral $PythonBin
 $CmdPlaywright = ConvertTo-CmdBatchLiteral (Join-Path $ReleaseDir "assets\playwright")
 $CmdGit = ConvertTo-CmdBatchLiteral (Join-Path $ReleaseDir "git\cmd")
-$CmdContent = @"
-@echo off
-setlocal DisableDelayedExpansion
-for /f "tokens=2 delims=:." %%P in ('chcp') do set "_OPENPROGRAM_CODEPAGE=%%P"
-chcp 65001 >nul
-set "PLAYWRIGHT_BROWSERS_PATH=$CmdPlaywright"
-set "OPENPROGRAM_IMMUTABLE_RUNTIME=1"
-if exist "$CmdGit\git.exe" set "PATH=$CmdGit;%PATH%"
-"$CmdPython" -I -B -X utf8 -m openprogram %*
-set "_OPENPROGRAM_EXIT=%ERRORLEVEL%"
-chcp %_OPENPROGRAM_CODEPAGE% >nul
-exit /b %_OPENPROGRAM_EXIT%
-"@
-# CMD needs BOM-free UTF-8 and an ASCII preamble selecting that code page
-# before it parses embedded paths. Restore the caller's console on return;
-# delayed expansion must not consume literal exclamation marks in paths.
 try {
-    Write-Utf8NoBom $CmdTemporary $CmdContent
+    Write-CmdLauncher $CmdTemporary -Run @(
+        "set `"PLAYWRIGHT_BROWSERS_PATH=$CmdPlaywright`"",
+        "set `"OPENPROGRAM_IMMUTABLE_RUNTIME=1`"",
+        "if exist `"$CmdGit\git.exe`" set `"PATH=$CmdGit;%PATH%`"",
+        "`"$CmdPython`" -I -B -X utf8 -m openprogram %*"
+    )
     # A managed install must replace launchers left by an older release or a
     # source checkout. Otherwise PATH can silently continue to run a stale
     # virtualenv even though the new runtime passed every activation probe.

@@ -326,8 +326,79 @@ def test_isolation_needs_a_repository(state, tmp_path):
     assert wt is None and "needs a git repository" in error
 
 
+def test_a_worktree_is_never_made_from_the_process_working_directory(state, repo, tmp_path, monkeypatch):
+    """A worker started inside a checkout (a test run inside OpenProgram's own,
+    a daemon launched from a repository) must not branch that checkout: with
+    no turn worktree, project folder or configured folder there is no repository."""
+    agent_mod = importlib.import_module("openprogram.programs.tools.agents.agent.agent.agent")
+    create_mod = importlib.import_module(
+        "openprogram.programs.tools.files.worktree.worktree_create.worktree_create")
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    monkeypatch.chdir(repo)
+    monkeypatch.delenv("OPENPROGRAM_WORKDIR", raising=False)
+    monkeypatch.setattr("openprogram.runtime.conversation.workdir.project_workdir_for", lambda _sid: plain)
+
+    wt, error = agent_mod._isolated_worktree("s1", "helper", "job_cwd")
+    assert wt is None and "needs a git repository" in error
+    assert create_mod._resolve_source_repo("", "s1") == str(plain)
+
+    monkeypatch.setattr("openprogram.runtime.conversation.workdir.project_workdir_for", lambda _sid: None)
+    assert create_mod._resolve_source_repo("", "s1") is None
+    assert _git(repo, "branch", "--list", "op/wt/*") == ""
+
+
 def test_unknown_isolation_is_refused():
     from openprogram.programs.tools.agents.agent.agent.agent import _agent_impl
 
     assert "unknown isolation" in _agent_impl("x", isolation="container")
     assert "send_message" in _agent_impl("x", isolation="worktree", to="s:h")
+
+
+# --- a background helper's worktree waits for the helper ----------------------
+
+
+def test_a_background_writer_gets_a_worktree_and_a_reader_does_not():
+    from openprogram.runtime.agent_registry import builtin_agents, delegation
+    from openprogram.runtime.agent_registry.manager import AgentSpec
+
+    writer = AgentSpec(id="w", name="Writer")
+    explorer = AgentSpec(id="explorer", tools=builtin_agents.builtin("explorer")["tools"])
+    assert delegation.isolation_for(writer, requested="", background=True) == ("worktree", True)
+    assert delegation.isolation_for(explorer, requested="", background=True) == ("", False)
+
+
+def test_merge_waits_for_the_helper_that_writes_there(state, repo, monkeypatch):
+    from openprogram.runtime.jobs.types import Job, JobStatus
+
+    job = Job(id="job_w", parent_session_id="s1", prompt="edit", agent_id="main",
+              status=JobStatus.RUNNING)
+    monkeypatch.setattr("openprogram.runtime.jobs.store.load_job",
+                        lambda sid, jid: job if (sid, jid) == ("s1", "job_w") else None)
+    mgr = WorktreeManager()
+    wt = mgr.create_worktree(str(repo), label="helper", parent_session="s1", parent_job="job_w")
+    (Path(wt.worktree_path) / "new.txt").write_text("from the helper\n")
+
+    for act in (lambda: mgr.merge_worktree(wt.id, strategy="auto", commit_pending=True),
+                lambda: mgr.discard_worktree(wt.id, force=True)):
+        with pytest.raises(Exception, match="owner_running"):
+            act()
+    assert mgr.get_worktree(wt.id).status == WorktreeStatus.ACTIVE
+    assert not (repo / "new.txt").exists()
+
+    job.status = JobStatus.COMPLETED
+    merged = mgr.merge_worktree(wt.id, strategy="auto", commit_pending=True)
+    assert merged.status == WorktreeStatus.MERGED
+    assert (repo / "new.txt").read_text() == "from the helper\n"
+
+
+def test_the_helpers_own_end_discards_while_it_still_counts_as_running(state, repo, monkeypatch):
+    from openprogram.runtime.jobs.types import Job, JobStatus
+
+    job = Job(id="job_c", parent_session_id="s1", prompt="edit", agent_id="main",
+              status=JobStatus.RUNNING)
+    monkeypatch.setattr("openprogram.runtime.jobs.store.load_job", lambda sid, jid: job)
+    mgr = WorktreeManager()
+    wt = mgr.create_worktree(str(repo), parent_session="s1", parent_job="job_c")
+    gone = mgr.discard_worktree(wt.id, force=True, owner_done=True)
+    assert gone.status == WorktreeStatus.DISCARDED

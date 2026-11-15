@@ -23,11 +23,12 @@ MIN_BAR_CELLS = 5
 
 _DOT = {
     "ready": "●", "rate_limited": "◐", "signed_out": "○", "no_credit": "✕",
-    "invalid_key": "✕", "unknown": "·",
+    "invalid_key": "✕", "unknown": "·", "not_configured": "○", "not_running": "○",
 }
 _STATE_WORDS = {
     "ready": "ready", "rate_limited": "rate limited", "signed_out": "signed out",
     "no_credit": "no credit", "invalid_key": "invalid key", "unknown": "unchecked",
+    "not_configured": "not set up", "not_running": "not running",
 }
 
 
@@ -175,10 +176,37 @@ def render(payload: dict, *, now: Optional[float] = None, columns: Optional[int]
     return "\n".join(out)
 
 
+def worker_status(refresh: bool) -> Optional[dict]:
+    """The payload as the running Worker of this profile answers it, or ``None``.
+
+    The Worker holds what only it knows, such as each key's use count and
+    last use (kept in memory, ``auth/pool.py``), so the CLI asks it first
+    and prints what the page shows: ``GET /api/providers/status``, or with
+    ``--refresh`` ``POST /api/providers/status/refresh``. ``None`` when no
+    Worker answers for this profile."""
+    from openprogram.interfaces.cli import worker_client
+    try:
+        from openprogram.host.security.backend_endpoint import resolve_backend_endpoint
+        endpoint = resolve_backend_endpoint()
+    except Exception:  # noqa: BLE001 -- no Worker of this profile: build it here
+        return None
+    if refresh:
+        status, payload = worker_client.request(endpoint, "POST", "/api/providers/status/refresh", {},
+                                                exit_if_unreachable=False)
+    else:
+        status, payload = worker_client.request(endpoint, "GET", "/api/providers/status",
+                                                exit_if_unreachable=False)
+    if status != 200 or not isinstance(payload, dict) or not isinstance(payload.get("providers"), list):
+        return None  # an older Worker or a failed read: build it here
+    return payload
+
+
 def cmd_overview(refresh: bool, as_json: bool) -> int:
     from openprogram.models.usage.provider_status import build_status
+    payload = worker_status(refresh)
     try:
-        payload = build_status(refresh="force" if refresh else "stale")
+        if payload is None:
+            payload = build_status(refresh="force" if refresh else "stale")
     except Exception as exc:  # noqa: BLE001 -- one line instead of a traceback
         print(f"Provider status could not be read: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1

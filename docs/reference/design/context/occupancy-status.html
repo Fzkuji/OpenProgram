@@ -18,6 +18,21 @@
 </table>
 <p class="note">Symptom of a cache keyed on HEAD alone: <code translate="no">/compact</code> reports 40.7k while the panel still shows Messages 125k. The summary was stored; the snapshot is old.</p>
 
+<h2 id="window">The window</h2>
+<p>The denominator is the context window of the model the request ran on: the same number compaction reads for the same Model. It is resolved each time it is shown and never read back from a saved record.</p>
+<table class="stack">
+<thead><tr><th scope="col">When</th><th scope="col">Model</th></tr></thead>
+<tbody>
+<tr><th scope="row">A request of a running turn reports usage</th><td>The Model the turn resolved. The report carries <code translate="no">provider/model</code> and its window; the conversation keeps both for the turn's final report</td></tr>
+<tr><th scope="row">Graph change, reload, panel</th><td>The first that names a model: picker pin, the model the last turn resolved, live runtime, the session row's pin, the Agent's model for a chat that follows it, the row's <code translate="no">model</code> from the last turn</td></tr>
+<tr><th scope="row">Read at a branch that is not selected</th><td>GET <code translate="no">/context?head_id=</code> for a tip another recorded branch ends at uses that branch's own model from its <code translate="no">branch_config</code>, else its Agent's. The selected branch's pin, last turn and runtime are not consulted</td></tr>
+<tr><th scope="row">Another branch is selected</th><td>The model and window the last turn resolved are dropped with the runtime: they belonged to the branch that was left. A branch with no model of its own then reads its Agent's</td></tr>
+<tr><th scope="row">Any stored model string</th><td><code translate="no">provider/model</code> and <code translate="no">provider:model</code> split at the first separator (<code translate="no">split_model_ref</code>); a bare id uses the session's provider</td></tr>
+<tr><th scope="row">The named model does not resolve</th><td>No window. Ring and panel show the token count without a limit or percentage. Only compaction keeps the 128k default, so it fires early</td></tr>
+</tbody>
+</table>
+<p class="note">A record saved while the lookup failed carries 128k. Loading the conversation, the panel route and the next broadcast each replace it with the window resolved then.</p>
+
 <h2 id="outcomes">Compaction outcomes</h2>
 <ol>
 <li>Prepare: build the prompt from rendered history, calculate <code translate="no">budget_pct</code>.</li>
@@ -40,6 +55,11 @@
 <thead class="sr"><tr><th scope="col">State</th><th scope="col">Display</th></tr></thead>
 <tbody>
 <tr><th scope="row">Normal</th><td>Neutral track, arc coloured by ratio. No suggestion border or state. Click opens the panel</td></tr>
+<tr><th scope="row">Source</th><td>Ring, tooltip and panel headline read one snapshot (<code translate="no">lib/chat/context-occupancy.ts</code>): the session's last <code translate="no">context_stats</code>; before the first one, the panel's cached snapshot (a new chat's estimate, marked est.); with no session, the draft estimate. They never show different numbers</td></tr>
+<tr><th scope="row">Draft becomes session</th><td>The first message's ack makes the draft a session under the draft's own key. The draft estimate is copied into that session's snapshot and its GET <code translate="no">/context</code> starts, so the count and window hold until the session estimate, then <code translate="no">context_stats</code>, replace them; they never drop to 0</td></tr>
+<tr><th scope="row">Branch without a snapshot</th><td>The cache answers a branch it has nothing for with the session's latest snapshot, counted against another branch's model. The ring shows it and reads this branch's own GET <code translate="no">/context</code> at once (<code translate="no">hasContextBreakdown</code>)</td></tr>
+<tr><th scope="row">Window unknown</th><td>Empty arc; tooltip and panel headline show tokens only. Category rows keep their share of the total</td></tr>
+<tr><th scope="row">Terminal client</th><td>The bottom bar keeps a window per conversation from <code translate="no">context_stats</code>. A frame whose <code translate="no">context_window</code> is null removes it: the bar shows the token counts without a limit or percentage, as the ring does</td></tr>
 <tr><th scope="row">Compacting</th><td>While the branch's running task is a <code translate="no">compact</code> operation or a turn in its compaction phase (<code translate="no">isCompacting</code>, from <code translate="no">compaction_started</code> to finished or failed): ring busy, panel button disabled</td></tr>
 <tr><th scope="row">Compact conversation</th><td>Panel row sends <code translate="no">{action:"compact", session_id}</code>, the WebSocket path of <code translate="no">/compact</code>. Disabled with no session or while compacting. Right after a compaction it stays enabled; the server answers nothing to compact</td></tr>
 </tbody>
@@ -62,6 +82,9 @@
 <li>After success, ring and panel totals drop and match <code translate="no">compaction_finished.tokens_after</code>.</li>
 <li>Re-compacting does not call the summary model and reports nothing to compact, never "covered 0 messages, X → X".</li>
 <li>No suggestion border at any occupancy.</li>
+<li>The ring's limit equals <code translate="no">real_context_window</code> of the Model compaction uses, for a chat with its own model and for one that follows its Agent, during a turn and after reload.</li>
+<li>A branch with its own model shows that model's window when it is selected and when its tip is read while another branch is selected.</li>
+<li>After the model changes to one with no known window, the terminal bar shows no limit.</li>
 <li>During compaction the ring is busy and the button disabled; completion restores both.</li>
 </ul>
 
@@ -70,16 +93,19 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">File</th><th scope="col">Role</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">openprogram/runtime/context/session_stats.py</code></th><td>Occupancy metric</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/session_stats.py</code></th><td>Occupancy metric; <code translate="no">model_ref_window</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/models/providers/catalog/models.py</code></th><td><code translate="no">split_model_ref</code>, <code translate="no">find_model_ref</code></td></tr>
+<tr><th scope="row"><code translate="no">tokens.py</code></th><td><code translate="no">known_context_window</code> for display, <code translate="no">real_context_window</code> for compaction</td></tr>
 <tr><th scope="row"><code translate="no">engine.py</code></th><td><code translate="no">compact</code>, <code translate="no">no_op</code>, <code translate="no">tokens_before</code>, <code translate="no">tokens_after</code></td></tr>
 <tr><th scope="row"><code translate="no">compaction/summarize.py</code></th><td><code translate="no">find_cut_index</code>; may short-circuit before the model call</td></tr>
 <tr><th scope="row"><code translate="no">persistence.py</code></th><td><code translate="no">rendered_history</code>; insert retains old turns</td></tr>
-<tr><th scope="row"><code translate="no">openprogram/interfaces/server/server_runtime/context_stats.py</code></th><td><code translate="no">_context_rev</code>, refresh, measured reuse</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/server/server_runtime/context_stats.py</code></th><td><code translate="no">_context_rev</code>, refresh, measured reuse, <code translate="no">_conv_model_ref</code>, <code translate="no">_branch_at_head</code></td></tr>
 <tr><th scope="row"><code translate="no">ws_actions/chat/commands.py</code></th><td>Refresh after manual compaction</td></tr>
 <tr><th scope="row"><code translate="no">ws_actions/chat/context_usage.py</code></th><td>Refresh after each measured request, automatic compaction included</td></tr>
 <tr><th scope="row"><code translate="no">routes/files/tree.py</code></th><td><code translate="no">GET /api/sessions/{id}/context</code></td></tr>
 <tr><th scope="row"><code translate="no">apps/web/components/chat/badges/</code></th><td><code translate="no">context-badge.tsx</code>, <code translate="no">context-breakdown-panel.tsx</code></td></tr>
 <tr><th scope="row"><code translate="no">apps/web/lib/runtime-bridge/session/chat-handlers.ts</code></th><td>Compaction events</td></tr>
+<tr><th scope="row"><code translate="no">apps/cli/src/screens/repl/wsHandlers/handleChatResponse.ts</code></th><td>Terminal bar's window per conversation</td></tr>
 </tbody>
 </table>
 </details>

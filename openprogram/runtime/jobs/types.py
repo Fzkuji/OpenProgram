@@ -74,6 +74,21 @@ def can_transition(from_status: JobStatus, to_status: JobStatus) -> bool:
     return (from_status, to_status) in _VALID_TRANSITIONS
 
 
+def own_message_ids(job_id: str) -> tuple[str, str]:
+    """The user message and reply a Job's turn writes, named at admission
+    (``runner/admission.py``). The reply is the helper's address while it
+    runs: ``send_message`` resolves a helper's name to it, though the Job's
+    ``head_id`` is only set when the turn ends."""
+    return f"{job_id}_user", f"{job_id}_user_reply"
+
+
+def branch_nodes(job: "Job") -> set[str]:
+    """The node ids that name the branch ``job`` runs on: the tip it extends,
+    the node it started from, its own message and reply, and its head."""
+    ids = {job.target_branch_head_id, job.head_id, job.parent_msg_id, *own_message_ids(job.id)}
+    return {node for node in ids if node}
+
+
 def mint_job_id() -> str:
     """16-hex-char id — short enough for UI display but with enough
     entropy to never collide within a session. Matches the existing
@@ -225,6 +240,13 @@ class Job:
     # the parent's notice is queued; recovery replays a mark whose writer is
     # gone, so a crash between the two cannot lose the result.
     notice_pending: Optional[dict[str, Any]] = None
+    # The model's tool call that started this Job (``agent``). A card
+    # rebuilt after a crash carries it, so it pairs with that call.
+    tool_call_id: Optional[str] = None
+    # The conversations (session ids) and branches (``SID:HEAD``) waiting
+    # above a delivered message, oldest first; send_message refuses a
+    # message back to one of them (a cycle). Empty for everything else.
+    chain_ancestors: Optional[list[str]] = None
 
     def __post_init__(self) -> None:
         # These execution inputs must survive jobs.json and must not retain
@@ -261,4 +283,6 @@ __all__ = [
     "is_terminal",
     "can_transition",
     "mint_job_id",
+    "own_message_ids",
+    "branch_nodes",
 ]

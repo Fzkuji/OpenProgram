@@ -514,18 +514,28 @@ async def stop_with_descendants(execution_id: str, stop_root, *, waited_on_only:
     root was being stopped is stopped after it. A root that has already
     ended takes its stop alone.
     """
-    root = _canonical_execution(execution_id)
+    from openprogram.runtime.execution.control.shared import off_loop
+
+    # The records are read in a worker thread (they live under the
+    # conversation's lock); the stops themselves are awaited here.
+    root = await off_loop(execution_id, _canonical_execution, execution_id)
     if root is not None and root.status.value in {"completed", "failed", "cancelled", "interrupted"}:
         return await stop_root()
     stopped: set[str] = set()
 
     async def stop_children() -> None:
-        for child in reversed(_descendants_to_cancel(execution_id, waited_on_only=waited_on_only)):
+        children = await off_loop(
+            execution_id, _descendants_to_cancel, execution_id, waited_on_only=waited_on_only,
+        )
+        for child in reversed(children):
             if child.execution_id in stopped:
                 continue
             stopped.add(child.execution_id)
             try:
-                await _canonical_control_service(child.execution_id).request_cancel(
+                service = await off_loop(
+                    child.execution_id, _canonical_control_service, child.execution_id,
+                )
+                await service.request_cancel(
                     command_id=f"execution-cancel:{child.execution_id}",
                     execution_id=child.execution_id,
                     actor={"source": "run_control"},

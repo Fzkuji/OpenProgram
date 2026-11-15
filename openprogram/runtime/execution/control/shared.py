@@ -42,6 +42,22 @@ Activator = Callable[[AttemptRecord, ActivationInput], Any]
 _log = logging.getLogger(__name__)
 
 
+async def off_loop(execution_id: str, fn: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Any:
+    """Run ``fn`` (blocking work on an execution's records) in a worker thread.
+
+    An execution's records, its conversation's nodes among them, are
+    written under that conversation's lock; a control command awaited on
+    the Worker's event loop must not wait for that lock there. The work
+    runs in the execution's lane (``conversation_work``): many commands
+    for one execution take at most that lane's threads, in arrival order,
+    so one held conversation never takes the threads of the others. The
+    awaits (an owner's signal, an activation) stay on the caller's loop.
+    """
+    from openprogram.state.store.session.conversation_work import run_for_conversation
+
+    return await run_for_conversation(f"execution:{execution_id}", fn, *args, **kwargs)
+
+
 class ProjectionRecoveryRequired(RuntimeError):
     """Canonical terminal state exists but its legacy projection needs repair."""
 

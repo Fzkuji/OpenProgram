@@ -22,6 +22,7 @@ import asyncio
 from fastapi.responses import JSONResponse
 
 from openprogram.runtime.events import emit_ws_frame
+from openprogram.state.store.session.conversation_work import run_for_conversation
 
 _log = logging.getLogger(__name__)
 
@@ -207,12 +208,14 @@ def register(app):
         from openprogram.interfaces.server.branch_settings import prepare_initial_guard, materialized_guard, commit_model, current_branch
         from openprogram.state.store.session.branch_config import BranchConfigConflict
 
-        def _conflict(exc):
-            return JSONResponse(content=model_conflict(session_id, exc), status_code=409)
+        async def _conflict(exc):
+            conflict = await run_for_conversation(session_id, model_conflict, session_id, exc)
+            return JSONResponse(content=conflict, status_code=409)
         try:
-            initial_branch_id = prepare_initial_guard(session_id, body)
+            # Each branch check reads the conversation under its lock: off the loop.
+            initial_branch_id = await run_for_conversation(session_id, prepare_initial_guard, session_id, body)
         except BranchConfigConflict as exc:
-            return _conflict(exc)
+            return await _conflict(exc)
 
         inferred_provider = None
         bare_model = model
@@ -236,7 +239,7 @@ def register(app):
             with _s._sessions_lock:
                 conv = _s._sessions.get(session_id)
             if conv is None:
-                conv = await asyncio.to_thread(_s._get_or_create_session, session_id)
+                conv = await run_for_conversation(session_id, _s._get_or_create_session, session_id)
             _s._log(
                 f"[/api/model] session_id={session_id!r} conv_found={conv is not None} "
                 f"target_provider={target_provider!r} bare_model={bare_model!r}"
@@ -246,7 +249,7 @@ def register(app):
                 cur_prov = conv.get("provider_name", _s.runtime_management._default_provider)
                 prov = target_provider or cur_prov
                 # Another branch's model is stored, not run: build nothing.
-                elsewhere = picks_other_branch(session_id, body)
+                elsewhere = await run_for_conversation(session_id, picks_other_branch, session_id, body)
                 need_new_rt = not elsewhere and ((target_provider and target_provider != cur_prov) or (old_rt is None))
                 runtime_ready = old_rt is not None
                 if need_new_rt:
@@ -259,19 +262,20 @@ def register(app):
                 else:
                     new_rt = old_rt
                 try:
-                    guarded_body = materialized_guard(session_id, body, initial_branch_id)
-                    row = await asyncio.to_thread(commit_model, session_id, guarded_body, prov, bare_model, conv,
+                    guarded_body = await run_for_conversation(session_id, 
+                        materialized_guard, session_id, body, initial_branch_id)
+                    row = await run_for_conversation(session_id, commit_model, session_id, guarded_body, prov, bare_model, conv,
                                             runtime=None if elsewhere else new_rt,
                                             replace_runtime=bool(need_new_rt))
                 except BranchConfigConflict as exc:
-                    return _conflict(exc)
+                    return await _conflict(exc)
                 prov, bare_model = row.get("provider_override"), row.get("model_override")
                 reply = picked_reply(row)
                 if row.get("branch_id") != row.get("active_branch_id"):
                     # Like an Agent switch on another branch: no broadcast, so
                     # no pane or sidebar shows this model as the selected one's.
                     return JSONResponse(content={**reply, "runtime_ready": False})
-                info = _s._get_provider_info(session_id)
+                info = await run_for_conversation(session_id, _s._get_provider_info, session_id)
                 emit_ws_frame({"type": "provider_changed", "data": info})
                 from openprogram.models.listing.listing import supports_fast as _supports_fast
                 emit_ws_frame({
@@ -285,9 +289,10 @@ def register(app):
                         },
                     },
                 })
-                _s.refresh_context_stats(session_id)
+                await run_for_conversation(session_id, _s.refresh_context_stats, session_id)
+                active_branch_id = await run_for_conversation(session_id, current_branch, session_id)
                 return JSONResponse(content={**reply, "runtime_ready": runtime_ready,
-                                             "active_branch_id": current_branch(session_id)})
+                                             "active_branch_id": active_branch_id})
 
         if target_provider and target_provider != _s.runtime_management._default_provider:
             try:
@@ -351,16 +356,20 @@ def register(app):
             with _s._sessions_lock:
                 conv = _s._sessions.get(session_id)
             if conv is None:
-                conv = await asyncio.to_thread(_s._get_or_create_session, session_id)
+                conv = await run_for_conversation(session_id, _s._get_or_create_session, session_id)
             if conv:
                 rt = conv.get("runtime")
                 if rt:
                     chat_session_id = getattr(rt, "_session_id", None)
-        shown = branch_view(session_id, conv, branch_id)
+        # The branch records are read under the conversation's lock: off the loop.
+        shown = await run_for_conversation(session_id, branch_view, session_id, conv, branch_id)
+        # So is the conversation's model pin.
         if shown is not None:
-            chat_provider, chat_model = _s.runtime_management._resolve_session_provider_model(shown, snapshot=True)
+            chat_provider, chat_model = await run_for_conversation(session_id, 
+                _s.runtime_management._resolve_session_provider_model, shown, snapshot=True)
         elif conv:
-            chat_provider, chat_model = _s.runtime_management._resolve_session_provider_model(conv)
+            chat_provider, chat_model = await run_for_conversation(session_id, 
+                _s.runtime_management._resolve_session_provider_model, conv)
         elif _s._user_pinned_provider and _s._user_pinned_model:
             chat_provider, chat_model = _s._user_pinned_provider, _s._user_pinned_model
         else:
@@ -379,11 +388,11 @@ def register(app):
         from openprogram.models.providers.settings.fast import fast_capability
 
         from openprogram.interfaces.server.branch_settings import current_branch
-        active_branch_id = current_branch(session_id)
+        active_branch_id = await run_for_conversation(session_id, current_branch, session_id)
         # The answered branch's stored effort, web search and the rest: a
         # pane rereads after ``agent_settings_changed``, so a write made
         # elsewhere reaches it without a reload.
-        settings = await asyncio.to_thread(stored_branch_settings, session_id, shown)
+        settings = await run_for_conversation(session_id, stored_branch_settings, session_id, shown)
         return JSONResponse(content={
             "active_branch_id": active_branch_id,
             "branch_id": branch_id if shown is not None else active_branch_id,

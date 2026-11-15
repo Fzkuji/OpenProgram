@@ -18,7 +18,8 @@ from typing import Any, Protocol
 
 
 class RunSlotPort(Protocol):
-    def reserve(self, session_id: str, owner: str) -> bool: ...
+    def reserve(self, session_id: str, owner: str, *,
+                lock_wait: float | None = None) -> bool: ...
 
     def activate(self, session_id: str, owner: str, *, execution_id: str,
                  status_version: int, runner: Any) -> bool: ...
@@ -43,11 +44,28 @@ def register_run_slot(port: RunSlotPort | None) -> None:
     _port = port
 
 
-def reserve(session_id: str, owner: str) -> bool:
+def reserve(session_id: str, owner: str, *, lock_wait: float | None = None) -> bool:
+    """Take the conversation's run slot for ``owner``; ``False`` when a turn holds it.
+
+    Taking it reads the conversation under its lock. ``lock_wait`` bounds
+    that wait in seconds (``0``: do not wait at all; ``None``: the store's
+    own wait). A lock not had in time raises ``SessionLockTimeout``: the
+    slot may be free, so the caller retries or says the message was not
+    delivered, never that a turn is running."""
     if _port is None:
         from .turns import is_turn_running
         return not is_turn_running(session_id)
-    return _port.reserve(session_id, owner)
+    if lock_wait is None or not _takes_lock_wait(_port):
+        return _port.reserve(session_id, owner)
+    return _port.reserve(session_id, owner, lock_wait=lock_wait)
+
+
+def _takes_lock_wait(port: Any) -> bool:
+    import inspect
+    try:
+        return "lock_wait" in inspect.signature(port.reserve).parameters
+    except (TypeError, ValueError):
+        return False
 
 
 def activate(session_id: str, owner: str, *, execution_id: str,

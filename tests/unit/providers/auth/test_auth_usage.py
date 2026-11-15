@@ -164,3 +164,51 @@ def test_non_key_failures_do_not_touch_the_pool(monkeypatch, status, error_text)
 ])
 def test_classify_failure_by_text(text, expected):
     assert usage.classify_failure(None, text) == expected
+
+
+_OPENCODE_CREDITS = (
+    "Error code: 401 - {'type': 'error', 'error': {'type': 'CreditsError', "
+    "'message': 'Insufficient balance. Manage your billing here: https://opencode.ai/workspace/w/billing'}"
+)
+
+
+@pytest.mark.parametrize("status,text", [
+    (401, _OPENCODE_CREDITS),                                   # OpenCode Zen
+    (403, '{"error": {"message": "Your credit balance is too low"}}'),
+    (429, '{"error": {"code": "insufficient_quota"}}'),          # OpenAI
+    (400, '{"error": {"code": "Arrearage"}}'),                   # Alibaba
+    (None, "HTTP 401 payment required"),
+])
+def test_a_spent_balance_is_billing_whatever_the_status(status, text):
+    """The body decides before the status code: no credit is a top-up, not a sign-in."""
+    assert usage.classify_failure(status, text) == "billing_blocked"
+
+
+def test_a_plain_401_still_needs_reauth():
+    assert usage.classify_failure(401, '{"error": "invalid api key"}') == "needs_reauth"
+
+
+def test_a_401_credits_error_stops_the_key_as_billing(store):
+    _seed(store, "opencode", "default", ["k1"])
+    cred = store.get_pool("opencode", "default").credentials[0]
+    usage.record_call_failure("opencode", "default", cred.credential_id, 401, _OPENCODE_CREDITS)
+    stored = store.get_pool("opencode", "default").credentials[0]
+    assert stored.status == "billing_blocked"
+    assert stored.last_error.startswith("billing_blocked: ")
+
+
+def test_a_key_stored_as_signed_out_for_a_spent_balance_reads_as_billing():
+    """Data written before the body decided is read again on load."""
+    from openprogram.models.auth.types import Credential, CredentialData
+
+    raw = Credential(
+        provider_id="opencode", account_id="default", kind="api_key",
+        payload=CredentialData(kind="api_key", auth_value="k"),
+        status="needs_reauth", last_error="needs_reauth: " + _OPENCODE_CREDITS,
+    ).to_dict()
+    cred = Credential.from_dict(raw)
+    assert cred.status == "billing_blocked"
+    assert cred.last_error == "billing_blocked: " + _OPENCODE_CREDITS
+
+    rejected = dict(raw, last_error="needs_reauth: Error code: 401 - invalid api key")
+    assert Credential.from_dict(rejected).status == "needs_reauth"

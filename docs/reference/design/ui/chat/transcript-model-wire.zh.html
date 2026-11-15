@@ -27,6 +27,7 @@ branches_changed { session_id }         replace 类
 view_closed     { session_id, view }    critical</pre>
 <p><code translate="no">list: blocks</code> 必须带 <code translate="no">index</code>。</p>
 <p><strong>变更的帧，对所有 socket 都是增量的。</strong> <code translate="no">chat_response</code> <code translate="no">stream_event</code> 的 <code translate="no">text</code> 和 <code translate="no">thinking</code> 增加 <code translate="no">row_id</code>、<code translate="no">item_id</code>、<code translate="no">item_index</code>、<code translate="no">offset</code>。<code translate="no">text_end</code> 增加 <code translate="no">row_id</code>、<code translate="no">item_id</code>。旧客户端仍能看到 <code translate="no">seq</code>。</p>
+<p class="note">工具调用、推理或 steer 之后开启一段文字的 <code translate="no">text</code> 事件还带 <code translate="no">separator</code>：回复的整段文字在这段增量之前要加的内容（<a href="../../runtime/execution/dispatcher-split.zh.html#reply-text">回复的文字</a>）。</p>
 <p>一个轮次的每个 <code translate="no">chat_response</code> 都带回复的 <code translate="no">row_id</code>，由该轮次的 <code translate="no">naming_reply_row</code> 包装加上。浏览器按这些 id 查找行，从不由一个 id 构造另一个。</p>
 <p><strong><code translate="no">ws_delivery.py</code>。</strong></p>
 <ul>

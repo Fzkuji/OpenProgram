@@ -170,7 +170,8 @@ def test_install_reaches_the_shared_hooks_from_a_worktree(repository: Path) -> N
 
 @pytest.fixture
 def publishable(repository: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    shutil.copy2(ROOT / "scripts/publish-github.sh", repository / "scripts/publish-github.sh")
+    for name in ("publish-github.sh", "retired_accounts.py"):
+        shutil.copy2(ROOT / "scripts" / name, repository / "scripts" / name)
     monkeypatch.setenv("OPENPROGRAM_DOCS_PYTHON", sys.executable)
     assert _git(repository, "add", ".").returncode == 0
     assert _git(repository, "commit", "--quiet", "-m", "Script").returncode == 0

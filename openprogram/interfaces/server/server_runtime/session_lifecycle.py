@@ -15,6 +15,7 @@ from .run_slots import (
     conversation_wide_operation,
     forget_operation,
     holds_its_slot,
+    locked_refusal,
     new_slot,
     repeat_refusal,
     slot_with_key,
@@ -111,6 +112,10 @@ def _stop_session_work(session_id: str, *, reason: str) -> list[str]:
     return cancelled
 
 
+#: Fields ``_save_session`` keeps that a reopened conversation shows again.
+_SAVED_USAGE_KEYS = ("_chat_usage", "_last_context_stats", "_last_exec_session", "_last_exec_cumulative_usage")
+
+
 def _get_or_create_session(session_id: str = None,
                                 agent_id: str = None,
                                 *,
@@ -132,22 +137,29 @@ def _get_or_create_session(session_id: str = None,
     if session_id is None:
         session_id = "local_" + uuid.uuid4().hex[:10]
     with state._sessions_lock:
+        known = session_id in state._sessions
+    if not known:
+        # Read outside the lock: a first read of a long conversation must
+        # not hold every other conversation's lookup.
+        try:
+            from openprogram.runtime.context.session_db import default_db
+            _db = default_db()
+            _hydrated = _db.get_branch(session_id) or []
+            _sess = _db.get_session(session_id)
+            _hydrated_head = _sess.get("head_id") if _sess else None
+        except Exception:
+            _hydrated = []
+            _sess = None
+            _hydrated_head = None
+    with state._sessions_lock:
         if session_id not in state._sessions:
             resolved_agent = agent_id or state._default_agent_id()
-            # Hydrate the active branch from SessionDB so a webui
-            # restart / fresh worker process sees the same messages
-            # the dispatcher and channels worker have been writing.
-            # Empty list for brand-new conversations.
-            try:
+            if known:
+                # Removed while unlocked: read it again.
                 from openprogram.runtime.context.session_db import default_db
-                _db = default_db()
-                _hydrated = _db.get_branch(session_id) or []
-                _sess = _db.get_session(session_id)
+                _hydrated = default_db().get_branch(session_id) or []
+                _sess = default_db().get_session(session_id)
                 _hydrated_head = _sess.get("head_id") if _sess else None
-            except Exception:
-                _hydrated = []
-                _sess = None
-                _hydrated_head = None
             resolved_agent = (
                 agent_id
                 or ((_sess or {}).get("agent_id") if isinstance(_sess, dict) else None)
@@ -188,6 +200,10 @@ def _get_or_create_session(session_id: str = None,
                 "tools_override": ((_sess or {}).get("tools_override") if isinstance(_sess, dict) else None),
                 "thinking_effort": ((_sess or {}).get("thinking_effort") if isinstance(_sess, dict) else None),
                 "permission_mode": ((_sess or {}).get("permission_mode") if isinstance(_sess, dict) else None),
+                # What the last save kept of the conversation's usage
+                # (``_save_session``), shown until the next turn measures it.
+                **{key: _sess.get(key) for key in _SAVED_USAGE_KEYS
+                   if isinstance(_sess, dict) and _sess.get(key) is not None},
             }
             # session.start on the bus — plugin subscribers included.
             # emit_safe swallows failures: never break session creation.
@@ -346,24 +362,48 @@ def operation_identity(task: dict) -> dict:
     return identity
 
 
-def _try_reserve_run(session_id: str, msg_id: str, *, key: str | None = None) -> bool:
+def _try_reserve_run(session_id: str, msg_id: str, *, key: str | None = None,
+                     lock_wait: float | None = None) -> bool:
     """Take the selected branch's slot for a turn. A turn that holds it but
-    has already sent its terminal frame is waited out (``_outwait_finishing``)."""
+    has already sent its terminal frame is waited out (``_outwait_finishing``).
+
+    ``False`` means only that the slot is held. A conversation whose lock
+    is not had within :func:`admission_lock_wait` raises
+    :class:`SessionLockTimeout` instead: nothing was found running, and
+    the caller says so (``locked_refusal``) rather than "a reply is
+    running". Call it off the event loop: it may wait for the lock.
+
+    ``lock_wait`` bounds the wait for the lock (``None``: the store's own
+    wait). ``0`` waits for nothing, neither the lock nor a finishing turn,
+    for a caller that would rather skip than wait (a room event)."""
+    if lock_wait is not None and lock_wait <= 0:
+        return _try_reserve_run_once(session_id, msg_id, key=key, lock_wait=0.0)
     deadline = time.monotonic() + FINISHING_WAIT_SECONDS
     while True:
-        if _try_reserve_run_once(session_id, msg_id, key=key):
+        if _try_reserve_run_once(session_id, msg_id, key=key, lock_wait=lock_wait):
             return True
         if not _outwait_finishing(session_id, None, key, deadline):
             return False
 
 
-def _try_reserve_run_once(session_id: str, msg_id: str, *, key: str | None = None) -> bool:
+def _try_reserve_run_once(session_id: str, msg_id: str, *, key: str | None = None,
+                          lock_wait: float | None = None) -> bool:
     from openprogram.state.store.session.session_lock import session_interprocess_lock
-    try:
-        with session_interprocess_lock(session_id, timeout=0.25):
-            return state._try_reserve_run_locked(session_id, msg_id, key=key)
-    except (TimeoutError, BlockingIOError):
-        return False
+    wait = admission_lock_wait() if lock_wait is None else max(0.0, lock_wait)
+    with session_interprocess_lock(session_id, timeout=wait):
+        return state._try_reserve_run_locked(session_id, msg_id, key=key)
+
+
+def admission_lock_wait() -> float:
+    """How long taking a slot waits for the conversation's lock.
+
+    The store's own wait (``DEFAULT_WAIT``): a holder does file work only,
+    such as the first load of a large conversation or a session move, so
+    a request waits it out the way a store write does instead of reading
+    a held lock as a running turn. Past it, the lock is reported as what
+    it is (``locked_refusal``)."""
+    from openprogram.state.store.session import session_lock
+    return session_lock.DEFAULT_WAIT
 
 
 #: How long a request waits for a turn that has sent its terminal frame
@@ -473,6 +513,7 @@ def reserve_operation(session_id: str, kind: str, owner: str, *,
     """
     deadline = time.monotonic() + REPEAT_JOIN_SECONDS
     finishing_deadline = time.monotonic() + FINISHING_WAIT_SECONDS
+    looked_again = False
     while True:
         refusal = _reserve_operation_once(session_id, kind, owner, branch_id=branch_id,
                                           scope=scope, key=key)
@@ -483,7 +524,13 @@ def reserve_operation(session_id: str, kind: str, owner: str, *,
             return refusal
         holder = keyed_slot(session_id, key)
         if holder is None:
-            return refusal
+            # The operation in the way may be this request's own first
+            # attempt, ended between the refusal and this look: ask once
+            # more instead of refusing a repeat whose first attempt is done.
+            if looked_again or on_repeat != "join":
+                return refusal
+            looked_again = True
+            continue
         if on_repeat != "join":
             return repeat_refusal(holder)
         if not _wait_for_slot_end(session_id, holder.get("op_id"), deadline):
@@ -505,9 +552,12 @@ def _reserve_operation_once(session_id: str, kind: str, owner: str, *,
     while it runs no branch is admitted. Every check runs under the
     session's process lock, the lock a branch's admission takes.
     """
-    from openprogram.state.store.session.session_lock import session_interprocess_lock
+    from openprogram.state.store.session.session_lock import (
+        SessionLockTimeout,
+        session_interprocess_lock,
+    )
     try:
-        with session_interprocess_lock(session_id, timeout=0.25):
+        with session_interprocess_lock(session_id, timeout=admission_lock_wait()):
             refusal = _operation_refusal(session_id)
             if refusal is not None:
                 return refusal
@@ -527,6 +577,8 @@ def _reserve_operation_once(session_id: str, kind: str, owner: str, *,
                                                  scope=scope, key=key):
                 return _busy_slot_refusal(session_id, branch_id)
             _record_operation(session_id, owner, branch_id)
+    except SessionLockTimeout as exc:
+        return locked_refusal(exc.waited, exc.holder)
     except (TimeoutError, BlockingIOError):
         return busy_refusal("reply", other_branch=True)
     if kind in ANNOUNCED_KINDS:
@@ -656,6 +708,8 @@ def reserve_branches_operation(session_id: str, branch_ids, kind: str,
                                     branch_id=None if not branch_id or branch_id == selected else branch_id)
         if refusal is not None:
             release_branches_operation(session_id, held)
+            if refusal.get("code") == "conversation_locked":
+                return refusal, []
             blocker = running_branch_among(session_id, [branch_id]) or {
                 "branch_id": branch_id or selected, "selected": not branch_id or branch_id == selected}
             return {**refusal, **_branches_refusal(blocker)}, []
@@ -1180,13 +1234,11 @@ def _try_reserve_branch_run(session_id: str, branch_id: str, msg_id: str, *,
 def _try_reserve_branch_run_once(session_id: str, branch_id: str, msg_id: str, *,
                                  key: str | None = None) -> bool:
     from openprogram.state.store.session.session_lock import session_interprocess_lock
-    try:
-        with session_interprocess_lock(session_id, timeout=0.25):
-            if _operation_refusal(session_id) is not None:
-                return False
-            return _reserve_branch_slot_locked(session_id, branch_id, msg_id, key=key)
-    except (TimeoutError, BlockingIOError):
-        return False
+    # A lock not had in time raises SessionLockTimeout (``_try_reserve_run``).
+    with session_interprocess_lock(session_id, timeout=admission_lock_wait()):
+        if _operation_refusal(session_id) is not None:
+            return False
+        return _reserve_branch_slot_locked(session_id, branch_id, msg_id, key=key)
 
 
 def _reserve_branch_slot_locked(session_id: str, branch_id: str, msg_id: str, *,
@@ -1364,8 +1416,11 @@ class ServerRunSlot:
     ends, so neither kind of turn can start on top of the other.
     """
 
-    def reserve(self, session_id: str, owner: str) -> bool:
-        return state._try_reserve_run(session_id, owner)
+    def reserve(self, session_id: str, owner: str, *,
+                lock_wait: float | None = None) -> bool:
+        if lock_wait is None:
+            return state._try_reserve_run(session_id, owner)
+        return state._try_reserve_run(session_id, owner, lock_wait=lock_wait)
 
     def activate(self, session_id: str, owner: str, *, execution_id: str,
                  status_version: int, runner) -> bool:
@@ -1390,3 +1445,12 @@ class ServerRunSlot:
 
     def release(self, session_id: str, owner: str) -> None:
         state._release_run_reservation(session_id, owner)
+
+
+def _watch_worker_loop() -> None:
+    """Have the conversation lock log a wait taken on the Worker's loop."""
+    from openprogram.state.store.session import session_lock
+    session_lock.watch_event_loop(lambda: getattr(state, "_loop", None))
+
+
+_watch_worker_loop()

@@ -19,6 +19,14 @@
 </tbody>
 </table>
 <p class="note">No default round cap: round count is diagnostic. <code translate="no">create_goal</code>, <code translate="no">get_goal</code> and <code translate="no">update_goal</code> only read and write objectives.</p>
+<p>In the chat, <code translate="no">/goal &lt;objective&gt;</code> leaves one message: the objective, with a Goal label (target icon, “Goal” in the accent ink, medium weight) opening its first line.</p>
+<ul>
+<li>The label comes from <code translate="no">starts_goal</code> on that user row, never from the text; only the message that creates the Goal has it.</li>
+<li>The label and the opening paragraph are one paragraph, so the objective starts on the label's line and wraps under it; later paragraphs, lists and code follow as in any message. An objective that opens with a list or code puts the label on its own line above it.</li>
+<li>The sender's bubble takes the label from <code translate="no">starts_goal</code> on <code translate="no">chat_ack</code>, before the transcript row arrives. A <code translate="no">/goal</code> from a New chat draft runs in that draft. <code translate="no">/goal status</code> and the other subcommands that only answer leave no user message, only their reply line.</li>
+<li>No reply line follows. Copy, edit and retry see the objective alone.</li>
+<li>A creation that fails answers in text. The Rich REPL draws no messages, so it prints “Goal saved; working in this conversation.”</li>
+</ul>
 
 <h2 id="restart-contract">Automatic recovery</h2>
 <figure>
@@ -220,6 +228,7 @@
 <tr><th scope="row">Active time</th><td>From durable start and stop records, excluding pauses and downtime. A lost executor keeps its last heartbeat and shows a lower bound with an unknown interval. Late usage restarts no timer. An unverifiable explicit time limit stops admission.</td></tr>
 <tr><th scope="row">Budgets</th><td>Unlimited by default. With a hard cost budget, unknown prices or usage pause paid admission with a reason. Maximum amount reserved when calculable; otherwise no promise against overspend. Rechecked after ledger reload, before recovery and acceptance.</td></tr>
 <tr><th scope="row">Background Jobs</th><td>Goal identity saved at the real caller's admission, restored at start. Cross-session calls keep caller provenance without a cross-session parent. Goal and Job share start and settlement transactions in <code translate="no">usage.db</code>; receipts save the Job reservation, so metering rebuilds after restart. Unknown tokens and costs reserve separately; partial data records lower bounds. Expired unstarted reservations cannot dispatch; started requests are not released. Hard budgets accept only audited limits, explicit prices and service tiers.</td></tr>
+<tr><th scope="row">A turn that paused</th><td>A reply that paused for an answer or an approval and went on is one reply. Its row counts every provider request and token of the turn, before the pause and after. Cost and the Goal's total come from each request's ledger receipt, written when that request ended, so nothing is charged twice.</td></tr>
 </tbody>
 </table>
 
@@ -238,6 +247,39 @@
 <li>Backend <code translate="no">can_resume</code>, <code translate="no">can_verify</code>, <code translate="no">can_end</code> and reason codes set buttons; the frontend infers nothing from status. Read failure shows "State temporarily unavailable" with refresh. An empty Todo shows no placeholder.</li>
 <li>User input outranks continuation through steer and queue. Keys bind <code translate="no">goal_id</code>, revision and previous committed turn; durable state and generation block stale actions when pause, edit, cancel and admission race.</li>
 </ul>
+
+<h3 id="goal-lock">Goal lock</h3>
+<p>One lock per conversation orders every change to its Goal: admission, a provider request's budget check, usage refresh, a finished turn's accounting, controls. Two turns of one conversation can run at once (a Goal on one branch, a message on another), so writers meet often.</p>
+<table class="stack">
+<thead><tr><th scope="col">Rule</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">Wait in line</th><td>A writer queues behind the holder, up to 30 seconds, then gets <code translate="no">GoalBusy</code>. Trying once failed a reply whenever two writers met.</td></tr>
+<tr><th scope="row">Nothing slow under the lock</th><td>The holder reads and writes Goal state only. The conversation's log is folded before waiting; a turn's tool-call scan and evidence file hashes are taken before the lock. On a 731 MB log a read under the lock took 6 s; the hold is now about 10 ms.</td></tr>
+<tr><th scope="row">A running turn never fails on the lock</th><td>If the lock stays held, the turn's request check, elapsed-time steps and verifier reads run without it. Each Goal write is a compare-and-set on its version; one that meets a newer version reads again and is redone, a budget refusal and the conversion of old usage included. Nothing unseen is overwritten and the turn does not fail.</td></tr>
+<tr><th scope="row">A usage refresh never holds a stream</th><td>Every usage event of the conversation asks for a refresh, on its provider stream's thread. One refresh per conversation waits in line and covers the ones asked for meanwhile; it reads the ledger after it holds the lock, and gives up after 2 seconds.</td></tr>
+<tr><th scope="row">A Goal's turn is checked against its own branch</th><td>Admission refuses a Goal turn only while a foreground turn runs on the Goal's branch. A turn on another branch, selected or not, neither holds the Goal back nor is held by it. A turn continued after a worker restart is checked against its own branch the same way.</td></tr>
+<tr><th scope="row">A finished turn's accounting is not dropped</th><td>It is retried at once, then off-thread for about two minutes. A lock that stayed held for a whole wait is not waited for again on the thread that still has the turn to close. The continuation is admitted only after that accounting released the lock. A stopped turn's cancelled reply and resource release never wait for it.</td></tr>
+<tr><th scope="row">A Goal left on an ended turn recovers</th><td>Reading an active Goal whose turn is over and unaccounted settles it, in this worker or a later one. A failed turn becomes a resumable pause.</td></tr>
+</tbody>
+</table>
+<p class="note">Codex keeps the Goal in SQLite and starts a continuation only when the thread is idle; DeepSeek harness repairs after taking exclusive access. Taken from both: short exclusive sections over Goal state, and the next turn waits for the previous one's bookkeeping. The lock is an OS file lock, released when its process ends, so no stale owner needs guessing.</p>
+<p class="note">Codex keeps one goal per thread and continues it when that thread is idle. A branch is this product's thread, so only the Goal's own branch gates its turns.</p>
+
+<h3 id="failed-turn">A turn that failed</h3>
+<p>A failure the next turn would not meet again is continued without a click; one it would meet at once waits for a person.</p>
+<table class="stack">
+<thead><tr><th scope="col">Case</th><th scope="col">What happens</th></tr></thead>
+<tbody>
+<tr><th scope="row">Transient failure</th><td>A provider error, a lost connection, a timeout, a rate limit that asks for at most five minutes, the worker's own fault. The Goal goes on by itself after a wait, at most three failures in a row; a completed turn starts the count over.</td></tr>
+<tr><th scope="row">Failure that repeats at once</th><td>A rejected key or missing permission, no credit or a spent quota, a model the plan or region does not serve, a refused address or request, a context that does not fit, a content refusal, a budget refusal, a retry-after over five minutes. The pause and its reason stay; Continue is the person's.</td></tr>
+<tr><th scope="row">Never continued here</th><td>A turn the user stopped stays stopped. A turn a restart cut follows <a href="#restart-contract">automatic recovery</a>. A spent Goal budget waits for a higher limit. A Goal nobody typed (always-on, check-in, scheduled, handoff) is restarted by its Agent's wake, under that Agent's daily budget.</td></tr>
+<tr><th scope="row">The wait</th><td>5 seconds, then 30, then 2 minutes, or the provider's retry-after when that is longer. It is held in process memory: after a restart the next read of the Goal starts it again. The count of failures is saved with the Goal.</td></tr>
+<tr><th scope="row">The next turn</th><td>The turn that would have followed a completed one: the failed turn's envelope and branch, the continuation prompt, a queued user message first. If the Goal was continued, edited or ended during the wait, nothing starts.</td></tr>
+<tr><th scope="row">Failed verification turn</th><td>The same completion candidate is submitted again from the failed turn, so the next turn verifies instead of doing the work over. When it cannot be verified yet (work still running, an operation with an unknown result), that reason pauses the Goal. A repeated notice of the failed turn judges nothing.</td></tr>
+</tbody>
+</table>
+<p class="note">Codex continues an active goal whenever its thread is idle and stops once the control plane sets <code translate="no">usage_limited</code> or <code translate="no">budget_limited</code>. Claude Code keeps the Goal after a transient error and clears it on unrecoverable auth, balance, uncompactable overflow or model errors.</p>
+<p class="note">Taken from both: a transient failure costs no click, an account or limit failure stops. Added here: the growing wait and the cap of three, because a turn can fail before doing any work.</p>
 
 <h3 id="conversation-file-preview">Goal in the transcript</h3>
 <ul>
@@ -439,7 +481,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">Status</th></tr></thead>
 <tbody>
-<tr><th scope="row">Implemented</th><td>Chat Goal continuation; no default round or recovery-expiry limit; history pairing; unknown-effect approval; deduplicated new turns; restricted Resume; incompatible-checkpoint handling; Job continuation with original authorization; independent acceptance; request attribution; late and partly unknown usage; hard-budget reservations; joint settlement; backend action conditions; explicit Verify; crash-time lower bounds; projection claim validation; transcript row; nested-scope correction</td></tr>
+<tr><th scope="row">Implemented</th><td>Chat Goal continuation; no default round or recovery-expiry limit; history pairing; unknown-effect approval; deduplicated new turns; restricted Resume; incompatible-checkpoint handling; Job continuation with original authorization; independent acceptance; request attribution; late and partly unknown usage; hard-budget reservations; joint settlement; backend action conditions; explicit Verify; automatic continuation after a transient failed turn; crash-time lower bounds; projection claim validation; transcript row; nested-scope correction</td></tr>
 <tr><th scope="row">Process evidence</th><td>Interruption matrices for chat and Goals; macOS live-background-process reconnection</td></tr>
 <tr><th scope="row">Not established</th><td>Windows process survival, OS restart, cross-host takeover, general external-event scheduling. Skipped tests prove no capability.</td></tr>
 <tr><th scope="row">Outside this design</th><td>Cross-host leases, a general workflow engine, an independent audit repository, bulk rewrite of historical costs or effects, exactly-once external operations, a judge on every turn</td></tr>

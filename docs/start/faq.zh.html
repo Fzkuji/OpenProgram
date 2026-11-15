@@ -5,7 +5,8 @@
 <h2 id="running">运行</h2>
 <details>
 <summary>端口 18100 被占用</summary>
-<pre translate="no"><code>openprogram ports                 # 当前端口
+<p>只要你没有自己设端口，OpenProgram 会自己换到下一个空闲端口，所以 18100 被别的程序或同一台电脑上的另一个账户占着时，你什么都不用做。你设的端口不会被换掉：App 和 <code translate="no">openprogram web</code> 会写明是哪个程序占着它。</p>
+<pre translate="no"><code>openprogram worker status         # 本账户的端口，或谁占着它
 openprogram ports --port 18110    # 持久化，下次启动生效
 lsof -ti:18100 | xargs kill       # 释放残留进程占用的端口，然后重启</code></pre>
 <p>仅本次运行：<code translate="no">OPENPROGRAM_WEB_PORT</code>。</p>

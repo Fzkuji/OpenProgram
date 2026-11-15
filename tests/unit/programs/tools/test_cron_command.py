@@ -372,6 +372,14 @@ def test_worker_spawn_prompt_uses_managed_prompt_entry(
     monkeypatch.setattr(worker.multiprocessing, "Queue", queue.Queue)
     proc = worker._spawn(entry, str(tmp_path / "prompt-logs"))
     assert proc is not None
+    # The relay that serves the job ends on its own once the job is gone;
+    # wait for it so its clean-up never outlives this test.
+    import threading
+
+    for thread in threading.enumerate():
+        if thread.name == "cron-job-relay":
+            thread.join(timeout=10)
+            assert not thread.is_alive()
     assert seen["req"].source == "scheduler"
     assert "done" in next((tmp_path / "prompt-logs").iterdir()).read_text(
         encoding="utf-8"

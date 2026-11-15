@@ -216,9 +216,10 @@ def test_an_always_on_stop_holds_across_a_real_turn(runtime, monkeypatch, undone
     assert chat.identity(restored) == chat.identity(goal)
 
 
-def test_an_always_on_stop_reports_a_held_goal_lock(runtime):
+def test_an_always_on_stop_reports_a_held_goal_lock(runtime, monkeypatch):
     from openprogram.programs.tools.planning.goal.ownership import goal_owner
     goals, chat, store = runtime
+    monkeypatch.setattr(chat, "GOAL_LOCK_WAIT_S", 0.05)
     automatic = goals.load_goal("goal-chat")
     automatic["origin"] = "scheduled"
     goals.save_goal("goal-chat", automatic)

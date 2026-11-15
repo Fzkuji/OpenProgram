@@ -350,8 +350,20 @@ def register(app):
 
     @app.get("/api/models/enabled")
     def api_enabled_models():
+        """The picker's models and, per provider, what it shows beside them:
+        configured or not, the state and its fix, the limit closest to
+        running out and a balance (models/usage/provider_views.py). Stored
+        values only; no provider is asked (a local server's loopback probe
+        is reused for 30 s)."""
         from openprogram.models import listing as _mc
-        return JSONResponse(content={"models": _mc.list_enabled_models()})
+        from openprogram.models.usage.provider_views import picker_states
+        models = _mc.list_enabled_models()
+        try:
+            states = picker_states([m["provider"] for m in models])
+        except Exception:
+            _log.warning("model picker provider states failed", exc_info=True)
+            states = {}
+        return JSONResponse(content={"models": models, "providers": states})
 
     @app.get("/api/providers/{name}/config")
     async def api_provider_config(name: str):
@@ -429,8 +441,15 @@ def register(app):
     from openprogram.models.usage.quota import default_store as _quota_store
 
     def _push_quota(report: dict) -> None:
+        """One key's new quota, with the provider's picker state recomputed
+        so the model picker updates without a request (``ProviderQuotaEvent``)."""
         from openprogram.runtime.events import emit_ws_frame
-        emit_ws_frame({"type": "provider_quota", "data": report})
+        from openprogram.models.usage.provider_views import picker_states
+        try:
+            picker = picker_states([report["provider"]]).get(report["provider"])
+        except Exception:
+            picker = None
+        emit_ws_frame({"type": "provider_quota", "data": {**report, "picker": picker}})
 
     _quota_store.set_listener(_push_quota)
 
@@ -451,8 +470,8 @@ def register(app):
 
     @app.post("/api/providers/status/refresh")
     def api_providers_status_refresh(body: Any = Body(default=None)):
-        """Read every connected provider's quota endpoint now (Refresh), then
-        answer with the status. Body: optional ``{"providers": [ids]}``."""
+        """Read every connected provider's login and quota endpoint now
+        (Refresh), then answer with the status. Body: optional ``{"providers": [ids]}``."""
         if body is None:
             body = {}
         error = check_request_body(body, allowed={"providers"})
@@ -464,12 +483,51 @@ def register(app):
         ):
             return JSONResponse(content={"error": "providers must be a list of ids"}, status_code=400)
         from openprogram.models.usage import provider_status
-        from openprogram.models.usage.quota_fetchers import refresh as read_quota
         rows = provider_status.connected_providers()
         if wanted is not None:
             rows = [row for row in rows if row["id"] in set(wanted)]
-        read_quota([row["id"] for row in rows], reason="manual")
+        provider_status.refresh_providers([row["id"] for row in rows])
         return JSONResponse(content=provider_status.build_status(providers=rows))
+
+    @app.get("/api/providers/detected")
+    def api_providers_detected():
+        """What Add provider and the empty state offer first: keys in the
+        Worker's environment (name and masked tail only), local servers
+        listening, and the popular providers (models/listing/detected.py)."""
+        from openprogram.models.listing.detected import detected
+        return JSONResponse(content=detected())
+
+    @app.get("/api/providers/fallback")
+    def api_providers_fallback(provider: str, model: str, context_tokens: int = 0):
+        """The model the quota-exhausted reply card offers in place of
+        ``provider``/``model``: the same model on another healthy provider,
+        else the most used healthy model with the same capabilities whose
+        window holds ``context_tokens``. Nothing is switched here."""
+        if not provider or not model or context_tokens < 0:
+            return JSONResponse(content={"error": "provider and model are required"}, status_code=400)
+        from openprogram.models.usage.provider_views import fallback_for
+        return JSONResponse(content=fallback_for(provider, model, context_tokens=context_tokens))
+
+    @app.post("/api/providers/{name}/refresh")
+    def api_provider_refresh(name: str):
+        """Read one provider's login, quota and health again now (its Refresh
+        button) and answer with its status. 404 when the provider is not connected."""
+        from openprogram.models.usage import provider_status
+        rows = [row for row in provider_status.connected_providers() if row["id"] == name]
+        if not rows:
+            return JSONResponse(content={"error": "provider is not connected"}, status_code=404)
+        provider_status.refresh_providers([name])
+        return JSONResponse(content=provider_status.build_status(providers=rows)["providers"][0])
+
+    @app.get("/api/providers/{name}/usage")
+    def api_provider_usage(name: str, days: int = 30, group: str = "day"):
+        """One provider's spend by day and/or model over 1-90 days, with its
+        quota samples (``group`` is ``day``, ``model`` or ``day,model``)."""
+        from openprogram.models.usage.provider_views import provider_usage
+        try:
+            return JSONResponse(content=provider_usage(name, days=days, group=group))
+        except ValueError as exc:
+            return JSONResponse(content={"error": str(exc)}, status_code=400)
 
     @app.post("/api/providers/{name}/validate")
     def api_validate_provider(name: str, body: Any = Body(default=None)):

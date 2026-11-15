@@ -289,7 +289,7 @@ async def handle_project_file_info(ws, cmd: dict) -> None:
 async def handle_project_folder_size(ws, cmd: dict) -> None:
     from .metadata import folder_size
     project_id, path = cmd.get("project_id"), cmd.get("path", "")
-    result = await asyncio.to_thread(folder_size, project_id, path, cmd.get("operation", "peek"), cmd.get("token"))
+    result = await asyncio.to_thread(folder_size, project_id, path, cmd.get("operation", "peek"), cmd.get("token"), cmd.get("fresh") is True)
     await ws.send_text(json.dumps({"type": "project_folder_size_result", "data": {
         **result, "project_id": project_id, "path": path, "action": "project_folder_size", "request_id": _request_id(cmd),
     }}))

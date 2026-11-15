@@ -99,14 +99,12 @@ def test_linux_port_probe_falls_back_when_lsof_is_missing(monkeypatch) -> None:
     assert processes.pids_on_port(18100) == [18100]
 
 
-def test_worker_pid_requires_a_live_lock_or_matching_command(monkeypatch) -> None:
+def test_worker_pid_requires_a_live_lock(monkeypatch) -> None:
     from openprogram.operations.worker import lifecycle
 
     monkeypatch.setattr(lifecycle, "read_holder_pid", lambda: 321)
-    monkeypatch.setattr(lifecycle, "_read_pid_file", lambda: 321)
     monkeypatch.setattr(lifecycle, "_process_alive", lambda _pid: True)
     monkeypatch.setattr(lifecycle, "is_held_by", lambda _pid: False)
-    monkeypatch.setattr(lifecycle, "_looks_like_worker_process", lambda _pid: False)
 
     assert lifecycle.current_worker_pid() is None
 
@@ -117,17 +115,12 @@ def test_worker_pid_requires_a_live_lock_or_matching_command(monkeypatch) -> Non
 def test_worker_pid_files_reject_nonpositive_signal_targets(
     tmp_path: Path, monkeypatch,
 ) -> None:
-    from openprogram.operations.worker import lifecycle
     from openprogram.operations.worker import lock as worker_lock
 
-    pid_file = tmp_path / "worker.pid"
     lock_file = tmp_path / "worker.lock"
-    pid_file.write_text("-1\n", encoding="utf-8")
     lock_file.write_text("0\n", encoding="utf-8")
-    monkeypatch.setattr(lifecycle.paths, "pid_path", lambda: pid_file)
     monkeypatch.setattr(worker_lock, "lock_path", lambda: lock_file)
 
-    assert lifecycle._read_pid_file() is None
     assert worker_lock.read_holder_pid() is None
 
 

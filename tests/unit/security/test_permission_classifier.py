@@ -136,3 +136,16 @@ def test_classifier_never_approves_partial_oversized_input(monkeypatch):
     blocked, _ = asyncio.run(auto_classify_tool("bash", {"command": "x" * 100000}))
     assert blocked
     assert not calls
+
+
+def test_attaching_a_file_to_the_reply_needs_no_review_and_is_not_a_network_send():
+    """Auto mode once sent send_file to the classifier, which denied a deck
+    as exfiltration; the model then only pasted paths for the rest of the chat."""
+    from openprogram.runtime.permissions.classifier import safe_call
+    from openprogram.runtime.permissions.tool_authority import capability_for_tool, decide_tool_authority
+
+    assert safe_call("send_file", {"path": "/abs/plan.pptx"})
+    assert capability_for_tool("send_file") == "fs.read"
+    assert decide_tool_authority({"authority_tier": "owner"}, "send_file").allowed
+    # A paired chat-app speaker may not read the owner's files, so may not be sent them.
+    assert not decide_tool_authority({"authority_tier": "paired"}, "send_file").allowed

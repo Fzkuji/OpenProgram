@@ -140,11 +140,9 @@ def _run_one(values: dict[str, Any]) -> None:
     # The channel's inbound call returned the waiting notice, so no one is
     # left to send this reply unless the turn sends it itself.
     result = process_user_turn(request, on_event=_publish, execution_context={"held_replay": True})
-    from openprogram.runtime.conversation.always_on import handoff
     from openprogram.runtime.scheduler import run_finish
 
     run_finish.finish_held(request, result)
-    handoff.held_turn_ended(request, result)
 
 
 def _tell_owner(saved: Path, values: dict[str, Any] | None) -> None:

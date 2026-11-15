@@ -41,8 +41,12 @@ siblings. See ``programs/tools/agent/agent/agent.MAX_SPAWN_FANOUT``.
 from __future__ import annotations
 
 import contextvars
+import json
+import logging
 import threading
 import time
+
+_log = logging.getLogger(__name__)
 
 _chain_messages: contextvars.ContextVar[int] = contextvars.ContextVar(
     "send_message_chain_messages", default=0,
@@ -184,7 +188,9 @@ MAX_SENDS_PER_HOUR = 20
 SEND_WINDOW_S = 3600.0
 
 _send_lock = threading.Lock()
+# Sender sessions whose window was read from disk; ``_sends`` then holds it.
 _sends: dict[str, list[float]] = {}
+_SENDS_FILE = "sends.json"
 
 
 def max_hops() -> int:
@@ -200,30 +206,122 @@ def hops_left() -> bool:
     return budget_left(current_chain_messages(), max_hops())
 
 
+def _sends_path(sender_session_id: str):
+    """The sender session's ``sends.json``, or None when it has no folder
+    (the window is then kept in memory only)."""
+    try:
+        from openprogram.runtime.context.session_db import default_db
+        sessions = default_db()
+        if not sessions._session_dir(sender_session_id).exists():  # noqa: SLF001 — as notices
+            return None
+        return sessions.state_file(sender_session_id, _SENDS_FILE)
+    except Exception:  # noqa: BLE001 - no store: memory only
+        return None
+
+
+def _read_window(sender_session_id: str) -> list[float]:
+    """The sender's send times. The caller holds ``_send_lock``."""
+    if sender_session_id in _sends:
+        return _sends[sender_session_id]
+    times: list[float] = []
+    path = _sends_path(sender_session_id)
+    if path is not None and path.exists():
+        try:
+            blob = json.loads(path.read_text(encoding="utf-8"))
+            times = [float(t) for t in (blob.get("sent") or []) if isinstance(t, (int, float))]
+        except Exception:  # noqa: BLE001 - an unreadable file starts an empty window
+            times = []
+    _sends[sender_session_id] = times
+    return times
+
+
+def _write_window(sender_session_id: str, times: list[float]) -> None:
+    """Keep the window in memory and in the sender's session folder, so a
+    Worker restart does not start a new hour. The caller holds ``_send_lock``."""
+    _sends[sender_session_id] = times
+    if len(_sends) > 2000:
+        for key in list(_sends)[:500]:
+            if key != sender_session_id:
+                _sends.pop(key, None)
+    path = _sends_path(sender_session_id)
+    if path is None:
+        return
+    try:
+        path.write_text(json.dumps({"version": 1, "sent": times}), encoding="utf-8")
+    except OSError:
+        _log.warning("send window of %s not saved", sender_session_id, exc_info=True)
+
+
 def claim_send(sender_session_id: str, *, now: float | None = None) -> bool:
     """Count one send for ``sender_session_id``; False when the hour's
-    allowance is spent (nothing is counted then). Kept in memory, so a
-    Worker restart starts a new window."""
+    allowance is spent (nothing is counted then). The window is saved in
+    the sender's session folder (``sends.json``), so a Worker restart keeps
+    the hour it is in."""
     limit = max_sends_per_hour()
     if not limit:
         return True
     at = time.time() if now is None else now
     with _send_lock:
-        recent = [t for t in _sends.get(sender_session_id, ()) if at - t < SEND_WINDOW_S]
+        recent = [t for t in _read_window(sender_session_id) if at - t < SEND_WINDOW_S]
         if len(recent) >= limit:
-            _sends[sender_session_id] = recent
+            _write_window(sender_session_id, recent)
             return False
         recent.append(at)
-        _sends[sender_session_id] = recent
-        if len(_sends) > 2000:
-            for key in list(_sends)[:500]:
-                _sends.pop(key, None)
+        _write_window(sender_session_id, recent)
     return True
 
 
 def release_send(sender_session_id: str) -> None:
     """Give back the last send counted for a message that was not sent."""
     with _send_lock:
-        recent = _sends.get(sender_session_id)
+        recent = list(_read_window(sender_session_id))
         if recent:
             recent.pop()
+            _write_window(sender_session_id, recent)
+
+
+# --- cycles ------------------------------------------------------------
+
+# The conversations (session ids) and branches (``SID:HEAD``) a message
+# passed through to reach this turn, oldest first: those waiting on it.
+# From the always-on handoff's ``ancestors``: a message to one of them
+# closes a loop, which it refused when it formed instead of letting the
+# hop count end it.
+_chain_ancestors: contextvars.ContextVar[tuple[str, ...]] = contextvars.ContextVar(
+    "send_message_chain_ancestors", default=(),
+)
+
+
+def current_chain_ancestors() -> tuple[str, ...]:
+    return _chain_ancestors.get()
+
+
+def set_chain_ancestors(ancestors):
+    """Bind the conversations waiting above this turn; returns the token."""
+    return _chain_ancestors.set(tuple(str(a) for a in ancestors or () if a))
+
+
+def closes_cycle(target_session_id: str, target_tip: str, ancestors=None) -> bool:
+    """Whether a message to ``target_session_id:target_tip`` goes back to a
+    conversation or branch already waiting on this chain (A→B→A)."""
+    waiting = set(current_chain_ancestors() if ancestors is None else ancestors)
+    return bool(waiting) and (
+        target_session_id in waiting or f"{target_session_id}:{target_tip}" in waiting)
+
+
+# --- helpers -----------------------------------------------------------
+
+_helper: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "agent_helper_turn", default=False,
+)
+
+
+def helper_turn() -> bool:
+    """Whether this turn is a helper started with ``agent`` (not a message
+    delivered to an existing conversation)."""
+    return _helper.get()
+
+
+def set_helper_turn(value: bool):
+    """Bind whether the current turn is a helper; returns the token."""
+    return _helper.set(bool(value))

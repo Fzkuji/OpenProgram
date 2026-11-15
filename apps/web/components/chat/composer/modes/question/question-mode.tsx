@@ -1,6 +1,6 @@
 "use client";
 
-import { approvalDisplayText, readSandboxEscalation, type SandboxEscalation } from "./approvals/approval-display-text";
+import { approvalDisplayText, COMMAND_TOOLS, readSandboxEscalation, type SandboxEscalation } from "./approvals/approval-display-text";
 
 /** Questions use a current-question panel above the composer.
  * All answers are submitted together through the existing acknowledged wait
@@ -14,6 +14,8 @@ import { ComputerUseApproval } from "./approvals/computer-use-approval";
 import { TerminalApproval } from "./approvals/terminal-approval";
 import { appStepArgs } from "@/lib/computer-use/computer-use-agent-call";
 import { Badge } from "@/components/ui/badge";
+import { BotGlyph } from "@/components/avatar/bot/bot-glyph";
+import { subAgentShape } from "@/lib/runtime-bridge/dag/render/agent-look";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -257,6 +259,9 @@ export function QuestionMode({ decision: q, onResolve }: QuestionModeProps) {
           aria-label={text(`Question ${stepIndex + 1} of ${steps.length}`, `第 ${stepIndex + 1} 题，共 ${steps.length} 题`)}>
           {stepIndex + 1}/{steps.length}
         </Badge>}
+        {q.askedBy && <Badge variant="outline" className="max-w-[45%] min-w-0 shrink" data-asked-by aria-label={text(`Asked by ${q.askedBy}`, `由 ${q.askedBy} 请求`)}>
+          <BotGlyph shape={subAgentShape(q.askedBy)} size={12} className="text-[var(--folder-color)]" /><span className="truncate">{q.askedBy}</span>
+        </Badge>}
         <div className={styles.badge}>{discussionOpen ? (cur.kind === "approval"
           ? text("Deny with a note", "拒绝并说明") : text("Discuss this request", "讨论这个请求"))
           : cur.kind === "approval" ? text("Approval required", "需要批准") : cur.prompt}</div>
@@ -450,9 +455,9 @@ function StepBody({
   }
   if (step.kind === "approval") {
     const esc = step.escalation;
-    const { prompt, summary } = approvalDisplayText(step.prompt, step.detail, esc, text);
     const tool = (step.tool ?? "").replace(/:sandbox-escalation$/, "");
-    const command = ["bash", "shell", "exec_command"].includes(tool) && typeof step.args?.command === "string"
+    const { prompt, summary } = approvalDisplayText(step.prompt, step.detail, esc, text, tool);
+    const command = COMMAND_TOOLS.includes(tool) && typeof step.args?.command === "string"
       ? step.args.command
       : step.tool === "write_stdin" && typeof step.args?.chars === "string" ? step.args.chars : null;
     return (

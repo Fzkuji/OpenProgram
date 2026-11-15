@@ -9,19 +9,20 @@ registerHooks({resolve(specifier,context,next){
   if(base)for(const suffix of ['.ts','/index.ts'])if(existsSync(fileURLToPath(base.href+suffix)))return {url:base.href+suffix,shortCircuit:true};
   return next(specifier,context);
 }});
-const { collectFileOutputs, previewTarget, inlineMediaKind }=await import('../../lib/chat/transcript/file-outputs.ts');
+const { replyFiles, previewTarget, inlineMediaKind }=await import('../../lib/chat/transcript/file-outputs.ts');
 const { filePreviewLayout }=await import('../../lib/tabs/panes/file-preview-layout.ts');
 const { normalizeCenterTabLayout }=await import('../../lib/tabs/center-tab-groups.ts');
 const chat={id:'s:a',kind:'session',sessionId:'a',title:'Chat'};
 const initial=()=>({tabs:[chat,{id:'s:b',kind:'session',sessionId:'b',title:'Other'}],groups:[],activeId:chat.id});
 const target={projectId:'p',path:'report.pdf'};
-test('only explicit local Markdown outputs and attachments become deduplicated file rows',()=>{
-  const text='[Report](</project/report%20one.pdf>) [source](/project/main.py:12) [remote](https://a.test/file.pdf) `[/tmp/code.pdf](/tmp/code.pdf)` <a href="/tmp/raw.pdf">x</a>';
-  assert.deepEqual(collectFileOutputs(text,[{path:'/project/report one.pdf',filename:'report one.pdf'}]).map(x=>x.path),['/project/report one.pdf','/project/main.py']);
-  assert.deepEqual(collectFileOutputs('[bad](//evil/file.pdf) [bad](javascript:alert) [bad](relative.pdf)'),[]);
-  assert.equal(collectFileOutputs('',[{path:'/tmp/data.zip',filename:'data.zip'}]).length,1);
-  // An archive opens as a tree, so a prose link to one is a card too; a bare binary link is not.
-  assert.deepEqual(collectFileOutputs('[pack](/tmp/pack.tar.gz) [weights](/tmp/model.bin)').map(x=>x.path),['/tmp/pack.tar.gz']);
+test('reply cards are the server attachments only, never paths linked from the prose',async()=>{
+  const sent=[{path:'/w/deck.pptx',filename:'deck.pptx'},{path:'/w/deck.pptx',filename:'deck.pptx'},{path:'',filename:'pending.pdf'},{path:'/w/data.zip',filename:''}];
+  assert.deepEqual(replyFiles(sent),[{path:'/w/deck.pptx',name:'deck.pptx'},{path:'/w/data.zip',name:'data.zip'}]);
+  // The card component takes no reply text: a script linked as [build.py](/w/build.py) gets no card and is never opened by itself.
+  const { readFileSync }=await import('node:fs');
+  const source=readFileSync(new URL('components/chat/messages/attachments/assistant-file-cards.tsx',root),'utf8');
+  assert.match(source,/replyFiles\(attachments\)/);
+  assert.doesNotMatch(source,/msg\.content/);
 });
 test('an archive listing becomes a folders-first tree that counts files at any depth',async()=>{
   const { buildArchiveTree, isArchivePath }=await import('../../lib/files/archive.ts');
@@ -33,10 +34,8 @@ test('an archive listing becomes a folders-first tree that counts files at any d
   assert.deepEqual(tree.map(n=>[n.name,n.dir,n.files]),[['papers',true,2],['readme.md',false,0]]);
   assert.deepEqual(tree[0].children.map(n=>n.name),['deep','a.pdf']);
 });
-test('only sent media plays inline; linked media and other files keep their rows',()=>{
-  const sent=[{path:'/w/cut.mp4'},{path:'/w/cover.png'},{path:'/w/voice.m4a'},{path:'/w/notes.pdf'}];
-  assert.deepEqual(['/w/cut.mp4','/w/cover.png','/w/voice.m4a','/w/notes.pdf'].map(path=>inlineMediaKind({path,name:''},sent)),['video','image','audio',null]);
-  assert.equal(inlineMediaKind({path:'/w/linked.png',name:''},sent),null);
+test('attached media plays inline; other files keep their rows',()=>{
+  assert.deepEqual(['/w/cut.mp4','/w/cover.png','/w/voice.m4a','/w/notes.pdf'].map(inlineMediaKind),['video','image','audio',null]);
 });
 test('project preview mapping respects root boundaries and traversal',()=>{
   const p={id:'p',path:'/project'};

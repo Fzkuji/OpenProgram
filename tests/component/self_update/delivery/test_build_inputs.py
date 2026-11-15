@@ -33,7 +33,7 @@ def test_electron_archive_is_pinned_by_version_and_architecture(
     package = tmp_path / "apps/desktop/package.json"
     package.parent.mkdir(parents=True)
     package.write_text(json.dumps({"devDependencies": {"electron": "44.4.3"}}))
-    monkeypatch.setattr(bundle.platform, "machine", lambda: machine)
+    monkeypatch.setattr(bundle, "interpreter_architecture", lambda: machine)
     assert bundle._electron_archive_spec(tmp_path) == (filename, sha256)
 
 
@@ -41,7 +41,7 @@ def test_electron_archive_is_pinned_by_version_and_architecture(
 def test_the_desktop_electron_version_is_pinned(monkeypatch, machine):
     # Bumping Electron without the controller pin breaks every complete build.
     root = Path(__file__).resolve().parents[4]
-    monkeypatch.setattr(bundle.platform, "machine", lambda: machine)
+    monkeypatch.setattr(bundle, "interpreter_architecture", lambda: machine)
     filename, _sha256 = bundle._electron_archive_spec(root)
     version = json.loads((root / "apps/desktop/package.json").read_text())["devDependencies"]["electron"]
     assert filename.startswith(f"electron-v{version}-darwin-")

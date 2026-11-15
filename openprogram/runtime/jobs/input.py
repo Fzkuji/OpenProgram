@@ -198,6 +198,12 @@ class JobAgentInputV1(_JobAgentInputSchema):
         }
         if usage_goal is not None:
             payload["job_context"]["usage_goal"] = dict(usage_goal)
+        # Both are written only when set, so every other Job keeps the
+        # payload and hash it always had.
+        if job.chain_ancestors:
+            payload["job_context"]["chain"]["ancestors"] = list(job.chain_ancestors)
+        if job.tool_call_id:
+            payload["job_context"]["tool_call_id"] = job.tool_call_id
         return cls.parse(payload)
 
     def to_turn_request(self, *, session_id: str | None = None) -> Any:
@@ -235,6 +241,8 @@ class JobAgentInputV1(_JobAgentInputSchema):
             caller_session_id=caller["session_id"] if caller else None,
             chain_messages=context["chain"]["messages"],
             chain_generations=context["chain"]["generations"],
+            chain_ancestors=list(context["chain"].get("ancestors") or []) or None,
+            tool_call_id=context.get("tool_call_id"),
             caller_chain_generations=hints["caller_generations"],
             spawn_caller=request.get("spawn_caller"),
             advance_head=bool(request.get("advance_head", False)),

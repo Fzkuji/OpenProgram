@@ -108,6 +108,9 @@ class _ChatRequest:
     # ``openprogram --print --no-web``: no web tool and no provider search
     # this turn.
     turn_no_web: bool | None = None
+    # The message sets a Goal (``/goal <objective>``): written on its user
+    # message as ``starts_goal``.
+    starts_goal: bool = False
 
 
 @dataclass(frozen=True)
@@ -246,7 +249,8 @@ async def _prepare_agent_and_environment(ws, req: _ChatRequest) -> bool:
     cmd = req.cmd
     from ..agent_invocation import AgentInvocationError, prepare_agent_invocation
     try:
-        req.agent_invocation = prepare_agent_invocation(cmd)
+        # It reads the conversation's row under its lock: off the loop.
+        req.agent_invocation = await asyncio.to_thread(prepare_agent_invocation, cmd)
     except AgentInvocationError as exc:
         await _send_chat_error(
             ws, req.session_id, exc.code, str(exc), retry_query=req.text,

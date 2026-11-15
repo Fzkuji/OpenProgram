@@ -423,8 +423,20 @@ async def _empty_response(send, status: int) -> None:
     await send({"type": "http.response.body", "body": b""})
 
 
-async def _http_response(send, status: int, error: str) -> None:
-    body = _json_body(error)
+def _openai_path(scope) -> bool:
+    """A request to the OpenAI-compatible endpoints, whose clients read
+    refusals in OpenAI's error shape (``routes/openai_compatible.py``)."""
+    path = str(scope.get("path") or "")
+    return scope.get("type") == "http" and (path == "/v1" or path.startswith("/v1/"))
+
+
+async def _http_response(send, status: int, error: str, *, openai: bool = False) -> None:
+    if openai:
+        from openprogram.interfaces.server.routes.openai_compatible import auth_error_body
+
+        body = auth_error_body(error)
+    else:
+        body = _json_body(error)
     headers = [
         (b"content-type", b"application/json"),
         (b"content-length", str(len(body)).encode("ascii")),
@@ -588,7 +600,8 @@ class OwnerAuthMiddleware:
             if scope["type"] == "websocket":
                 await _websocket_response(send, 403, "request_origin_rejected", scope)
             else:
-                await _http_response(send, 403, "request_origin_rejected")
+                await _http_response(send, 403, "request_origin_rejected",
+                                     openai=_openai_path(scope))
             return
 
         path = str(scope.get("path") or "")
@@ -647,7 +660,8 @@ class OwnerAuthMiddleware:
             if scope["type"] == "websocket":
                 await _websocket_response(send, 401, "authentication_required", scope)
             else:
-                await _http_response(send, 401, "authentication_required")
+                await _http_response(send, 401, "authentication_required",
+                                     openai=_openai_path(scope))
             return
 
         using_cookie = not bearer_provided
@@ -658,7 +672,8 @@ class OwnerAuthMiddleware:
             if scope["type"] == "websocket":
                 await _websocket_response(send, 403, "request_origin_rejected", scope)
             else:
-                await _http_response(send, 403, "request_origin_rejected")
+                await _http_response(send, 403, "request_origin_rejected",
+                                     openai=_openai_path(scope))
             return
 
         if scope["type"] == "http" and path == "/api/auth/session":

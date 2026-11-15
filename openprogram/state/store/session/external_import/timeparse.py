@@ -20,7 +20,10 @@ def parse_timestamp(value: Any) -> Optional[float]:
 
 
 def fallback_title(first_user_text: str) -> str:
-    line = " ".join((first_user_text or "").split())
+    # Credentials go before the cut: a key cut short no longer matches
+    # its shape and would survive into the title.
+    from .sanitize import remove_secret_values
+    line = " ".join(remove_secret_values(first_user_text or "").split())
     if len(line) <= TITLE_MAX:
         return line
     return line[:TITLE_MAX - 1].rstrip() + "…"

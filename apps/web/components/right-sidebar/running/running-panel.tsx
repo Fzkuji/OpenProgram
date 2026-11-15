@@ -2,8 +2,10 @@
 
 /**
  * Activity: what the conversation runs and keeps doing. Agents holds the
- * main agent, one per branch the reader made, with its sub-agents summed up
- * and a red count for what waits on the reader. Programs and commands holds
+ * main agent, one per branch the reader made, with a red count for what
+ * waits on the reader, and under it the roster of the helpers it started:
+ * the ones still going, waiting on the reader or failed, then one fold for
+ * the ones that finished (agent-roster.tsx). Programs and commands holds
  * the shell calls and background programs. Then what the conversation does
  * on its own: its open work and the Scheduler tasks set from it. Always-on
  * is a setting of the conversation's Agent, not an agent of its own: the
@@ -21,7 +23,15 @@ import { useManagedProcesses } from "@/lib/execution/use-managed-processes";
 import { processIsActive, type ActiveToolCall, type AgentCall, type ManagedProcess } from "@/lib/net/execution/process-client";
 import { type ExecutionSnapshot } from "@/lib/execution/execution-debugger";
 import { activityModel, agentBranches, pruneBranches, spawnedBy, startedAt, type ActivityIssue, type BranchRow } from "@/lib/execution/activity-model";
-import { toggleActivitySection, useActivityView } from "@/lib/prefs/activity-view";
+import { toggleActivitySection, toggleAgentHelpers, useActivityView } from "@/lib/prefs/activity-view";
+import { rosterCost, rosterListed, rosterLive, rosterStatus, rosterTotal, splitRoster, type RosterLook, type RosterStatus } from "@/lib/execution/agent-roster";
+import { canExecuteAction, newCommandId, buildExecutionCommand } from "@/lib/execution/execution-debugger";
+import { postExecutionCommand } from "@/lib/net/execution/execution-client";
+import type { OutgoingSend } from "@/lib/net/execution/activity-roster-client";
+import { navigate } from "@/lib/nav/navigate";
+import { showToast } from "@/lib/format-utils/toast";
+import { fmtUsd } from "@/components/settings/providers/status/model";
+import { HoverTip } from "@/components/ui/tooltip";
 import { loadSubAgentTranscript } from "@/lib/chat/transcript/sub-agent-transcripts";
 import { sendRuntimeCommand } from "@/lib/runtime-bridge/session/session-load";
 import { presentTool } from "@/components/chat/messages/execution/tool-presentation";
@@ -42,11 +52,15 @@ import { ActivityPage } from "./activity-page";
 import { usePageSlide } from "./use-page-slide";
 import type { ActivityPageTarget, ActivityPanelContext } from "./activity-page-types";
 import { Glyph, AgentGlyph, Status, Row, type Tone } from "./running-rows";
+import { FinishedRow, RosterRow, usageTip } from "./agent-roster";
+import { useAgentRoster } from "./use-agent-roster";
 import { LIVE, duration, when, callKind, executionTone, executionState, programTone, programTitle, commandLine, programStatus, programBarTone, routineSchedule, routineRunLabel } from "./running-format";
 
 type View = { kind: "main" | "call" | "program" | "work" | "routine"; id: string };
 
 const PAGE = 20;
+/** Finished helpers listed when their fold opens, and with each "earlier". */
+const FINISHED_PAGE = 50;
 
 /** What a level-1 row opens. */
 function pageFor(view: View): ActivityPageTarget {
@@ -86,6 +100,11 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
   const worktrees = useSessionWorktrees(sessionId);
   const selectedBranchId = useSessionStore(s => (sessionId ? s.composerSettingsBySession[sessionId]?.active_branch_id ?? null : null));
   const [programsShown, setProgramsShown] = useState(PAGE);
+  // What only the server knows of each helper: stalled, queued, its cost.
+  const roster = useAgentRoster(active, sessionId);
+  // How many finished helpers each agent's fold lists; absent while shut.
+  const [finishedShown, setFinishedShown] = useState<Record<string, number>>({});
+  const [stopping, setStopping] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   // Level 1 leaves the document while a page rests over it; its scroll and
@@ -95,7 +114,7 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
   const slide = usePageSlide(() => setOpened(null));
   const { cut: cutSlide, leave: leaveSlide } = slide;
   const overviewShown = !page || slide.beneath;
-  useEffect(() => { cutSlide(); setOpened(null); setProgramsShown(PAGE); }, [sessionId, cutSlide]);
+  useEffect(() => { cutSlide(); setOpened(null); setProgramsShown(PAGE); setFinishedShown({}); }, [sessionId, cutSlide]);
   useLayoutEffect(() => {
     const element = levelOneScroll.current;
     if (overviewShown && element) element.scrollTop = levelOneReturn.current.scrollTop;
@@ -263,15 +282,78 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
     sendRuntimeCommand({ action: "load_session", session_id: sessionId });
   }
 
+  /** Show a sub-agent's conversation in the chat, as its card's Switch does. */
+  function openAgentConversation(jobId: string) {
+    const job = execution(jobId);
+    void (async () => {
+      const target = await loadSubAgentTranscript(sessionId!, jobId, { jobId, headId: job?.display?.assistant_message_id }) || job?.display?.assistant_message_id;
+      if (!target) return;
+      sendRuntimeCommand({ action: "checkout_branch", session_id: sessionId, head_msg_id: target });
+      sendRuntimeCommand({ action: "load_session", session_id: sessionId });
+    })();
+  }
+
+  // ---- the roster under an agent ---------------------------------------------
+  type RosterEntry = { row: BranchRow<AgentCall>; depth: number; status: RosterStatus };
+  /** What the page sees of a helper right now; the server's facts refine it. */
+  function rosterLook(row: BranchRow<AgentCall>): RosterLook {
+    if (row.kind === "leaf") return row.leaf.failed ? "err" : "rest";
+    const issues = issuesOf(row.item);
+    if (issues.length) return issues.some(issue => decisionFor(issue.execution.execution_id)?.kind === "approval") ? "approval" : "input";
+    if (activeIn(subtreeOf(row.item))) return "run";
+    return executionTone(row.item) === "err" ? "err" : "rest";
+  }
+  const factsOf = (row: BranchRow<AgentCall>) => row.kind === "agent" ? roster.agents[row.item.execution_id] ?? null : null;
+  const helperName = (row: BranchRow<AgentCall>) => (row.kind === "agent"
+    ? row.item.display?.label || row.item.task_label || text("Sub-agent", "子代理")
+    : row.leaf.description || text("Sub-agent", "子代理")).replace(/_/g, " ");
+  /** One agent's roster: the helpers listed, the ones folded as finished,
+   *  the messages it still waits on, and what its helpers cost together. */
+  function rosterOf(scope: Scope, facts: ScopeFacts) {
+    const entries: RosterEntry[] = facts.tree.map(row => ({ row, depth: row.depth, status: rosterStatus(rosterLook(row), factsOf(row)) }));
+    const { shown, finished } = splitRoster(entries, entry => rosterListed(entry.status));
+    // Messages are sent from the branch the reader is on.
+    const outgoing: OutgoingSend[] = scope.active ? roster.outgoing : [];
+    // The topmost helpers that can still be stopped: a stop reaches what they started.
+    const stoppable: ExecutionSnapshot[] = [];
+    let inside = Infinity;
+    for (const entry of entries) {
+      if (entry.depth <= inside) inside = Infinity;
+      if (inside !== Infinity || entry.row.kind !== "agent") continue;
+      if (rosterLive(entry.status) && canExecuteAction(entry.row.item, "cancel")) { stoppable.push(entry.row.item); inside = entry.depth; }
+    }
+    return {
+      shown, finished, outgoing, stoppable,
+      live: entries.filter(entry => rosterLive(entry.status)).length,
+      // A helper's cost already holds the helpers under it.
+      cost: rosterTotal(entries.filter(entry => entry.depth === 1).map(entry => rosterCost(factsOf(entry.row)))),
+    };
+  }
+  /** Stop every helper that is still going. */
+  async function stopAll(items: ExecutionSnapshot[]) {
+    if (!items.length || stopping) return;
+    setStopping(true);
+    showToast(text("Stop requested. Cancelling the current operation…", "已请求停止，正在取消当前操作…"));
+    try {
+      await Promise.allSettled(items.map(item => postExecutionCommand(buildExecutionCommand(item, "cancel", newCommandId()))));
+    } finally { setStopping(false); }
+  }
+
   // ---- rows ----------------------------------------------------------------
-  /** A main agent's row: its branch's colour and a tag on the checked-out one. */
-  function scopeRow(scope: Scope): ReactNode {
-    const facts = scopeFacts(scope);
+  /** A main agent's row: its branch's colour and a tag on the checked-out
+   *  one, then its roster. Left and Right fold and unfold the roster. */
+  function scopeRow(scope: Scope, facts: ScopeFacts, list: ReturnType<typeof rosterOf>): ReactNode {
     // What waits for the reader is the red count on the glyph, its own
     // and its sub-agents'; the line keeps what it is doing or its time.
     const waiting = facts.issues.length + facts.tree.filter(row => lookOf(row).tone === "warn").length;
     const look = facts.issues.length ? scopeStatus({ ...facts, issues: [] }, scope) : scopeStatus(facts, scope);
-    const subs = facts.tree.length ? text(`${facts.tree.length} sub-agent${facts.tree.length === 1 ? "" : "s"}`, `${facts.tree.length} 个子代理`) : "";
+    const foldKey = `${sessionId}:${scope.key}`;
+    const hasRoster = facts.tree.length > 0 || list.outgoing.length > 0;
+    const folded = hasRoster && listView.foldedAgents.includes(foldKey);
+    // Folded, the row says how many helpers are still going under it.
+    const subs = !folded || !facts.tree.length ? ""
+      : list.live ? text(`${list.live} active sub-agent${list.live === 1 ? "" : "s"}`, `${list.live} 个子代理进行中`)
+        : text(`${facts.tree.length} sub-agent${facts.tree.length === 1 ? "" : "s"}`, `${facts.tree.length} 个子代理`);
     const currentTag = scope.head && scope.active ? <span className={styles.current}>{text("Current", "当前")}</span> : null;
     const tree = branchWorktree(worktrees.rows, scope.branchId ?? (scope.active ? selectedBranchId : null));
     const isolated = tree && isOpen(tree) ? tree : null;
@@ -280,10 +362,41 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
     const worktreeNote = isolated ? text(`${isolatedFiles} ${isolatedFiles === 1 ? "file" : "files"} in worktree`, `worktree 中 ${isolatedFiles} 个文件`) : "";
     // Always-on belongs to the checked-out branch: check-ins start from it.
     const always = alwaysOn && scope.active ? alwaysStatus() : null;
-    return <Row key={scope.key} glyph={<AgentGlyph shape={mainShape} color={scope.color} />} title={scope.name} badge={current} count={waiting}
-      status={[look.label, subs, worktreeNote].filter(Boolean).join(" · ")} tone={look.tone === "warn" ? "muted" : look.tone}
-      extra={always && <Status tone={always.tone} dot={false}>{`${text("Always-on", "常驻")} · ${always.label}`}</Status>}
-      onOpen={() => open({ kind: "main", id: scope.key })} />;
+    /** Fold from a row inside the roster: the focus goes to the agent's row. */
+    const foldFromInside = () => {
+      (document.activeElement as HTMLElement | null)?.closest("[data-agent-group]")?.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
+      toggleAgentHelpers(foldKey);
+    };
+    const helperRow = (entry: RosterEntry, indent: number) => {
+      const { row } = entry;
+      const key = row.kind === "agent" ? row.item.execution_id : `spawn:${row.leaf.id}`;
+      return <RosterRow key={key} name={helperName(row)} status={entry.status} indent={indent} text={text}
+        cost={rosterCost(factsOf(row))} tip={usageTip(factsOf(row), text)} onFold={foldFromInside}
+        onOpen={() => { if (row.kind === "agent") openAgentConversation(row.item.execution_id); else open({ kind: "main", id: scope.key }); }} />;
+    };
+    const finishedCount = finishedShown[foldKey] ?? 0;
+    return <div key={scope.key} data-agent-group="">
+      <Row glyph={<AgentGlyph shape={mainShape} color={scope.color} />} title={scope.name} badge={current} count={waiting}
+        status={[look.label, subs, worktreeNote].filter(Boolean).join(" · ")} tone={look.tone === "warn" ? "muted" : look.tone}
+        extra={always && <Status tone={always.tone} dot={false}>{`${text("Always-on", "常驻")} · ${always.label}`}</Status>}
+        disclosure={hasRoster ? { open: !folded, onToggle: () => toggleAgentHelpers(foldKey),
+          label: folded ? text("Show its sub-agents", "展开它的子代理") : text("Hide its sub-agents", "收起它的子代理") } : undefined}
+        onOpen={() => open({ kind: "main", id: scope.key })} />
+      {hasRoster && !folded ? <div className="-mx-[8px] -my-[4px] max-h-[360px] overflow-y-auto px-[8px] py-[4px]" role="group" aria-label={text(`Sub-agents of ${scope.name}`, `${scope.name} 的子代理`)}>
+        {list.shown.map(entry => helperRow(entry, 16 * entry.depth))}
+        {list.outgoing.map(send => <RosterRow key={`out:${send.job_id}`} outgoing name={send.to} indent={16} text={text} onFold={foldFromInside}
+          status={send.status === "waiting" ? "waiting" : rosterStatus("run", { agent_status: send.status, queued: false, usage: null })}
+          onOpen={() => navigate(`/s/${send.to_session}`)} />)}
+        {list.finished.length > 0 ? <FinishedRow count={list.finished.length} open={finishedCount > 0} indent={16} text={text} onFold={foldFromInside}
+          onToggle={() => setFinishedShown(current => ({ ...current, [foldKey]: current[foldKey] ? 0 : FINISHED_PAGE }))} /> : null}
+        {finishedCount > 0 ? <>
+          {list.finished.slice(0, finishedCount).map(entry => helperRow(entry, 16))}
+          {list.finished.length > finishedCount ? <Button type="button" variant="link" size="xs" onClick={() => setFinishedShown(current => ({ ...current, [foldKey]: finishedCount + FINISHED_PAGE }))}>
+            {text(`Show ${Math.min(FINISHED_PAGE, list.finished.length - finishedCount)} earlier`, `显示更早的 ${Math.min(FINISHED_PAGE, list.finished.length - finishedCount)} 个`)}
+          </Button> : null}
+        </> : null}
+      </div> : null}
+    </div>;
   }
   /** An agent's status line: what waits on the reader first, then what runs. */
   function agentLook(item: ExecutionSnapshot): { label: string; tone: Tone; at: number } {
@@ -414,15 +527,7 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
         if (decision) answerInChat(decision.id); else useSessionStore.getState().focusComposer();
       },
       switchTo: scope => { if (scope.head) switchTo(scope.head, scope.branchId); },
-      openAgentConversation: jobId => {
-        const job = execution(jobId);
-        void (async () => {
-          const target = await loadSubAgentTranscript(sessionId, jobId, { jobId, headId: job?.display?.assistant_message_id }) || job?.display?.assistant_message_id;
-          if (!target) return;
-          sendRuntimeCommand({ action: "checkout_branch", session_id: sessionId, head_msg_id: target });
-          sendRuntimeCommand({ action: "load_session", session_id: sessionId });
-        })();
-      },
+      openAgentConversation,
       alwaysStatus, act, pendingKey: pending, actionError, copy: (key, value) => void copy(key, value), copiedKey: copied,
       close: () => { levelOneReturn.current.focus = true; slide.leave(); },
       pull: slide.pull,
@@ -431,8 +536,8 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
   }
 
   // ---- overview ----------------------------------------------------------------
-  // Messages live in the chat. Agents is the main agent alone: the
-  // sub-agents it starts are summed up under it and listed on its page.
+  // Messages live in the chat. Agents is the main agent with the roster
+  // of the sub-agents it started under it; its page holds their runs.
   // Every conversation has its main agent, so its row is always there; its
   // page reads the runs from the transcript, with or without execution
   // records. Programs and commands lists what they run in a shell.
@@ -447,10 +552,10 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
   ].sort((a, b) => rank(a.tone) - rank(b.tone) || b.at - a.at);
   /** One overview group: its header folds the rows under it. Until its
    *  data is read it stays folded and does not open. */
-  const section = (key: string, name: string, rows: ReactNode, ready = true) => {
+  const section = (key: string, name: ReactNode, rows: ReactNode, ready = true, actions?: ReactNode) => {
     const collapsed = !ready || listView.collapsed.includes(key);
     return <div className="group/sec">
-      <SectionHeader name={name} className={styles.sectionHeader} collapsible collapsed={collapsed}
+      <SectionHeader name={name} className={styles.sectionHeader} collapsible collapsed={collapsed} actions={actions}
         onToggle={() => { if (ready) toggleActivitySection(key); }} />
       {!collapsed && rows}
     </div>;
@@ -460,6 +565,10 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
   const agentsReady = Boolean(state.fetchedAt);
   const programsReady = agentsReady && processes.loaded;
   const scheduledReady = ongoing != null;
+  // Each agent with its roster; the group's header adds the rosters up.
+  const agentRows = scopes.map(scope => { const facts = scopeFacts(scope); return { scope, facts, list: rosterOf(scope, facts) }; });
+  const agentsCost = rosterTotal(agentRows.map(entry => entry.list.cost));
+  const stoppable = [...new Map(agentRows.flatMap(entry => entry.list.stoppable).map(item => [item.execution_id, item])).values()];
   return <>{overviewShown ? <section ref={slide.under} className={styles.panel} aria-label={text("Conversation activity", "会话运行记录")} inert={Boolean(page)}>
     {readFailed && readNotice?.sessionId === sessionId && (hasRead || readNotice.persistent) && <p role="status" className={`${styles.notice} ${readNotice.persistent && !hasRead ? styles.error : ""}`}>{hasRead
       ? text("Updating status… Showing saved records.", "正在更新状态，当前显示上次记录。")
@@ -468,7 +577,12 @@ export function RunningPanel({ active, sessionId, resetSignal }: { active: boole
       {pendingInbox.items.length > 0 && section("pending",
         text(`Waiting for you · ${pendingInbox.items.length}`, `等你处理 · ${pendingInbox.items.length}`),
         pendingInOrder(pendingInbox.items).map(pendingRow))}
-      {section("agents", text("Agents", "Agents"), scopes.map(scopeRow), agentsReady)}
+      {section("agents",
+        agentsCost !== null ? <>{text("Agents", "Agents")}<span className={styles.sum}>{` · ${fmtUsd(agentsCost)}`}</span></> : text("Agents", "Agents"),
+        agentRows.map(entry => scopeRow(entry.scope, entry.facts, entry.list)), agentsReady,
+        stoppable.length > 0 ? <HoverTip label={text("Stops every running sub-agent", "停止所有正在运行的子代理")}>
+          <Button type="button" variant="ghost" size="xs" disabled={stopping || state.connection.state !== "connected"} onClick={() => void stopAll(stoppable)}>{text("Stop all", "全部停止")}</Button>
+        </HoverTip> : null)}
       {work.length > 0 && section("programs", text("Programs and commands", "程序和命令"), <>
         {work.slice(0, programsShown).map(entry => entry.node)}
         {work.length > programsShown && <Button type="button" variant="link" size="xs" onClick={() => setProgramsShown(value => value + 50)}>

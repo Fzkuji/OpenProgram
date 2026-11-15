@@ -64,11 +64,12 @@ def test_create_rejects_unknown_blocked_by(board):
 
 def test_update_fields_and_status(board):
     _todo_create_impl("a")
-    out = _todo_update_impl("1", status="in_progress", owner="claude")
-    assert out == "Todo #1 updated (status, owner)"
+    out = _todo_update_impl("1", status="in_progress")
+    assert out == "Todo #1 updated (status)"
     (entry,) = _branch(board)["todos"]
     assert entry["status"] == "in_progress"
-    assert entry["owner"] == "claude"
+    # Who works on what is the plan's job now; todos carry no owner.
+    assert "owner" not in entry
 
 
 def test_update_rejects_bad_status(board):
@@ -94,7 +95,11 @@ def test_list_groups_and_annotations(board):
     _todo_create_impl("second", blocked_by="1")
     _todo_create_impl("third")
     _todo_update_impl("1", status="completed")
-    _todo_update_impl("3", status="in_progress", owner="claude")
+    _todo_update_impl("3", status="in_progress")
+    # A board written before owners were dropped still shows its owner.
+    blob = json.loads(board.read_text())
+    blob["branches"]["main"]["todos"][2]["owner"] = "claude"
+    board.write_text(json.dumps(blob))
     out = _todo_list_impl()
     lines = out.splitlines()
     assert lines[0] == "in_progress:"

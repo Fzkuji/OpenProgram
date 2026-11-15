@@ -569,14 +569,44 @@ def test_tool_rows_add_up_to_their_tool_category():
 def test_a_draft_chat_counts_the_agent_prompt_against_the_model_window(monkeypatch):
     import openprogram.runtime.conversation.model_tools as model_tools
     import openprogram.programs as programs
-    import openprogram.runtime.context.tokens as tokens
+    import openprogram.models.providers.catalog.models as catalog
 
     monkeypatch.setattr(programs, "agent_tools", lambda **_kw: [])
     monkeypatch.setattr(model_tools, "load_agent_profile",
                         lambda _id: {"id": "main", "name": "Main"})
-    monkeypatch.setattr(tokens, "real_context_window", lambda _model: 400_000)
+    monkeypatch.setattr(catalog, "get_model", lambda provider, model_id: (
+        SimpleNamespace(context_window=400_000) if (provider, model_id) == ("p", "m") else None))
 
     bd = stats.compute_draft_breakdown("main", "p", "m")
     assert bd["draft"] and bd["context_window"] == 400_000
     assert bd["system_prompt"] > 0 and bd["messages"] == 0
     assert bd["system_detail"][0]["name"] == "base"
+
+
+@pytest.mark.parametrize("ref, provider, expected", [
+    ("openai-codex/gpt-6.1-sol", None, ("openai-codex", "gpt-6.1-sol")),
+    ("openai-codex:gpt-6.1-sol", None, ("openai-codex", "gpt-6.1-sol")),
+    ("openrouter/anthropic/claude-x", None, ("openrouter", "anthropic/claude-x")),
+    ("ollama:llama3:8b", None, ("ollama", "llama3:8b")),
+    ("gpt-6.1-sol", "openai-codex", ("openai-codex", "gpt-6.1-sol")),
+    ("", "p", ("p", None)),
+])
+def test_one_parser_reads_every_stored_model_spelling(ref, provider, expected):
+    from openprogram.models.providers.catalog.models import split_model_ref
+    assert split_model_ref(ref, provider) == expected
+
+
+def test_a_bare_id_holding_a_colon_resolves_under_its_provider(monkeypatch):
+    import openprogram.models.providers.catalog.models as catalog
+    model = SimpleNamespace(context_window=8_192)
+    monkeypatch.setattr(catalog, "get_model", lambda provider, model_id: (
+        model if (provider, model_id) == ("ollama", "llama3:8b") else None))
+    assert catalog.find_model_ref("llama3:8b", "ollama") is model
+
+
+def test_display_never_invents_a_window_compaction_keeps_its_default():
+    from openprogram.runtime.context.tokens import known_context_window, real_context_window
+    assert known_context_window(None) is None
+    assert known_context_window(SimpleNamespace(context_window=None, max_tokens=8_000)) is None
+    assert real_context_window(None) == 128_000
+    assert stats.model_ref_window("nowhere/unknown") is None

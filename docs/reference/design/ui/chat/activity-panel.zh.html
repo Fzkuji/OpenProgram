@@ -5,18 +5,36 @@
 <p>右侧栏的 Activity 只看一个对话。一次运行在等的事不单独成组，而是落在相关那一行，字形角上显示红色计数。唯一的例外是“等你处理”，即各对话留给读者的报告。消息不作为行。</p>
 
 <h2 id="overview">总览</h2>
-<p>各组顺序固定。Agents 一直显示；其余各组为空时连同组头都不显示。只有等你处理的组头带计数。悬停组头显示 <code translate="no">SectionHeader</code> 的箭头，点击折叠（按浏览器保存，<code translate="no">lib/prefs/activity-view.ts</code>）。</p>
+<p>各组顺序固定。Agents 一直显示；其余各组为空时连同组头都不显示。只有等你处理的组头带计数；Agents 的组头加上助手的花费。悬停组头显示 <code translate="no">SectionHeader</code> 的箭头，点击折叠（按浏览器保存，<code translate="no">lib/prefs/activity-view.ts</code>）。</p>
 <table class="stack">
 <thead><tr><th scope="col">组</th><th scope="col">行</th><th scope="col">状态行</th></tr></thead>
 <tbody>
 <tr><th scope="row">等你处理</th><td>所有常驻对话里还在等读者的报告（<code translate="no">lib/agents/pending-inbox</code>）。每行打开对应对话。</td><td>“发现 · &lt;代理&gt; · &lt;时间&gt;”</td></tr>
-<tr><th scope="row">代理</th><td>主代理，无论启动多少子代理都只有一行，并且总是列出：会话的回合没有留下执行记录时也有它，静止时显示会话最后活动时间，打开后从对话记录读取运行。有多个分支时，每个分支一行，地位相同。代理<a href="../../runtime/always-on-agents.zh.html">常驻</a>期间，已检出分支的行多一行，显示下次唤醒。</td><td>运行中（当前调用或“等待子代理”，加用时，蓝色）；“失败 · &lt;时间&gt;”（红色）；否则是最后消息时间和“10 月 15 日 · 5 个子代理”。在自己 <a href="../../runtime/execution/agent-worktree.zh.html">worktree</a> 里的分支多一个“Worktree”标签和“worktree 中 3 个文件”</td></tr>
+<tr><th scope="row">代理</th><td>主代理，总是列出，下面是<a href="#agent-roster">它启动的助手</a>：会话的回合没有留下执行记录时也有它，静止时显示会话最后活动时间，打开后从对话记录读取运行。有多个分支时，每个分支一行，地位相同。代理<a href="../../runtime/always-on-agents.zh.html">常驻</a>期间，已检出分支的行多一行，显示下次唤醒。</td><td>运行中（当前调用或“等待子代理”，加用时，蓝色）；“失败 · &lt;时间&gt;”（红色）；否则是最后消息时间。助手收起时加“· 3 个子代理进行中”。在自己 <a href="../../runtime/execution/agent-worktree.zh.html">worktree</a> 里的分支多一个“Worktree”标签和“worktree 中 3 个文件”</td></tr>
 <tr><th scope="row">程序和命令</th><td>运行中的 shell 调用、随运行中断的 shell 调用、所有后台程序。运行中在前，其余按新到旧；每次 20 条。<code translate="no">agent</code> 调用不在这里。</td><td>“命令 · 运行中 · 12 秒”；“命令 · 已中断 · 昨天”（灰色）；“45 / 100 samples · 3.4/s”；“已完成 · 10 / 10 epochs · 4 分 5 秒”；“在 62 / 200 失败 · 退出码 1”</td></tr>
 <tr><th scope="row">未完成事项</th><td><a href="../../../../capabilities/agents.zh.html#未完成事项">未完成事项</a>，每项一行；完成后离开总览</td><td>“未完成 · &lt;时间&gt;”</td></tr>
 <tr><th scope="row">定时任务</th><td>从本对话设置的 Scheduler 任务、提醒和 webhook（任务或其签名规格的 <code translate="no">session_id</code>），新的在前</td><td>“Webhook · 被调用时”；“循环 · 0 9 * * 1-5 · 检查结果变化时”</td></tr>
 </tbody>
 </table>
 <p class="note">状态词：运行中、已完成、失败、已取消、已中断、等你回答、等你授权。静止的行只显示时间。调用和程序在读取执行之后才归位，不会闪现成无主；未列出的算主代理的。</p>
+
+<details id="agent-roster">
+<summary>代理下面的助手</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">组头</th><td>“Agents · $0.14”：助手一共花了多少，只算价格已知的。有助手在进行时显示“全部停止”，取消每个最上层的助手，停止会传到它启动的助手。</td></tr>
+<tr><th scope="row">行</th><td>头像、名字、状态徽章，右侧是它整棵子树的成本；悬停显示成本、token 和工具调用数。一行放不下时先去掉成本，再截短名字。每深一层缩进 16。点击在聊天里显示它的对话，和它卡片上的“切换”一样。</td></tr>
+<tr><th scope="row">徽章</th><td>正在运行（实底，圆点呼吸）；等你授权、等你回答、无进展（描边，黄色圆点）；失败（红色）；等待中（排队等空位）和空闲（描边，弱化）。正在运行和等读者处理来自执行和聊天里未答的卡片，立即生效；无进展、排队、被限制停止来自名单读取。</td></tr>
+<tr><th scope="row">列出</th><td>正在进行、需要读者或失败的助手。已完成的助手只在它下面还有列出的助手时保留。</td></tr>
+<tr><th scope="row">“N 个已完成”</th><td>最后一行。原地展开成已完成的助手，每次 50 个，各带“空闲”和成本。</td></tr>
+<tr><th scope="row">“→ 名字”</th><td>发给另一个代理、还没答复的消息；对方开始处理前是“等待中”。点击打开那个对话。</td></tr>
+<tr><th scope="row">折叠</th><td>代理名字后的箭头，或在它的行上按左右键，收起和展开它的助手；在助手行上按左键收起整组，焦点回到代理的行。用键盘走到的行显示悬停时的底色。收起后这一行显示还在进行的助手数，红色计数保留。按对话和代理保存在本浏览器（<code translate="no">lib/prefs/activity-view.ts</code> 的 <code translate="no">foldedAgents</code>）。</td></tr>
+<tr><th scope="row">高度</th><td>名单在 360 像素内滚动，下面的组不被推走</td></tr>
+<tr><th scope="row">读取</th><td>面板显示时读 <code translate="no">GET /api/session/{id}/activity/roster</code>：进入时、收到 <code translate="no">op:execution-update</code> 和 <code translate="no">op:job-status</code> 时（每秒至多一次），以及每 30 秒</td></tr>
+</tbody>
+</table>
+</details>
 
 <details>
 <summary>列表里的程序</summary>
@@ -253,7 +271,7 @@
 
 <details>
 <summary>代码</summary>
-<p><code translate="no">apps/web/components/right-sidebar/running/running-panel.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/activity-page.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/use-page-slide.ts</code>、<code translate="no">apps/web/components/right-sidebar/running/sideways.ts</code>、<code translate="no">apps/web/components/right-sidebar/running/activity-page-row.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/activity-page-geometry.ts</code>、<code translate="no">apps/web/components/right-sidebar/running/activity-run-wording.ts</code>、<code translate="no">apps/web/components/right-sidebar/running/run-list.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/run-insides.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/sub-agent-row.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/execution-controls.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/program-page.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/command-page.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/scheduled-task-page.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/open-work-page.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/always-on-row.tsx</code>、<code translate="no">apps/web/lib/net/execution/activity-runs-client.ts</code>、<code translate="no">apps/web/lib/execution/activity-model.ts</code>、<code translate="no">apps/web/lib/prefs/activity-view.ts</code>、<code translate="no">apps/web/lib/chat/conversation-work.ts</code>、<code translate="no">openprogram/runtime/execution/activity_calls.py</code>、<code translate="no">openprogram/runtime/execution/activity_runs.py</code>、<code translate="no">openprogram/interfaces/server/routes/execution/activity_runs.py</code>、<code translate="no">openprogram/interfaces/server/routes/execution/conversation_work.py</code></p>
+<p><code translate="no">apps/web/components/right-sidebar/running/running-panel.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/agent-roster.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/use-agent-roster.ts</code>、<code translate="no">apps/web/lib/execution/agent-roster.ts</code>、<code translate="no">apps/web/components/right-sidebar/running/activity-page.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/use-page-slide.ts</code>、<code translate="no">apps/web/components/right-sidebar/running/sideways.ts</code>、<code translate="no">apps/web/components/right-sidebar/running/activity-page-row.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/activity-page-geometry.ts</code>、<code translate="no">apps/web/components/right-sidebar/running/activity-run-wording.ts</code>、<code translate="no">apps/web/components/right-sidebar/running/run-list.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/run-insides.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/sub-agent-row.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/execution-controls.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/program-page.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/command-page.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/scheduled-task-page.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/open-work-page.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/always-on-row.tsx</code>、<code translate="no">apps/web/lib/net/execution/activity-runs-client.ts</code>、<code translate="no">apps/web/lib/execution/activity-model.ts</code>、<code translate="no">apps/web/lib/prefs/activity-view.ts</code>、<code translate="no">apps/web/lib/chat/conversation-work.ts</code>、<code translate="no">openprogram/runtime/execution/activity_calls.py</code>、<code translate="no">openprogram/runtime/execution/activity_runs.py</code>、<code translate="no">openprogram/interfaces/server/routes/execution/activity_runs.py</code>、<code translate="no">openprogram/interfaces/server/routes/execution/conversation_work.py</code></p>
 </details>
 
 <p class="next"><a href="../visual-system/indicator-dots.zh.html">状态圆点</a> · <a href="sub-agent-row.zh.html">子代理自己的对话</a></p>

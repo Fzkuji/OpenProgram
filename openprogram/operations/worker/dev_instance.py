@@ -6,8 +6,9 @@ The development instance is a runtime (port 18200,
 ``~/.openprogram-dev``) that runs whatever ``dev`` commit was deployed to
 it last, opened in ``/Applications/OpenProgram Dev.app`` on macOS or in a
 browser. Commits reach stable only by promotion: a commit that the
-development instance is serving, healthy, is fast-forwarded onto
-``stable`` and installed into the App by ``scripts/refresh-local-app.sh``.
+development instance is serving, healthy, is installed into the App by
+``scripts/refresh-local-app.sh``, which fast-forwards ``stable`` onto it
+once the new version is healthy.
 
 Both build from managed detached worktrees of the source repository, so
 neither depends on the state of a developer's checkout.
@@ -17,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import urllib.request
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -54,7 +56,11 @@ class StableBusyError(InstanceError):
 
 
 class RefreshFailedError(InstanceError):
-    """``stable`` moved, but installing it into the App failed twice."""
+    """Installing the commit into the App failed, so it was not promoted.
+
+    The refresh puts the previous App and worker back, and ``stable`` moves
+    only once the new version is healthy; the message says what runs now.
+    """
 
 
 def stable_state_dir() -> Path:
@@ -258,8 +264,10 @@ def _managed_worktree(repo: Path, path: Path, revision: str) -> Path:
 
 
 def _run(script: Path, cwd: Path, env: dict | None = None) -> None:
+    """Run ``script``; a ``None`` value in ``env`` removes that variable."""
+    merged = {**os.environ, **(env or {})}
     result = subprocess.run(["bash", str(script)], cwd=str(cwd),
-                            env={**os.environ, **(env or {})})
+                            env={key: value for key, value in merged.items() if value is not None})
     if result.returncode != 0:
         raise InstanceError(f"{script.name} failed (exit {result.returncode})")
 
@@ -365,9 +373,14 @@ def promote(revision: str | None = None, *, wait_for_stable: bool = True,
     conditions again since the wait can outlast them.
     ``wait_for_stable=False`` is for the self-update controller alone: it has
     already waited, and a repair after a failed promotion must not wait on
-    stable's work. The stable profile is backed up next. A failed refresh is
-    run once more; its installer leaves the previous App in place, so a retry
-    starts clean.
+    stable's work. The stable profile is backed up next.
+
+    ``scripts/refresh-local-app.sh`` installs ``target`` and moves ``stable``
+    itself, compare-and-swap from ``current``, only after the new worker is
+    healthy. Everything that can fail runs before it stops the old worker,
+    and a failure after that puts the previous App and worker back, so a
+    failed promotion leaves stable running what it ran before. It is not
+    retried: a second run would only repeat the same failure.
     """
     repo = source_repo()
     target, current = _promotion_target(repo, revision)
@@ -381,21 +394,35 @@ def promote(revision: str | None = None, *, wait_for_stable: bool = True,
     if archive:
         prune_promote_backups(Path(archive).parent)
 
-    # Compare-and-swap so a concurrent promotion cannot be overwritten.
-    _git(repo, "update-ref", "-m", "promote from dev", f"refs/heads/{STABLE_BRANCH}",
-         target, current or "0" * 40)
     tree = _managed_worktree(repo, stable_state_dir() / "release-source", target)
     # The development instance already built this commit; the refresh reuses
-    # that build when its recorded revision matches.
-    script, env = tree / "scripts" / "refresh-local-app.sh", {"OPENPROGRAM_PREBUILT_DIR": str(dev_artifacts_dir())}
+    # that build when its recorded revision matches. Without a session id the
+    # detached refresh is waited for, so its outcome is known here.
+    env = {"OPENPROGRAM_PREBUILT_DIR": str(dev_artifacts_dir()),
+           "OPENPROGRAM_PROMOTE_FROM": current or "",
+           "OPENPROGRAM_SESSION_ID": None}
     try:
-        _run(script, tree, env)
-    except InstanceError:
-        try:
-            _run(script, tree, env)
-        except InstanceError as exc:
-            raise RefreshFailedError(f"stable moved to {target[:10]} but the App refresh failed twice: {exc}") from exc
+        _run(tree / "scripts" / "refresh-local-app.sh", tree, env)
+    except InstanceError as exc:
+        # The refresh moves ``stable`` only once the new worker is healthy, so
+        # a failure after that (the App window not reopening) is no failed
+        # promotion: reporting one would have the self-update controller
+        # revert a commit that stable is serving.
+        if _ref(repo, STABLE_BRANCH) != target:
+            raise RefreshFailedError(f"{target[:10]} was not promoted: {exc}; {_stable_now(repo)}") from exc
+        print(f"promoted {target[:10]}, but the refresh then failed: {exc}; {_stable_now(repo)}", file=sys.stderr)
     return target
+
+
+def _stable_now(repo: Path) -> str:
+    """One line on what the stable instance runs, read from the facts."""
+    import tempfile
+
+    branch, installed = _ref(repo, STABLE_BRANCH), stable_revision()
+    state = "healthy" if healthy(STABLE_PORT) else f"not answering on port {STABLE_PORT}"
+    log = Path(tempfile.gettempdir()) / f"openprogram-refresh-{os.getuid()}.log"
+    return (f"now stable is {(branch or 'absent')[:10]} and the App runs "
+            f"{(installed or 'an unrecorded revision')[:10]}, {state}; log: {log}")
 
 
 def _promotion_target(repo: Path, revision: str | None) -> tuple[str, str | None]:

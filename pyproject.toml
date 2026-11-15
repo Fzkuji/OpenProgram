@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openprogram"
-version = "1.2.0"
+version = "1.3.0"
 description = "OpenProgram: Self-Programming AI Agent Framework"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "AGPL-3.0-or-later"}
 authors = [
-    {name = "Fzkuji"},
+    {name = "FuzzyKuji"},
 ]
 keywords = ["llm", "agentic", "agentic-programming", "self-programming", "multi-agent", "ai-agent", "agent-framework", "workflow-automation", "autonomous-agents", "ai", "function", "decorator", "context"]
 classifiers = [
@@ -233,9 +233,9 @@ all = [
 openprogram = "openprogram.interfaces.cli:main"
 
 [project.urls]
-Homepage = "https://openprogram.io/"
+Homepage = "https://fuzzykuji.github.io/openprogram-site/"
 Repository = "https://github.com/FuzzyKuji/OpenProgram"
-Documentation = "https://openprogram.io/docs/"
+Documentation = "https://fuzzykuji.github.io/openprogram-site/docs/"
 Issues = "https://github.com/FuzzyKuji/OpenProgram/issues"
 Changelog = "https://github.com/FuzzyKuji/OpenProgram/releases"
 Discussions = "https://github.com/FuzzyKuji/OpenProgram/discussions"

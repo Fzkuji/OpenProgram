@@ -35,6 +35,8 @@ export async function switchSessionAgent(sessionId: string, agentId: string): Pr
   const conv = runtimeState.conversations[sessionId];
   if (conv && selected) conv.agent_id = result.agent_id;
   const focused = useSessionStore.getState().currentSessionId === sessionId;
-  await Promise.all([loadSessionAgentSettings(sessionId), ...(focused ? [loadAgentSettings()] : [])]);
+  await Promise.all([
+    loadSessionAgentSettings(sessionId, { written: true }), ...(focused ? [loadAgentSettings()] : []),
+  ]);
   return result;
 }

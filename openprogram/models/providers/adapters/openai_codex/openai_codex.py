@@ -21,6 +21,7 @@ import asyncio
 import hashlib
 import json
 import os
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from openprogram.models.providers.streaming.budget import provider_retry_attempts
@@ -34,7 +35,7 @@ from openprogram.models.providers.shared.openai_responses import (
 from openprogram.models.providers.shared.validate_modalities import validate_input_modalities
 from openprogram.models.providers.shared.simple_options import build_base_options
 from openprogram.models.providers.utils.event_stream import EventStream
-from . import websocket_transport
+from . import auth_adapter, websocket_transport
 from .read_budget import ReadBudget, StreamIdleTimeout, StreamTotalTimeout
 from .request_compression import encode_turn
 from openprogram.models.providers.utils.http_client import (
@@ -91,73 +92,106 @@ def _is_permanent_failure(exc: Exception) -> bool:
     )
 
 
+def _pooled_codex_bearer() -> str:
+    """The current bearer of the active pooled ChatGPT login, valid before
+    it is sent: acquire_sync refreshes a stored login whose token is within
+    the skew window; ``oauth_view`` does the same for a login delegated to
+    the Codex CLI's file and adopts a newer login of the same account found
+    there. ``""`` when there is none.
+
+    A login that can no longer be refreshed raises
+    :class:`AuthNeedsReauthError`: the reply says to sign in again instead
+    of "No API key", and nothing is asked of the token endpoint again."""
+    from openprogram.models.auth.types import AuthNeedsReauthError
+    try:
+        from openprogram.models.auth.credential_provider import get_credential_provider
+        from .credentials import acquire
+        return acquire(get_credential_provider()).payload.auth_value or ""
+    except AuthNeedsReauthError:
+        raise
+    except Exception:
+        # No provider config or no credentials: the caller raises the
+        # actionable "No API key" error.
+        _log.debug("no pooled openai-codex credential", exc_info=True)
+        return ""
+
+
+def _chatgpt_account(token: str) -> str:
+    try:
+        return auth_adapter.extract_account_id(token)
+    except Exception:
+        return ""
+
+
 def _resolve_codex_bearer_token(opts_api_key: str | None) -> str:
     """Resolve the bearer token codex requests need to authorize.
 
-    Codex (ChatGPT subscription) auth has three valid sources:
-
-      1. Explicit ``api_key`` passed in opts — caller-supplied,
-         always wins.
-      2. The provider's env var (handled by ``resolve_provider_key``) —
-         covers users on a bare API key with no OAuth flow.
-      3. CredentialProvider's OAuth credential pool — covers users who ran
-         ``codex login`` (or the OpenProgram OAuth wizard) so the
-         pool has a ``CredentialData(kind="oauth").auth_value`` ready.
+      1. An ``api_key`` passed in opts. When it is a ChatGPT access token
+         (a Runtime hands its login's token to every call it makes), the
+         current token of that same account's pooled login replaces it, so
+         a call made after a refresh does not send the token the refresh
+         replaced.
+      2. The provider's stored API key (``resolve_provider_key``).
+      3. The pooled OAuth login (:func:`_pooled_codex_bearer`).
 
     Returns ``""`` when nothing yields a usable token, so the caller
-    can raise the same "No API key for provider" error as before.
-    Pre-fix: only sources 1 and 2 were checked, so OAuth users —
-    despite a populated ``~/.openprogram/auth/openai-codex/default.json``
-    — got the error the moment a stream started.
+    raises "No API key for provider".
     """
     if opts_api_key:
-        return opts_api_key
+        account = _chatgpt_account(opts_api_key)
+        if not account:
+            return opts_api_key
+        current = _pooled_codex_bearer()
+        return current if current and _chatgpt_account(current) == account else opts_api_key
 
     from openprogram.models.providers.settings.env_api_keys import resolve_provider_key
     env_key = resolve_provider_key("openai-codex")
     if env_key:
         return env_key
-
-    # Try the OAuth pool. acquire_sync auto-refreshes if the token is
-    # within the skew window, so we never serve a stale access_token.
-    # Read the bearer via the canonical resolver (``auth_value``), NOT the
-    # raw ``payload.access_token`` attribute: OAuth credentials carry the
-    # live bearer in ``auth_value`` (``access_token`` is often None after a
-    # refresh/re-login rewrites the payload), which silently broke codex —
-    # and chatgpt-subscription, which routes through this same resolver.
-    try:
-        from openprogram.models.auth.credential_provider import get_credential_provider
-        from openprogram.models.auth.resolver import resolve_connection
-        cred = get_credential_provider().acquire_sync("openai-codex")
-        conn = resolve_connection(cred)
-        if conn and conn.auth_value:
-            return conn.auth_value
-    except Exception:
-        # CredentialProvider raises when no provider config is registered or
-        # no credentials exist. Both are recoverable — fall through to
-        # the empty-string return so the caller's check fires the same
-        # actionable error message.
-        _log.debug("no pooled openai-codex credential", exc_info=True)
-
-    return ""
+    return _pooled_codex_bearer()
 
 
 def _refresh_rejected_token(rejected: str) -> str:
     """The backend answered 401 to a pooled OAuth token before its recorded
-    expiry (the session was revoked or rotated elsewhere). Refresh that
-    credential once, as the Codex CLI does on 401, and return the new bearer;
-    ``""`` when the token is not ours or no fresher one can be had."""
+    expiry (the session was revoked or rotated elsewhere). Refresh the login
+    that token came from once, as the Codex CLI does on 401, and return the
+    new bearer; ``""`` when the token is not ours or no fresher one can be
+    had.
+
+    A stored ``oauth`` login is refreshed through CredentialProvider (which
+    adopts a newer login of the same account from the Codex CLI's file). A
+    login delegated to that file is refreshed in the file itself; a refused
+    refresh token marks it as needing sign-in."""
+    from openprogram.models.auth.types import AuthNeedsReauthError
     try:
         from openprogram.models.auth.credential_provider import get_credential_provider
         from openprogram.models.auth.store import get_store
         manager = get_credential_provider()
-        for pool in get_store().list_pools():
-            if pool.provider_id != "openai-codex":
-                continue
+        pools = [p for p in get_store().list_pools() if p.provider_id == "openai-codex"]
+        for pool in pools:
             for cred in pool.credentials:
-                if cred.payload.auth_value == rejected:
+                if cred.kind == "oauth" and cred.payload.auth_value == rejected:
                     fresh = manager.force_refresh_sync(cred).payload.auth_value
                     return fresh if fresh and fresh != rejected else ""
+        for pool in pools:
+            for cred in pool.credentials:
+                if cred.kind != "cli_delegated":
+                    continue
+                path = (cred.payload.data or {}).get("store_path")
+                shared = auth_adapter.read_shared_login(Path(path) if path else None)
+                if shared and shared["access_token"] == rejected:
+                    from .credentials import refresh_delegated
+                    fresh = refresh_delegated(cred, rejected, manager)
+                    return fresh if fresh and fresh != rejected else ""
+        # An older token of a login that has been refreshed since: answer
+        # the login's current one.
+        current = _pooled_codex_bearer()
+        account = _chatgpt_account(rejected)
+        if current and current != rejected and account and _chatgpt_account(current) == account:
+            return current
+    except AuthNeedsReauthError as exc:
+        # The login is marked as needing sign-in; the caller surfaces the 401.
+        _log.warning("openai-codex: %s", exc)
     except Exception:
         # The caller surfaces the original 401 when no fresher token exists.
         _log.warning("openai-codex token refresh after 401 failed", exc_info=True)
@@ -214,7 +248,9 @@ def stream_openai_codex_responses(
 
         # --- Prep that's identical across retry attempts ----------
         try:
-            api_key = _resolve_codex_bearer_token(opts.get("api_key"))
+            # Reads (and may refresh) the stored login and the Codex CLI's
+            # file under a cross-process lock: never on the event loop.
+            api_key = await asyncio.to_thread(_resolve_codex_bearer_token, opts.get("api_key"))
             if not api_key:
                 raise ValueError(f"No API key for provider: {model.provider}")
             base_url = getattr(model, "base_url", None) or _DEFAULT_CODEX_BASE_URL
@@ -431,6 +467,7 @@ def stream_openai_codex_responses(
                 content, encoding_headers = encode_turn(
                     request_body, chatgpt_sign_in=_chatgpt_sign_in(base_url, headers)
                 )
+                resend = False
                 try:
                     async with client.stream(
                         "POST",
@@ -447,18 +484,17 @@ def stream_openai_codex_responses(
                             except Exception:
                                 err_text = repr(error_text_bytes)
                             if response.status_code == 401 and not token_refreshed:
+                                # A token the backend no longer accepts: refresh
+                                # its login once and send the same request again
+                                # at once. This is not a transport retry, so it
+                                # neither waits nor spends the retry budget.
                                 token_refreshed = True
                                 rejected = headers["Authorization"].removeprefix("Bearer ")
                                 fresh = await asyncio.to_thread(_refresh_rejected_token, rejected)
                                 if fresh:
                                     headers["Authorization"] = f"Bearer {fresh}"
-                                    raise ProviderStreamError(
-                                        f"HTTP 401: {err_text}",
-                                        http_status=401,
-                                        error_text=err_text,
-                                        retryable=True,
-                                        provider=model.provider,
-                                    )
+                                    resend = True
+                        if not resend and response.status_code not in (200, 201):
                             raise ProviderStreamError(
                                 f"HTTP {response.status_code}: {err_text}",
                                 http_status=response.status_code,
@@ -470,11 +506,14 @@ def stream_openai_codex_responses(
                                 provider=model.provider,
                             )
 
-                        sse_events = _parse_sse_stream(response, signal=_sig)
-                        await _consume(sse_events)
+                        if not resend:
+                            sse_events = _parse_sse_stream(response, signal=_sig)
+                            await _consume(sse_events)
                 finally:
                     if private_client:
                         await client.aclose()
+                if resend:
+                    await _http_turn()
 
             async def _attempt() -> None:
                 nonlocal attempt_number
@@ -567,7 +606,9 @@ def stream_simple_openai_codex_responses(
 ) -> EventStream:
     """Simple interface for OpenAI Codex Responses streaming."""
     explicit_key = getattr(options, "api_key", None) if options else None
-    api_key = _resolve_codex_bearer_token(explicit_key)
+    # A caller's key passes through as is: the stream swaps it for its
+    # login's current token off the event loop, where a refresh may wait.
+    api_key = explicit_key or _resolve_codex_bearer_token(None)
     if not api_key:
         raise ValueError(f"No API key for provider: {model.provider}")
 

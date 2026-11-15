@@ -185,20 +185,12 @@ async def aiter_event_stream(ev_stream):
 
 
 def extract_text(msg) -> str:
-    """Pull plain text out of an AssistantMessage's content list."""
+    """One AssistantMessage's flat text (``reply_text``: passages a tool
+    call or reasoning came between are a blank line apart)."""
     if msg is None:
         return ""
-    content = getattr(msg, "content", None)
-    if isinstance(content, str):
-        return content
-    if not content:
-        return ""
-    parts: list[str] = []
-    for c in content:
-        ctype = getattr(c, "type", None)
-        if ctype == "text":
-            parts.append(getattr(c, "text", "") or "")
-    return "".join(parts)
+    from openprogram.state.reply_text import reply_text
+    return reply_text(getattr(msg, "content", None))
 
 
 def extract_usage(msg) -> dict:

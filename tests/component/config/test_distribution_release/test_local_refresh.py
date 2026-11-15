@@ -42,7 +42,7 @@ def test_local_app_refresh_detaches_before_stopping_worker() -> None:
     )
     detach_at = refresh.index('start_new_session=True')
     lock_at = refresh.index('fcntl.flock(lock, fcntl.LOCK_EX)')
-    stop_at = refresh.index('"$local_python" -m openprogram worker stop')
+    stop_at = refresh.index('step "stopping the worker"')
     assert "OPENPROGRAM_REFRESH_DETACHED" in refresh
     assert '["bash", sys.argv[1], *sys.argv[2:]]' in refresh
     assert "OPENPROGRAM_SESSION_ID" in refresh
@@ -57,7 +57,7 @@ def test_local_app_refresh_reuses_a_matching_dev_build() -> None:
     assert '"$(cat "$prebuilt_dir/revision" 2>/dev/null)" = "$build_revision"' in refresh
     reuse = refresh.index('if test -n "$prebuilt_wheel"; then')
     assert reuse < refresh.index('$build_nice "$repo_root/scripts/release/stage-release-assets.sh"')
-    assert reuse < refresh.index('stamp "quitting the App"')
+    assert reuse < refresh.index('step "quitting the App"')
     assert 'printf \'%s\\n\' "$revision" > "$artifacts.incoming/revision"' in dev
     assert 'mv "$artifacts.incoming" "$artifacts"' in dev
     # Builds run beside the open App at a lower priority.
@@ -68,15 +68,19 @@ def test_local_app_refresh_reopens_app_after_quit() -> None:
     refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
         encoding="utf-8"
     )
-    quit_at = refresh.index(
-        'osascript -e \'tell application id "ai.openprogram.desktop" to quit\''
-    )
     open_at = refresh.index('open -a "$app_path"')
     wait_at = refresh.index(
         'pgrep -f "^${app_path}/Contents/MacOS/OpenProgram( |$)"', open_at
     )
     fail_at = refresh.index("OpenProgram did not reopen after the refresh", wait_at)
-    assert quit_at < open_at < wait_at < fail_at
+    quit_at = refresh.index(
+        'osascript -e \'tell application id "ai.openprogram.desktop" to quit\''
+    )
+    commit_at = refresh.index("committed=1\n", quit_at)
+    assert open_at < wait_at < fail_at < quit_at
+    # The new App reopens once committed; a restored one from finish_refresh.
+    assert refresh.index("reopen_app\n", commit_at) > commit_at
+    assert "app_ready_for_reopen=1" in refresh[refresh.index("finish_refresh() {"):quit_at]
 
 
 
@@ -84,25 +88,17 @@ def test_local_app_refresh_restarts_worker_after_runtime_install() -> None:
     refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
         encoding="utf-8"
     )
-    install = refresh.index('"$app_python" -I -m pip install')
-    stops = [
-        match.start()
-        for match in re.finditer(
-            r'"\$app_python" -I -B -m openprogram worker (?:install|stop)', refresh
-        )
-    ]
-    health = refresh.index(
-        'http://127.0.0.1:18100/healthz', install
-    )
-    assert any(install < stop < health for stop in stops)
-    final_window = refresh[install:health]
+    install = refresh.index('"$staged_python" -I -m pip install')
+    stop = refresh.index('"$app_python" -I -B -m openprogram worker stop >/dev/null\n')
+    switch = refresh.index('mv "$staged_app" "$app_path"')
+    start = refresh.index("start_worker\n", switch)
+    health = refresh.index("wait_for_health\n", start)
+    assert install < stop < switch < start < health
     assert "scripts/release/pack-desktop-archive.sh" in refresh
-    assert (
-        '"$app_python" -I -B -m openprogram worker stop >/dev/null 2>&1\n'
-        in final_window
-    )
-    assert '"$app_python" -I -B -m openprogram worker install\n' in final_window
-    assert "worker stop >/dev/null 2>&1 || true" not in final_window
+    starter = refresh[refresh.index("start_worker() {"):refresh.index("wait_for_health() {")]
+    assert '"$app_python" -I -B -m openprogram worker stop >/dev/null 2>&1 || return\n' in starter
+    assert '"$app_python" -I -B -m openprogram worker install\n' in starter
+    assert "http://127.0.0.1:18100/healthz" in refresh[refresh.index("wait_for_health() {"):install]
 
 
 
@@ -110,9 +106,9 @@ def test_local_app_refresh_hydrates_embedded_runtime_dependencies() -> None:
     refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
         encoding="utf-8"
     )
-    hydrate = refresh.index('hydrate_wheel_dependencies "$app_python"')
+    hydrate = refresh.index('hydrate_wheel_dependencies "$staged_python"')
     reinstall = refresh.index(
-        '"$app_python" -I -m pip install --disable-pip-version-check'
+        '"$staged_python" -I -m pip install --disable-pip-version-check'
     )
     assert hydrate < reinstall
     assert '--force-reinstall "$wheel"' in refresh[reinstall:]
@@ -141,8 +137,8 @@ def test_local_app_refresh_bundles_no_programs() -> None:
         in refresh
     )
     snapshot = refresh.index('cp "$product_runtime_config" "$product_runtime_stage"')
-    validate = refresh.index('"$runtime_root/bin/verify-product-runtime.py" "$runtime_root"')
-    install = refresh.index('cp "$product_runtime_stage" "$installed_product_runtime"')
+    validate = refresh.index('"$staged_runtime/bin/verify-product-runtime.py" "$staged_runtime"')
+    install = refresh.index('cp "$product_runtime_stage" "$staged_runtime/product-runtime.json"')
     assert snapshot < install < validate
 
 
@@ -151,8 +147,8 @@ def test_local_app_refresh_installs_the_app_icon_before_signing() -> None:
         encoding="utf-8"
     )
     stage = refresh.index('cp "$repo_root/apps/desktop/build/icon.icns" "$runtime_assets_stage/icon.icns"')
-    install = refresh.index('cp "$runtime_assets_stage/icon.icns" "$app_path/Contents/Resources/icon.icns"')
-    sign = refresh.index('"$repo_root/scripts/release/local-macos-signing.py" sign --app "$app_path"')
+    install = refresh.index('cp "$runtime_assets_stage/icon.icns" "$staged_app/Contents/Resources/icon.icns"')
+    sign = refresh.index('"$repo_root/scripts/release/local-macos-signing.py" sign --app "$staged_app"')
     touch = refresh.index('touch "$app_path"')
     assert stage < install < sign < touch
 
@@ -162,12 +158,14 @@ def test_local_app_refresh_removes_stale_package_layout_before_install() -> None
         encoding="utf-8"
     )
 
-    cleanup = refresh.index('remove_stale_package_tree "$local_python"')
-    install = refresh.index('"$local_python" -m pip install')
-    local_check = refresh.index('validate_stale_package_tree "$local_python"')
-    app_check = refresh.index('validate_stale_package_tree "$app_python"')
-
-    assert local_check < app_check < cleanup < install
+    for python, install_command in (
+        ("$staged_python", '"$staged_python" -I -m pip install'),
+        ("$local_python", '"$local_python" -m pip install'),
+    ):
+        check = refresh.index(f'validate_stale_package_tree "{python}"')
+        cleanup = refresh.index(f'remove_stale_package_tree "{python}"')
+        install = refresh.index(install_command)
+        assert check < cleanup < install
     assert "remove-stale-openprogram-packages.py" in refresh
 
 
@@ -580,10 +578,11 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
     assert not mutation_log.exists()
     assert installed_asar.read_bytes() == b"original-asar"
 
+    # Interrupted while the new App is signed beside the installed one.
     signal_ready = tmp_path / "signal-ready"
-    fake_pgrep = fake_bin / "pgrep"
+    fake_codesign = fake_bin / "codesign"
     executables.write(
-        fake_pgrep,
+        fake_codesign,
         "#!/bin/sh\n"
         'touch "$SIGNAL_READY"\n'
         "sleep 30\n"
@@ -605,7 +604,7 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
     while not signal_ready.exists() and interrupted.poll() is None:
         if time.monotonic() >= deadline:
             interrupted.kill()
-            raise AssertionError("refresh did not acquire the install lock")
+            raise AssertionError("refresh did not reach signing")
         time.sleep(0.02)
     os.killpg(interrupted.pid, signal.SIGTERM)
     stdout, stderr = interrupted.communicate(timeout=SCRIPT_TIMEOUT)
@@ -615,6 +614,7 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
     assert not mutation_log.exists()
     assert installed_asar.read_bytes() == b"original-asar"
     assert not lock_file.exists()
+    assert not list(app.parent.glob(".openprogram-refresh.*"))
 
     local_python.write_text(
         "#!/bin/sh\n"
@@ -626,7 +626,7 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         "esac\n",
         encoding="utf-8",
     )
-    fake_pgrep.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    fake_codesign.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
     fake_open = fake_bin / "open"
     executables.write(fake_open, "#!/bin/sh\nexit 0\n")
     fake_curl = fake_bin / "curl"
@@ -800,8 +800,11 @@ def test_default_local_refresh_requires_committed_source_before_mutation(
     mutation_log = Path(env["MUTATION_LOG"])
     assert result.returncode != 0  # Native runtime actions are deliberately fake.
     if change in {"clean", "committed_during_build"} or target_alias == "custom":
-        assert mutation_log.exists(), output
-        assert "openprogram worker stop" in mutation_log.read_text(), output
+        # Past every gate the new App is assembled beside the installed one;
+        # the fake App fails real signing there, before anything is stopped.
+        assert "assembling the new App beside the installed one" in output, output
+        assert "nothing was stopped or replaced" in output, output
+        assert not mutation_log.exists(), output
         assert "refusing to refresh the default App" not in output
         assert len(build_log.read_text().splitlines()) == (2 if change == "committed_during_build" else 1)
     elif change == "locked":
@@ -821,6 +824,7 @@ def test_default_local_refresh_requires_committed_source_before_mutation(
             assert not build_log.exists()
     assert {str(p.relative_to(app)): p.read_bytes()
             for p in app.rglob("*") if p.is_file()} == installed_before
+    assert not list(app.parent.glob(".openprogram-refresh.*"))
     if change == "locked":
         assert lock_file.read_text() == f"{os.getpid()}\n"
     else:
@@ -830,6 +834,9 @@ def test_default_local_refresh_requires_committed_source_before_mutation(
     } else initial_head)
 
 
+PREVIOUS_REVISION = "previous-revision-of-the-app"
+
+
 def _prepare_completion_refresh_fixture(
     tmp_path: Path, executables: ExecutablePool, *, service: bool,
 ):
@@ -837,7 +844,7 @@ def _prepare_completion_refresh_fixture(
     env["OPENPROGRAM_REFRESH_DETACHED"] = "1"
     fake_bin = tmp_path / "fake-bin"
     # Keep the public script/build/version gates; replace external build,
-    # signing, launch and process tools, never touching the installed App.
+    # signing, launch and process tools, never touching a real App or worker.
     uv = Path(env["OPENPROGRAM_UV_BIN"])
     uv.write_text(uv.read_text().replace("0.6.1", "0.6.6"))
     local = Path(env["OPENPROGRAM_LOCAL_PYTHON"])
@@ -852,21 +859,33 @@ def _prepare_completion_refresh_fixture(
         'printf "local %s\\n" "$*" >> "$MUTATION_LOG"\n'
     )
     (app / "Contents/Frameworks").mkdir()
+    (app / "Contents/Resources/openprogram-source-revision").write_text(PREVIOUS_REVISION + "\n")
+    # The embedded interpreter tells the previous App from the new one by the
+    # source revision beside it, so a failure can be made the new version's.
     embedded = app / "Contents/Resources/runtime/python/bin/python3"
     executables.write(
         embedded,
         '#!/bin/sh\nset -eu\n'
         'case "$*" in *"m.version"*) echo 0.6.6; exit 0 ;; esac\n'
-        'printf "embedded %s\\n" "$*" >> "$MUTATION_LOG"\n'
+        'case "$*" in *verify-product-runtime.py*) exit "${VERIFY_RC:-0}" ;; esac\n'
+        'revision=$(sed -n 1p "$(dirname "$0")/../../../openprogram-source-revision" 2>/dev/null || :)\n'
+        'role=new; test "$revision" != "$PREVIOUS_REV" || role=previous\n'
+        'printf "%s %s\\n" "$role" "$*" >> "$MUTATION_LOG"\n'
+        'fail() { test "$role" = previous || exit "$1"; exit 0; }\n'
         'case "$*" in\n'
-        ' *"worker install"*) exit "${INSTALL_RC:-0}" ;;\n'
+        ' *"worker install"*|*"worker start"*) echo "$role" > "$WORKER_ROLE"; '
+        'echo "${OPENPROGRAM_PROMOTE_FROM-unset}" > "$WORKER_ROLE.promote"; fail "${INSTALL_RC:-0}" ;;\n'
         ' *"-I -B - "*) body=$(cat); '
-        'case "$body" in *current_worker_pid*) exit "${OWNER_RC:-0}" ;; esac ;;\n'
+        'case "$body" in *current_worker_pid*) fail "${OWNER_RC:-0}" ;; esac ;;\n'
         'esac\nexit 0\n'
 ,
     )
     for name, body in {
-        "curl": 'printf "%s\\n" "$*" >> "$PROBE_ARGS"; n=0; test ! -f "$PROBE_COUNT" || n=$(cat "$PROBE_COUNT"); '
+        # The health endpoint answers for the worker that was started last.
+        "curl": 'printf "%s\\n" "$*" >> "$PROBE_ARGS"; role=$(cat "$WORKER_ROLE" 2>/dev/null || echo none); '
+                'test "$role" != none || exit 7; '
+                'test "$role" = new || exit "${PREVIOUS_HEALTH_RC:-0}"; '
+                'n=0; test ! -f "$PROBE_COUNT" || n=$(cat "$PROBE_COUNT"); '
                 'n=$((n+1)); echo "$n" > "$PROBE_COUNT"; '
                 'test "$n" -ge "${HEALTH_AFTER:-1}" || exit 7\n',
         "sleep": 'exec /bin/sleep 0.01\n',
@@ -879,7 +898,10 @@ def _prepare_completion_refresh_fixture(
         p = fake_bin / name
         executables.write(p, "#!/bin/sh\n" + body)
     env.update(PROBE_COUNT=str(tmp_path / "probes"), PROBE_ARGS=str(tmp_path / "probe-args"), OPEN_LOG=str(tmp_path / "opens"),
-               OPENED=str(tmp_path / "opened"))
+               OPENED=str(tmp_path / "opened"), WORKER_ROLE=str(tmp_path / "worker-role"),
+               PREVIOUS_REV=PREVIOUS_REVISION)
+    # The previous worker is serving when the refresh begins.
+    Path(env["WORKER_ROLE"]).write_text("previous\n")
     if service:
         plist = Path(env["HOME"]) / "Library/LaunchAgents/ai.openprogram.worker.plist"
         plist.parent.mkdir(parents=True)
@@ -887,53 +909,87 @@ def _prepare_completion_refresh_fixture(
     return repo, app, env
 
 
+def _app_files(app: Path) -> dict[str, bytes]:
+    return {str(p.relative_to(app)): p.read_bytes() for p in app.rglob("*") if p.is_file()}
+
+
+def _shorten_health_wait(script: Path) -> None:
+    source = script.read_text()
+    shortened, replaced = re.subn(r"^health_timeout=\d+$", "health_timeout=1", source, flags=re.M)
+    assert replaced == 1
+    script.write_text(shortened)
+
+
+# What each case breaks, its exit status, and how the refresh ends:
+# "staging" fails before anything is stopped, "restored" puts the previous
+# App and worker back, "new" keeps the healthy new version.
+COMPLETION_CASES = {
+    "delayed": ({"HEALTH_AFTER": "56"}, 0, "new"),
+    "timeout": ({"HEALTH_AFTER": "999999"}, 7, "restored"),
+    "timeout_open_failure": ({"HEALTH_AFTER": "999999", "OPEN_RC": "42"}, 7, "restored"),
+    "owner_failure": ({"OWNER_RC": "23"}, 23, "restored"),
+    "install_failure": ({"INSTALL_RC": "29"}, 29, "restored"),
+    "sign_failure": ({"SIGN_RC": "31"}, 31, "staging"),
+    "verify_failure": ({"VERIFY_RC": "17"}, 17, "staging"),
+    "open_failure": ({"OPEN_RC": "42"}, 42, "new"),
+    "restore_failure": ({"HEALTH_AFTER": "999999", "PREVIOUS_HEALTH_RC": "7"}, 7, "broken"),
+}
+
+
 @POSIX_SHELL_INTEGRATION
 @pytest.mark.parametrize(("case", "service"), [
-    ("delayed", True), ("delayed", False), ("timeout", True),
-    ("timeout_open_failure", True), ("owner_failure", True),
-    ("sign_failure", True), ("install_failure", True), ("open_failure", True),
+    ("delayed", True), ("delayed", False), ("timeout", True), ("timeout", False),
+    *[(case, True) for case in COMPLETION_CASES if case not in {"delayed", "timeout"}],
 ])
-def test_local_refresh_completion_preserves_failure_and_reopens_verified_app(
+def test_local_refresh_completion_preserves_failure_and_restores_the_previous_version(
     tmp_path: Path, executables: ExecutablePool, case: str, service: bool,
 ) -> None:
     repo, app, env = _prepare_completion_refresh_fixture(tmp_path, executables, service=service)
     script = repo / "scripts/refresh-local-app.sh"
-    if case == "delayed":
-        # The old script has only 50 retries plus a final probe.
-        env["HEALTH_AFTER"] = "56"
-    elif case.startswith("timeout"):
-        env["HEALTH_AFTER"] = "999999"
-        source = script.read_text()
-        shortened, replaced = re.subn(r"^health_timeout=\d+$", "health_timeout=1", source, flags=re.M)
-        assert replaced == 1
-        script.write_text(shortened)
-        if case == "timeout_open_failure":
-            env["OPEN_RC"] = "42"
-    elif case == "owner_failure":
-        env["OWNER_RC"] = "23"
-    elif case == "sign_failure":
-        env["SIGN_RC"] = "31"
-    elif case == "install_failure":
-        env["INSTALL_RC"] = "29"
-    else:
-        env["OPEN_RC"] = "42"
+    breaks, expected, outcome = COMPLETION_CASES[case]
+    env.update(breaks)
+    if "HEALTH_AFTER" in breaks and breaks["HEALTH_AFTER"] == "999999":
+        _shorten_health_wait(script)
+    before = _app_files(app)
     result = subprocess.run(
         ["bash", str(script)], env=env, capture_output=True, text=True, timeout=SCRIPT_TIMEOUT,
     )
     output = result.stdout + result.stderr
-    expected = {"delayed": 0, "timeout": 7, "timeout_open_failure": 7,
-                "owner_failure": 23, "sign_failure": 31,
-                "install_failure": 29, "open_failure": 42}[case]
     assert result.returncode == expected, output
+    calls = Path(env["MUTATION_LOG"]).read_text().splitlines() if Path(env["MUTATION_LOG"]).exists() else []
+    starts = [c for c in calls if c.endswith(("-I -B -m openprogram worker install",
+                                               "-I -B -m openprogram worker start"))]
+    start = "worker install" if service else "worker start"
     opens = Path(env["OPEN_LOG"])
-    if case == "sign_failure":
+    leftovers = list(app.parent.glob(".openprogram-refresh.*"))
+    if outcome == "staging":
+        # Signing and verification run on the copy beside the App: the old
+        # worker was never stopped and the installed App is byte-identical.
+        assert not any("worker" in call for call in calls), output
+        assert _app_files(app) == before
+        assert not opens.exists(), output
+        assert "nothing was stopped or replaced, so the previous version (previous-r) is still running" in output
+        assert not leftovers
+    elif outcome == "restored":
+        assert starts == [f"new -I -B -m openprogram {start}", f"previous -I -B -m openprogram {start}"], output
+        assert _app_files(app) == before
+        assert Path(env["WORKER_ROLE"]).read_text().strip() == "previous"
+        assert "the previous version (previous-r) is running again" in output
+        # The previous App reopens behind what the user is doing.
+        assert opens.read_text().splitlines() == [f"-g -a {app}"], output
+        assert not leftovers
+    elif outcome == "broken":
+        assert "restoring the previous version failed while waiting for the previous worker to answer" in output
+        # The previous App is back in place; the files of the attempt are kept.
+        assert _app_files(app) == before
+        assert len(leftovers) == 1 and str(leftovers[0]) in output
         assert not opens.exists(), output
     else:
-        # Nobody was in the App when the refresh closed it, so it reopens behind what they are doing.
+        assert starts == [f"new -I -B -m openprogram {start}"], output
+        assert (app / "Contents/Resources/openprogram-source-revision").read_text().strip() != PREVIOUS_REVISION
+        assert Path(env["WORKER_ROLE"]).read_text().strip() == "new"
         assert opens.read_text().splitlines() == [f"-g -a {app}"], output
-    calls = Path(env["MUTATION_LOG"]).read_text().splitlines()
-    assert sum("embedded -I -B -m openprogram worker install" == c for c in calls) == int(service and case != "sign_failure")
-    assert sum("embedded -I -B -m openprogram worker start" == c for c in calls) == int(not service and case != "sign_failure")
+        assert not leftovers
     args_file = Path(env["PROBE_ARGS"])
     if args_file.exists():
         for probe in args_file.read_text().splitlines():
@@ -944,8 +1000,167 @@ def test_local_refresh_completion_preserves_failure_and_reopens_verified_app(
         assert str(Path(env["HOME"]) / ".openprogram/worker.log") in output
     if "open_failure" in case:
         assert "OpenProgram did not reopen after the refresh" in output
+    if case == "open_failure":
+        assert "is installed and its worker is healthy" in output
     assert not (app.parent / ".openprogram-app-install.lock").exists()
     assert not list(Path(env["TMPDIR"]).glob("openprogram-local-wheel.*"))
+
+
+def _prepare_promotion_refresh_fixture(tmp_path: Path, executables: ExecutablePool):
+    """A refresh run by `openprogram dev promote`: a real Git repository whose
+    `stable` is one commit behind the checked-out commit to promote."""
+    repo, app, env = _prepare_completion_refresh_fixture(tmp_path, executables, service=True)
+    script = repo / "scripts/refresh-local-app.sh"
+    # Remap only the canonical App path in the copied public script.
+    script.write_text(script.read_text().replace('"/Applications/OpenProgram.app"', f'"{app}"'))
+    (tmp_path / "fake-bin/git").unlink()
+    # Builds a wheel without touching the source, so the checkout stays clean.
+    Path(env["OPENPROGRAM_UV_BIN"]).write_text(
+        "#!/bin/sh\nset -eu\n"
+        'case "${1:-}" in export) while [ "$#" -gt 0 ]; do '
+        'if [ "$1" = "--output-file" ]; then : > "$2"; fi; shift; done; exit 0 ;; '
+        'pip) exit 0 ;; esac\n'
+        'out=; while [ "$#" -gt 0 ]; do '
+        'if [ "$1" = "--out-dir" ]; then out="$2"; shift 2; else shift; fi; done\n'
+        'mkdir -p "$out"\n'
+        'exec "$REAL_PYTHON" - "$out/openprogram-0.6.6-py3-none-any.whl" <<\'PYWHEEL\'\n'
+        "import sys, zipfile\n"
+        "with zipfile.ZipFile(sys.argv[1], 'w') as z:\n"
+        " z.writestr('openprogram-0.6.6.dist-info/METADATA', "
+        "'Metadata-Version: 2.1\\nName: openprogram\\nVersion: 0.6.6\\n')\n"
+        " z.writestr('openprogram/interfaces/server/_frontend/chat.html', "
+        "'<body><div id=\"sidebar\"></div></body>')\n"
+        "PYWHEEL\n"
+    )
+
+    def git(*args: str) -> str:
+        return subprocess.check_output(
+            ["git", "-C", str(repo), *args], text=True,
+            env=os.environ | {"GIT_CONFIG_NOSYSTEM": "1"},
+        ).strip()
+
+    git("init", "-q", "-b", "dev")
+    git("config", "user.name", "Refresh Test")
+    git("config", "user.email", "refresh@example.invalid")
+    git("config", "commit.gpgsign", "false")
+    git("config", "core.hooksPath", "/dev/null")
+    git("add", ".")
+    git("commit", "-qm", "what stable runs")
+    stable = git("rev-parse", "HEAD")
+    git("branch", "stable")
+    (repo / "promoted.txt").write_text("promoted\n")
+    git("add", "promoted.txt")
+    git("commit", "-qm", "the commit to promote")
+    target = git("rev-parse", "HEAD")
+    env["OPENPROGRAM_PROMOTE_FROM"] = stable
+    return script, app, env, git, stable, target
+
+
+@POSIX_SHELL_INTEGRATION
+def test_a_promotion_whose_runtime_fails_verification_changes_nothing(
+    tmp_path: Path, executables: ExecutablePool,
+) -> None:
+    script, app, env, git, stable, target = _prepare_promotion_refresh_fixture(tmp_path, executables)
+    env["VERIFY_RC"] = "1"
+    before = _app_files(app)
+    result = subprocess.run(["bash", str(script)], env=env, capture_output=True, text=True,
+                            timeout=SCRIPT_TIMEOUT)
+    output = result.stdout + result.stderr
+    assert result.returncode == 1, output
+    assert "verifying the new runtime" in output
+    calls = Path(env["MUTATION_LOG"]).read_text().splitlines()
+    assert not any("worker" in call for call in calls), output
+    assert Path(env["WORKER_ROLE"]).read_text().strip() == "previous"
+    assert _app_files(app) == before
+    assert git("rev-parse", "stable") == stable
+    assert "nothing was stopped or replaced, so the previous version (previous-r) is still running" in output
+    assert not list(app.parent.glob(".openprogram-refresh.*"))
+
+
+@POSIX_SHELL_INTEGRATION
+def test_a_promotion_whose_worker_never_answers_restores_the_previous_version(
+    tmp_path: Path, executables: ExecutablePool,
+) -> None:
+    script, app, env, git, stable, target = _prepare_promotion_refresh_fixture(tmp_path, executables)
+    _shorten_health_wait(script)
+    git("commit", "-qam", "a shorter health wait")
+    target = git("rev-parse", "HEAD")
+    env["HEALTH_AFTER"] = "999999"
+    before = _app_files(app)
+    result = subprocess.run(["bash", str(script)], env=env, capture_output=True, text=True,
+                            timeout=SCRIPT_TIMEOUT)
+    output = result.stdout + result.stderr
+    assert result.returncode == 7, output
+    assert "the refresh failed while waiting for the worker to answer" in output
+    assert "the previous version (previous-r) is running again" in output
+    calls = Path(env["MUTATION_LOG"]).read_text().splitlines()
+    assert "previous -I -B -m openprogram worker stop" in calls  # The outage happened.
+    assert [c for c in calls if c.endswith("worker install")] == [
+        "new -I -B -m openprogram worker install", "previous -I -B -m openprogram worker install"]
+    assert Path(env["WORKER_ROLE"]).read_text().strip() == "previous"
+    assert _app_files(app) == before
+    assert git("rev-parse", "stable") == stable != target
+    assert not list(app.parent.glob(".openprogram-refresh.*"))
+
+
+@POSIX_SHELL_INTEGRATION
+def test_a_promotion_moves_stable_once_the_new_version_is_healthy(
+    tmp_path: Path, executables: ExecutablePool,
+) -> None:
+    script, app, env, git, stable, target = _prepare_promotion_refresh_fixture(tmp_path, executables)
+    result = subprocess.run(["bash", str(script)], env=env, capture_output=True, text=True,
+                            timeout=SCRIPT_TIMEOUT)
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert git("rev-parse", "stable") == target
+    assert (app / "Contents/Resources/openprogram-source-revision").read_text().strip() == target
+    assert Path(env["WORKER_ROLE"]).read_text().strip() == "new"
+    assert output.index("worker healthy") < output.index(f"moving stable to {target[:10]}")
+    assert git("reflog", "-1", "--format=%gs", "stable") == "promote from dev"
+    assert not list(app.parent.glob(".openprogram-refresh.*"))
+    # A worker started detached inherits the environment; a refresh run from
+    # it later must not take itself for this promotion.
+    assert Path(env["WORKER_ROLE"] + ".promote").read_text().strip() == "unset"
+
+
+@POSIX_SHELL_INTEGRATION
+def test_a_signal_between_the_app_renames_still_restores_the_previous_version(
+    tmp_path: Path, executables: ExecutablePool,
+) -> None:
+    script, app, env, git, stable, target = _prepare_promotion_refresh_fixture(tmp_path, executables)
+    # The signal lands right after the installed App is renamed aside, before
+    # the script can record that it was.
+    executables.write(
+        tmp_path / "fake-bin/mv",
+        '#!/bin/sh\n/bin/mv "$@" || exit\n'
+        'case "$2" in */previous.app) kill -TERM "$PPID" ;; esac\n',
+    )
+    before = _app_files(app)
+    result = subprocess.run(["bash", str(script)], env=env, capture_output=True, text=True,
+                            timeout=SCRIPT_TIMEOUT)
+    output = result.stdout + result.stderr
+    assert result.returncode == 143, output
+    assert "the previous version (previous-r) is running again" in output
+    assert _app_files(app) == before
+    assert Path(env["WORKER_ROLE"]).read_text().strip() == "previous"
+    assert git("rev-parse", "stable") == stable
+    assert not list(app.parent.glob(".openprogram-refresh.*"))
+
+
+@POSIX_SHELL_INTEGRATION
+def test_a_promotion_refuses_when_stable_moved_since_it_began(
+    tmp_path: Path, executables: ExecutablePool,
+) -> None:
+    script, app, env, git, stable, target = _prepare_promotion_refresh_fixture(tmp_path, executables)
+    git("branch", "-f", "stable", target)
+    before = _app_files(app)
+    result = subprocess.run(["bash", str(script)], env=env, capture_output=True, text=True,
+                            timeout=SCRIPT_TIMEOUT)
+    output = result.stdout + result.stderr
+    assert result.returncode != 0
+    assert "not " + stable + " as when the promotion began" in output, output
+    assert not Path(env["MUTATION_LOG"]).exists()
+    assert _app_files(app) == before
 
 
 @POSIX_SHELL_INTEGRATION

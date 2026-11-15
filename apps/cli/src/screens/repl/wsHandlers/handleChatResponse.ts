@@ -20,6 +20,7 @@ import { Turn, TurnBlock } from '../../../components/Turn.js';
 import { stripProviderPrefix } from '../helpers.js';
 import { backendBase, backendFetch } from '../../../utils/backend.js';
 import {
+  streamText,
   upsertStreamingText,
   appendStreamingTool,
   finalizeStreamingTools,
@@ -36,6 +37,9 @@ interface ChatResponseData {
   event?: {
     type?: string;
     text?: string;
+    /** text: the blank line the reply's flat text takes before this delta,
+     *  on the frame that opens a passage after a tool call. */
+    separator?: string;
     tool?: string;
     input?: string;
     result?: string;
@@ -217,7 +221,7 @@ function routeForeignConv(
       return;
     }
     if (inner?.type === 'text' && typeof inner.text === 'string') {
-      const delta = inner.text;
+      const delta = streamText(inner);
       c.setChannelActivityByConv((m) => {
         const prev = m[dConvId] ?? {
           convId: dConvId,
@@ -297,7 +301,7 @@ function handleStreamEvent(d: ChatResponseData, c: WsEventsCtx): void {
   }
   if (inner.type === 'text' && typeof inner.text === 'string') {
     const delta = inner.text;
-    upsertStreamingText(c.setStreaming, delta);
+    upsertStreamingText(c.setStreaming, delta, inner.separator ?? '');
     c.setActivity((a) => {
       if (!a) return a;
       return {
@@ -364,12 +368,19 @@ function handleContextStats(d: ChatResponseData, c: WsEventsCtx): void {
       [cid]: { input: d.chat!.input_tokens, output: d.chat!.output_tokens },
     }));
   }
-  if (
-    cid
-    && typeof d.context_window === 'number'
-    && d.context_window > 0
-  ) {
-    c.setWindowByConv((m) => ({ ...m, [cid]: d.context_window as number }));
+  if (cid && 'context_window' in d) {
+    // A frame that names the window field and leaves it empty says the
+    // model's window is unknown: the old one is dropped, so the bar shows
+    // the count alone instead of a limit that belonged to another model.
+    const window = typeof d.context_window === 'number' && d.context_window > 0
+      ? d.context_window
+      : null;
+    c.setWindowByConv((m) => {
+      if (window !== null) return m[cid] === window ? m : { ...m, [cid]: window };
+      if (!(cid in m)) return m;
+      const { [cid]: _unknown, ...rest } = m;
+      return rest;
+    });
   }
   // Live model from the actual runtime. Trumps agent-default values
   // seeded by stats/agents_list — those describe what the agent is

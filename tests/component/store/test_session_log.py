@@ -197,3 +197,150 @@ def test_one_append_picks_its_file_once_when_the_writer_role_changes(tmp_path, m
 
     assert log.main_path.exists()
     assert list(log.agent_directory.glob("*.jsonl"))
+
+
+def test_a_stream_line_folds_onto_the_reply(tmp_path: Path):
+    log = SessionLog(tmp_path / "s")
+    trace = {"blocks": [{"type": "text", "text": "Hel"}], "stream_seq": 1, "kept": True}
+    log.write_history(0, "assistant", "r", _node("r", 0, output="Hel"))
+    log.patch_node("r", {"output": "Hel"}, {"extra": json.dumps(trace)})
+    log.stream_node("r", {"text": [0, "lo"], "output_tail": "lo", "stream_seq": 2}, quiet=True)
+    log.stream_node("r", {"from": 1, "blocks": [{"type": "tool", "result": None}], "stream_seq": 3})
+    log.stream_node("r", {"from": 1, "blocks": [{"type": "tool", "result": "ok"}], "stream_seq": 4,
+                          "output": "Hello!"})
+
+    node = SessionLog(tmp_path / "s").list_history()[0]
+    assert node["output"] == "Hello!"
+    assert json.loads(node["metadata"]["extra"]) == {
+        "blocks": [{"type": "text", "text": "Hello"}, {"type": "tool", "result": "ok"}],
+        "stream_seq": 4, "kept": True}
+
+
+def test_a_trace_a_later_line_replaced_is_never_unpacked(tmp_path: Path, monkeypatch):
+    """A cold open once decompressed every stored version of every reply's trace."""
+    log = SessionLog(tmp_path / "s")
+    log.write_history(0, "assistant", "r", _node("r", 0))
+    for n in range(30):
+        extra = json.dumps({"blocks": [{"type": "text", "text": f"{n:03d}" * 4000}]})
+        log.patch_node("r", {"output": str(n)}, {"extra": extra}, quiet=True)
+    unpacked = []
+    original = session_log.unpack_extra
+    monkeypatch.setattr(session_log, "unpack_extra", lambda packed: (unpacked.append(1), original(packed))[1])
+
+    node = SessionLog(tmp_path / "s").list_history()[0]
+    assert json.loads(node["metadata"]["extra"])["blocks"][0]["text"].startswith("029")
+    assert len(unpacked) == 1
+
+
+def test_a_long_reply_is_put_together_once_however_many_lines_it_streamed_in(tmp_path: Path, monkeypatch):
+    """Each line once rebuilt the reply's whole text: 30,000 deltas of a 6.5 MB reply folded in 8.3 s."""
+    log = SessionLog(tmp_path / "s")
+    log.write_history(0, "assistant", "r", _node("r", 0, output=""))
+    log.patch_node("r", {"output": ""}, {"extra": json.dumps({"blocks": [{"type": "thinking", "text": ""}]})})
+    pieces = [f"piece {n} " for n in range(2_000)]
+    for n, piece in enumerate(pieces[:1_000]):
+        log.stream_node("r", {"text": [0, piece], "stream_seq": n}, quiet=True)
+    log.stream_node("r", {"from": 1, "blocks": [{"type": "text", "text": ""}], "stream_seq": 1_000}, quiet=True)
+    for n, piece in enumerate(pieces[1_000:], 1_001):
+        log.stream_node("r", {"text": [1, piece], "output_tail": piece, "stream_seq": n}, quiet=True)
+    joins = []
+    original = session_log.join_text
+    monkeypatch.setattr(session_log, "join_text",
+                        lambda current, added: (joins.append(len(added)), original(current, added))[1])
+
+    node = SessionLog(tmp_path / "s").list_history()[0]
+
+    assert node["output"] == "".join(pieces[1_000:])
+    assert json.loads(node["metadata"]["extra"]) == {
+        "blocks": [{"type": "thinking", "text": "".join(pieces[:1_000])},
+                   {"type": "text", "text": "".join(pieces[1_000:])}],
+        "stream_seq": 2_000}
+    # The output and each of the two blocks, each from all of its pieces.
+    assert sorted(joins) == [1_000, 1_000, 1_000]
+
+
+def test_text_streamed_after_a_replaced_output_or_block_lands_on_the_replacement(tmp_path: Path):
+    log = SessionLog(tmp_path / "s")
+    log.write_history(0, "assistant", "r", _node("r", 0, output="old"))
+    log.patch_node("r", {"output": "old"}, {"extra": json.dumps({"blocks": [{"type": "text", "text": "old"}]})})
+    log.stream_node("r", {"text": [0, " tail"], "output_tail": " tail"}, quiet=True)
+    log.stream_node("r", {"from": 0, "blocks": [{"type": "text", "text": "new"}], "output": "new"}, quiet=True)
+    log.stream_node("r", {"text": [0, " one"], "output_tail": " one"}, quiet=True)
+    log.patch_node("r", {"output": "set"}, quiet=True)
+    log.stream_node("r", {"text": [0, " two"], "output_tail": " two"}, quiet=True)
+    log.stream_node("r", {"text": [3, "nowhere"]}, quiet=True)
+
+    node = SessionLog(tmp_path / "s").list_history()[0]
+    assert node["output"] == "set two"
+    assert json.loads(node["metadata"]["extra"])["blocks"] == [{"type": "text", "text": "new one two"}]
+
+    # A reader that already folded part of the reply gets the same text.
+    reader = SessionLog(tmp_path / "s")
+    reader.list_history()
+    log.stream_node("r", {"text": [0, " three"], "output_tail": " three"}, quiet=True)
+    node = reader.list_history()[0]
+    assert node["output"] == "set two three"
+    assert json.loads(node["metadata"]["extra"])["blocks"] == [{"type": "text", "text": "new one two three"}]
+
+
+def _filled(root: Path, records: int) -> SessionLog:
+    log = SessionLog(root)
+    log.write_history(0, "user", "a", _node("a", 0))
+    for n in range(records):
+        log.patch_node("a", {"output": f"{n} " + "x" * 200})
+    log.append_state_file("todos.json", "[1]")
+    log.append_turn_record(session_log.RUN_ROWS_RECORD, {"rows": [{"n": 1}]})
+    return log
+
+
+def test_a_cold_fold_reads_the_checkpoint_and_only_the_lines_after_it(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(session_log, "CHECKPOINT_MIN_BYTES", 10_000)
+    root = tmp_path / "s"
+    log = _filled(root, 200)
+    log.list_history()
+    assert (root / "checkpoint" / "fold.json").is_file()
+    covered = log._writer_path().stat().st_size
+    log.patch_node("a", {"output": "after"})
+
+    starts = []
+    original = session_log.read_appended
+    monkeypatch.setattr(session_log, "read_appended",
+                        lambda path, start=0, **kw: (starts.append(start), original(path, start, **kw))[1])
+    reopened = SessionLog(root)
+    assert reopened.list_history()[0]["output"] == "after"
+    assert starts == [covered]
+    assert reopened.read_run_rows() == [[{"n": 1}]]
+
+
+def test_a_checkpoint_of_a_rewritten_log_is_not_used(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(session_log, "CHECKPOINT_MIN_BYTES", 10_000)
+    root = tmp_path / "s"
+    log = _filled(root, 200)
+    log.list_history()
+    main = log._writer_path()
+    covered = main.stat().st_size
+    # The same file, rewritten in place and longer than the part covered.
+    lines = [encode_record(1, "node.put", {"payload": _node("z", 0)})]
+    while sum(map(len, lines)) <= covered:
+        lines.append(encode_record(len(lines) + 1, "node.patch", {"id": "z", "set": {"output": "w" * 300}}))
+    inode = main.stat().st_ino
+    with open(main, "r+b") as handle:
+        handle.truncate(0)
+        handle.write(b"".join(lines))
+    assert main.stat().st_ino == inode
+    assert [node["id"] for node in SessionLog(root).list_history()] == ["z"]
+
+
+def test_state_files_and_run_rows_read_from_the_checkpoint(tmp_path: Path, monkeypatch):
+    from openprogram.state.store.session import session_state_file
+    monkeypatch.setattr(session_log, "CHECKPOINT_MIN_BYTES", 10_000)
+    root = tmp_path / "s"
+    _filled(root, 200).list_history()
+    session_state_file.forget_directory(root)
+    starts = []
+    original = session_state_file.read_appended
+    monkeypatch.setattr(session_state_file, "read_appended",
+                        lambda path, start=0, **kw: (starts.append(start), original(path, start, **kw))[1])
+    assert session_state_file.read_files(root) == {"todos.json": "[1]"}
+    assert session_state_file.read_run_rows(root) == [[{"n": 1}]]
+    assert starts == []

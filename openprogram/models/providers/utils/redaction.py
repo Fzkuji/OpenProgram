@@ -57,6 +57,29 @@ _SKIP_FIELDS = frozenset({
 })
 
 
+def remove_secrets(text: str, replacement: str = "[secret removed]") -> str:
+    """``text`` with every secret shape above replaced for good.
+
+    The same high-precision shapes as a request, without a vault: for
+    copies that must never hold the value (an imported transcript), where
+    nothing will ask for it back. Emails are not secrets and stay."""
+    if not text:
+        return text
+    for pattern in _SECRET_PATTERNS:
+        text = pattern.sub(replacement, text)
+    for pattern in _SECRET_VALUE_PATTERNS:
+        text = pattern.sub(lambda m: _replace_group(m, replacement), text)
+    return text
+
+
+def _replace_group(match: re.Match[str], replacement: str) -> str:
+    """The match with only its value (group 1) replaced, by position."""
+    start, end = match.span(1)
+    base = match.start(0)
+    whole = match.group(0)
+    return whole[:start - base] + replacement + whole[end - base:]
+
+
 class Vault:
     """Real value ↔ placeholder for one provider call."""
 

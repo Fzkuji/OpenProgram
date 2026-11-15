@@ -1,6 +1,8 @@
 """release documentation tests."""
 from __future__ import annotations
 import os
+import re
+from openprogram.operations.project_site import INSTALL_SCRIPT_URL
 from ._support import POSIX_SHELL_INTEGRATION, ROOT, _desktop_package, subprocess
 
 
@@ -13,7 +15,7 @@ def test_docs_publish_short_installer_at_the_domain_root() -> None:
 
 
 def test_normal_user_docs_use_the_short_release_installer() -> None:
-    short_command = "curl -fsSL https://openprogram.io/install | sh"
+    short_command = f"curl -fsSL {INSTALL_SCRIPT_URL} | sh"
     for relative in (
         "README.md",
         "docs/install/install.html",
@@ -184,25 +186,27 @@ def test_public_docs_follow_the_release_platform_policy() -> None:
 
 
 
-def test_install_docs_say_what_each_release_offers() -> None:
-    expectations = {
-        "docs/install/install.html": (
-            ">v1.1.0, latest published</th>",
-            ">App as deb and AppImage, and the terminal install; x86_64 and arm64.</td>",
-            '>No App. The x64 terminal archive is on the <a href="download.html#v1-1-0">Download</a> page.</td>',
-            ">Adds the App, x64. Windows on Arm comes later.</td>",
-        ),
-        "docs/install/install.zh.html": (
-            ">v1.1.0，最新已发布</th>",
-            ">App（deb 和 AppImage）和终端安装，x86_64 和 arm64。</td>",
-            '>没有 App。x64 终端压缩包在<a href="download.zh.html#v1-1-0">下载</a>页。</td>',
-            ">增加 App，x64。Windows on Arm 以后再做。</td>",
-        ),
-    }
-    for relative, expected in expectations.items():
+def test_install_docs_always_offer_the_newest_release() -> None:
+    """The first download links follow each release instead of naming one.
+
+    The Install page once linked the v1.1.0 DMGs and called v1.1.0 the latest
+    release long after newer ones shipped. Its App links now go through
+    latest.html, which finds the file in the newest release, and no install
+    page names a release to download from.
+    """
+    latest = (ROOT / "docs/_static_root/latest.js").read_text(encoding="utf-8")
+    first_links = ("OpenProgram-mac-arm64.dmg", "OpenProgram-mac-x64.dmg", "OpenProgram-win-x64.exe")
+    for relative in ("docs/install/install.html", "docs/install/install.zh.html"):
         contents = (ROOT / relative).read_text(encoding="utf-8")
-        for sentence in expected:
-            assert sentence in contents, relative
+        choose = contents[contents.index('id="choose"'):contents.index("</table>", contents.index('id="choose"'))]
+        for name in first_links:
+            assert f'href="../latest.html?{name}"' in choose, f"{relative}: {name}"
+            assert f'"{name}"' in latest
+        assert 'id="release-support"' in contents, relative
+    for relative in ("install.html", "install.zh.html", "download.html", "download.zh.html"):
+        contents = (ROOT / "docs/install" / relative).read_text(encoding="utf-8")
+        assert re.search(r"releases/download/v\d", contents) is None, relative
+        assert re.search(r"\bv\d+\.\d+\.\d+\b", contents) is None, relative
 
 
 def test_install_docs_cover_what_stops_a_new_user() -> None:
@@ -218,7 +222,7 @@ def test_install_docs_cover_what_stops_a_new_user() -> None:
         "APPIMAGE_EXTRACT_AND_RUN=1",
         "HTTPS_PROXY",
         "NO_PROXY",
-        "SHA256SUMS",
+        "release-manifest.json",
     )
     for relative in ("docs/install/install.html", "docs/install/install.zh.html"):
         contents = (ROOT / relative).read_text(encoding="utf-8")
@@ -234,7 +238,7 @@ def test_every_readme_gives_the_working_install_fallback() -> None:
     assert len(readmes) == 10
     for path in readmes:
         contents = path.read_text(encoding="utf-8")
-        assert "curl -fsSL https://openprogram.io/install | sh" in contents, path.name
+        assert f"curl -fsSL {INSTALL_SCRIPT_URL} | sh" in contents, path.name
         assert fallback in contents, path.name
 
 
@@ -243,6 +247,7 @@ def test_download_page_is_registered_and_lists_every_app_file() -> None:
 
     assert "install/download.html" in PAGE_ORDER
     assert any("install/download.html" in paths for _en, _zh, paths in TAB_SECTIONS["install"])
+    latest = (ROOT / "docs/_static_root/latest.js").read_text(encoding="utf-8")
     for relative in ("docs/install/download.html", "docs/install/download.zh.html"):
         contents = (ROOT / relative).read_text(encoding="utf-8")
         for name in (
@@ -254,7 +259,12 @@ def test_download_page_is_registered_and_lists_every_app_file() -> None:
             "OpenProgram-linux-arm64.AppImage",
             "OpenProgram-win-x64.exe",
         ):
-            assert name in contents, f"{relative}: {name}"
+            # A release has no file under this fixed name; the link goes
+            # through latest.html, which finds the versioned file. The link
+            # is relative, so it works wherever the site is served.
+            assert f'href="../latest.html?{name}"' in contents, f"{relative}: {name}"
+            assert f'"{name}"' in latest
+        assert "releases/latest/download/" not in contents
 
 
 

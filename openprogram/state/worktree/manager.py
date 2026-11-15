@@ -17,11 +17,12 @@ from __future__ import annotations
 
 import os
 import re
+import logging
 import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from openprogram.state.paths import get_state_dir
 from openprogram.state.worktree.include_sync import sync_include_files
@@ -70,6 +71,19 @@ def _broadcast_worktree_status(wt: Worktree) -> None:
 # Subprocess timeout cap. Git operations on user repos should be fast;
 # 60s is a generous ceiling that still avoids deadlock if a hook hangs.
 _GIT_TIMEOUT_SECS = 60.0
+
+logger = logging.getLogger(__name__)
+
+# ``(worktree) -> id of the unfinished helper Job working in it, or None``,
+# registered by the Jobs engine (``runtime/jobs/execution_hooks.py``): the
+# state layer does not read Jobs itself.
+_owner_check: Optional[Callable[["Worktree"], Optional[str]]] = None
+
+
+def set_owner_check(check: Optional[Callable[["Worktree"], Optional[str]]]) -> None:
+    """Install who answers whether a worktree's helper is still working."""
+    global _owner_check
+    _owner_check = check
 
 
 class WorktreeError(Exception):
@@ -402,7 +416,29 @@ class WorktreeManager:
         summary = self.summarize(wt)
         if summary["commits"] or summary["files"] or summary["dirty"]:
             return None
-        return self.discard_worktree(worktree_id, force=False, delete_branch=True)
+        # Called once its helper ended (the Job's end, or the caller's wait).
+        return self.discard_worktree(worktree_id, force=False, delete_branch=True,
+                                     owner_done=True)
+
+    def running_owner(self, wt: Worktree) -> Optional[str]:
+        """The id of the helper Job this worktree belongs to while it has
+        not ended, else None: the folder is still being written to. The
+        Jobs engine answers (``set_owner_check``); without it nobody holds."""
+        if not wt.parent_job or _owner_check is None:
+            return None
+        try:
+            return _owner_check(wt)
+        except Exception:  # noqa: BLE001 - an unreadable Job holds nothing
+            logger.debug("owner of worktree %s not read", wt.id, exc_info=True)
+            return None
+
+    def _refuse_while_owner_runs(self, wt: Worktree, action: str) -> None:
+        running = self.running_owner(wt)
+        if running is not None:
+            raise WorktreeError(
+                f"owner_running: the helper {running} still works in worktree {wt.id}; "
+                f"{action} it once that helper has finished, or stop the helper first."
+            )
 
     def merge_worktree(
         self,
@@ -412,8 +448,13 @@ class WorktreeManager:
         delete_branch: bool = False,
         commit_pending: bool = False,
         message: Optional[str] = None,
+        owner_done: bool = False,
     ) -> Worktree:
         """Merge the worktree's branch back into ``source_repo`` HEAD.
+
+        Refused while the helper Job it belongs to (``parent_job``) has not
+        ended (``owner_running``): it may still be writing. ``owner_done``:
+        the caller knows that Job has ended.
 
         ``commit_pending``: the person asked to merge what the worktree
         holds, so uncommitted and untracked changes are committed first
@@ -444,6 +485,8 @@ class WorktreeManager:
                 f"worktree {worktree_id} is in status {wt.status.value}; "
                 "merge only allowed from active."
             )
+        if not owner_done:
+            self._refuse_while_owner_runs(wt, "merge")
         # Refuse if there are uncommitted / untracked changes — agent
         # has to commit explicitly first (D7). ``git status --porcelain``
         # is empty when clean.
@@ -571,11 +614,15 @@ class WorktreeManager:
         *,
         force: bool = False,
         delete_branch: bool = True,
+        owner_done: bool = False,
     ) -> Worktree:
         """Tear down the worktree without merging.
 
         ``force=False`` (default) refuses to discard a dirty worktree;
         the caller has to set ``force=True`` to drop uncommitted work.
+        Refused, forced or not, while the helper Job it belongs to has not
+        ended; ``owner_done``: the caller knows it has (its end, a spawn
+        that failed to start).
         """
         wt = load_worktree(worktree_id)
         if wt is None:
@@ -584,6 +631,8 @@ class WorktreeManager:
             # Idempotent — already discarded / merged / kept. Just
             # return the current row.
             return wt
+        if not owner_done:
+            self._refuse_while_owner_runs(wt, "discard")
 
         if not force:
             rc, out, _ = _run_git(

@@ -1,8 +1,8 @@
 <title>路由概览</title>
-<meta name="description" content="Providers 概览面板如何把会话和分支对应到模型，并显示故障切换。">
+<meta name="description" content="Providers 的 Routing 视图如何把会话和分支对应到模型，并显示故障切换。">
 <h1>路由概览</h1>
 
-<p>设置 → Providers → 概览显示哪个会话的哪条分支在和哪个模型对话，以及模型失败时发生了什么。只有故障切换是为它单独记录的，其余都来自已有记录。</p>
+<p>设置 → LLM Providers → Routing（页头里 Providers 旁边）显示哪个会话的哪条分支在和哪个模型对话，以及模型失败时发生了什么。只有故障切换是为它单独记录的，其余都来自已有记录。</p>
 
 <h2 id="sources">数据来源</h2>
 <p><code translate="no">GET /api/routing/overview?window=&lt;seconds&gt;</code>（<code translate="no">openprogram/interfaces/server/routes/settings/routing.py</code>）合并：</p>

@@ -121,6 +121,9 @@ def _json_dumps(value: Any) -> str:
 #: The registered loader tool that maps onto the Responses ``tool_search`` tool.
 TOOL_SEARCH_NAME = "tool_search"
 
+#: The tag around a search's note sent after its ``tool_search_output``.
+SEARCH_NOTE_TAG = "tool-search-result"
+
 
 def _tool_search_tool(tool: "Tool", api: str | None, model_id: str | None) -> dict[str, Any]:
     from openprogram.models.providers.schema import normalize_for
@@ -423,7 +426,7 @@ def convert_responses_messages(
                 # request however the text ages and whatever the tools'
                 # schemas become. A tool the turn no longer offers is refused
                 # when called, like any unknown tool.
-                from openprogram.models.providers.shared.tool_loads import load_records
+                from openprogram.models.providers.shared.tool_loads import load_records, search_note
                 from openprogram.models.providers.types import Tool as _Tool
 
                 tools = [] if msg.is_error else [
@@ -437,6 +440,17 @@ def convert_responses_messages(
                     "status": "completed",
                     "tools": tools,
                 })
+                # The output has no place for words, and an empty list reads
+                # as "no such tool". What the search has to say beyond its
+                # definitions (the tool is already callable, the name is
+                # unknown, nothing matched) follows as its own item, from
+                # the note the result stored, so the bytes never change.
+                note = search_note(getattr(msg, "details", None))
+                if note:
+                    messages.append({"role": "user", "content": [{
+                        "type": "input_text",
+                        "text": sanitize_surrogates(f"<{SEARCH_NOTE_TAG}>\n{note}\n</{SEARCH_NOTE_TAG}>"),
+                    }]})
                 continue
             messages.append({
                 "type": "function_call_output",

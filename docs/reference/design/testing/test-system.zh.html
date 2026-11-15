@@ -30,6 +30,9 @@
 <ul>
 <li>仓库契约只读 Git 受跟踪文件，所以干净检出和含忽略文件或嵌套仓库的检出结果相同。通用扫描器的根由调用方提供。</li>
 <li>顶层 <code translate="no">conftest.py</code> 只保留防止访问真实用户状态的隔离；领域 fixture 留在本地。临时 HOME 确定性清理。</li>
+<li>每个测试进程（包括每个 xdist worker）都清掉继承来的 <code translate="no">GIT_DIR</code> 一类变量，并装上审计钩子（<code translate="no">tests/support/host_guard.py</code>）。它拒绝会改动套件所在检出的 git 命令、对其 <code translate="no">.git</code> 或真实 <code translate="no">~/.openprogram*</code> 的任何写入，以及 HOME 未设或指向真实 home 的 Python 子进程。</li>
+<li>被拒绝的测试按名字失败；会话结束时检查 <code translate="no">.git/config</code> 和从本次 HOME 登记进来的 worktree，覆盖子进程。</li>
+<li>产品代码找仓库时从不退回进程的工作目录：worktree 只从调用传入的路径、本轮的 worktree、对话的项目文件夹或配置的默认文件夹创建。</li>
 <li>并发结果用 Event、Condition 或带截止时间的等待。</li>
 <li>测试不替换全局线程类，也不创建真实线程或线程池。生产模块内的后台资源在 teardown 时 join 或关闭。</li>
 </ul>

@@ -3,10 +3,10 @@ attach, and branching a conversation into a new session."""
 from __future__ import annotations
 
 import logging
-import asyncio
 import json
 import uuid
 
+from openprogram.state.store.session.conversation_work import run_for_conversation
 from openprogram.state.store.session.graph.branches import (  # noqa: F401
     _attach_info,
     _attach_ref,
@@ -31,7 +31,7 @@ async def handle_list_branches(ws, cmd: dict):
         ws._history_graph_session = cmd.get("session_id") if cmd["graph_visible"] else None
         if not cmd["graph_visible"]:
             return
-    payload = await asyncio.to_thread(build_branches_payload, cmd.get("session_id"))
+    payload = await run_for_conversation(cmd.get("session_id"), build_branches_payload, cmd.get("session_id"))
     if cmd.get("include_graph") is False:
         payload.pop("graph", None)
     await ws.send_text(json.dumps(
@@ -45,50 +45,56 @@ async def handle_checkout_branch(ws, cmd: dict):
     from openprogram.interfaces.server import server as _s
     session_id = cmd.get("session_id")
     head_msg_id = cmd.get("head_msg_id")
-    ok = False
-    err = None
-    alignment = None
-    active_branch_id = None
     if not session_id or not head_msg_id:
-        err = "session_id and head_msg_id required"
+        ok, err, alignment, active_branch_id = False, "session_id and head_msg_id required", None, None
     else:
-        try:
-            from openprogram.runtime.context.session_db import default_db
-            db = default_db()
-            if (head_msg_id in set((db.get_session(session_id) or {}).get("rewind_hidden_nodes") or [])
-                    or head_msg_id in set((db.get_session(session_id) or {}).get("rewind_hidden_heads") or [])):
-                err = "This version was withdrawn by Rewind; use Undo rewind to recover it."
-            elif not db.message_exists(session_id, head_msg_id):
-                err = f"unknown message {head_msg_id!r}"
-            else:
-                alignment = {"status": "aligned", "decision": "shared_workspace"}
-                from openprogram.runtime.conversation.rewind_marks import forget_read_baselines
-                # Every branch works on the same current files, not a historical copy.
-                switched = await asyncio.to_thread(
-                    _s.switch_branch, session_id, head_msg_id,
-                    branch_id=cmd.get("branch_id"),
-                    meta_update={"workspace_alignment": alignment,
-                                 "pending_rewind_note": {"kind": "branch_kept_files"}},
-                )
-                ok = switched["ok"]
-                if ok:
-                    active_branch_id = switched["active_branch_id"]
-                    forget_read_baselines(session_id)
-                    # A different branch is a different context. The last
-                    # measurement belonged to the branch we just left, so
-                    # re-estimate against the new one.
-                    _s.refresh_context_stats(session_id)
-                else:
-                    alignment = None
-                    err = switched["error"]
-        except Exception as e:
-            err = f"{type(e).__name__}: {e}"
+        # Every read and write here takes the conversation's lock: off the
+        # event loop, so a held conversation delays only this request.
+        ok, err, alignment, active_branch_id = await run_for_conversation(session_id, 
+            _checkout_branch, _s, cmd, session_id, head_msg_id)
     await ws.send_text(json.dumps({
         "type": "branch_checked_out",
         "data": {"session_id": session_id, "head_msg_id": head_msg_id,
                   "ok": ok, "error": err, "workspace_alignment": alignment,
                   **({"active_branch_id": active_branch_id} if active_branch_id else {})},
     }, default=str))
+
+
+def _checkout_branch(_s, cmd: dict, session_id: str, head_msg_id: str):
+    """``(ok, error, workspace_alignment, active_branch_id)`` of a switch."""
+    ok, err, alignment, active_branch_id = False, None, None, None
+    try:
+        from openprogram.runtime.context.session_db import default_db
+        db = default_db()
+        if (head_msg_id in set((db.get_session(session_id) or {}).get("rewind_hidden_nodes") or [])
+                or head_msg_id in set((db.get_session(session_id) or {}).get("rewind_hidden_heads") or [])):
+            err = "This version was withdrawn by Rewind; use Undo rewind to recover it."
+        elif not db.message_exists(session_id, head_msg_id):
+            err = f"unknown message {head_msg_id!r}"
+        else:
+            alignment = {"status": "aligned", "decision": "shared_workspace"}
+            from openprogram.runtime.conversation.rewind_marks import forget_read_baselines
+            # Every branch works on the same current files, not a historical copy.
+            switched = _s.switch_branch(
+                session_id, head_msg_id,
+                branch_id=cmd.get("branch_id"),
+                meta_update={"workspace_alignment": alignment,
+                             "pending_rewind_note": {"kind": "branch_kept_files"}},
+            )
+            ok = switched["ok"]
+            if ok:
+                active_branch_id = switched["active_branch_id"]
+                forget_read_baselines(session_id)
+                # A different branch is a different context. The last
+                # measurement belonged to the branch we just left, so
+                # re-estimate against the new one.
+                _s.refresh_context_stats(session_id)
+            else:
+                alignment = None
+                err = switched["error"]
+    except Exception as e:
+        err = f"{type(e).__name__}: {e}"
+    return ok, err, alignment, active_branch_id
 
 
 async def handle_resolve_workspace_alignment(ws, cmd: dict):
@@ -101,13 +107,14 @@ async def handle_resolve_workspace_alignment(ws, cmd: dict):
     alignment = None
     if not session_id:
         error = "session_id is required"
-    elif _s._is_run_active(session_id):
+    elif await run_for_conversation(session_id, _s._is_run_active, session_id):
         error = _s.RUN_ACTIVE_ERROR
     elif decision == "keep_current_files":
         # Compatibility for an already-open client displaying the retired banner.
         alignment = {"status": "aligned", "decision": "shared_workspace"}
         from openprogram.runtime.context.session_db import default_db
-        default_db().update_session(session_id, workspace_alignment=alignment)
+        await run_for_conversation(session_id, lambda: default_db().update_session(
+            session_id, workspace_alignment=alignment))
         ok = True
     elif decision == "restore_branch_code":
         error = "Use Rewind to preview and confirm a file restore. Switching versions keeps current files."
@@ -125,6 +132,18 @@ async def handle_resolve_workspace_alignment(ws, cmd: dict):
     }, default=str))
 
 
+def _stored_head(session_id: str):
+    """The conversation's head, read under its lock (callers run this off
+    the event loop); ``None`` when it has none."""
+    try:
+        from openprogram.runtime.context.session_db import default_db
+        return (default_db().get_session(session_id) or {}).get("head_id")
+    except Exception:
+        # No stored head: the caller's missing-head check answers the client.
+        _log.debug("head lookup failed for session %s", session_id, exc_info=True)
+        return None
+
+
 async def handle_rename_branch(ws, cmd: dict):
     session_id = cmd.get("session_id")
     head_msg_id = cmd.get("head_msg_id")
@@ -132,13 +151,7 @@ async def handle_rename_branch(ws, cmd: dict):
     ok = False
     err = None
     if not head_msg_id and session_id:
-        try:
-            from openprogram.runtime.context.session_db import default_db
-            _sess = default_db().get_session(session_id) or {}
-            head_msg_id = _sess.get("head_id")
-        except Exception:
-            # No stored head: the missing-head check below answers the client.
-            _log.debug("head lookup failed for session %s", session_id, exc_info=True)
+        head_msg_id = await run_for_conversation(session_id, _stored_head, session_id)
     if not session_id or not head_msg_id or not new_name:
         err = "session_id, head_msg_id, name all required"
     elif len(new_name) > 80:
@@ -148,8 +161,8 @@ async def handle_rename_branch(ws, cmd: dict):
             from openprogram.runtime.context.session_db import default_db
             # User typed a name → highest priority, lock it so auto-naming
             # (Stage 2) never overwrites it (branch-naming.md 优先级与锁).
-            default_db().set_branch_name(
-                session_id, head_msg_id, new_name, name_locked=True)
+            await run_for_conversation(session_id, lambda: default_db().set_branch_name(
+                session_id, head_msg_id, new_name, name_locked=True))
             ok = True
         except Exception as e:
             err = f"{type(e).__name__}: {e}"
@@ -165,13 +178,7 @@ async def handle_auto_name_branch(ws, cmd: dict):
     session_id = cmd.get("session_id")
     head_msg_id = cmd.get("head_msg_id")
     if not head_msg_id and session_id:
-        try:
-            from openprogram.runtime.context.session_db import default_db
-            _sess = default_db().get_session(session_id) or {}
-            head_msg_id = _sess.get("head_id")
-        except Exception:
-            # No stored head: the missing-head check below answers the client.
-            _log.debug("head lookup failed for session %s", session_id, exc_info=True)
+        head_msg_id = await run_for_conversation(session_id, _stored_head, session_id)
     ok = False
     err = None
     name = None
@@ -185,7 +192,7 @@ async def handle_auto_name_branch(ws, cmd: dict):
                 build_branch_name_prompt,
             )
             prompt = build_branch_name_prompt(
-                db.get_branch(session_id, head_msg_id) or [])
+                await run_for_conversation(session_id, db.get_branch, session_id, head_msg_id) or [])
             from openprogram.interfaces.server import runtime_management as rm
             rm._init_providers()
             rt = rm._chat_runtime
@@ -208,8 +215,8 @@ async def handle_auto_name_branch(ws, cmd: dict):
                     # User clicked the button → user-initiated = highest
                     # priority. Lock so Stage-2 auto-naming never overwrites
                     # it (branch-naming.md 优先级与锁).
-                    db.set_branch_name(
-                        session_id, head_msg_id, cleaned, name_locked=True)
+                    await run_for_conversation(session_id, lambda: db.set_branch_name(
+                        session_id, head_msg_id, cleaned, name_locked=True))
                     name = cleaned
                     ok = True
                 else:
@@ -233,7 +240,7 @@ async def handle_delete_branch_name(ws, cmd: dict):
     else:
         try:
             from openprogram.runtime.context.session_db import default_db
-            default_db().delete_branch_name(session_id, head_msg_id)
+            await run_for_conversation(session_id, default_db().delete_branch_name, session_id, head_msg_id)
             ok = True
         except Exception as e:
             err = f"{type(e).__name__}: {e}"
@@ -258,13 +265,7 @@ async def handle_delete_branch(ws, cmd: dict):
     session_id = cmd.get("session_id")
     head_msg_id = cmd.get("head_msg_id")
     if not head_msg_id and session_id:
-        try:
-            from openprogram.runtime.context.session_db import default_db as _df
-            _sess = _df().get_session(session_id) or {}
-            head_msg_id = _sess.get("head_id")
-        except Exception:
-            # No stored head: the missing-head check below answers the client.
-            _log.debug("head lookup failed for session %s", session_id, exc_info=True)
+        head_msg_id = await run_for_conversation(session_id, _stored_head, session_id)
     ok = False
     err = None
     deleted = 0
@@ -277,7 +278,7 @@ async def handle_delete_branch(ws, cmd: dict):
     else:
         try:
             from openprogram.runtime.context.session_db import default_db
-            tail = default_db().branch_tail(session_id, head_msg_id)
+            tail = await run_for_conversation(session_id, default_db().branch_tail, session_id, head_msg_id)
         except ValueError as e:
             err = str(e)
     if err is None:
@@ -285,39 +286,15 @@ async def handle_delete_branch(ws, cmd: dict):
         # writes INTO the tail about to be deleted: the selected branch's,
         # or one on another branch whose tip lies in the removed subtree.
         # A turn elsewhere keeps running.
-        refusal = await asyncio.to_thread(
+        refusal = await run_for_conversation(session_id, 
             _s.reserve_branch_operation, session_id, owner,
             target_head=tail["start"], subtree=True,
         )
         if refusal is not None:
             err = refusal["error"]
     if err is None:
-        try:
-            from openprogram.runtime.context.session_db import default_db
-            db = default_db()
-            # Read again under the hold: the tree may have grown meanwhile.
-            tail = db.branch_tail(session_id, head_msg_id)
-            doomed = set(tail["nodes"])
-            cur_head = (db.get_session(session_id) or {}).get("head_id")
-            head_in_branch = cur_head in doomed
-            if head_in_branch:
-                # Move off first, through an ordinary switch: the branch
-                # being deleted keeps its record unselected, and the
-                # delete below removes it with its tail.
-                new_head = next((lf["head_msg_id"] for lf in db.list_branches(session_id)
-                                 if lf["head_msg_id"] not in doomed), tail["fork"])
-                if not _s._set_active_head(session_id, new_head):
-                    raise RuntimeError("the branch changed while it was being deleted; try again")
-            deleted = db.delete_branch_tail(session_id, tail["start"])
-            # _set_active_head refreshed conv["messages"] for a moved HEAD;
-            # the deleted rows may still sit in a cached list otherwise.
-            _s._invalidate_messages(session_id)
-            _s.refresh_context_stats(session_id)
-            ok = True
-        except Exception as e:
-            err = f"{type(e).__name__}: {e}"
-        finally:
-            _s._release_run_reservation(session_id, owner)
+        ok, err, deleted, new_head = await run_for_conversation(session_id, 
+            _delete_held_branch, _s, session_id, head_msg_id, owner)
     await ws.send_text(json.dumps({
         "type": "branch_deleted",
         "data": {"session_id": session_id, "head_msg_id": head_msg_id,
@@ -328,47 +305,50 @@ async def handle_delete_branch(ws, cmd: dict):
     }, default=str))
 
 
-async def handle_attach_branch(ws, cmd: dict) -> None:
-    """Write an attach-pointer row anchored on ``anchor_head_msg_id``
-    that references the branch ending at ``target_head_msg_id``. Same
-    shape as the attach card a /task spawn produces, but explicit and
-    decoupled from the active head — the user picks both the source
-    branch (what to embed) and the anchor (where the card lives).
+def _delete_held_branch(_s, session_id: str, head_msg_id: str, owner: str):
+    """Delete the branch ``owner`` holds and give the hold back:
+    ``(ok, error, deleted, new_head)``. Runs off the event loop: every
+    step takes the conversation's lock."""
+    ok, err, deleted, new_head = False, None, 0, None
+    try:
+        from openprogram.runtime.context.session_db import default_db
+        db = default_db()
+        # Read again under the hold: the tree may have grown meanwhile.
+        tail = db.branch_tail(session_id, head_msg_id)
+        doomed = set(tail["nodes"])
+        cur_head = (db.get_session(session_id) or {}).get("head_id")
+        if cur_head in doomed:
+            # Move off first, through an ordinary switch: the branch
+            # being deleted keeps its record unselected, and the
+            # delete below removes it with its tail.
+            new_head = next((lf["head_msg_id"] for lf in db.list_branches(session_id)
+                             if lf["head_msg_id"] not in doomed), tail["fork"])
+            if not _s._set_active_head(session_id, new_head):
+                raise RuntimeError("the branch changed while it was being deleted; try again")
+        deleted = db.delete_branch_tail(session_id, tail["start"])
+        # _set_active_head refreshed conv["messages"] for a moved HEAD;
+        # the deleted rows may still sit in a cached list otherwise.
+        _s._invalidate_messages(session_id)
+        _s.refresh_context_stats(session_id)
+        ok = True
+    except Exception as e:
+        err = f"{type(e).__name__}: {e}"
+    finally:
+        _s._release_run_reservation(session_id, owner)
+    return ok, err, deleted, new_head
 
-    Wire format::
 
-        in:  {"action": "attach_branch", "session_id": "...",
-              "target_head_msg_id": "...",       # source (embedded)
-              "anchor_head_msg_id": "..."        # where to anchor; default = active head
-              "label": "..."                     (optional override)}
-        out: open transcripts of the anchor session get the new attach
-             card from the transcript publisher.
-    """
+def _attach_branch(session_id: str, target_head: str, anchor_arg: str | None,
+                   anchor_session_id: str, label_override: str | None) -> dict:
+    """Write the attach pointer; the result frame's data.
+
+    Every step reads or writes a conversation under its lock, so the
+    whole attach runs in a worker thread (``handle_attach_branch``)."""
     import json as _json
     import time
     import uuid
 
     from openprogram.interfaces.server import server as _s
-
-    session_id = (cmd.get("session_id") or "").strip()
-    target_head = (cmd.get("target_head_msg_id") or "").strip()
-    anchor_arg = (cmd.get("anchor_head_msg_id") or "").strip() or None
-    # Cross-session: when ``anchor_session_id`` is supplied, the attach
-    # pointer lands on that session instead of ``session_id``. Default
-    # = same-session attach (legacy behaviour).
-    anchor_session_id = (cmd.get("anchor_session_id") or "").strip() or session_id
-    label_override = (cmd.get("label") or "").strip() or None
-
-    if not session_id or not target_head:
-        await ws.send_text(json.dumps({
-            "type": "attach_branch_result",
-            "data": {
-                "session_id": session_id or None,
-                "ok": False,
-                "error": "session_id and target_head_msg_id are required",
-            },
-        }))
-        return
 
     # Attach appends a row to the ANCHOR session and mark_merged mutates
     # the SOURCE session, so a run in flight on either side can race us.
@@ -377,18 +357,14 @@ async def handle_attach_branch(ws, cmd: dict) -> None:
         None,
     )
     if _busy:
-        await ws.send_text(json.dumps({
-            "type": "attach_branch_result",
-            "data": {
-                "session_id": session_id,
-                "anchor_session_id": anchor_session_id,
-                "target_head_msg_id": target_head,
-                "ok": False,
-                "code": "run_active",
-                "error": _s.RUN_ACTIVE_ERROR,
-            },
-        }))
-        return
+        return {
+            "session_id": session_id,
+            "anchor_session_id": anchor_session_id,
+            "target_head_msg_id": target_head,
+            "ok": False,
+            "code": "run_active",
+            "error": _s.RUN_ACTIVE_ERROR,
+        }
 
     ok = False
     error: str | None = None
@@ -432,20 +408,16 @@ async def handle_attach_branch(ws, cmd: dict) -> None:
                     continue
                 ad = m.get("attach")
                 if isinstance(ad, dict) and (ad.get("head_id") or "").strip() == target_head:
-                    await ws.send_text(json.dumps({
-                        "type": "attach_branch_result",
-                        "data": {
-                            "session_id": session_id,
-                            "anchor_session_id": anchor_session_id,
-                            "target_head_msg_id": target_head,
-                            "anchor": anchor,
-                            "attach_node_id": m.get("id"),
-                            "ok": True,
-                            "duplicate": True,
-                            "error": None,
-                        },
-                    }, default=str))
-                    return
+                    return {
+                        "session_id": session_id,
+                        "anchor_session_id": anchor_session_id,
+                        "target_head_msg_id": target_head,
+                        "anchor": anchor,
+                        "attach_node_id": m.get("id"),
+                        "ok": True,
+                        "duplicate": True,
+                        "error": None,
+                    }
         except Exception:
             # Duplicate check is an optimisation; attaching again is harmless.
             _log.debug(
@@ -573,19 +545,61 @@ async def handle_attach_branch(ws, cmd: dict) -> None:
             f"anchor={anchor_session_id} target={target_head} "
             f"anchor_head={anchor}: {error}"
         )
+    return {
+        "session_id": session_id,
+        "anchor_session_id": anchor_session_id,
+        "target_head_msg_id": target_head,
+        "anchor": anchor,
+        "attach_node_id": attach_node_id,
+        "ok": ok,
+        "error": error,
+    }
 
-    await ws.send_text(json.dumps({
-        "type": "attach_branch_result",
-        "data": {
-            "session_id": session_id,
-            "anchor_session_id": anchor_session_id,
-            "target_head_msg_id": target_head,
-            "anchor": anchor,
-            "attach_node_id": attach_node_id,
-            "ok": ok,
-            "error": error,
-        },
-    }, default=str))
+
+async def handle_attach_branch(ws, cmd: dict) -> None:
+    """Write an attach-pointer row anchored on ``anchor_head_msg_id``
+    that references the branch ending at ``target_head_msg_id``. Same
+    shape as the attach card a /task spawn produces, but explicit and
+    decoupled from the active head — the user picks both the source
+    branch (what to embed) and the anchor (where the card lives).
+
+    Wire format::
+
+        in:  {"action": "attach_branch", "session_id": "...",
+              "target_head_msg_id": "...",       # source (embedded)
+              "anchor_head_msg_id": "..."        # where to anchor; default = active head
+              "label": "..."                     (optional override)}
+        out: open transcripts of the anchor session get the new attach
+             card from the transcript publisher.
+
+    The attach reads and writes both conversations under their locks: it
+    runs in the anchor conversation's lane, off the event loop.
+    """
+    session_id = (cmd.get("session_id") or "").strip()
+    target_head = (cmd.get("target_head_msg_id") or "").strip()
+    anchor_arg = (cmd.get("anchor_head_msg_id") or "").strip() or None
+    # Cross-session: when ``anchor_session_id`` is supplied, the attach
+    # pointer lands on that session instead of ``session_id``. Default
+    # = same-session attach (legacy behaviour).
+    anchor_session_id = (cmd.get("anchor_session_id") or "").strip() or session_id
+    label_override = (cmd.get("label") or "").strip() or None
+
+    if not session_id or not target_head:
+        await ws.send_text(json.dumps({
+            "type": "attach_branch_result",
+            "data": {
+                "session_id": session_id or None,
+                "ok": False,
+                "error": "session_id and target_head_msg_id are required",
+            },
+        }))
+        return
+
+    data = await run_for_conversation(
+        anchor_session_id, _attach_branch,
+        session_id, target_head, anchor_arg, anchor_session_id, label_override,
+    )
+    await ws.send_text(json.dumps({"type": "attach_branch_result", "data": data}, default=str))
 
 
 def run_branch_session(session_id: str | None, msg_id: str | None,
@@ -657,7 +671,7 @@ async def handle_branch_session(ws, cmd: dict) -> None:
                        "title"? (on success), "error"?, "code"?}}
              + a ``sessions_list`` broadcast on success.
     """
-    data = await asyncio.to_thread(
+    data = await run_for_conversation(cmd.get("session_id"), 
         run_branch_session, cmd.get("session_id"), cmd.get("msg_id"), cmd.get("title"), cmd.get("branch_id"),
     )
     await ws.send_text(json.dumps(

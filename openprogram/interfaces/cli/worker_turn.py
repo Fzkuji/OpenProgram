@@ -719,7 +719,8 @@ class _Relay:
                 event = data.get("event")
                 if (self.on_text is not None and isinstance(event, dict)
                         and event.get("type") == "text"):
-                    self.on_text(str(event.get("text") or ""))
+                    from openprogram.state.reply_text import stream_text
+                    self.on_text(stream_text(event))
             elif what == "result":
                 if self.status in _STOPPING_STATUSES:
                     # A stop from elsewhere (the Web UI's stop button): the

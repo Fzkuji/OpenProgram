@@ -43,6 +43,6 @@ export async function pickBranchModel(sessionId: string, provider: string, model
   const selected = !reply.branch_id || reply.branch_id === reply.active_branch_id;
   if (selected) {
     const { loadSessionAgentSettings } = await import("@/lib/runtime-bridge/providers");
-    void loadSessionAgentSettings(sessionId);
+    void loadSessionAgentSettings(sessionId, { written: true });
   }
 }

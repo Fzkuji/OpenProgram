@@ -573,3 +573,38 @@ def test_agent_name_is_trimmed_at_a_word():
     assert len(name) <= AGENT_NAME_MAX and long.startswith(name) and long[len(name)] == " "
     assert agent_name("x" * 80) == "x" * AGENT_NAME_MAX
     assert agent_name("two\nlines") == "two lines"
+    assert agent_name("indented\n    next line") == "indented next line"
+    assert agent_name("one\u2028two\x85three") == "one two three"
+    assert agent_name("keeps  two") == "keeps  two"
+
+
+def test_an_agent_name_keeps_two_spaces_as_written(store, fake_dispatcher):
+    """Claude Code keeps an Agent call's description as typed; so does the
+    name here, so the card, the job and the branch show the spacing the
+    description had, and send_message reaches it by that text."""
+    from openprogram.runtime.jobs.store import list_jobs
+    out = _call_agent(prompt="fix it", description="Fix  the  login",
+                      session_id="p1", turn_id="a1")
+    assert 'name="Fix  the  login"' in out
+    jobs = list_jobs("p1")
+    assert [j.label for j in jobs] == ["Fix  the  login"]
+    names = {b.get("name") for b in store.list_branches("p1")}
+    assert "Fix  the  login" in names or "Fix  the  login" in {
+        store.get_branch_meta("p1", jobs[0].head_id).get("name")}
+
+
+def test_agent_default_starts_fresh(store, fake_dispatcher):
+    """C1: with no start_from the helper sees only the brief."""
+    _call_agent(prompt="find the answer", session_id="p1", turn_id="a1", start_from="")
+    assert fake_dispatcher["predecessor"] is None
+    assert fake_dispatcher["history_override"] == []
+
+
+def test_agent_fork_with_another_agent_starts_fresh_with_a_note(store, fake_dispatcher, monkeypatch):
+    from openprogram.runtime.agent_registry.manager import AgentSpec
+    monkeypatch.setattr("openprogram.runtime.agent_registry.manager.list_all",
+                        lambda: [AgentSpec(id="researcher", name="Researcher")])
+    out = _call_agent(prompt="x", agent_id="researcher", start_from="fork",
+                      session_id="p1", turn_id="a1")
+    assert fake_dispatcher["predecessor"] is None
+    assert "start_from='fork' needs your own Agent" in out

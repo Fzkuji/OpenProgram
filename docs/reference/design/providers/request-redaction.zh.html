@@ -27,6 +27,7 @@
 <tr><th scope="row">精度</th><td>只认高精度形态：误判会破坏请求</td></tr>
 <tr><th scope="row">编号</th><td>按首次出现，一个值对应一个占位符，同一历史脱敏结果相同：提示缓存有效，思考块一致</td></tr>
 <tr><th scope="row">无需脱敏</th><td>请求原样传递</td></tr>
+<tr><th scope="row">其他使用者</th><td><code translate="no">remove_secrets</code> 用同样的形态、固定的 <code translate="no">[secret removed]</code>、不建 vault，供<a href="../runtime/session/external-import.zh.html">导入的会话</a>使用，这些会话绝不能保存原值</td></tr>
 </tbody>
 </table>
 

@@ -203,6 +203,9 @@ def prepare_turn(
         user_msg["trigger"] = "restart"
     if req.notice:
         user_msg["notice"] = req.notice
+    if req.starts_goal:
+        # The message that sets a Goal; the chat labels it Goal.
+        user_msg["starts_goal"] = True
     if req.automation:
         # Still drawn as the message it is; a reader of the history can tell
         # that nobody typed it (always_on/pending.py).

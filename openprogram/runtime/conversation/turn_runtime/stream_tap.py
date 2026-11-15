@@ -14,6 +14,8 @@ from typing import TYPE_CHECKING, Callable
 from dataclasses import dataclass
 
 from openprogram.runtime.conversation.event_parsing import STORED_DETAILS_KEY, STORED_MEDIA_KEY, STORED_RESULT_KEY
+from openprogram.state.reply_text import opening_separator, reply_text
+from openprogram.state.attachments import markers_as_names
 
 if TYPE_CHECKING:
     from openprogram.runtime.conversation.turn_runtime.types import EventCallback
@@ -139,6 +141,53 @@ def make_stream_tap(
     # sent again (a ``retry`` frame with ``restart``) is cut back to here.
     response_start = _tail()
 
+    # What the log already holds of this reply, so each later write records
+    # only what was added (``session_log.apply_stream_changes``): the first
+    # write is the whole trace, then the open block's new text, or the
+    # blocks from the first one that changed. Rewriting the whole trace on
+    # every delta made a long reply's log grow with the square of its size.
+    persisted: dict = {"written": False, "count": 0, "tail": None, "output": "", "changed_from": None,
+                       "split": None}
+
+    def _changed(index: int) -> None:
+        """Block ``index`` changed other than by text added to the open block."""
+        current = persisted["changed_from"]
+        persisted["changed_from"] = index if current is None else min(current, index)
+
+    def _remember(output: str) -> None:
+        last = blocks[-1] if blocks else None
+        persisted.update(
+            written=True, count=len(blocks), output=output, changed_from=None,
+            tail=len(last["text"]) if last is not None and last.get("type") in ("text", "thinking") else None,
+        )
+
+    def _stream_change(output: str) -> dict:
+        count, previous = len(blocks), persisted["count"]
+        start = min(count, previous, *(() if persisted["changed_from"] is None else (persisted["changed_from"],)))
+        change: dict = {"stream_seq": stream_seq}
+        tail = previous - 1
+        if persisted["split"] == tail and count > previous and start > tail >= 0:
+            # The block that just closed reached the log as pieces; write it
+            # whole once, so a search of the log finds its text on one line
+            # even when the reply never gets its closing whole write.
+            start = tail
+        if persisted["split"] is not None and start <= persisted["split"]:
+            persisted["split"] = None
+        if start > tail >= 0 and persisted["tail"] is not None:
+            text = blocks[tail].get("text") or ""
+            if len(text) > persisted["tail"]:
+                change["text"] = [tail, text[persisted["tail"]:]]
+                persisted["split"] = tail
+        if start < max(count, previous):
+            change["from"] = start
+            change["blocks"] = blocks[start:]
+        if output.startswith(persisted["output"]):
+            if len(output) > len(persisted["output"]):
+                change["output_tail"] = output[len(persisted["output"]):]
+        else:
+            change["output"] = output
+        return change
+
     def _drop_restarted_response() -> bool:
         count, length = response_start
         changed = len(blocks) > count
@@ -148,6 +197,8 @@ def make_stream_tap(
             if len(text) > length:
                 blocks[count - 1]["text"] = text[:length]
                 changed = True
+        if changed:
+            _changed(max(count - 1, 0))
         return changed
 
     def flush(*, quiet: bool = False) -> None:
@@ -155,17 +206,25 @@ def make_stream_tap(
         if not dirty or not placeholder_inserted:
             return
         try:
+            # A marker the model wrote is not a file the turn attached
+            # (those are added at the end, send_file.with_attachments);
+            # a reply cut off here (a worker restart) keeps this text.
+            output = markers_as_names(reply_text(blocks))
             fields = {
-                "output": "".join(b["text"] for b in blocks if b["type"] == "text"),
+                "output": output,
                 "metadata": {**_memory_stamp(req), "extra": json.dumps({
                     **(extra if isinstance(extra, dict) else {}),
                     "blocks": blocks, "stream_seq": stream_seq,
                 }, default=str)},
             }
-            if quiet:
+            if persisted["written"]:
+                store.update_stream_progress(req.session_id, assistant_msg_id, change=_stream_change(output),
+                                             quiet=quiet, **fields)
+            elif quiet:
                 store.update_stream_progress(req.session_id, assistant_msg_id, **fields)
             else:
                 writer.update(assistant_msg_id, **fields)
+            _remember(output)
             dirty = False
         except Exception:
             _log.warning("failed to persist chat progress for session %s", req.session_id, exc_info=True)
@@ -234,10 +293,18 @@ def make_stream_tap(
                     delta = evt.get("text") or ""
                     if blocks and blocks[-1].get("type") == etype:
                         offset = utf16_length(blocks[-1]["text"])
-                        blocks[-1]["text"] += delta
                     else:
                         offset = 0
-                        blocks.append({"type": etype, "text": delta})
+                        blocks.append({"type": etype, "text": ""})
+                    if etype == "text" and delta and not blocks[-1]["text"]:
+                        # The first text of a passage after a tool call,
+                        # reasoning or a steering message: a client that
+                        # builds the reply's flat text from deltas puts
+                        # this before it (``reply_text.stream_text``).
+                        separator = opening_separator(blocks, len(blocks) - 1, delta)
+                        if separator:
+                            evt["separator"] = separator
+                    blocks[-1]["text"] += delta
                     payload.update(
                         row_id=assistant_msg_id,
                         item_id=block_item_id(blocks, len(blocks) - 1),
@@ -257,9 +324,11 @@ def make_stream_tap(
                             card["provider_executed"] = True
                         blocks.append(card)
                 else:
-                    for block in reversed(blocks):
+                    for index in range(len(blocks) - 1, -1, -1):
+                        block = blocks[index]
                         if (block.get("type") == "tool"
                                 and block.get("tool_call_id") == evt.get("tool_call_id")):
+                            _changed(index)
                             block.update(result=evt.get("result"),
                                          is_error=bool(evt.get("is_error")),
                                          outcome=evt.get("outcome"))
@@ -292,6 +361,7 @@ def make_stream_tap(
                 for index in range(len(blocks) - 1, -1, -1):
                     if blocks[index].get("type") == "text":
                         blocks[index]["citations"] = list(evt["citations"])
+                        _changed(index)
                         payload.update(row_id=assistant_msg_id, item_id=block_item_id(blocks, index))
                         dirty = True
                         flush()

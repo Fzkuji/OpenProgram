@@ -41,24 +41,10 @@ class WorkerLock:
         try:
             locking.flock(fh.fileno(), locking.LOCK_EX | locking.LOCK_NB)
         except BlockingIOError:
-            if os.name == "nt":
-                # msvcrt denies reads that overlap another handle's locked
-                # byte.  Same-process probes use the registry below; an
-                # external probe reads the separate lifecycle PID file.
-                with _held_paths_lock:
-                    local_holder = _lock_key(self.path) in _held_paths
-                if local_holder:
-                    raw = str(os.getpid())
-                else:
-                    from .paths import pid_path
-
-                    try:
-                        raw = pid_path().read_text(encoding="utf-8").splitlines()[0]
-                    except (OSError, IndexError):
-                        raw = ""
-            else:
-                fh.seek(0)
-                raw = fh.read().strip()
+            # The locked byte lies past the PID (host/_platform/locking.py),
+            # so the holder's PID reads the same way on every platform.
+            fh.seek(0)
+            raw = fh.read().strip()
             try:
                 self.holder_pid = int(raw) if raw else None
             except ValueError:
@@ -116,7 +102,11 @@ def held_in_this_process(path: Path) -> bool:
 
 
 def read_holder_pid() -> Optional[int]:
-    """Peek at the current lock holder. Returns None if no holder."""
+    """Peek at the PID the lock holder wrote. Returns None if there is none.
+
+    Readable while the lock is held, on Windows too: the locked byte lies past
+    the PID. Only a hint; :func:`is_held_by` proves the holder is live.
+    """
     p = lock_path()
     if not p.exists():
         return None

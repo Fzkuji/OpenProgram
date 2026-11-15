@@ -16,6 +16,7 @@ from .shared import (
     ReconciliationCompletion,
     WaitSuspension,
     _log,
+    off_loop,
 )
 
 from .waits import WaitsOperations
@@ -57,6 +58,9 @@ class RuntimeControlService(WaitsOperations, CancellationOperations, BranchesOpe
         self._terminal_recovery: Callable[..., object] | None = None
         self._cancel_delivery_lock = RLock()
         self._delivered_cancel_commands: set[str] = set()
+        # Cancels being handed to their owner right now: a second stop
+        # arriving meanwhile must not hand the same command over again.
+        self._cancel_deliveries_in_flight: set[str] = set()
         self._cancel_delivery_by_execution: dict[str, set[str]] = {}
         self._cancel_escalations: dict[str, Timer] = {}
 
@@ -323,7 +327,7 @@ class RuntimeControlService(WaitsOperations, CancellationOperations, BranchesOpe
                 from .stop_requests import forward
 
                 try:
-                    forward(self.executions, execution, "cancel")
+                    await off_loop(execution.execution_id, forward, self.executions, execution, "cancel")
                 except Exception:
                     _log.warning("stop of %s not passed to its process", execution.execution_id, exc_info=True)
             return ControlDispatch(

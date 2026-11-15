@@ -1,7 +1,8 @@
 """Rewrite README contributor avatars from the GitHub contributors API.
 
 The README embeds GitHub's own profile PNGs so the image host is the
-same site that renders the file. Bots and AI coding accounts are omitted.
+same site that renders the file. Bots, AI coding accounts and the project's
+retired accounts (see ``retired_accounts.py``) are omitted.
 """
 
 from __future__ import annotations
@@ -15,6 +16,11 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
+
+try:
+    from scripts.retired_accounts import is_retired_login
+except ModuleNotFoundError:  # run as a file, as the contributors workflow does
+    from retired_accounts import is_retired_login
 
 REPO = os.environ.get("OPENPROGRAM_GITHUB_REPO", "FuzzyKuji/OpenProgram")
 CONTRIBUTORS_URL = f"https://api.github.com/repos/{REPO}/contributors?per_page=100"
@@ -45,6 +51,8 @@ def is_listed_contributor(entry: dict[str, Any]) -> bool:
         return False
     lower = login.lower()
     if lower.endswith("[bot]") or lower.endswith("-bot") or lower.endswith("_bot"):
+        return False
+    if is_retired_login(lower):
         return False
     return lower not in AI_LOGINS
 

@@ -244,3 +244,74 @@ def test_managed_worker_requires_separately_installed_office(tmp_path, monkeypat
     make_office_pack(tmp_path / 'runtime/assets/office')
     monkeypatch.setattr(server, 'prepared_office_cache', lambda: tmp_path / 'missing-cache')
     assert not server.load_installed_office_pack().available
+
+
+def _office_archive(tmp_path):
+    import io
+    import zipfile
+    source = make_office_pack(tmp_path / 'source')
+    content = io.BytesIO()
+    with zipfile.ZipFile(content, 'w') as archive:
+        for path in source.rglob('*'):
+            if path.is_file(): archive.writestr(path.relative_to(source).as_posix(), path.read_bytes())
+    return content.getvalue()
+
+
+def test_the_archive_is_asked_from_the_installed_versions_release_then_the_newest():
+    from openprogram.programs.applications.office_editor.install import (
+        OFFICE_ARCHIVE_NAME, OFFICE_RELEASES, office_download_urls)
+    latest = f"{OFFICE_RELEASES}/latest/download/{OFFICE_ARCHIVE_NAME}"
+    assert OFFICE_RELEASES == "https://github.com/FuzzyKuji/OpenProgram/releases"
+    assert office_download_urls("1.3.0") == [f"{OFFICE_RELEASES}/download/v1.3.0/{OFFICE_ARCHIVE_NAME}", latest]
+    # A build without a release of its own, or a bare checkout, asks only the newest release.
+    assert office_download_urls("1.3.0.dev1") == [latest]
+    assert office_download_urls(None) == [latest]
+
+
+def test_a_version_without_its_own_copy_installs_the_newest_releases_verified_bytes(tmp_path, monkeypatch):
+    import httpx
+    import pytest
+    import openprogram.programs.applications.office_editor.install as installer
+    data = _office_archive(tmp_path)
+    cache = tmp_path / 'cache' / 'office'
+    monkeypatch.setattr(installer, 'prepared_office_cache', lambda: cache)
+    monkeypatch.setattr(installer, 'installed_version', lambda: '1.4.0')
+    monkeypatch.setattr(installer, 'OFFICE_DOWNLOAD_BYTES', len(data))
+    monkeypatch.setattr(installer, 'OFFICE_ARCHIVE_SHA256', hashlib.sha256(data).hexdigest())
+    asked = []
+    def answer(served):
+        def handler(request):
+            asked.append(request.url.path)
+            return httpx.Response(200, content=served) if '/latest/' in request.url.path else httpx.Response(404)
+        return lambda *a, **k: httpx.Client(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(installer.safe_http, 'safe_client', answer(data))
+    assert installer.download_office_pack().available
+    assert [path.split('/')[-2] for path in asked] == ['v1.4.0', 'download']
+    previous = (cache / 'current.json').read_bytes()
+    # The newest release's copy is held to the same pin as the version's own.
+    monkeypatch.setattr(installer.safe_http, 'safe_client', answer(data[:-1] + b'x'))
+    with pytest.raises(ValueError, match='verification'):
+        installer.download_office_pack()
+    assert (cache / 'current.json').read_bytes() == previous
+
+
+def test_a_version_no_release_serves_says_which_update_brings_office(tmp_path, monkeypatch):
+    import httpx
+    import pytest
+    import openprogram.programs.applications.office_editor.install as installer
+    cache = tmp_path / 'cache' / 'office'
+    monkeypatch.setattr(installer, 'prepared_office_cache', lambda: cache)
+    monkeypatch.setattr(installer.safe_http, 'safe_client', lambda *a, **k: httpx.Client(
+        transport=httpx.MockTransport(lambda request: httpx.Response(404))))
+    monkeypatch.setattr(installer, 'installed_version', lambda: '1.2.0')
+    with pytest.raises(installer.OfficeArchiveUnpublished) as raised:
+        installer.download_office_pack()
+    assert raised.value.update_to == '1.3.0' and raised.value.version == '1.2.0'
+    assert str(raised.value) == ('OpenProgram 1.2.0 cannot download Office support: releases before 1.3.0 '
+                                 'do not include it. Update OpenProgram to 1.3.0 or newer, then install again.')
+    assert not cache.exists() and not list(cache.parent.glob('.office-install-*'))
+    monkeypatch.setattr(installer, 'installed_version', lambda: '1.3.4')
+    with pytest.raises(installer.OfficeArchiveUnpublished) as raised:
+        installer.download_office_pack()
+    assert raised.value.update_to is None
+    assert 'Update OpenProgram to the newest version' in str(raised.value)

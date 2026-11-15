@@ -197,12 +197,16 @@ def managed_release_target(
     This is the single platform seam used by the managed updater. Archive
     format is part of the target contract: POSIX runtimes use ``tar.gz`` and
     Windows runtimes use a ZIP that needs no Unix compatibility layer.
+    The architecture is the running interpreter's, which an x64 install on
+    Windows on Arm keeps.
     """
 
     import platform as _platform
 
+    from openprogram.host._platform.architecture import interpreter_architecture
+
     system = system or _platform.system()
-    machine = (machine or _platform.machine()).lower()
+    machine = (machine or interpreter_architecture()).lower()
     platform_name = {
         "Darwin": "macos",
         "Linux": "linux",

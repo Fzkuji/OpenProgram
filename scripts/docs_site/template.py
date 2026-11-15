@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import html as _html
 import json
+import posixpath
 from pathlib import Path
 
 
@@ -142,6 +143,10 @@ def render_page(
     )
     social_description = _html.escape(description, quote=True)
     social_url = _html.escape(canonical_url, quote=True)
+    # The site root holds favicon.ico; the docs are mounted one level below it.
+    site_root = posixpath.dirname(base.rstrip("/")).rstrip("/") + "/"
+    social_image = _html.escape(
+        (docs_root_url or base) + "images/openprogram-social-card.png", quote=True)
     breadcrumb_data = ""
     if canonical_url and docs_root_url and canonical_url.rstrip("/") != docs_root_url.rstrip("/"):
         payload = {
@@ -193,8 +198,8 @@ def render_page(
 <meta property="og:url" content="{social_url}">
 <meta property="og:title" content="{safe_title} · OpenProgram Docs">
 <meta property="og:description" content="{social_description}">
-<meta property="og:image" content="https://openprogram.io/docs/images/openprogram-social-card.png">
-<meta property="og:image:secure_url" content="https://openprogram.io/docs/images/openprogram-social-card.png">
+<meta property="og:image" content="{social_image}">
+<meta property="og:image:secure_url" content="{social_image}">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -202,9 +207,9 @@ def render_page(
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{safe_title} · OpenProgram Docs">
 <meta name="twitter:description" content="{social_description}">
-<meta name="twitter:image" content="https://openprogram.io/docs/images/openprogram-social-card.png">
+<meta name="twitter:image" content="{social_image}">
 <meta name="twitter:image:alt" content="OpenProgram: Self-Programming AI Agent Framework">
-<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" href="{site_root}favicon.ico" sizes="any">
 <link rel="icon" type="image/svg+xml" href="{base}assets/mark.svg">
 <link rel="stylesheet" href="{base}assets/site.css?v={ASSET_VER}">
 <link rel="stylesheet" href="{base}assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">

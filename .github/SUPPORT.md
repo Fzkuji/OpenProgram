@@ -1,7 +1,7 @@
 # OpenProgram Support
 
-- Read the [documentation](https://openprogram.io/docs/) and
-  [troubleshooting guide](https://openprogram.io/docs/server/troubleshooting.html).
+- Read the [documentation](https://fuzzykuji.github.io/openprogram-site/docs/) and
+  [troubleshooting guide](https://fuzzykuji.github.io/openprogram-site/docs/server/troubleshooting.html).
 - Ask usage and design questions in
   [GitHub Discussions](https://github.com/FuzzyKuji/OpenProgram/discussions/categories/q-a).
 - Report reproducible bugs through the

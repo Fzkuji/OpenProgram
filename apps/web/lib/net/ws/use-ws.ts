@@ -59,6 +59,7 @@ import { showToast } from "@/lib/format-utils/toast";
 import { notifyDesktopSessionLoaded } from "@/lib/desktop/self-update-reopen";
 import { translateText } from "@/lib/i18n";
 import { getQueryClient } from "@/lib/query-client";
+import { applyProviderQuotaFrame } from "@/lib/models/provider-state";
 import {
   agentSettingsChanged,
   loadAgentSettings,
@@ -514,6 +515,14 @@ export function useWS(): void {
           getQueryClient()?.invalidateQueries({ queryKey: ["models-enabled"] });
           return true;
         }
+        case "provider_quota": {
+          // One key's new quota and its provider's picker state: the model
+          // picker and its trigger follow it without a request. Settings
+          // surfaces listen to the same frame through the window event.
+          applyProviderQuotaFrame(getQueryClient(), d as never);
+          window.dispatchEvent(new CustomEvent("op:provider-quota", { detail: d }));
+          return true;
+        }
         case "provider_models_changed": {
           const provider = typeof d?.provider === "string" ? d.provider : "";
           const queryClient = getQueryClient();
@@ -592,6 +601,7 @@ export function useWS(): void {
               args: (dd.args as Record<string, unknown>) || undefined,
               allowedScopes: Array.isArray(dd.allowed_scopes) ? dd.allowed_scopes.filter((scope): scope is string => typeof scope === "string") : undefined,
               risk_level: (dd.risk_level as "low" | "medium" | "high") || undefined,
+              askedBy: typeof dd.asked_by === "string" && dd.asked_by ? dd.asked_by : undefined,
               schema:
                 dd.schema && typeof dd.schema === "object"
                   ? (dd.schema as PendingDecision["schema"])
@@ -771,6 +781,7 @@ export function useWS(): void {
                         args: (dd.args as Record<string, unknown>) || undefined,
               allowedScopes: Array.isArray(dd.allowed_scopes) ? dd.allowed_scopes.filter((scope): scope is string => typeof scope === "string") : undefined,
               risk_level: (dd.risk_level as "low" | "medium" | "high") || undefined,
+              askedBy: typeof dd.asked_by === "string" && dd.asked_by ? dd.asked_by : undefined,
                         schema:
                           dd.schema && typeof dd.schema === "object"
                             ? (dd.schema as PendingDecision["schema"])

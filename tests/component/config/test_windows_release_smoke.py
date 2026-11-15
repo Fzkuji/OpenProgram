@@ -39,8 +39,16 @@ def _step(workflow: str, name: str) -> str:
 
 def test_the_windows_app_is_verified_before_its_checksums():
     workflow = RELEASE.read_text(encoding="utf-8")
+    # A file's checksum is recorded once, in release-manifest.json, by the
+    # publish job from the uploaded artifacts; the desktop job uploads the
+    # installer only after the smoke, and publish waits for that job.
     verify = workflow.index("- name: Verify the Windows App")
-    assert verify < workflow.index("- name: Create Windows SHA-256 checksums")
+    assert verify < workflow.index("name: desktop-${{ matrix.layout }}-${{ matrix.platform }}-${{ matrix.arch }}")
+    publish = workflow[workflow.index("\n  publish:"):]
+    needs = re.search(r"needs: \[(.*?)\]", publish).group(1)
+    assert "desktop" in [job.strip() for job in needs.split(",")]
+    assert "- name: Create release manifest" in publish
+    assert "SHA256SUMS" not in workflow
     step = _step(workflow, "Verify the Windows App")
     assert "if: matrix.platform == 'win'" in step
     assert "smoke-windows-desktop.ps1" in step and "-ToolCall" in step and "-Uninstall" in step
@@ -100,6 +108,18 @@ def test_the_smoke_pipes_a_prompt_to_print_before_the_tool_call():
 def test_the_desktop_smoke_script_stays_ascii():
     text = (ROOT / "scripts" / "release" / "smoke-windows-desktop.ps1").read_bytes()
     assert all(byte < 128 for byte in text)
+
+
+def test_the_desktop_smoke_installs_under_a_group_policy_that_allows_signed_scripts_only():
+    """The runner's own policy is unrestricted and -ExecutionPolicy Bypass beats
+    every scope but Group Policy, so a fresh install that ran an unsigned .ps1
+    passed the release gate and failed on company PCs."""
+    text = (ROOT / "scripts" / "release" / "smoke-windows-desktop.ps1").read_text(encoding="ascii")
+    policy = text.index('$PolicyKey = "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\PowerShell"')
+    assert "-Name ExecutionPolicy -PropertyType String -Value AllSigned" in text
+    assert "Get-ExecutionPolicy -Scope MachinePolicy" in text
+    install = text.index('Start-Process -FilePath $Installer -ArgumentList "/S", "/currentuser"')
+    assert policy < install < text.index("Remove-Item -Path $PolicyKey", install)
 
 
 def _post(base_url: str, messages: list, tools: list) -> dict:

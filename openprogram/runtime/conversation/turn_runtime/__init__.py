@@ -148,64 +148,6 @@ def _drain_send_message_inbox(session_id: str) -> None:
         )
 
 
-def _finish_resumed_handoff(req: TurnRequest, final_text: str | None) -> None:
-    """A turn that continues one a worker restart cut off may be a handoff
-    turn that still owes its sender a reply (always_on/handoff.py); send it
-    now that the turn ended. ``None``: the turn failed. Best-effort."""
-    if not getattr(req, "restart_resume", False):
-        return
-    try:
-        from openprogram.runtime.conversation.always_on.handoff import resumed_turn_ended
-        resumed_turn_ended(getattr(req, "resumes_message_id", None), final_text)
-    except Exception:
-        _log.debug("handoff reply after restart failed for session %s",
-                   req.session_id, exc_info=True)
-
-
-def _failure_answer(exc: BaseException) -> str:
-    from openprogram.runtime.conversation.always_on.handoff import failure_answer
-    return failure_answer(f"{type(exc).__name__}: {exc}")
-
-
-def _end_resumed_attempt(req: TurnRequest, user_msg_id: str, *, final_text: str | None = None,
-                         error: BaseException | None = None, cancel_event=None) -> None:
-    """The attempt that resumed a paused turn ended: a handoff turn sends the
-    reply it still owes. A raise while the worker goes down, or one that is
-    not an ordinary error, is no outcome: recovery decides. Best-effort."""
-    try:
-        from openprogram.runtime.conversation.always_on import handoff
-        from openprogram.runtime.conversation.run_control import is_worker_stopping
-        stopped = cancel_event is not None and cancel_event.is_set()
-        if error is not None and not stopped and (is_worker_stopping() or not isinstance(error, Exception)):
-            return
-        if stopped and not (final_text or "").strip():
-            answer = handoff.STOPPED_ANSWER
-        elif error is not None:
-            answer = _failure_answer(error)
-        else:
-            answer = final_text
-        from openprogram.runtime.permissions.identity import in_handoff_chain
-        if in_handoff_chain(req):
-            handoff.turn_ended(user_msg_id, answer)
-        _finish_resumed_handoff(req, answer)
-    except Exception:
-        _log.debug("handoff reply of a resumed turn failed for session %s",
-                   req.session_id, exc_info=True)
-
-
-def _handoff_turn_phase(req: TurnRequest, user_msg_id: str, *, paused: bool) -> None:
-    """Keep a resumed handoff turn's saved phase in step. Best-effort."""
-    from openprogram.runtime.permissions.identity import in_handoff_chain
-
-    if not in_handoff_chain(req):
-        return
-    try:
-        from openprogram.runtime.conversation.always_on import handoff
-        (handoff.turn_paused if paused else handoff.turn_resumed)(user_msg_id)
-    except Exception:
-        _log.debug("handoff phase not saved for session %s", req.session_id, exc_info=True)
-
-
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
@@ -342,7 +284,6 @@ def execute_continuation(
         placeholder_inserted=True,
         agentic_tool_names=_agentic_tool_names,
     )
-    _handoff_turn_phase(req, user_msg_id, paused=False)
     try:
         final_text, usage, tool_calls = _run_loop_blocking(
             req=req,
@@ -358,13 +299,11 @@ def execute_continuation(
     except BaseException as exc:
         if _bound_reply is not None:
             _bound_reply.abort()
-        _end_resumed_attempt(req, user_msg_id, error=exc, cancel_event=cancel_event)
         raise
     finally:
         _on_event_persist.flush()
         _bindings.release(suspended=bool(context.get("safe_point_committed")))
     if context.get("safe_point_committed"):
-        _handoff_turn_phase(req, user_msg_id, paused=True)
         if _bound_reply is not None:
             _bound_reply.pause()
         result = TurnResult(
@@ -377,9 +316,9 @@ def execute_continuation(
 
     # The pre-pause trace is part of tool_calls, so files attached
     # before the pause go out too (same step as 4b in _process_turn_once).
-    from openprogram.programs.tools.interaction.send_file import attached_paths, with_attachments
-    final_text = with_attachments(final_text, tool_calls, req.session_id)
-    attached_files = attached_paths(tool_calls, req.session_id)
+    from openprogram.programs.tools.interaction.send_file import turn_attachments
+    final_text, attached_files = turn_attachments(
+        final_text, tool_calls, req, _turn_started_at(db, req.session_id, user_msg_id))
 
     assistant_msg, _blocks, tool_calls, usage = persist_assistant_message(
         db=db,
@@ -426,7 +365,6 @@ def execute_continuation(
     }})
     if _bound_reply is not None:
         _bound_reply.finish(final_text, attached_files=attached_files)
-    _end_resumed_attempt(req, user_msg_id, final_text=final_text, cancel_event=cancel_event)
     return TurnResult(
         final_text=final_text,
         user_msg_id=user_msg_id,
@@ -436,6 +374,17 @@ def execute_continuation(
         last_round_text=req.last_round_text,
         usage=usage,
     )
+
+
+def _turn_started_at(db, session_id: str, user_msg_id: str) -> float | None:
+    """When a resumed turn started: its user message's time. ``None``
+    (nothing produced is attached) when the store has no time for it."""
+    try:
+        rows = db.get_messages_by_id(session_id, [user_msg_id])
+        value = rows[0].get("timestamp") if rows else None
+        return float(value) if value else None
+    except Exception:
+        return None
 
 
 def _bind_usage_branch(db, session_id: str, branch_id: str | None = None) -> None:
@@ -463,6 +412,28 @@ def _bind_usage_branch(db, session_id: str, branch_id: str | None = None) -> Non
 
 @_memory_execution
 def _process_turn_once(
+    req: TurnRequest,
+    *,
+    on_event: Optional[EventCallback] = None,
+    cancel_event: Optional[threading.Event] = None,
+    execution_context: dict | None = None,
+) -> TurnResult:
+    """Run the turn and hand the thread back labelled as it came.
+
+    The turn labels this thread's model calls as its own (``chat``, its
+    conversation and branch); a pooled thread that kept the label would
+    count whatever it runs next as this conversation's chat.
+    """
+    from openprogram.models.usage.context import _current as _usage_label
+    before = _usage_label.get()
+    try:
+        return _run_turn_once(req, on_event=on_event, cancel_event=cancel_event,
+                              execution_context=execution_context)
+    finally:
+        _usage_label.set(before)
+
+
+def _run_turn_once(
     req: TurnRequest,
     *,
     on_event: Optional[EventCallback] = None,
@@ -692,8 +663,6 @@ def _process_turn_once(
     #    a system message so the conversation isn't left in a stuck
     #    "agent is thinking…" state.
     _bound_reply = None
-    # A first attempt that paused before its first effect runs again here.
-    _handoff_turn_phase(req, user_msg_id, paused=False)
     try:
         # In both paths we pass history WITHOUT the new user message:
         # * user_already_persisted=False: history was loaded before the
@@ -754,8 +723,6 @@ def _process_turn_once(
         # TurnWriter (record_failure). An errored turn still ends the
         # turn, so queued cross-branch messages are drained here too.
         _drain_send_message_inbox(req.session_id)
-        if getattr(req, "restart_resume", False):
-            _end_resumed_attempt(req, user_msg_id, error=e, cancel_event=cancel_event)
         if _bound_reply is not None:
             _bound_reply.abort()
         return handle_turn_error(
@@ -778,7 +745,6 @@ def _process_turn_once(
         ))
 
     if execution_context is not None and execution_context.get("safe_point_committed"):
-        _handoff_turn_phase(req, user_msg_id, paused=True)
         if _bound_reply is not None:
             _bound_reply.pause()
         result = TurnResult(
@@ -796,9 +762,10 @@ def _process_turn_once(
     #     result, and in the TurnResult the channel layer uploads from,
     #     in one move. Same lexicon as an inbound attachment, deliberately.
     #     A resumed turn does the same in execute_continuation.
-    from openprogram.programs.tools.interaction.send_file import attached_paths, with_attachments
-    final_text = with_attachments(final_text, tool_calls, req.session_id)
-    attached_files = attached_paths(tool_calls, req.session_id)
+    #     Deliverables the turn produced (a deck a script built, named in
+    #     the reply) are attached the same way without a send_file call.
+    from openprogram.programs.tools.interaction.send_file import turn_attachments
+    final_text, attached_files = turn_attachments(final_text, tool_calls, req, started_at)
 
     # 5. Persist the assistant message (phase 5) — extracted to
     #    persistence.py (dispatcher-split step 5). Returns the
@@ -899,7 +866,6 @@ def _process_turn_once(
         # A background turn's end does not free the conversation: the
         # foreground turn, if any, drains the inbox when it ends.
         _drain_send_message_inbox(req.session_id)
-    _finish_resumed_handoff(req, final_text)
 
     # 7. Final result event for clients that wait for the synchronous
     #    "the turn is done" signal. It carries the reply as persisted

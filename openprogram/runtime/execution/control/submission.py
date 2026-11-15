@@ -300,6 +300,88 @@ def rejected_command(cmd: dict, code: str, latest_snapshot: dict | None = None) 
     return value
 
 
+def _authorized_target(store, cmd: dict, operation: str, raw_actor: dict, actor: dict,
+                       bound_session: str | None, surface: str | None,
+                       conversation_session_id: str | None):
+    """Read and authorize the command's execution, in a worker thread.
+
+    Returns ``(execution, actor, None)``, or ``(None, None, answer)`` when
+    the command is refused. ``actor`` gains the server-resolved binding:
+    command and audit records retain only transport-trusted control
+    metadata, and the execution binding is stored explicitly so later audit
+    readers can reconstruct the exact authorization decision without
+    trusting command input."""
+    execution_id = cmd.get("execution_id")
+    execution = store.get_execution(execution_id)
+    if execution is None:
+        return None, None, (rejected_command(cmd, "not_found"), {
+            "execution_id": execution_id, "status_version": None,
+        })
+    try:
+        if conversation_session_id:
+            from openprogram.runtime.execution.conversation_scope import authorize_conversation_execution
+
+            authorization = authorize_conversation_execution(
+                raw_actor, PUBLIC_COMMAND_ACTIONS[operation], execution,
+                store=store, session_id=conversation_session_id, bound_session=None,
+            )
+        else:
+            authorization = authorize_execution_target(
+                raw_actor, PUBLIC_COMMAND_ACTIONS[operation], execution,
+                bound_session=bound_session,
+            )
+        if actor:
+            for field in ("project_ids", "session_ids", "execution_actions"):
+                value = raw_actor.get(field)
+                if isinstance(value, (list, tuple, frozenset, set)):
+                    actor[field] = tuple(str(item) for item in value)
+            actor["resolved_project_id"] = authorization.project_binding["project_id"]
+            actor["resolved_session_id"] = authorization.project_binding["session_id"]
+            actor["surface"] = surface if surface is not None else str(raw_actor.get("surface") or "runtime")
+    except Exception:
+        return None, None, (rejected_command(cmd, "not_found"), {
+            "execution_id": execution_id, "status_version": None,
+        })
+    return execution, actor, None
+
+
+def _job_runner_for(store, execution_id: str):
+    """``(job_runner, is_job)``: the Job runner owns its resource saga and
+    canonical control hooks, including transport-neutral resource release.
+    A Job runner exists only where the Jobs package is loaded."""
+    from .. import hooks
+
+    job_runner = hooks.job_runner(store)
+    is_job = job_runner is not None and store.get_job_agent_input(execution_id) is not None
+    return job_runner, is_job
+
+
+def _check_resume(store, service, execution, command_id: str, operation: str) -> None:
+    """Refuse a new continue or step while an external effect is unresolved.
+
+    A retry of an already persisted resume command must remain a pure
+    idempotent read.  During a step, its tool effect is legitimately
+    ``dispatched`` before the safe point commits it.  Recovering the owner
+    for the duplicate transport request would fence the live attempt while
+    it is still executing, so its safe-point commit would fail with
+    ``stale_attempt`` and force reconciliation."""
+    from openprogram.runtime.execution.store import ExecutionConflict
+
+    execution_id = execution.execution_id
+    if store.get_command(command_id) is not None:
+        return
+    if not service.effects.list_unresolved(execution_id):
+        return
+    if execution.current_attempt_id is not None:
+        generation = execution.owner_lease.get("generation")
+        if isinstance(generation, int):
+            service.recover_owner_loss(
+                execution_id, attempt_id=execution.current_attempt_id,
+                generation=generation,
+            )
+    raise ExecutionConflict("unresolved_effect", "execution has an unresolved external effect")
+
+
 async def submit_execution_control(
     cmd: dict,
     operation: str,
@@ -310,7 +392,16 @@ async def submit_execution_control(
     conversation_session_id: str | None = None,
     prepare_steer: SteerPayloadPreparer | None = None,
 ):
-    """Submit one authenticated exact command through RuntimeControlService."""
+    """Submit one authenticated exact command through RuntimeControlService.
+
+    Awaited on the caller's event loop. Every read and write of the
+    execution's records (they live under its conversation's lock) runs in a
+    worker thread of the execution's lane (``control.shared.off_loop``), in
+    the order the command needs them; only the owner's signal, an
+    activation and a steer's attachments are awaited here. A held
+    conversation therefore delays this command, never the loop, and a stop
+    still reaches a running owner as soon as its command is written.
+    """
     from openprogram.runtime.execution import default_control_service, default_store
     from openprogram.runtime.execution.store import ExecutionConflict, CommandConflict
     from openprogram.runtime.execution.attempts import AttemptConflict
@@ -318,14 +409,17 @@ async def submit_execution_control(
 
     from openprogram.state.authority import has_capability, normalize_authority
 
+    from .shared import off_loop
+
     raw_actor = dict(actor) if isinstance(actor, dict) else {}
     actor = normalize_authority(raw_actor)
     if operation == "cancel" and names_request(cmd):
         # A stop sent before the client learnt the execution id names the
         # send; it becomes a stop of that execution, or a mark the send's
         # admission takes.
-        resolved, answer = _resolve_request_target(
-            cmd, raw_actor, actor, bound_session, surface,
+        resolved, answer = await off_loop(
+            f"request:{cmd.get('session_id')}:{cmd.get('client_request_id')}",
+            _resolve_request_target, cmd, raw_actor, actor, bound_session, surface,
         )
         if answer is not None:
             return answer
@@ -340,49 +434,15 @@ async def submit_execution_control(
         }
     store = default_store()
     service = default_control_service()
-    execution = store.get_execution(execution_id)
-    if execution is None:
-        return rejected_command(cmd, "not_found"), {
-            "execution_id": execution_id, "status_version": None,
-        }
+    execution, actor, refusal = await off_loop(
+        execution_id, _authorized_target, store, cmd, operation, raw_actor, actor,
+        bound_session, surface, conversation_session_id,
+    )
+    if refusal is not None:
+        return refusal
     try:
-        if conversation_session_id:
-            from openprogram.runtime.execution.conversation_scope import authorize_conversation_execution
-
-            authorization = authorize_conversation_execution(
-                raw_actor, PUBLIC_COMMAND_ACTIONS[operation], execution,
-                store=store, session_id=conversation_session_id, bound_session=None,
-            )
-        else:
-            authorization = authorize_execution_target(
-                raw_actor, PUBLIC_COMMAND_ACTIONS[operation], execution,
-                bound_session=bound_session,
-            )
-        # Command and audit records retain only transport-trusted control
-        # metadata.  The execution binding is resolved by the server and is
-        # stored explicitly so later audit readers can reconstruct the exact
-        # authorization decision without trusting command input.
-        if actor:
-            for field in ("project_ids", "session_ids", "execution_actions"):
-                value = raw_actor.get(field)
-                if isinstance(value, (list, tuple, frozenset, set)):
-                    actor[field] = tuple(str(item) for item in value)
-            actor["resolved_project_id"] = authorization.project_binding["project_id"]
-            actor["resolved_session_id"] = authorization.project_binding["session_id"]
-            actor["surface"] = surface if surface is not None else str(raw_actor.get("surface") or "runtime")
-    except Exception:
-        return rejected_command(cmd, "not_found"), {
-            "execution_id": execution_id, "status_version": None,
-        }
-    try:
-        from .. import hooks
-
-        # A Job runner exists only where the Jobs package is loaded.
-        job_runner = hooks.job_runner(store)
-        is_job = job_runner is not None and store.get_job_agent_input(execution_id) is not None
+        job_runner, is_job = await off_loop(execution_id, _job_runner_for, store, execution_id)
         if is_job:
-            # The Job runner owns its resource saga and canonical control
-            # hooks, including transport-neutral resource release.
             service = job_runner._execution_control
         if operation in {"wait_answer", "wait_decline"}:
             payload = cmd.get("payload")
@@ -408,32 +468,11 @@ async def submit_execution_control(
                 "steer": "steer", "fork": "fork", "retry": "retry",
             }[operation]):
                 raise ExecutionConflict("unsupported", "execution does not support this control command")
-        # A retry of an already persisted resume command must remain a pure
-        # idempotent read.  During a step, its tool effect is legitimately
-        # ``dispatched`` before the safe point commits it.  Recovering the
-        # owner for the duplicate transport request would fence the live
-        # attempt while it is still executing, so its safe-point commit would
-        # fail with ``stale_attempt`` and force reconciliation.
-        existing_resume = (
-            store.get_command(command_id)
-            if operation in {"continue", "step"}
-            else None
-        )
-        if (
-            operation in {"continue", "step"}
-            and existing_resume is None
-            and service.effects.list_unresolved(execution_id)
-        ):
-            if execution.current_attempt_id is not None:
-                generation = execution.owner_lease.get("generation")
-                if isinstance(generation, int):
-                    service.recover_owner_loss(
-                        execution_id, attempt_id=execution.current_attempt_id,
-                        generation=generation,
-                    )
-            raise ExecutionConflict("unresolved_effect", "execution has an unresolved external effect")
+        if operation in {"continue", "step"}:
+            await off_loop(execution_id, _check_resume, store, service, execution, command_id, operation)
         if is_job and operation in {"continue", "step"}:
-            command, latest = job_runner.queue_job_resume(
+            command, latest = await off_loop(
+                execution_id, job_runner.queue_job_resume,
                 command_id=command_id,
                 execution_id=execution_id,
                 expected_version=expected_version,
@@ -469,7 +508,7 @@ async def submit_execution_control(
             payload = dict(cmd["payload"])
             if payload.get("attachments"):
                 digest = steer_attachments_digest(payload["attachments"])
-                existing = store.get_command(command_id)
+                existing = await off_loop(execution_id, store.get_command, command_id)
                 if existing is not None:
                     # A retry: the files were saved the first time. A
                     # different batch under the same id fails the fingerprint.
@@ -489,13 +528,15 @@ async def submit_execution_control(
                     payload["attachments_digest"] = digest
             else:
                 payload.pop("attachments", None)
-            dispatch = service.request_steer(
+            dispatch = await off_loop(
+                execution_id, service.request_steer,
                 command_id=command_id, execution_id=execution_id,
                 expected_version=expected_version, actor=actor,
                 payload=payload,
             )
         elif operation == "fork":
-            branch = service.request_fork(
+            branch = await off_loop(
+                execution_id, service.request_fork,
                 command_id=command_id, execution_id=execution_id,
                 expected_version=expected_version, actor=actor,
                 manifest_id=cmd["payload"]["manifest_id"],
@@ -504,7 +545,8 @@ async def submit_execution_control(
             )
             return branch.command, branch.execution
         elif operation == "retry":
-            branch = service.request_retry(
+            branch = await off_loop(
+                execution_id, service.request_retry,
                 command_id=command_id, execution_id=execution_id,
                 expected_version=expected_version, actor=actor,
                 checkpoint_id=cmd["payload"].get("checkpoint_id"),
@@ -522,7 +564,7 @@ async def submit_execution_control(
             )
         return dispatch.command, dispatch.execution
     except (ExecutionConflict, CommandConflict, AttemptConflict, InvalidCommand) as exc:
-        current = store.get_execution(execution_id)
+        current = await off_loop(execution_id, store.get_execution, execution_id)
         return rejected_command(
             cmd,
             "unsupported_capability" if getattr(exc, "code", None) == "unsupported" else getattr(exc, "code", "command_rejected"),

@@ -41,6 +41,10 @@ import asyncio
 import logging
 import json
 import os
+import threading
+import time
+
+from openprogram.state.store.session.conversation_work import run_for_conversation
 
 _log = logging.getLogger(__name__)
 
@@ -52,18 +56,20 @@ def _project_dict(p, alive: set[str] | None = None, unarchived: set[str] | None 
     if alive is not None:
         sids = [s for s in sids if s in alive]
     visible = [sid for sid in sids if unarchived is None or sid in unarchived]
-    from openprogram.state.store.project.location import evaluate_project_location
-    location_state = evaluate_project_location(p)
-    path_missing = location_state in {"missing", "replaced"} or (
-        bool(p.path) and not os.path.isdir(os.path.expanduser(p.path)))
+    # The location the registry records, never a look at the folder: a
+    # listing answers from memory. ``_reconcile_projects`` checks the folders
+    # behind the reply and has every page list again when a state changed.
+    location_state = "available" if p.is_default else (
+        getattr(p, "location_state", "") or "available")
+    path_missing = location_state in {"missing", "replaced"}
     return {
         "id": p.id,
         "name": p.name,
         "path": p.path,
         "is_default": p.is_default,
         # The composer chip warns on a project whose folder is gone and
-        # offers the relocate repair. Computed here (one stat per
-        # project) so the frontend never guesses from the path string.
+        # offers the relocate repair. Sent from here so the frontend never
+        # guesses from the path string.
         "path_missing": path_missing,
         "path_replaced": location_state == "replaced",
         "location_state": location_state,
@@ -100,13 +106,16 @@ def _session_meta(session_id: str) -> dict:
 # Projects
 
 
-async def handle_list_projects(ws, cmd: dict):
-    session_id = (cmd.get("session_id") or "").strip() or None
-    projects: list[dict] | None = None
-    current_project_id: str | None = None
-    status = "ready"
-    error_code: str | None = None
-    error: str | None = None
+def _projects_snapshot(session_id: str | None) -> dict:
+    """The registry as it stands, read only and from memory: the parsed
+    registry file and the conversation index. Nothing per project touches
+    the disk (no folder check, no marker read), no scans, no writes, no
+    registry lock.
+
+    Each file-system call gives up the interpreter lock, and getting it back
+    takes a full switch interval whenever another thread is computing, so a
+    listing that made hundreds of small calls took seconds beside one busy
+    thread while it took milliseconds alone."""
     try:
         from openprogram.state.store.project import project_store as _projects
         _projects.get_default_project()  # ensure the default label exists
@@ -117,33 +126,108 @@ async def handle_list_projects(ws, cmd: dict):
             unarchived = {r.get("id") for r in default_db().list_sessions(limit=100_000) if r.get("id")}
         except Exception:
             unarchived = alive
-        _projects.prune_sessions(alive)   # 清孤立引用（修 882-bug），只增不减的历史遗留
-        from openprogram.state.store.project.location import refresh_project_location
-        for project in _projects.list_projects():
-            if not project.is_default:
-                refresh_project_location(project.id)
         projects = [_project_dict(p, alive, unarchived) for p in _projects.list_projects()]
+        current_project_id = None
         if session_id:
             cur = _projects.project_for_session(session_id)
             current_project_id = cur.id if cur else None
+        return {"projects": projects, "current_project_id": current_project_id,
+                "status": "ready", "error_code": None, "error": None}
     except Exception:
         # An unavailable registry is not an authoritative empty snapshot.
         # Keep the request context so clients can retry without clearing
         # project-scoped state for projects that still exist.
-        status = "error"
-        error_code = "PROJECT_REGISTRY_UNAVAILABLE"
-        error = "Project registry is unavailable."
+        return {"projects": None, "current_project_id": None, "status": "error",
+                "error_code": "PROJECT_REGISTRY_UNAVAILABLE",
+                "error": "Project registry is unavailable."}
+
+
+#: Listing projects is an access, so it also reconciles them (finds a moved
+#: or deleted folder, drops references to deleted conversations). That work
+#: reads every project's folder and may wait on a session migration, so it
+#: runs after the reply, one at a time, at most this often. A listing inside
+#: the interval is followed by one run at the interval's end, so what a
+#: listing showed is always checked against the folders afterwards.
+RECONCILE_INTERVAL_S = 10.0
+_reconcile_lock = threading.Lock()
+_reconcile_running = False
+_reconcile_started_at = float("-inf")
+#: When the run queued behind the interval is due; in the past when none is.
+_reconcile_queued_for = float("-inf")
+
+
+def _claim_reconcile() -> float | None:
+    """Seconds until this listing's reconciliation may start (0 = now);
+    ``None`` when one is already running or queued."""
+    global _reconcile_running, _reconcile_queued_for, _reconcile_started_at
+    with _reconcile_lock:
+        now = time.monotonic()
+        if _reconcile_running or now < _reconcile_queued_for:
+            return None
+        wait = _reconcile_started_at + RECONCILE_INTERVAL_S - now
+        if wait > 0:
+            if wait == float("inf"):
+                return None
+            _reconcile_queued_for = now + wait
+            return wait
+        _reconcile_running, _reconcile_started_at = True, now
+        return 0.0
+
+
+def _start_queued_reconcile(loop) -> None:
+    global _reconcile_running, _reconcile_queued_for, _reconcile_started_at
+    with _reconcile_lock:
+        _reconcile_queued_for = float("-inf")
+        if _reconcile_running:
+            return
+        _reconcile_running, _reconcile_started_at = True, time.monotonic()
+    loop.run_in_executor(None, _reconcile_projects)
+
+
+def _visible_locations() -> dict:
+    """What a listing shows of each project's location: the recorded one."""
+    from openprogram.state.store.project import project_store as _projects
+    return {p.id: (p.path, p.location_state) for p in _projects.list_projects()}
+
+
+def _reconcile_projects() -> None:
+    """Prune dead session references and refresh project locations; tell
+    every client to list again when what a listing shows changed: a folder
+    found moved, deleted or back, or a migration that settled (migrating →
+    available)."""
+    global _reconcile_running
+    try:
+        from openprogram.state.store.project import project_store as _projects
+        from openprogram.state.store.project.location import reconcile_registered_projects
+        before = _visible_locations()
+        _projects.prune_sessions(_alive_session_ids())
+        reconcile_registered_projects()
+        if _visible_locations() != before:
+            _projects_changed()
+    except Exception:
+        _log.warning("project reconciliation after listing failed", exc_info=True)
+    finally:
+        with _reconcile_lock:
+            _reconcile_running = False
+
+
+async def handle_list_projects(ws, cmd: dict):
+    session_id = (cmd.get("session_id") or "").strip() or None
+    snapshot = await asyncio.to_thread(_projects_snapshot, session_id)
     await ws.send_text(json.dumps({
         "type": "projects_list",
-        "data": {
-            "projects": projects,
-            "current_project_id": current_project_id,
-            "session_id": session_id,
-            "status": status,
-            "error_code": error_code,
-            "error": error,
-        },
+        "data": {**snapshot, "session_id": session_id},
     }, default=str))
+    if snapshot["status"] != "ready":
+        return
+    wait = _claim_reconcile()
+    if wait is None:
+        return
+    loop = asyncio.get_running_loop()
+    if wait:
+        loop.call_later(wait, _start_queued_reconcile, loop)
+    else:
+        loop.run_in_executor(None, _reconcile_projects)
 
 
 async def handle_create_project(ws, cmd: dict):
@@ -162,12 +246,27 @@ async def handle_create_project(ws, cmd: dict):
             ok = True
         except Exception as e:  # noqa: BLE001
             error = f"{type(e).__name__}: {e}"
+    if ok:
+        _projects_changed(proj_dict["id"])
     await ws.send_text(json.dumps({
         "type": "project_created",
         "data": {"ok": ok, "project": proj_dict, "error": error},
     }, default=str))
     if ok:
         await handle_list_projects(ws, {"session_id": cmd.get("session_id")})
+
+
+def _projects_changed(project_id: str | None = None) -> None:
+    """Tell every open page to list projects again: a project made,
+    renamed, moved or hidden from one connection shows in all of them.
+
+    Handlers call this as soon as the change is stored, before anything
+    is sent back to the requesting socket: a sender that hangs up after
+    its reply (the CLI, a script, an agent) must not take the other
+    pages' notice with it."""
+    from openprogram.interfaces.server import server
+    data = {"project_id": project_id} if project_id else {}
+    server._broadcast(json.dumps({"type": "projects_changed", "data": data}))
 
 
 #: Rejection reason when a session that already has turns tries to rebind.
@@ -205,6 +304,20 @@ def _binding_is_frozen(session_id: str, project_id: str) -> bool:
         return True
 
 
+def _set_session_project(session_id: str, project_id: str) -> tuple[bool, str | None]:
+    if _binding_is_frozen(session_id, project_id):
+        return False, FROZEN_ERROR
+    try:
+        from openprogram.state.store.project import project_store as _projects
+        from openprogram.runtime.context.session_db import default_db
+        if _projects.get_project(project_id) is None:
+            return False, "unknown project"
+        default_db().assign_project(session_id, project_id)
+        return True, None
+    except Exception as e:  # noqa: BLE001
+        return False, f"{type(e).__name__}: {e}"
+
+
 async def handle_set_session_project(ws, cmd: dict):
     """Bind the session's MAIN project. Legal only while the session has
     no turns yet: the main working directory freezes when the first real
@@ -214,22 +327,18 @@ async def handle_set_session_project(ws, cmd: dict):
     which moves its repository and records the move."""
     session_id = (cmd.get("session_id") or "").strip()
     project_id = (cmd.get("project_id") or "").strip()
-    ok, error = False, None
     if not session_id or not project_id:
-        error = "session_id and project_id are required"
-    elif _binding_is_frozen(session_id, project_id):
-        error = FROZEN_ERROR
+        ok, error = False, "session_id and project_id are required"
     else:
-        try:
-            from openprogram.state.store.project import project_store as _projects
-            from openprogram.runtime.context.session_db import default_db
-            if _projects.get_project(project_id) is None:
-                error = "unknown project"
-            else:
-                default_db().assign_project(session_id, project_id)
-                ok = True
-        except Exception as e:  # noqa: BLE001
-            error = f"{type(e).__name__}: {e}"
+        # Reads and writes the conversation under its lock: off the loop.
+        ok, error = await run_for_conversation(
+            session_id, _set_session_project, session_id, project_id)
+    if ok:
+        # Other open pages regroup the conversation; sent before the reply so
+        # a caller that hangs up does not take their notice with it.
+        _projects_changed(project_id)
+        from openprogram.interfaces.server.ws_actions.session.listing import broadcast_sessions_list
+        broadcast_sessions_list()
     await ws.send_text(json.dumps({
         "type": "session_project_set",
         "data": {"ok": ok, "session_id": session_id, "project_id": project_id, "error": error},
@@ -238,6 +347,33 @@ async def handle_set_session_project(ws, cmd: dict):
 
 #: Rejection reason when a conversation is moved while a turn runs on it.
 RUNNING_ERROR = "the conversation is running; wait for it to finish"
+
+
+def _move_session_to_project(session_id: str, project_id: str):
+    """``(ok, error, from_project_id, node_id)`` of moving the conversation."""
+    from_project_id, node_id = None, None
+    try:
+        from openprogram.runtime.conversation.run_control import is_turn_running
+        from openprogram.runtime.context.session_db import default_db
+        from openprogram.state.store.project import project_store as _projects
+        from openprogram.state.store.project.relocate_node import record_move
+        target = _projects.get_project(project_id)
+        if target is None:
+            return False, "unknown project", None, None
+        if is_turn_running(session_id):
+            return False, RUNNING_ERROR, None, None
+        db = default_db()
+        before = _projects.project_for_session(session_id) or _projects.get_default_project()
+        result = db.move_session(session_id, project_id)
+        from_project_id = result.get("from_project_id")
+        if result.get("moved"):
+            node_id = record_move(
+                db, session_id,
+                old_project_id=from_project_id or "", new_project_id=project_id,
+                old_name=before.name if before else "", new_name=target.name)
+        return True, None, from_project_id, node_id
+    except Exception as e:  # noqa: BLE001
+        return False, f"{type(e).__name__}: {e}", from_project_id, node_id
 
 
 async def handle_move_session_to_project(ws, cmd: dict):
@@ -251,41 +387,22 @@ async def handle_move_session_to_project(ws, cmd: dict):
     folder."""
     session_id = (cmd.get("session_id") or "").strip()
     project_id = (cmd.get("project_id") or "").strip()
-    ok, error, from_project_id, node_id = False, None, None, None
     if not session_id or not project_id:
-        error = "session_id and project_id are required"
+        ok, error, from_project_id, node_id = False, "session_id and project_id are required", None, None
     else:
-        try:
-            from openprogram.runtime.conversation.run_control import is_turn_running
-            from openprogram.runtime.context.session_db import default_db
-            from openprogram.state.store.project import project_store as _projects
-            from openprogram.state.store.project.relocate_node import record_move
-            target = _projects.get_project(project_id)
-            if target is None:
-                error = "unknown project"
-            elif is_turn_running(session_id):
-                error = RUNNING_ERROR
-            else:
-                db = default_db()
-                before = _projects.project_for_session(session_id) or _projects.get_default_project()
-                result = db.move_session(session_id, project_id)
-                from_project_id = result.get("from_project_id")
-                if result.get("moved"):
-                    node_id = record_move(
-                        db, session_id,
-                        old_project_id=from_project_id or "", new_project_id=project_id,
-                        old_name=before.name if before else "", new_name=target.name)
-                ok = True
-        except Exception as e:  # noqa: BLE001
-            error = f"{type(e).__name__}: {e}"
+        # Moves the conversation under its lock: off the loop.
+        ok, error, from_project_id, node_id = await run_for_conversation(
+            session_id, _move_session_to_project, session_id, project_id)
+    if ok:
+        _projects_changed(project_id)
+        from openprogram.interfaces.server.ws_actions.session.listing import broadcast_sessions_list
+        broadcast_sessions_list()
     await ws.send_text(json.dumps({
         "type": "session_moved",
         "data": {"ok": ok, "session_id": session_id, "from_project_id": from_project_id,
                  "project_id": project_id, "node_id": node_id, "error": error},
     }, default=str))
     if ok:
-        from openprogram.interfaces.server import server
-        server._broadcast(json.dumps({"type": "projects_changed", "data": {"project_id": project_id}}))
         await handle_list_projects(ws, {"session_id": session_id})
 
 
@@ -339,6 +456,8 @@ async def handle_relocate_project(ws, cmd: dict):
                 old_path=old_path or "", new_path=path)
         except Exception:
             node_id = None
+    if ok:
+        _projects_changed(resolved_id)
     await ws.send_text(json.dumps({
         "type": "project_relocated",
         "data": {"ok": ok, "session_id": session_id, "project_id": resolved_id,
@@ -376,8 +495,29 @@ async def handle_list_session_workdirs(ws, cmd: dict):
     session_id = (cmd.get("session_id") or "").strip()
     await ws.send_text(json.dumps({
         "type": "session_workdirs",
-        "data": {"session_id": session_id, "workdirs": _resolve_workdirs(session_id)},
+        "data": {"session_id": session_id,
+                 "workdirs": await run_for_conversation(session_id, _resolve_workdirs, session_id)},
     }, default=str))
+
+
+def _edit_workdirs(session_id: str, path: str, add: bool) -> tuple[bool, str | None]:
+    """Add or remove one extra working directory; runs off the loop (the
+    conversation's record is read and written under its lock)."""
+    try:
+        from openprogram.runtime.context.session_db import default_db
+        db = default_db()
+        meta = db.get_session(session_id) or {}
+        ap = os.path.abspath(os.path.expanduser(path))
+        if add:
+            dirs = list(meta.get("workdirs") or [])
+            if ap not in dirs:
+                dirs.append(ap)
+        else:
+            dirs = [d for d in (meta.get("workdirs") or []) if d not in (path, ap)]
+        db.update_session(session_id, workdirs=dirs)
+        return True, None
+    except Exception as e:  # noqa: BLE001
+        return False, f"{type(e).__name__}: {e}"
 
 
 async def handle_add_session_workdir(ws, cmd: dict):
@@ -389,18 +529,7 @@ async def handle_add_session_workdir(ws, cmd: dict):
     elif not os.path.isdir(os.path.expanduser(path)):
         error = f"not a directory: {path}"
     else:
-        try:
-            from openprogram.runtime.context.session_db import default_db
-            db = default_db()
-            meta = db.get_session(session_id) or {}
-            dirs = list(meta.get("workdirs") or [])
-            ap = os.path.abspath(os.path.expanduser(path))
-            if ap not in dirs:
-                dirs.append(ap)
-            db.update_session(session_id, workdirs=dirs)
-            ok = True
-        except Exception as e:  # noqa: BLE001
-            error = f"{type(e).__name__}: {e}"
+        ok, error = await run_for_conversation(session_id, _edit_workdirs, session_id, path, True)
     await ws.send_text(json.dumps({
         "type": "session_workdir_added",
         "data": {"ok": ok, "session_id": session_id, "path": path, "error": error},
@@ -412,17 +541,7 @@ async def handle_add_session_workdir(ws, cmd: dict):
 async def handle_remove_session_workdir(ws, cmd: dict):
     session_id = (cmd.get("session_id") or "").strip()
     path = (cmd.get("path") or "").strip()
-    ok, error = False, None
-    try:
-        from openprogram.runtime.context.session_db import default_db
-        db = default_db()
-        meta = db.get_session(session_id) or {}
-        ap = os.path.abspath(os.path.expanduser(path))
-        dirs = [d for d in (meta.get("workdirs") or []) if d not in (path, ap)]
-        db.update_session(session_id, workdirs=dirs)
-        ok = True
-    except Exception as e:  # noqa: BLE001
-        error = f"{type(e).__name__}: {e}"
+    ok, error = await run_for_conversation(session_id, _edit_workdirs, session_id, path, False)
     await ws.send_text(json.dumps({
         "type": "session_workdir_removed",
         "data": {"ok": ok, "session_id": session_id, "path": path, "error": error},
@@ -515,10 +634,9 @@ async def handle_update_project(ws, cmd: dict):
         result = {"ok": True, "project": _project_dict(project)}
     except (ValueError, OSError) as exc:
         result = {"ok": False, "error": str(exc)}
-    await ws.send_text(json.dumps({"type": "project_updated", "data": result}))
     if result["ok"]:
-        from openprogram.interfaces.server import server
-        server._broadcast(json.dumps({"type": "projects_changed", "data": {"project_id": project.id}}))
+        _projects_changed(project.id)
+    await ws.send_text(json.dumps({"type": "project_updated", "data": result}))
 
 
 ACTIONS = {
@@ -594,12 +712,19 @@ async def handle_project_operation(ws, cmd: dict):
                 claimed = {sid for p in projects.list_projects() for sid in p.session_ids}
                 session_ids.extend(row["id"] for row in db.list_sessions(limit=100_000, include_archived=True)
                                    if row.get("id") and row["id"] not in claimed)
-            for sid in session_ids:
+            def archive(sid):
+                # Under the conversation's lock: run in its lane.
                 row = db.get_session(sid)
                 if not row:
-                    continue
-                was_archived = bool(row.get("archived"))
+                    return None
+                was = bool(row.get("archived"))
                 db.update_session(sid, archived=True)
+                return was
+
+            for sid in session_ids:
+                was_archived = await run_for_conversation(sid, archive, sid)
+                if was_archived is None:
+                    continue
                 archived.append(sid)
                 if not was_archived:
                     from openprogram.runtime.conversation.always_on.runtime import archive_changed
@@ -615,9 +740,9 @@ async def handle_project_operation(ws, cmd: dict):
             raise ValueError("unknown project operation")
     except Exception as exc:
         result["error"] = str(exc)
-    await ws.send_text(json.dumps({"type": f"{action}_result", "data": result}))
     if result["ok"]:
-        server._broadcast(json.dumps({"type": "projects_changed", "data": {"project_id": project_id}}))
+        _projects_changed(project_id)
+    await ws.send_text(json.dumps({"type": f"{action}_result", "data": result}))
 
 
 ACTIONS.update({name: handle_project_operation for name in (

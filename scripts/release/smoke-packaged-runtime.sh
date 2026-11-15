@@ -123,6 +123,13 @@ run_with_timeout 180 "$embedded_python" -I "$resources/runtime/bin/verify-produc
   "${verify_args[@]}"
 run_with_timeout 60 "$embedded_python" -I -B "$resources/runtime/bin/verify-product-runtime.py" \
   "$resources/runtime" --compiled-import-only
+# `worker start` re-executes into the named helper, which must load them too.
+worker_helper="$(sed -n \
+  's/^[[:space:]]*"worker_python":[[:space:]]*"\([^"]*\)".*/\1/p' "$manifest")"
+if test -n "$worker_helper"; then
+  run_with_timeout 60 "$resources/runtime/$worker_helper" -I -B "$resources/runtime/bin/verify-product-runtime.py" \
+    "$resources/runtime" --compiled-import-only
+fi
 run_with_timeout 30 "$resources/runtime/bin/node" "$resources/runtime/assets/tui/index.cjs" --probe
 
 port="${OPENPROGRAM_SMOKE_PORT:-$((19000 + RANDOM % 500))}"

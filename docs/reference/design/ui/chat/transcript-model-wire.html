@@ -27,6 +27,7 @@ branches_changed { session_id }         replace class
 view_closed     { session_id, view }    critical</pre>
 <p><code translate="no">index</code> is required for <code translate="no">list: blocks</code>.</p>
 <p><strong>Changed frames, additive for all sockets.</strong> <code translate="no">chat_response</code> <code translate="no">stream_event</code> <code translate="no">text</code> and <code translate="no">thinking</code> gain <code translate="no">row_id</code>, <code translate="no">item_id</code>, <code translate="no">item_index</code>, <code translate="no">offset</code>. <code translate="no">text_end</code> gains <code translate="no">row_id</code>, <code translate="no">item_id</code>. Old clients still see <code translate="no">seq</code>.</p>
+<p class="note">The <code translate="no">text</code> event that opens a passage after a tool call, reasoning or a steer also carries <code translate="no">separator</code>: what the reply's flat text takes before the delta (<a href="../../runtime/execution/dispatcher-split.html#reply-text">A reply's text</a>).</p>
 <p>Every <code translate="no">chat_response</code> of a turn carries the reply's <code translate="no">row_id</code>, stamped by the turn's <code translate="no">naming_reply_row</code> wrap. The browser looks rows up by these ids and never builds one id from another.</p>
 <p><strong><code translate="no">ws_delivery.py</code>.</strong></p>
 <ul>

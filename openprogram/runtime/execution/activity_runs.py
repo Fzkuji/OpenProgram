@@ -110,7 +110,17 @@ def list_runs(
             if chart is not None:
                 row["steps"] = _chart_events(index, session_id, source, row, reads, chart)
             rows.append(row)
-    return {"runs": rows, "offset": offset, "total": len(ordered)}
+    page = {"runs": rows, "offset": offset, "total": len(ordered)}
+    if chart is not None and offset == 0:
+        # The messages this conversation sent elsewhere that are still
+        # unanswered ("→ Butler · waiting").
+        from openprogram.runtime.execution import hooks
+        roster = hooks.registered("agent_roster_facts")
+        try:
+            page["outgoing"] = list(roster.outgoing(session_id, chart.jobs)) if roster is not None else []
+        except Exception:  # noqa: BLE001 - the page shows without them
+            page["outgoing"] = []
+    return page
 
 
 @dataclass(frozen=True)
@@ -709,8 +719,23 @@ def _job_event(
         "error": job.error[:EVENT_TEXT_CHARS] if isinstance(job.error, str) and job.error else None,
         "created_at": created, "closed_as": status,
         "conversation": {"session_id": session, "head_id": job.head_id} if session and not never_started else None,
+        **_agent_facts(job),
         "children": _job_children(job, jobs, index, index_of, seen, depth, started),
     }
+
+
+def _agent_facts(job: Any) -> dict[str, Any]:
+    """The roster facts of a helper: its status in the one status set and the
+    tokens and cost of its subtree (``jobs/agent_status.py``, registered as
+    the ``agent_roster_facts`` hook)."""
+    from openprogram.runtime.execution import hooks
+    roster = hooks.registered("agent_roster_facts")
+    try:
+        if roster is not None:
+            return dict(roster.facts(job))
+    except Exception:  # noqa: BLE001 - the row still shows; the facts are extra
+        pass
+    return {"agent_status": None, "usage": None}
 
 
 def _job_children(

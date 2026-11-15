@@ -25,6 +25,9 @@ _LOG = logging.getLogger(__name__)
 _MAX_SCANS = 16
 _TTL = 60
 _BATCH = 500
+# One automatic ``measure`` request walks for at most this long, then
+# saves what it counted; Details can continue from the returned token.
+_MEASURE_BUDGET = 1.0
 
 
 def _target(project_id, path):
@@ -181,7 +184,7 @@ def _load_cache():
                 continue
             key, value = row
             if (not isinstance(key, str) or not isinstance(value, dict)
-                    or value.get('state') not in {'complete', 'incomplete'}
+                    or value.get('state') not in {'complete', 'incomplete', 'partial'}
                     or any(type(value.get(field)) is not int or value[field] < 0
                            for field in ('bytes', 'entries', 'skipped'))
                     or not isinstance(value.get('updated_at'), (int, float))
@@ -207,6 +210,15 @@ def _save_cache():
     except OSError as exc:
         # Metadata remains usable when profile storage is unavailable.
         _LOG.debug('Unable to save folder size cache: %s', exc)
+
+
+def _store(key, result):
+    """Keep one terminal or budget-limited sample per directory, under _LOCK."""
+    _CACHE[key] = {**result, 'token': None}
+    _CACHE.move_to_end(key)
+    while len(_CACHE) > _MAX_CACHE:
+        _CACHE.popitem(last=False)
+    _save_cache()
 
 
 def _cached_sample(info):
@@ -266,9 +278,34 @@ def cached_size(project_id, path):
     return None
 
 
-def folder_size(project_id, path, operation='peek', token=None):
-    if not isinstance(operation, str) or operation not in {'peek', 'start', 'continue', 'cancel'}:
+def _measure(project_id, path, fresh):
+    """Answer a visible folder in one request: the saved sample, else one
+    bounded walk whose result (finished or not) is saved for the next view."""
+    if not fresh:
+        result = folder_size(project_id, path, 'peek')
+        if result.get('error_code') or result.get('state') != 'unknown':
+            return result
+    result = folder_size(project_id, path, 'start')
+    deadline = time.monotonic() + _MEASURE_BUDGET
+    while result.get('token') and time.monotonic() < deadline:
+        result = folder_size(project_id, path, 'continue', result['token'])
+    if result.get('state') == 'partial':
+        info = file_info(project_id, path)
+        if not info.get('error_code') and info.get('revision') == result.get('revision'):
+            with _LOCK:
+                _load_cache()
+                # A concurrent request may have saved a newer sample meanwhile.
+                saved = _CACHE.get(info['absolute_path'])
+                if not saved or saved['updated_at'] <= result['updated_at']:
+                    _store(info['absolute_path'], result)
+    return result
+
+
+def folder_size(project_id, path, operation='peek', token=None, fresh=False):
+    if not isinstance(operation, str) or operation not in {'peek', 'measure', 'start', 'continue', 'cancel'}:
         return _error(ValueError('unsupported size operation'))
+    if operation == 'measure':
+        return _measure(project_id, path, fresh is True)
     info = file_info(project_id, path)
     if info.get('error_code'):
         return info
@@ -322,10 +359,5 @@ def folder_size(project_id, path, operation='peek', token=None):
                   'token': None if done else token, 'updated_at': time.time(), 'revision': scan['revision']}
         if done:
             _drop(token)
-            cache_key = info['absolute_path']
-            _CACHE[cache_key] = result
-            _CACHE.move_to_end(cache_key)
-            while len(_CACHE) > _MAX_CACHE:
-                _CACHE.popitem(last=False)
-            _save_cache()
+            _store(info['absolute_path'], result)
         return result

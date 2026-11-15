@@ -234,6 +234,44 @@ def test_the_end_write_reuses_the_running_card_id(parent_store, fake_dispatcher)
     assert node_id == card_id
 
 
+def test_the_end_write_keeps_what_the_runner_wrote_meanwhile(parent_store, monkeypatch):
+    """The job runner settles the card when the job ends, on its own thread.
+    Its write landing between the caller reading the card and writing it
+    must survive: the caller merges into the card as it is at the write."""
+    from openprogram.runtime.conversation.sub_agent_run import (
+        AgentTurnResult,
+        write_attach_pointer_for_spawn,
+        write_attach_placeholder_for_spawn,
+    )
+    from openprogram.state.store.session.context_commit import store as commit_store
+
+    card_id = write_attach_placeholder_for_spawn(
+        session_id="p1", caller_msg_id="a1", label="probe", prompt="go",
+        chosen_agent="worker", node_id="racecard001", job_id="j1",
+        tool_call_id="call-1", delivery="tool_result",
+    )
+    runner_fields = {"execution_id": "j1", "status_version": 4, "result_status": "completed",
+                     "usage": {"tokens": 0, "tool_calls": 0}, "source_commit_id": "commit-runner"}
+
+    def runner_writes_meanwhile(*_args, **_kwargs):
+        parent_store.merge_node("p1", card_id, lambda node: {"metadata": {
+            "attach": {**node.metadata["attach"], **runner_fields, "status": "completed"}}})
+        return None
+
+    monkeypatch.setattr(commit_store, "load_commit_for_head", runner_writes_meanwhile)
+    write_attach_pointer_for_spawn(
+        session_id="p1", caller_msg_id="a1",
+        result=AgentTurnResult(head_id="sub_a", final_text="done"),
+        label="probe", prompt="go", chosen_agent="worker", node_id=card_id,
+    )
+
+    card = next(m for m in parent_store.get_messages("p1") if m.get("id") == card_id)
+    attach = card["attach"]
+    assert {key: attach.get(key) for key in runner_fields} == runner_fields
+    assert attach["status"] == "completed" and attach["head_id"] == "sub_a"
+    assert attach["tool_call_id"] == "call-1" and attach["job_id"] == "j1"
+
+
 def test_write_attach_pointer_mints_id_when_not_supplied(
     parent_store, fake_dispatcher,
 ):

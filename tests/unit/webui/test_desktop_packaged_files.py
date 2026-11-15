@@ -137,10 +137,12 @@ def test_refresh_script_rejects_stale_checkout_for_default_app():
 
 
 def test_refresh_script_replaces_the_archive_by_rename():
-    """An App launched mid-refresh must never read a half-copied app.asar."""
+    """An App launched mid-refresh must never read a half-copied app.asar:
+    the archive goes into the staged App, which replaces the installed one by rename."""
     refresh = (DESKTOP.parents[1] / "scripts" / "refresh-local-app.sh").read_text(
         encoding="utf-8"
     )
-    assert 'cp "$desktop_asar" "$installed_asar"\n' not in refresh
-    assert 'cp "$desktop_asar" "$installed_asar.incoming"\nmv -f "$installed_asar.incoming" "$installed_asar"' in refresh
+    assert 'cp "$desktop_asar" "$installed_asar' not in refresh
+    copy = refresh.index('cp "$desktop_asar" "$staged_app/Contents/Resources/app.asar"\n')
+    assert copy < refresh.index('mv "$app_path" "$previous_app"\n') < refresh.index('mv "$staged_app" "$app_path"\n')
 

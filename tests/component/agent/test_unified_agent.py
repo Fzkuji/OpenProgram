@@ -59,6 +59,56 @@ def test_async_turn_cancellation_signals_worker(monkeypatch):
     asyncio.run(run())
 
 
+def test_async_turn_cancellation_fires_the_stop(monkeypatch):
+    # The turn's loop is woken by the wakeups registered on its signal, not
+    # by a poll: a bare ``set`` would reach a running tool only at the backstop.
+    from openprogram.runtime.execution.run_control import wakeups
+    entered, woken = threading.Event(), threading.Event()
+    def execute(req, **kwargs):
+        handle = wakeups.register(kwargs['cancel_event'], woken.set)
+        try:
+            entered.set()
+            assert woken.wait(30)
+        finally:
+            wakeups.unregister(handle)
+        return D.TurnResult('', 'u', 'a')
+    monkeypatch.setattr(D, '_process_turn_once', execute)
+    async def run():
+        task = asyncio.create_task(Agent().arun_turn(agent_turn_request.TurnRequest('one', 'hello', 'main', 'python')))
+        assert await asyncio.to_thread(entered.wait, 2)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert woken.is_set()
+    asyncio.run(run())
+
+
+def test_async_turn_under_an_anyio_cancel_scope_waits_for_its_worker(monkeypatch):
+    # anyio cancels the task again at every await, so the cleanup must keep
+    # waiting until the owner thread is done, not return at the first one.
+    import anyio
+    entered, release, ended = threading.Event(), threading.Event(), threading.Event()
+    def execute(req, **kwargs):
+        entered.set()
+        assert kwargs['cancel_event'].wait(30)
+        release.wait(30)
+        ended.set()
+        return D.TurnResult('', 'u', 'a')
+    monkeypatch.setattr(D, '_process_turn_once', execute)
+    async def run():
+        with anyio.CancelScope() as scope:
+            async def stop_later():
+                await anyio.to_thread.run_sync(entered.wait, 2)
+                # The owner thread keeps writing a while after the stop.
+                threading.Timer(0.2, release.set).start()
+                scope.cancel()
+            async with anyio.create_task_group() as group:
+                group.start_soon(stop_later)
+                await Agent().arun_turn(agent_turn_request.TurnRequest('one', 'hello', 'main', 'python'))
+        return ended.is_set()
+    assert anyio.run(run)
+
+
 def test_public_agent_runs_real_loop_with_context_and_history(tmp_path, monkeypatch):
     from tests.unit.agent.dispatcher.test_dispatcher_integration import _stub_model, make_text_stream_fn
     store = SessionStore(tmp_path)

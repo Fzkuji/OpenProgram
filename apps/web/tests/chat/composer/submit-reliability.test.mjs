@@ -737,6 +737,55 @@ test("a chat-type command takes the normal send path, and waits in the queue dur
   assert.deepEqual(queueFor("A").map(row => row.text), ["/task go"]);
 });
 
+const runLocal = (text, submitter) => (submitter.sendCommand(text) ? "ran" : "failed");
+
+test("a backend command from a draft is the draft's first message, with its id and settings", async () => {
+  focus("local_new");
+  host.sessions.composerSettingsBySession.local_new = { permission_mode: "plan", agentInvocation: { agentId: "writer" } };
+  host.sessions.pendingProjectsByChat.local_new = "proj-1";
+  host.sessions.additionalWorkingDirsBySession.local_new = ["/w/extra"];
+  host.sessions.composerDrafts.local_new = "/goal ship it";
+  const raw = [];
+  await composer("/goal ship it", {
+    activeChatKey: "local_new", currentSessionId: null, isRunning: false,
+    send: frame => (raw.push(frame), true), slash: slashProbe(runLocal).slash,
+  }).submit();
+  assert.deepEqual(raw, [], "never a bare frame the server would give a conversation of its own");
+  const frame = host.frames[0];
+  assert.equal(frame.action, "chat");
+  assert.equal(frame.session_id, "local_new");
+  assert.equal(frame.text, "/goal ship it");
+  assert.equal(frame.permission_mode, "plan");
+  assert.equal(frame.agent_id, "writer");
+  assert.equal(frame.project_id, "proj-1");
+  assert.deepEqual(frame.additional_working_dirs, ["/w/extra"]);
+  assert.ok(frame.client_request_id, "the ack and the reply name this send");
+  // No bubble yet: the ack draws one for a command that goes on as a turn
+  // (/goal <text>); one that only answers (/goal status) leaves its reply.
+  assert.deepEqual(host.sessions.messageOrder.local_new ?? [], []);
+  assert.equal(pending.getPendingUserText("local_new"), "/goal ship it", "the ack pairs with this send");
+  assert.equal(pending.hasPendingFirstAck("local_new"), true);
+  assert.deepEqual(host.draftWrites.at(-1), ["local_new", ""]);
+});
+
+test("a backend command in a split pane goes to that pane's conversation", async () => {
+  await composer("/goal status", {
+    bound: "B", activeChatKey: "B", currentSessionId: "B", isRunning: false, slash: slashProbe(runLocal).slash,
+  }).submit();
+  assert.equal(host.frames[0].session_id, "B");
+  assert.equal(host.frames[0].text, "/goal status");
+  assert.deepEqual(host.welcomeWrites, [], "the focused chat's shell is not touched");
+});
+
+test("a backend command during a run goes at once, beside the turn", async () => {
+  running();
+  const raw = [];
+  await composer("/goal status", { send: frame => (raw.push(frame), true), slash: slashProbe(runLocal).slash }).submit();
+  assert.deepEqual(raw, [{ action: "chat", session_id: "A", text: "/goal status" }]);
+  assert.equal(queueFor("A").length, 0);
+  assert.equal(host.frames.length, 0);
+});
+
 test("a composer with no chat key sends the settings kept under __new__", () => {
   host.sessions.composerSettingsBySession.__new__ = { permission_mode: "acceptEdits", agentInvocation: { agentId: "writer" } };
   sendChatMessage(sendArgs({ sessionId: null }));

@@ -37,6 +37,22 @@ import logging
 
 _log = logging.getLogger(__name__)
 
+#: ``ErrorReason`` values that are the provider's own stated refusal.
+_REFUSAL_REASONS = {"auth": "authentication", "authz": "not authorized"}
+#: ``failure_cause`` values that are, in the words the log line uses.
+_REFUSAL_CAUSES = {
+    "quota_exhausted": "no credit or quota left",
+    "invalid_key": "credential rejected",
+    "not_available": "not available on this plan or region",
+}
+
+
+def _provider_refusal(reason: str | None, cause: dict | None) -> str | None:
+    """Why a provider refused a request no retry can recover, or ``None``
+    for any other failure (which keeps its traceback)."""
+    named = _REFUSAL_CAUSES.get((cause or {}).get("cause") or "")
+    return named or _REFUSAL_REASONS.get(reason or "")
+
 
 def _default_convert_to_llm(messages: list[AgentMessage]) -> list[Message]:
     """Default converter: keep only LLM-compatible messages."""
@@ -465,12 +481,7 @@ class LoopDriver:
             # ``str(err)`` is empty for bare exceptions (e.g. RuntimeError()),
             # which would surface downstream as a content-free
             # "Agent session failed". Always carry the exception TYPE so the
-            # error_message is never empty, and dump the full traceback to
-            # stderr so the real cause is recoverable.
-            if not is_aborted:
-                import traceback as _tb
-                import sys as _sys
-                _tb.print_exc(file=_sys.stderr)
+            # error_message is never empty.
             err_text = f"{type(err).__name__}: {err}" if str(err) else type(err).__name__
             # Structured taxonomy so surfaces above the provider layer can tell
             # a retryable rate-limit from a fatal auth/context failure instead of
@@ -484,6 +495,23 @@ class LoopDriver:
                 except Exception:
                     # Taxonomy is optional detail; the error message still carries the text.
                     _log.debug("error taxonomy unavailable for %s", type(err).__name__, exc_info=True)
+                # A refusal the provider states outright (no credit, a spent
+                # quota, a rejected login, a plan or region it does not serve)
+                # is fully described by its reason: one warning line. Anything
+                # else is unexpected, so its traceback goes to stderr where
+                # the real cause can be recovered.
+                refusal = _provider_refusal(err_reason, err_cause)
+                if refusal:
+                    _log.warning(
+                        "provider %s refused the request (%s): %s",
+                        (err_cause or {}).get("provider") or model.provider,
+                        refusal,
+                        " ".join(err_text.split())[:300],
+                    )
+                else:
+                    import traceback as _tb
+                    import sys as _sys
+                    _tb.print_exception(type(err), err, err.__traceback__, file=_sys.stderr)
             error_msg = AssistantMessage(
                 role="assistant",
                 content=[TextContent(type="text", text="")],

@@ -281,7 +281,9 @@ function Install-CliLauncher {
   $content = @"
 @echo off
 setlocal DisableDelayedExpansion
-for /f "tokens=2 delims=:." %%P in ('chcp') do set "_OPENPROGRAM_CODEPAGE=%%P"
+set "_OPENPROGRAM_CODEPAGE=%_OPENPROGRAM_CALLER_CODEPAGE%"
+set "_OPENPROGRAM_CALLER_CODEPAGE="
+if not defined _OPENPROGRAM_CODEPAGE for /f "tokens=2 delims=:." %%P in ('chcp') do set "_OPENPROGRAM_CODEPAGE=%%P"
 chcp 65001 >nul
 "$quotedPython" -X utf8 -m openprogram %*
 set "_OPENPROGRAM_EXIT=%ERRORLEVEL%"

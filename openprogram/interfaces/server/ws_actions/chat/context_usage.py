@@ -3,8 +3,24 @@ from __future__ import annotations
 
 
 def _record_context_usage(session_id: str, msg_id: str, conv: dict,
-                          usage: dict, *, refresh_head: bool = False) -> None:
-    """Publish and persist a provider request's measured prompt size."""
+                          usage: dict, *, refresh_head: bool = False,
+                          model: str | None = None,
+                          context_window: int | None = None) -> None:
+    """Publish and persist a provider request's measured prompt size.
+
+    ``model`` (``provider/model``) and ``context_window`` are what the turn
+    resolved for that request; the window shown is that Model's, the same
+    one compaction reads. They are kept on the conversation, so the turn's
+    final report and later refreshes use the same model. ``refresh_head``
+    marks the report of a finished turn; without it the turn is still
+    running.
+    """
+    if model and conv is not None:
+        conv["_turn_model_ref"] = model
+        conv["_turn_context_window"] = int(context_window or 0) or None
+    model = model or (conv or {}).get("_turn_model_ref")
+    if model and not context_window and model == (conv or {}).get("_turn_model_ref"):
+        context_window = (conv or {}).get("_turn_context_window")
     measured = int(usage.get("context_tokens") or 0) if usage else 0
     if usage and "context_tokens" not in usage:
         measured = (int(usage.get("input_tokens") or 0)
@@ -26,9 +42,9 @@ def _record_context_usage(session_id: str, msg_id: str, conv: dict,
             current["head_id"] = session.get("head_id")
         _s._hydrate_messages_from_db(session_id)
     measured_runtime = SimpleNamespace(
-        model=conv.get("model_override") or getattr(
-            conv.get("runtime"), "model", None,
-        ),
+        model=model,
+        context_window=context_window,
+        running_turn=not refresh_head,
         last_usage={
             "input_tokens": int(usage.get("input_tokens") or 0),
             "output_tokens": int(usage.get("output_tokens") or 0),

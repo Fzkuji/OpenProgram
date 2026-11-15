@@ -40,6 +40,7 @@ from openprogram.runtime.conversation.event_parsing import (
     extract_usage as _extract_usage,
     shorten as _shorten,
 )
+from openprogram.state.reply_text import ReplyText
 from openprogram.runtime.conversation.model_tools import (
     log_resolved_tools as _log_resolved_tools,
     resolve_tools as _resolve_tools,
@@ -138,9 +139,14 @@ def _seed_continuation_cards(
     *,
     ordered_blocks_out: list[dict] | None,
     tool_calls: list[dict],
-    final_text_parts: list[str],
+    reply: ReplyText,
 ) -> set[str]:
-    """Restore the full pre-pause trace, then current-decision fallback."""
+    """Restore the full pre-pause trace, then current-decision fallback.
+
+    ``reply`` takes the restored trace's blocks: a reply that paused is one
+    reply, so its flat text is every passage it showed, before the pause
+    and after (the stream tap's row already reads that way while it runs).
+    """
     seen_tool_ids: set[str] = set()
 
     def _note_tool(tool_id: object, *, tool: object = None, result=None,
@@ -178,8 +184,6 @@ def _seed_continuation_cards(
         if ordered is None:
             continue
         decision_cards.append(ordered)
-        if ordered.get("type") == "text" and ordered.get("text"):
-            final_text_parts.append(ordered["text"])
         if ordered.get("type") == "tool" and not ordered.get("provider_executed"):
             _note_tool(
                 ordered.get("tool_call_id"),
@@ -189,13 +193,14 @@ def _seed_continuation_cards(
 
     display = tuple(getattr(continuation, "display", ()) or ())
     if display:
+        # The restored trace, kept by the caller or only read for its text.
+        trace = ordered_blocks_out if ordered_blocks_out is not None else []
         for card in display:
             if not isinstance(card, Mapping):
                 continue
             item = dict(card)
             kind = item.get("type")
-            if ordered_blocks_out is not None:
-                ordered_blocks_out.append(item)
+            trace.append(item)
             if kind == "tool" and not item.get("provider_executed"):
                 _note_tool(
                     item.get("tool_call_id"),
@@ -204,25 +209,25 @@ def _seed_continuation_cards(
                     is_error=item.get("is_error"),
                     input_value=item.get("input"),
                 )
-        if ordered_blocks_out is not None:
-            overlap = 0
-            for n in range(len(decision_cards), 0, -1):
-                if _cards_are_suffix(ordered_blocks_out, decision_cards[:n]):
-                    overlap = n
-                    break
-            present = {
-                str(block.get("tool_call_id"))
-                for block in ordered_blocks_out
-                if block.get("type") == "tool" and block.get("tool_call_id")
-            }
-            for ordered in decision_cards[overlap:]:
-                if (
-                    ordered.get("type") == "tool"
-                    and ordered.get("tool_call_id")
-                    and str(ordered["tool_call_id"]) in present
-                ):
-                    continue
-                ordered_blocks_out.append(dict(ordered))
+        overlap = 0
+        for n in range(len(decision_cards), 0, -1):
+            if _cards_are_suffix(trace, decision_cards[:n]):
+                overlap = n
+                break
+        present = {
+            str(block.get("tool_call_id"))
+            for block in trace
+            if block.get("type") == "tool" and block.get("tool_call_id")
+        }
+        for ordered in decision_cards[overlap:]:
+            if (
+                ordered.get("type") == "tool"
+                and ordered.get("tool_call_id")
+                and str(ordered["tool_call_id"]) in present
+            ):
+                continue
+            trace.append(dict(ordered))
+        reply.extend(trace)
         for result in continuation.tool_results:
             _note_tool(
                 result.tool_call_id,
@@ -232,6 +237,7 @@ def _seed_continuation_cards(
             )
         return seen_tool_ids
 
+    reply.extend(decision_cards)
     for ordered in decision_cards:
         if ordered_blocks_out is not None:
             ordered_blocks_out.append(ordered)
@@ -416,11 +422,7 @@ def turn_availability(req, tools) -> dict[str, str]:
     for name in names & set(MEMORY_TOOL_NAMES):
         if not _memory_allowed(write=name == "memory_update"):
             out[name] = "memory is turned off for this conversation"
-    # A sub-agent's turn does not hand work over (a background check-in,
-    # also off the head, may).
     from openprogram.runtime.permissions.identity import SCHEDULER_SPEAKER, outside_text
-    if "handoff" in names and ((not req.advance_head and not req.background) or req.spawned_from_session):
-        out["handoff"] = "only the conversation's own turn on its current branch hands work over"
     # A scheduled run reports with its reply; it runs in its own process,
     # where a report would reach neither the page nor the channels.
     if "always_on_report" in names and req.speaker_id == SCHEDULER_SPEAKER:
@@ -443,6 +445,58 @@ def turn_availability(req, tools) -> dict[str, str]:
         for name in names & set(ASK_TOOLS):
             out[name] = "nobody is there to answer a question in this run"
     return out
+
+
+# What a helper started with ``agent`` does not get: it reports, and the
+# agent that started it schedules, posts and remembers (Hermes' delegate
+# blocklist, reduced). ``agent`` itself goes by the depth limit.
+DELEGATE_BLOCKED = frozenset({
+    # ``cron`` is the scheduler's older name, still registered.
+    "scheduler", "cron", "remind", "save_routine", "always_on_schedule",
+    "chat_send", "memory_update",
+})
+DELEGATE_BLOCKED_REASON = "a helper reports back; the agent that started it does this"
+
+
+def forked_prompt(req) -> Optional[str]:
+    """The system prompt the caller's branch recorded, for a helper forked
+    with the conversation (``depth.forked_turn``), or None to build one.
+    A fork is only offered with the caller's own Agent (``agent.py``), so
+    the recorded prompt is that Agent's."""
+    from openprogram.programs.tools.agents.send_message.send_message.depth import (
+        forked_turn,
+        helper_turn,
+    )
+    if not (helper_turn() and forked_turn()):
+        return None
+    anchor = getattr(req, "branch_from", None)
+    if not isinstance(anchor, str) or not anchor or not getattr(req, "session_id", None):
+        return None
+    try:
+        from openprogram.runtime.context import Context
+        from openprogram.runtime.context.system_prompt_node import latest_recorded_prompt
+        return latest_recorded_prompt(Context.turn_store(req.session_id), req.session_id, anchor)
+    except Exception:  # noqa: BLE001 - built afresh; the cache is not shared
+        _log.debug("caller prompt not read for fork in %s", req.session_id, exc_info=True)
+        return None
+
+
+def delegate_blocked(tools, unavailable: dict[str, str]):
+    """``(tools, unavailable)`` for a helper's turn: the blocked tools leave
+    its list; a forked helper keeps them refused, so its list stays its
+    caller's bytes and the prompt cache is shared."""
+    from openprogram.programs.tools.agents.send_message.send_message.depth import (
+        forked_turn,
+        helper_turn,
+    )
+    if not helper_turn():
+        return tools, unavailable
+    blocked = {tool.name for tool in tools or []} & DELEGATE_BLOCKED
+    if not blocked:
+        return tools, unavailable
+    if forked_turn():
+        return tools, {**unavailable, **{name: DELEGATE_BLOCKED_REASON for name in blocked}}
+    return [tool for tool in tools if tool.name not in blocked], unavailable
 
 
 def refused_while_unavailable(tool, why: str):
@@ -490,7 +544,7 @@ def resolve_agent_runtime(
     pinned = pins_tools(req)
     # Always-on tools belong to conversations whose Agent is always-on: that
     # holds for the whole conversation, so they leave the array.
-    always_on_only = {"always_on_report", "always_on_schedule", "always_on_preference", "handoff"}
+    always_on_only = {"always_on_report", "always_on_schedule", "always_on_preference"}
     if any(tool.name in always_on_only for tool in tools or []):
         from openprogram.runtime.conversation.always_on import agent_for_session
         if agent_for_session(req.session_id) is None:
@@ -517,6 +571,7 @@ def resolve_agent_runtime(
         tools, browser_enabled = _configure_browser_tool(tools, req.surface_context, enabled=saved_browser_tool,
                                                           tools_override=_named_tools(agent_profile, req.tools_override))
     unavailable.update(turn_availability(req, tools))
+    tools, unavailable = delegate_blocked(tools, unavailable)
     if not pinned:
         tools = [tool for tool in tools or [] if tool.name not in unavailable]
         unavailable = {}
@@ -593,8 +648,12 @@ def resolve_agent_runtime(
         web_search_option = None
         tools = [tool for tool in tools or [] if "web" not in tool.name.lower()]
     req._provider_web_search = bool(web_search_option)
-    from openprogram.programs import install_allowed_tool_names
-    install_allowed_tool_names({tool.name for tool in tools or []})
+    if not any(tool.name == "tool_search" for tool in tools or []):
+        # Without the loader a deferred tool could never be called: each
+        # goes out with its schema (Claude Code with tool search off).
+        tools = [_undeferred(tool) for tool in tools or []] if tools is not None else tools
+    from openprogram.programs import install_turn_tools
+    install_turn_tools(tools)
     _log_resolved_tools(req, tools)
     if tools:
         tools = [_wrap_with_approval(tool, req, event_sink) for tool in tools]
@@ -621,7 +680,11 @@ def resolve_agent_runtime(
     # The conversation's own turn sends the deferred-tool catalog beside its
     # message, so a tool that connects or goes never changes the prompt.
     catalog_beside = bool(saved_system_prompt is None and getattr(req, "session_id", None) and owner)
-    recordable_prompt = saved_system_prompt if saved_system_prompt is not None else build_system_prompt(
+    # A helper forked with the conversation (same Agent, its history copied)
+    # sends the prompt its caller's branch recorded, byte for byte, so the
+    # provider's prompt cache is shared (Claude Code's fork).
+    fork_prompt = forked_prompt(req) if saved_system_prompt is None and owner else None
+    recordable_prompt = saved_system_prompt if saved_system_prompt is not None else fork_prompt if fork_prompt is not None else build_system_prompt(
         agent_profile, tools=tools,
         channel=_prompt_channel(req),
         chat_delivery=_chat_delivery(req),
@@ -1120,8 +1183,10 @@ def _steering_source(req, *, model, db, assistant_msg_id, execution_context):
     async def _get_one_steering_message():
         # Runtime steering is available only to a canonical execution and is
         # consumed from its durable execution command queue at a safe point.
-        # Session-local inboxes are not a second steering transport.
-        if req.source == "agent_spawn" or not canonical_execution:
+        # Session-local inboxes are not a second steering transport. A
+        # helper's Job is a canonical execution of its own, so the person's
+        # "Add instruction" and its spawner's send_message reach it here.
+        if not canonical_execution:
             return []
         if not isinstance(durable_steer_inputs, list) or not durable_steer_inputs:
             return []
@@ -1148,13 +1213,18 @@ def _steering_source(req, *, model, db, assistant_msg_id, execution_context):
             or req.user_msg_id
             or "ROOT"
         )
+        # A steer another agent sent (send_message to a helper it started)
+        # is agent traffic, not the person speaking.
+        from_agent = payload.get("origin") == "agent"
         metadata = {
-            "source": "web",
+            "source": "agent" if from_agent else "web",
             "steering": True,
             "command_id": command_id,
             "agent_id": req.agent_id,
-            "origin": "person",
+            "origin": "agent" if from_agent else "person",
         }
+        if from_agent:
+            metadata["message_origin"] = "agent_delivery"
         from openprogram.state.memory.policy import stamp
         metadata.update(stamp(req))
         try:
@@ -1221,7 +1291,7 @@ def _steering_source(req, *, model, db, assistant_msg_id, execution_context):
         # its message_start reaches the ordered event stream, after prior output.
         delivered_steers[id(message)] = {
             "type":"user_message", "session_id":req.session_id, "msg_id":message_id,
-            "content":text, "source":"web", "steering":True,
+            "content":text, "source":metadata["source"], "steering":True,
             "assistant_msg_id":assistant_msg_id, "command_id":command_id,
             "timestamp":timestamp, "predecessor":predecessor,
         }
@@ -1504,7 +1574,10 @@ def _start_agent_stream(req, context, config, continuation, loop_cancel, stream_
 class _TurnTally:
     """What the drain accumulates from the event stream for the turn's result."""
 
-    final_text_parts: list[str] = field(default_factory=list)
+    # The turn's flat text so far (``reply_text``): every response's blocks
+    # in order, so passages a tool call, reasoning or a steering message
+    # came between are a blank line apart.
+    reply: ReplyText = field(default_factory=ReplyText)
     usage_total: dict = field(default_factory=lambda: {
         "input_tokens": 0, "output_tokens": 0,
         "cache_read_tokens": 0, "cache_write_tokens": 0,
@@ -1522,28 +1595,52 @@ class _TurnTally:
     # a Stop keeps what they hold (``_keep_stopped_response``).
     open_response: Any = None
     ended_response: Any = None
+    # The text and reasoning of the response streaming now that were sent
+    # on as stream frames, one entry per content block. A provider adds a
+    # delta to its partial message before the loop reads the delta's event,
+    # so the partial can hold text nobody was sent; a cut response keeps
+    # this, never the partial.
+    forwarded: list[dict] = field(default_factory=list)
+
+
+_TOKEN_KEYS = ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens")
 
 
 def _seed_tally_from_continuation(tally: _TurnTally, continuation, ordered_blocks_out) -> None:
-    """Carry the resumed decision's cards, tool calls and usage into the tally."""
+    """Carry the turn's cards, tool calls and usage from before the pause into the tally.
+
+    A turn that paused and went on is one reply: its usage, like its text,
+    covers every provider response the turn got, each counted the way a live
+    response is (``_record_turn_end``). The journal holds one decision per
+    response; the last is the one the turn paused on. This is the reply
+    row's own count; what a Goal or a budget is charged comes from the
+    ledger's receipt of each request, written when that request ended, so
+    nothing is charged again here.
+    """
     tally.seen_tool_ids = _seed_continuation_cards(
         continuation,
         ordered_blocks_out=ordered_blocks_out,
         tool_calls=tally.tool_calls,
-        final_text_parts=tally.final_text_parts,
+        reply=tally.reply,
     )
-    prior_usage = continuation.assistant_message.usage
-    prior_tiers = _extract_usage(continuation.assistant_message).get("service_tiers")
-    if prior_tiers:
-        tally.usage_total["service_tiers"] = list(prior_tiers)
-    tally.usage_total.update({
-        "input_tokens": int(getattr(prior_usage, "input", 0) or 0),
-        "output_tokens": int(getattr(prior_usage, "output", 0) or 0),
-        "cache_read_tokens": int(getattr(prior_usage, "cache_read", 0) or 0),
-        "cache_write_tokens": int(getattr(prior_usage, "cache_write", 0) or 0),
-        "provider_request_count": 1,
-        "agent_iteration_count": 1,
-    })
+    journal = getattr(continuation, "journal", None)
+    responses = [decision.message for decision in getattr(journal, "decisions", None) or ()]
+    if not responses:
+        responses = [continuation.assistant_message]
+    tiers: list = []
+    totals = dict.fromkeys(_TOKEN_KEYS, 0)
+    for response in responses:
+        usage = _extract_usage(response)
+        tiers.extend(usage.get("service_tiers") or ())
+        for key in _TOKEN_KEYS:
+            totals[key] += int(usage.get(key) or 0)
+    if tiers:
+        tally.usage_total["service_tiers"] = tiers
+    tally.usage_total.update(
+        totals,
+        provider_request_count=len(responses),
+        agent_iteration_count=len(responses),
+    )
 
 
 def _raise_provider_error(msg) -> None:
@@ -1578,8 +1675,13 @@ def _raise_provider_error(msg) -> None:
     )
 
 
-def _record_turn_end(ev, tally: _TurnTally, *, req, on_event, ordered_blocks_out) -> None:
-    """Fold one provider call's message into the turn's text, usage and ordered cards."""
+def _record_turn_end(ev, tally: _TurnTally, *, req, on_event, ordered_blocks_out,
+                     model=None) -> None:
+    """Fold one provider call's message into the turn's text, usage and ordered cards.
+
+    ``model`` is the Model the turn resolved; its context-usage report names
+    it and its window, so occupancy shows the window compaction reads.
+    """
     tally.usage_total["provider_request_count"] += 1
     tally.usage_total["agent_iteration_count"] += 1
     msg = getattr(ev, "message", None)
@@ -1592,8 +1694,8 @@ def _record_turn_end(ev, tally: _TurnTally, *, req, on_event, ordered_blocks_out
     if getattr(msg, "stop_reason", None) == "error":
         _raise_provider_error(msg)
     text = _extract_text(msg)
+    _add_response_text(tally, msg)
     if text:
-        tally.final_text_parts.append(text)
         req.last_round_text = text
     usage = _extract_usage(msg)
     if usage.get("service_tiers"):
@@ -1613,15 +1715,17 @@ def _record_turn_end(ev, tally: _TurnTally, *, req, on_event, ordered_blocks_out
         tally.usage_total["context_tokens"] = prompt_tokens
         tally.usage_total["request_input_estimate"] = usage.get("request_input_estimate", 0)
     if prompt_tokens > 0:
-        on_event({
-            "type": "chat_response",
-            "data": {
-                "type": "context_usage",
-                "session_id": req.session_id,
-                "msg_id": req.user_msg_id,
-                "usage": usage,
-            },
-        })
+        report = {
+            "type": "context_usage",
+            "session_id": req.session_id,
+            "msg_id": req.user_msg_id,
+            "usage": usage,
+        }
+        if model is not None and getattr(model, "provider", None) and getattr(model, "id", None):
+            from openprogram.runtime.context.tokens import known_context_window
+            report["model"] = f"{model.provider}/{model.id}"
+            report["context_window"] = known_context_window(model)
+        on_event({"type": "chat_response", "data": report})
     # Build ordered blocks from msg.content so the
     # webui can render thinking / text / tool cards
     # interleaved in their original LLM emission
@@ -1631,6 +1735,18 @@ def _record_turn_end(ev, tally: _TurnTally, *, req, on_event, ordered_blocks_out
     # called a tool, then kept narrating.
     if ordered_blocks_out is not None and msg is not None:
         _append_response_blocks(msg, tally, ordered_blocks_out)
+
+
+def _add_response_text(tally: _TurnTally, msg) -> None:
+    """Add one provider response's blocks to the turn's flat text."""
+    content = getattr(msg, "content", None)
+    if isinstance(content, str):
+        tally.reply.add({"type": "text", "text": content})
+        return
+    for blk in content or []:
+        ordered = _ordered_block_from_content(blk)
+        if ordered is not None:
+            tally.reply.add(ordered)
 
 
 def _append_response_blocks(msg, tally: _TurnTally, ordered_blocks_out: list[dict]) -> None:
@@ -1672,37 +1788,56 @@ def _keep_stopped_response(tally: _TurnTally, ordered_blocks_out: list[dict] | N
     Responses that ended are already in the ordered blocks, signatures and
     all. A response that ended while its tools ran goes in whole: its calls
     are complete and each gets a result (``persistence``). A response cut
-    while streaming keeps its text as one last unsigned response
-    (``partial``); its reasoning is shown but never sent (an unsigned
-    thinking block is left out of a request, ``context.render``) and a call
-    whose arguments had not all arrived is dropped.
+    while streaming keeps the text that was sent on (``tally.forwarded``)
+    as one last unsigned response (``partial``); its reasoning is shown but
+    never sent (an unsigned thinking block is left out of a request,
+    ``context.render``) and a call whose arguments had not all arrived is
+    dropped. The kept text joins the turn's text, so the reply's content,
+    its result frame and its blocks say the same.
     """
-    if ordered_blocks_out is None:
-        return
     ended, cut = tally.ended_response, tally.open_response
     if ended is not None and getattr(ended, "stop_reason", None) not in ("aborted", "error"):
-        _append_response_blocks(ended, tally, ordered_blocks_out)
+        _add_response_text(tally, ended)
+        if ordered_blocks_out is not None:
+            _append_response_blocks(ended, tally, ordered_blocks_out)
         return
-    cut = cut if cut is not None else ended
-    if cut is None:
+    if cut is None and ended is None:
         return
-    kept: list[dict] = []
-    for blk in getattr(cut, "content", None) or []:
-        kind = getattr(blk, "type", None) if not isinstance(blk, dict) else blk.get("type")
-        if kind == "text":
-            text = getattr(blk, "text", None) if not isinstance(blk, dict) else blk.get("text")
-            if isinstance(text, str) and text:
-                kept.append({"type": "text", "text": text, "partial": True})
-        elif kind == "thinking":
-            text = getattr(blk, "thinking", None) if not isinstance(blk, dict) else blk.get("thinking")
-            if isinstance(text, str) and text:
-                kept.append({"type": "thinking", "text": text, "partial": True})
-    if kept:
+    kept = [
+        {"type": block["type"], "text": block["text"], "partial": True}
+        for block in tally.forwarded if block["text"] and block["type"] in ("text", "thinking")
+    ]
+    tally.reply.extend(tally.forwarded)
+    if kept and ordered_blocks_out is not None:
         kept[0]["round_start"] = True
         ordered_blocks_out.extend(kept)
 
 
-def _record_agent_event(ev, tally: _TurnTally, *, req, on_event, ordered_blocks_out) -> None:
+def _note_forwarded(tally: _TurnTally, inner) -> None:
+    """Record one delta of the open response that went out as a stream frame."""
+    kind = {"text_delta": "text", "thinking_delta": "thinking"}.get(getattr(inner, "type", None))
+    if kind is None:
+        if getattr(inner, "type", None) == "retry" and getattr(inner, "restart", None):
+            # The request goes out again; what it streamed is void.
+            tally.forwarded.clear()
+        elif getattr(inner, "type", None) == "servertool_start":
+            # A search the provider runs was shown as a card: the text
+            # after it is another passage (``reply_text``).
+            tally.forwarded.append({"type": "tool", "index": getattr(inner, "content_index", None), "text": ""})
+        return
+    delta = getattr(inner, "delta", None)
+    if not isinstance(delta, str) or not delta:
+        return
+    index = getattr(inner, "content_index", None)
+    last = tally.forwarded[-1] if tally.forwarded else None
+    if last is not None and last["type"] == kind and last["index"] == index:
+        last["text"] += delta
+    else:
+        tally.forwarded.append({"type": kind, "index": index, "text": delta})
+
+
+def _record_agent_event(ev, tally: _TurnTally, *, req, on_event, ordered_blocks_out,
+                        model=None) -> None:
     """Record the side effects of one agent event that the turn's result needs."""
     # Side-effects we care about for the final result.
     # Approval is gated INSIDE the wrapped tool execute (see
@@ -1753,11 +1888,15 @@ def _record_agent_event(ev, tally: _TurnTally, *, req, on_event, ordered_blocks_
                     tally.open_response, tally.ended_response = None, _msg
                 else:
                     tally.open_response = _msg
+                    if ev.type == "message_start":
+                        tally.forwarded = []
+                    else:
+                        _note_forwarded(tally, getattr(ev, "assistant_message_event", None))
         if ev.type == "turn_end":
             tally.ended_response = None
             _record_turn_end(
                 ev, tally, req=req, on_event=on_event,
-                ordered_blocks_out=ordered_blocks_out,
+                ordered_blocks_out=ordered_blocks_out, model=model,
             )
 
 
@@ -1799,6 +1938,7 @@ async def _drain_events(
             if getattr(ev, "type", None) == "message_start":
                 delivered = delivered_steers.pop(id(getattr(ev, "message", None)), None)
                 if delivered is not None:
+                    tally.reply.interrupt()
                     if ordered_blocks_out is not None:
                         ordered_blocks_out.append({"type":"steering", "message_id":delivered["msg_id"],
                                                    "text":delivered["content"], "timestamp":delivered["timestamp"]})
@@ -1809,11 +1949,12 @@ async def _drain_events(
             _record_agent_event(
                 ev, tally, req=req, on_event=on_event,
                 ordered_blocks_out=ordered_blocks_out,
+                model=getattr(config, "model", None),
             )
 
     if cancel_event is not None and cancel_event.is_set():
         _keep_stopped_response(tally, ordered_blocks_out)
-    return "".join(tally.final_text_parts).strip(), tally.usage_total, tally.tool_calls
+    return tally.reply.text.strip(), tally.usage_total, tally.tool_calls
 
 
 def run_loop_blocking(

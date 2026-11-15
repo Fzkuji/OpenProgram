@@ -28,9 +28,15 @@ function slugify(name: string): string {
  *  POST /api/providers/custom. The user gives a Name and Base URL; the id is
  *  derived server-side. On success calls onCreated(id) with the id from the
  *  response so the parent reloads the list and selects the new provider. */
-export function AddCustomProvider({ onCreated }: { onCreated: (id: string) => void }) {
+export function AddCustomProvider({ onCreated, defaultOpen = false, onCancel }: {
+  onCreated: (id: string) => void;
+  /** Start with the form open (Add provider's Custom tile). */
+  defaultOpen?: boolean;
+  /** Cancel leaves the form this way instead of folding it. */
+  onCancel?: () => void;
+}) {
   const { text } = useTranslation();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const [label, setLabel] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [local, setLocal] = useState(false);
@@ -118,7 +124,7 @@ export function AddCustomProvider({ onCreated }: { onCreated: (id: string) => vo
       <label className="flex items-center gap-2 text-fs-xs"><Checkbox checked={local} onCheckedChange={(checked) => setLocal(checked === true)} />{text("Local server (API key optional)", "本地服务（API key 可选）")}</label>
       {error && <div style={{ fontSize: "var(--fs-2xs)", color: "var(--destructive)" }}>{error}</div>}
       <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-        <Button variant="ghost" onClick={reset} disabled={busy}>
+        <Button variant="ghost" onClick={() => { reset(); onCancel?.(); }} disabled={busy}>
           {text("Cancel", "取消")}
         </Button>
         <Button onClick={submit} disabled={!canSubmit || busy}>

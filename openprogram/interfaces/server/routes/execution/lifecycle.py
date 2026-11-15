@@ -15,6 +15,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from openprogram.runtime.events import emit_ws_frame
+from openprogram.state.store.session.conversation_work import run_for_conversation
 
 _log = logging.getLogger(__name__)
 
@@ -177,7 +178,8 @@ def register(app):
             "command": command_data,
         }
         if has_public_snapshot:
-            execution_data = _execution_payload(execution)
+            # Reads the execution and job stores: off the event loop.
+            execution_data = await run_for_conversation(getattr(execution, "session_id", None), _execution_payload, execution)
             cursor = {
                 "execution_id": execution_data.get("execution_id"),
                 "next_sequence": int(execution_data.get("event_sequence") or execution_data.get("status_version") or 0) + 1,
@@ -190,7 +192,7 @@ def register(app):
             emit_ws_frame(execution_update_frame(execution_data, cursor))
         from openprogram.interfaces.server import server as _s
         if has_public_snapshot and execution_data.get("status") in {"cancelling", "cancelled"}:
-            _s._release_session_occupancy_for_execution(execution_data)
+            await run_for_conversation(execution_data.get("session_id"), _s._release_session_occupancy_for_execution, execution_data)
         code = 200
         if command_data.get("status") == "rejected":
             code = 404 if command_data.get("rejection_code") == "not_found" else 409
@@ -343,8 +345,10 @@ def register(app):
             "unresolved_effects": unresolved_effects,
         })
 
+    # Plain functions, like the list above: the snapshot reads job records
+    # under the conversation's lock, in FastAPI's thread pool.
     @app.get("/api/execution/{execution_id}")
-    async def api_execution_snapshot(execution_id: str, request: Request):
+    def api_execution_snapshot(execution_id: str, request: Request):
         from openprogram.runtime.execution import default_store
 
         execution = default_store().get_execution(execution_id)
@@ -355,7 +359,7 @@ def register(app):
         return JSONResponse({"type": "execution.snapshot", "snapshot": snapshot, "data": snapshot})
 
     @app.get("/api/execution/{execution_id}/events")
-    async def api_execution_events(execution_id: str, request: Request, after_sequence: int = 0):
+    def api_execution_events(execution_id: str, request: Request, after_sequence: int = 0):
         from openprogram.runtime.execution import default_store
 
         execution = default_store().get_execution(execution_id)

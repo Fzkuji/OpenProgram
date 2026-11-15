@@ -419,3 +419,22 @@ def test_prove_usable_without_model_stays_unknown(monkeypatch, stub_base):
     r = cr.validate_credential("deepseek", api_key="k", use_cache=False, prove_usable=True)
     assert r.status == cr.UNKNOWN and not r.ok
     assert "no model" in (r.detail or "").lower()
+
+
+_CREDITS_401 = ('{"type":"error","error":{"type":"CreditsError",'
+                '"message":"Insufficient balance. Manage your billing here: https://opencode.ai/billing"}}')
+
+
+def test_layer1_401_credits_error_is_no_balance_not_rejected(monkeypatch, stub_base):
+    """The body decides before the status: a 401 that says the balance is spent is no credit."""
+    _patch_http_get(monkeypatch, (401, _CREDITS_401, 12))
+    r = cr.validate_credential("deepseek", api_key="k", use_cache=False)
+    assert r.status == cr.VALID_NO_BALANCE
+    assert cr.persist_status_from_probe(r.status) == "billing_blocked"
+
+
+def test_layer2_401_credits_error_is_no_balance(monkeypatch):
+    monkeypatch.setattr(st, "_resolve_base_url", lambda pid: "https://api.example/v1")
+    _patch_layer2(monkeypatch, _FakeResp(401, _CREDITS_401))
+    r = cr.validate_credential("deepseek", model="deepseek-chat", api_key="k", use_cache=False)
+    assert r.status == cr.VALID_NO_BALANCE

@@ -453,6 +453,11 @@ class AuthStore:
 
     # -- locks (public — used by manager) ------------------------------------
 
+    def pool_file(self, provider_id: str, account_id: str) -> Path:
+        """The file that persists ``(provider, account)``; the refresh lock
+        (:mod:`openprogram.models.auth.refresh_lock`) sits beside it."""
+        return self._pool_path(self._canon(provider_id), account_id)
+
     def async_lock(self, provider_id: str, account_id: str) -> asyncio.Lock:
         """Per-pool asyncio lock. Refresh code grabs this to serialize
         refresh_token rotation within the process."""

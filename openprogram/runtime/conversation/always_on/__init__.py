@@ -6,12 +6,11 @@ ordinary chat Goal there, does silent read-only check-ins on a side branch
 while it has no unfinished Goal, and reports with ``always_on_report``: a
 message from the Agent in the conversation, a notification, and the
 channel conversations chosen for the Agent or bound to the chat. Quiet hours and wake days hold scheduled wakes back,
-and ``handoff`` gives work to another conversation of the owner.
+and ``send_message`` gives work to another conversation of the owner.
 
 Design: docs/reference/design/runtime/always-on-agents.html
 """
 from openprogram.runtime.conversation.always_on.delivery import channel_targets
-from openprogram.runtime.conversation.always_on.handoff import HandoffRefused
 from openprogram.runtime.conversation.always_on.runtime import (
     WakeRefused,
     add_preference,
@@ -24,6 +23,6 @@ from openprogram.runtime.conversation.always_on.runtime import (
     wake,
 )
 
-__all__ = ["HandoffRefused", "WakeRefused", "add_preference", "agent_for_session",
+__all__ = ["WakeRefused", "add_preference", "agent_for_session",
            "channel_targets", "join", "remove_preference", "report", "schedule_wake",
            "status", "wake"]

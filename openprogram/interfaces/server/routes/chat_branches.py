@@ -365,13 +365,13 @@ def _apply_rewind(
                 "__error__": (result.get("error") or "Could not restore the files", 409),
                 "status": result.get("status"),
             }
-        if result.get("head_changed"):
-            _srv._set_active_head(session_id, result.get("new_head_id"))
-            _srv.refresh_context_stats(session_id)
+        mirror_rewound_head(_srv, session_id, result)
         result["marks"] = list_rewind_marks(session_id)
         return result
 
-    from openprogram.interfaces.server.ws_actions.chat.rewind import rewind_scope, rewind_slot_key
+    from openprogram.interfaces.server.ws_actions.chat.rewind import (
+        mirror_rewound_head, rewind_scope, rewind_slot_key,
+    )
     return _with_reserved_run(session_id, apply, scope=rewind_scope(mode),
                               key=rewind_slot_key(idempotency_key))
 
@@ -415,7 +415,8 @@ async def post_chat_rewind_points(body: dict = None):
     if not session_id:
         return JSONResponse(content={"error": "session_id required"}, status_code=400)
     points = await run_in_threadpool(
-        list_rewind_points, session_id, None, recover=not _srv._is_run_active(session_id),
+        # Whether a turn runs is read under the conversation's lock too.
+        lambda: list_rewind_points(session_id, None, recover=not _srv._is_run_active(session_id)),
     )
     return JSONResponse(content={"session_id": session_id, "points": points})
 

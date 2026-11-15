@@ -77,11 +77,30 @@ def uses_app_entitlements(item: Path, app: Path) -> bool:
     return item == app or item.suffix == '.app' or macho_executable(item)
 
 
-def is_seed_helper(item: Path, app: Path) -> bool:
-    # libpython lives outside the helper's bundle, so the helper alone needs
-    # library validation off. Its grants stay attached to this one signature.
+def loads_unsigned_code(item: Path, app: Path) -> bool:
+    """A Worker interpreter, which must load modules no Developer ID vouches for.
+
+    Programs install their compiled dependencies, and semantic memory installs
+    torch, after the App is signed; those files are ad hoc signed or not at
+    all. The thin layout's seed helper is one such interpreter (its libpython
+    also lives outside its bundle); in the full layout they are the embedded
+    runtime's Python and its named helper, both read from the runtime
+    manifest. Each gets library validation off; the Electron app and every
+    other executable keep it on.
+    """
     helper = app / 'Contents/Resources/seed/helper/OpenProgram.app'
-    return item == helper or item == helper / 'Contents/MacOS/OpenProgram'
+    if item in (helper, helper / 'Contents/MacOS/OpenProgram'):
+        return True
+    runtime = app / 'Contents/Resources/runtime'
+    manifest = runtime / 'runtime-manifest.json'
+    if not manifest.is_file():
+        return False
+    data = json.loads(manifest.read_text(encoding='utf-8'))
+    workers = {(runtime / data['python']).resolve()}
+    if data.get('worker_python'):
+        executable = (runtime / data['worker_python']).resolve()
+        workers |= {executable, executable.parents[2]}
+    return item.resolve() in workers
 
 
 def macho_executable(path: Path) -> bool:
@@ -273,7 +292,7 @@ def sign(app: Path, identity: str, entitlements: Path) -> None:
     for item in nested + [app]:
         print(f'Signing {item.relative_to(app) if item != app else app.name}', flush=True)
         args = ['--force', '--sign', identity, '--timestamp', '--options', 'runtime']
-        if is_seed_helper(item, app):
+        if loads_unsigned_code(item, app):
             args.extend(['--entitlements', str(entitlements.with_name('entitlements.mac.helper.plist'))])
         elif uses_app_entitlements(item, app):
             args.extend(['--entitlements', str(entitlements)])

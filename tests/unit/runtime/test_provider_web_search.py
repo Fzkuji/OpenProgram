@@ -27,7 +27,7 @@ def _server_tool(status="completed", results=None, query="ctxpress"):
         type="serverToolUse", id="ws_1", name="web_search",
         input={"query": query}, status=status,
         results=results if results is not None else [
-            {"title": "ctxpress", "url": "https://github.com/fzkuji2026/ctxpress"},
+            {"title": "ctxpress", "url": "https://github.com/example-org/ctxpress"},
             {"title": "Docs", "url": "https://docs.example.org"},
         ],
         raw=None,
@@ -184,13 +184,13 @@ def _run_search_turn(monkeypatch):
 
     server_tool = t.ServerToolUse(
         id="ws_1", name="web_search", input={"query": "ctxpress"}, status="completed",
-        results=[{"title": "ctxpress", "url": "https://github.com/fzkuji2026/ctxpress"},
+        results=[{"title": "ctxpress", "url": "https://github.com/example-org/ctxpress"},
                  {"title": "Docs", "url": "https://docs.example.org"}],
     )
     running = t.ServerToolUse(id="ws_1", name="web_search", input={"query": ""},
                               status="searching", results=[])
     text = TextContent(text="ctxpress compresses context.", citations=[
-        {"url": "https://github.com/fzkuji2026/ctxpress", "title": "ctxpress",
+        {"url": "https://github.com/example-org/ctxpress", "title": "ctxpress",
          "start": 0, "end": 8}])
     calls, executed, events = [], [], []
 
@@ -231,13 +231,13 @@ def test_server_tool_use_is_forwarded_and_never_executed(monkeypatch, lenient_co
          "provider_executed": True, "node_id": "", "ref_node_id": "", "group_id": ""},
         {"type": "tool_result", "tool_call_id": "ws_1", "occurrence_id": "ws_1",
          "tool": "web_search", "input": json.dumps({"query": "ctxpress"}),
-         "result": "ctxpress — https://github.com/fzkuji2026/ctxpress\n"
+         "result": "ctxpress — https://github.com/example-org/ctxpress\n"
                    "Docs — https://docs.example.org",
          "expose": "full", "provider_executed": True, "is_error": False,
          "outcome": "completed", "node_id": "", "ref_node_id": "", "group_id": ""},
     ]
     citations = [e for e in events if e["type"] == "text_end"]
-    assert citations and citations[0]["citations"][0]["url"] == "https://github.com/fzkuji2026/ctxpress"
+    assert citations and citations[0]["citations"][0]["url"] == "https://github.com/example-org/ctxpress"
 
 
 def test_provider_search_and_citations_persist_in_last_blocks(monkeypatch, lenient_content):
@@ -249,7 +249,7 @@ def test_provider_search_and_citations_persist_in_last_blocks(monkeypatch, lenie
     assert json.loads(tool["input"]) == {"query": "ctxpress"}
     assert tool["result"].startswith("ctxpress — https://github.com/")
     text = next(b for b in blocks if b["type"] == "text")
-    assert text["citations"] == [{"url": "https://github.com/fzkuji2026/ctxpress",
+    assert text["citations"] == [{"url": "https://github.com/example-org/ctxpress",
                                   "title": "ctxpress", "start": 0, "end": 8}]
 
 
@@ -292,7 +292,7 @@ def test_chat_envelopes_mark_provider_executed():
     assert result["type"] == "tool_result" and result["provider_executed"] is True
     assert result["is_error"] is False and result["outcome"] == "completed"
     assert result["result"].splitlines() == [
-        "ctxpress — https://github.com/fzkuji2026/ctxpress", "Docs — https://docs.example.org"]
+        "ctxpress — https://github.com/example-org/ctxpress", "Docs — https://docs.example.org"]
 
 
 def test_chat_text_end_forwards_citations_only_when_present():
@@ -350,7 +350,7 @@ def test_persisted_reply_keeps_provider_search_block_and_citations():
     assert blocks[0] == {"type": "tool", "tool": "web_search", "tool_call_id": "ws_1",
                          "provider_executed": True,
                          "input": json.dumps({"query": "ctxpress"}),
-                         "result": "ctxpress — https://github.com/fzkuji2026/ctxpress\n"
+                         "result": "ctxpress — https://github.com/example-org/ctxpress\n"
                                    "Docs — https://docs.example.org",
                          "is_error": False}
 

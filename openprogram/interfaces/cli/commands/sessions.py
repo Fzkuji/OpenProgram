@@ -113,8 +113,12 @@ def _cmd_sessions_export(session_id, export_format="md", output=None):
 _IMPORT_BATCH = 8
 
 
-def _cmd_sessions_import(paths, import_from="all", since_days=None, list_only=False):
+def _cmd_sessions_import(paths, import_from="all", since_days=None, list_only=False,
+                         dry_run=False):
     """Import Claude Code / Codex conversations, or list what is importable.
+
+    ``dry_run`` prints what an import would do — a new session, or new
+    turns appended to the one an earlier import made — and writes nothing.
 
     A running worker does the writes, in small batches so each request
     stays well inside the HTTP timeout and its sidebar refreshes as they
@@ -144,9 +148,28 @@ def _cmd_sessions_import(paths, import_from="all", since_days=None, list_only=Fa
             day = time.strftime("%Y-%m-%d", time.localtime(r["updated_at"]))
             print(f"  [{r['state']:>8}] {r['agent_label']:<11} {day}  {r['title'][:60]}")
         return
-    todo = [r["path"] for r in rows if r["state"] in ("new", "updated")]
-    if not todo:
+    pending = [r for r in rows if r["state"] in ("new", "updated")]
+    if not pending:
         print("Nothing new to import.")
+        return
+    todo = [r["path"] for r in pending]
+    if dry_run:
+        # Decided the way the import decides (a rewound source is a new
+        # conversation, a source with no reply is skipped), read only.
+        plans = [p for p in ext.plan_imports(agents, paths=todo)
+                 if p["status"] in ("created", "appended", "failed")]
+        if not plans:
+            print("Nothing new to import.")
+            return
+        days = {r["path"]: r["updated_at"] for r in rows}
+        labels = {r["path"]: r["agent_label"] for r in rows}
+        print(f"Would import {len(plans)} conversation(s); nothing was imported:\n")
+        for p in plans:
+            action = {"created": "create", "appended": "append"}.get(p["status"], "fail")
+            day = time.strftime("%Y-%m-%d", time.localtime(days.get(p["path"], 0)))
+            extra = f": {p.get('error')}" if p["status"] == "failed" else f"  (+{p['turns_added']} turns)"
+            print(f"  {action:>6}  {labels.get(p['path'], p['agent']):<11} {day}  {p['title'][:60]}{extra}")
+            print(f"          {p['path']}")
         return
 
     try:

@@ -21,8 +21,9 @@ _log = logging.getLogger(__name__)
 def new_session_chat_model(agent_id: Optional[str] = None) -> tuple[Optional[str], Optional[str]]:
     """Model a *new* session starts on; never consulted for a pinned turn.
 
-    The Agent's own model when it has one, else the last used model, else
-    nothing.
+    The Agent's own model when it has one, else (for a utility-tier Agent,
+    ``builtin_agents.UTILITY_TIER``) the Lightweight helper's model, else the
+    last used model, else nothing.
     """
     try:
         from openprogram.runtime.agent_registry.manager import DEFAULT_AGENT_ID, get as get_agent
@@ -31,6 +32,12 @@ def new_session_chat_model(agent_id: Optional[str] = None) -> tuple[Optional[str
         model = (spec.model.id or "").strip() or None if spec else None
         if provider and model:
             return provider, model
+        # A scout (Explorer) without a model of its own runs on the utility
+        # tier: the Lightweight helper's model, when that has one.
+        from openprogram.runtime.agent_registry.builtin_agents import utility_tier_model
+        pair = utility_tier_model(spec) if spec else None
+        if pair:
+            return pair
     except Exception as exc:
         _log.warning("agent chat model unavailable: %s", exc)
     try:
@@ -52,7 +59,8 @@ def read_session_chat_model(session_id: Optional[str]) -> tuple[Optional[str], O
     if request is not None and getattr(request, "session_id", None) == session_id:
         override = getattr(request, "model_override", None)
         if override:
-            return tuple(override.split("/", 1)) if "/" in override else (None, override)
+            from openprogram.models.providers.catalog.models import split_model_ref
+            return split_model_ref(override)
         if getattr(request, "branch_id", None):
             from openprogram.runtime.context.session_db import default_db
             from openprogram.state.store.session.branch_config import config_for_branch
@@ -128,6 +136,7 @@ def write_session_chat_model(
 
 
 def override_string(provider: Optional[str], model: Optional[str]) -> Optional[str]:
+    """``provider/model``; ``catalog.models.split_model_ref`` reads it back."""
     if provider and model:
         return f"{provider}/{model}"
     return model or None

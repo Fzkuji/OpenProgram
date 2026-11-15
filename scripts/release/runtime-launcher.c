@@ -315,6 +315,72 @@ static int for_each_entry(const char *path, EntryVisitor visit, void *context) {
     return result;
 }
 
+/*
+ * Node starts this launcher with handle inheritance on, so every handle the
+ * App had marked inheritable arrives here too, the App's DevTools listening
+ * socket among them. The launcher waits for the worker for the worker's whole
+ * life and passes inheritable handles on to it, so a handle kept here would
+ * outlive the App and hold its port shut for the next App. Nothing here uses
+ * an inherited handle except the standard ones, so the others are closed
+ * before anything starts. ProcessHandleInformation (51) lists this process's
+ * handles with their attributes (Windows 8 and later).
+ */
+typedef struct {
+    HANDLE value;
+    ULONG_PTR handle_count;
+    ULONG_PTR pointer_count;
+    ULONG granted_access;
+    ULONG object_type_index;
+    ULONG attributes;
+    ULONG reserved;
+} HandleEntry;
+
+typedef struct {
+    ULONG_PTR count;
+    ULONG_PTR reserved;
+    HandleEntry handles[1];
+} HandleSnapshot;
+
+typedef LONG (WINAPI *QueryProcess)(HANDLE, ULONG, PVOID, ULONG, PULONG);
+
+#define OP_PROCESS_HANDLE_INFORMATION 51
+#define OP_OBJ_INHERIT 0x2
+#define OP_INFO_LENGTH_MISMATCH ((LONG)0xC0000004L)
+
+static void close_inherited_handles(void) {
+    HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+    QueryProcess query = ntdll
+        ? (QueryProcess)(void (*)(void))GetProcAddress(ntdll, "NtQueryInformationProcess")
+        : NULL;
+    HANDLE keep[3];
+    HandleSnapshot *snapshot = NULL;
+    ULONG size = 64 * 1024, needed = 0;
+    LONG status = OP_INFO_LENGTH_MISMATCH;
+    ULONG_PTR index;
+    if (!query) return;
+    keep[0] = GetStdHandle(STD_INPUT_HANDLE);
+    keep[1] = GetStdHandle(STD_OUTPUT_HANDLE);
+    keep[2] = GetStdHandle(STD_ERROR_HANDLE);
+    while (status == OP_INFO_LENGTH_MISMATCH && size <= 64 * 1024 * 1024) {
+        free(snapshot);
+        snapshot = (HandleSnapshot *)malloc(size);
+        if (!snapshot) return;
+        status = query(GetCurrentProcess(), OP_PROCESS_HANDLE_INFORMATION, snapshot, size, &needed);
+        size = needed > size ? needed + 4096 : size * 2;
+    }
+    if (status < 0) {
+        free(snapshot);
+        return;
+    }
+    for (index = 0; index < snapshot->count; index++) {
+        HANDLE handle = snapshot->handles[index].value;
+        if (!(snapshot->handles[index].attributes & OP_OBJ_INHERIT)) continue;
+        if (handle == keep[0] || handle == keep[1] || handle == keep[2]) continue;
+        CloseHandle(handle);
+    }
+    free(snapshot);
+}
+
 static int spawn_wait(char *const arguments[]) {
     wchar_t command[32768];
     size_t used = 0;
@@ -1276,6 +1342,7 @@ int main(int argc, char **argv) {
     }
     argc = wide_count;
     argv = wide_arguments;
+    close_inherited_handles();
 #endif
     if (argc >= 3 && strcmp(argv[1], "--root") == 0) {
         if (!join(root, sizeof(root), "%s", argv[2])) return EXIT_USAGE;

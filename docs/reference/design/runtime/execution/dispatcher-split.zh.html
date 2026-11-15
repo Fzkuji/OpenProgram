@@ -58,6 +58,46 @@
 
 <p class="note"><code translate="no">error_path.py</code> 决定失败后的头指针，写入交给 <code translate="no">TurnWriter.record_failure</code>。其他模块不产生 <code translate="no">head_id</code>。</p>
 
+<h2 id="reply-text">回复的文字</h2>
+
+<p>一条回复是一串块：文字、推理、工具调用、steer 消息。聊天界面画的是块。存下来的 <code translate="no">content</code>、<code translate="no">TurnResult.final_text</code>、<code translate="no">--print</code>、渠道消息、搜索结果、标题和复制出来的消息读的是一个字符串，只由 <code translate="no">state/reply_text.py</code> 里的 <code translate="no">reply_text</code> 生成。</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">两个文字块之间</th><th scope="col">文字里</th></tr></thead>
+<tbody>
+<tr><th scope="row">什么都没有</th><td>逐字节接上。模型供应商会为了引用把一段连续的文字切成几块，超出输出上限后续写的响应也是从句子中间接着写。</td></tr>
+<tr><th scope="row">工具调用、steer 消息或带文字的推理</th><td>一个空行，中间隔了多少块都只有一个。边界任一侧已经有空白时不加。</td></tr>
+<tr><th scope="row">只有签名的推理</th><td>不加。它不会被画出来，也没有流帧提到它。</td></tr>
+</tbody>
+</table>
+
+<table class="stack">
+<thead><tr><th scope="col">读的一方</th><th scope="col">文字从哪来</th></tr></thead>
+<tbody>
+<tr><th scope="row">结果帧、存下来的行、<code translate="no">final_text</code></th><td><code translate="no">loop_runner</code> 把每次响应的块、送达的 steer 和停止时保留的文字依次交给同一个 <code translate="no">ReplyText</code>。</td></tr>
+<tr><th scope="row">流式中的行</th><td><code translate="no">stream_tap</code> 读自己的块。分隔符算在追加的 <code translate="no">output_tail</code> 里，所以日志只往文字后面加，冷读折叠出来的和运行中的行一样。</td></tr>
+<tr><th scope="row">自己累加增量的客户端</th><td>开启一段文字的那个文字帧带 <code translate="no">separator</code>；<code translate="no">stream_text</code> 把它放在增量前面。页面、渠道、OpenAI 兼容接口的流、<code translate="no">--print</code> 的分段消息和 ACP 都用它。</td></tr>
+<tr><th scope="row">暂停后继续的回复</th><td>还是同一行。<code translate="no">loop_runner</code> 用暂停前显示过的整段轨迹给 <code translate="no">ReplyText</code> 打底，所以文字是这条回复的每一段，暂停后的第一段前面只有一个空行。</td></tr>
+<tr><th scope="row">对话记录的行</th><td>没有 <code translate="no">content</code> 的行和失败的行，读各块的 <code translate="no">reply_text</code>。</td></tr>
+<tr><th scope="row">下一次模型请求</th><td>按响应逐个发块（<code translate="no">context/render.py</code>）。分隔符不在任何块里，所以发回去的就是模型写的原文。</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>为什么是空行</summary>
+<table class="stack">
+<thead><tr><th scope="col">框架</th><th scope="col">中间有工具调用的回复，文字怎么拼</th></tr></thead>
+<tbody>
+<tr><th scope="row">openclaw</th><td>这次运行里每段助手文字，用空行接起来</td></tr>
+<tr><th scope="row">opencode</th><td><code translate="no">run</code> 把每个写完的文字部分去掉首尾空白，各自成行打印</td></tr>
+<tr><th scope="row">pi-mono</th><td>打印模式输出最后一条消息的文字块，每块后面一个换行</td></tr>
+<tr><th scope="row">codex-cli</th><td><code translate="no">exec</code> 只保留最后一条助手消息</td></tr>
+</tbody>
+</table>
+<p class="note">OpenProgram 采用 openclaw 的做法：空行在 Markdown 和聊天应用里都是分段，单个换行不是。每一段都保留，因为工具调用前的那句话常常是回复里唯一交代做了什么的地方。</p>
+<p class="note">连续的文字块原样不动。这条规则四家都用不上，因为它们都不会把一段连续文字存成几块。</p>
+</details>
+
 <h2 id="seam">测试接缝</h2>
 
 <p>测试在包对象上替换 <code translate="no">_resolve_model</code>、<code translate="no">_load_agent_profile</code>、<code translate="no">_run_loop_blocking</code> 和 <code translate="no">process_user_turn</code>。</p>

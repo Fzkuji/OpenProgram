@@ -7,7 +7,8 @@ placement pattern as ``inbox.json`` (agent/inbox.py). Each entry:
     subject     required title
     description optional details
     status      pending | in_progress | completed
-    owner       optional free-text claimant
+    owner       free-text claimant on boards written before the plan
+                tracked who works on what; read, never written now
     blocked_by  list of todo ids this entry waits on
     scope       absent for the conversation's own agent, ``agent:<id>``
                 for a todo a sub-agent created (its own plan)

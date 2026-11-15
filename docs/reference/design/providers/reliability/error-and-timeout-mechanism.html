@@ -122,7 +122,7 @@
 <tbody>
 <tr><th scope="row">1</th><td>HTTP 429</td><td><code translate="no">RATE_LIMIT</code>; <code translate="no">AUTHORIZATION</code> if a spent quota</td><td>yes; no</td></tr>
 <tr><th scope="row">1</th><td>HTTP 500, 502, 503, 504</td><td><code translate="no">PROVIDER_INTERNAL</code></td><td>yes</td></tr>
-<tr><th scope="row">1</th><td>HTTP 401, 403</td><td><code translate="no">AUTHENTICATION</code>, <code translate="no">AUTHORIZATION</code></td><td>no</td></tr>
+<tr><th scope="row">1</th><td>HTTP 401, 402, 403</td><td><code translate="no">AUTHORIZATION</code> if the body says the credit is spent (<code translate="no">BILLING_MARKERS</code>); else <code translate="no">AUTHENTICATION</code>, <code translate="no">AUTHORIZATION</code></td><td>no</td></tr>
 <tr><th scope="row">1</th><td>HTTP 403 whose body is a web page, not the API's JSON: the network edge in front of the provider refused the caller's address. The message keeps the page's words, not its markup</td><td><code translate="no">NETWORK_BLOCK</code></td><td>no</td></tr>
 <tr><th scope="row">1</th><td>HTTP 400</td><td><code translate="no">INVALID_REQUEST</code>, <code translate="no">CONTEXT_LENGTH</code>, <code translate="no">CONTENT_POLICY</code></td><td>no</td></tr>
 <tr><th scope="row">2</th><td>Transport exception type (<code translate="no">ConnectError</code>, <code translate="no">ReadTimeout</code>, ...); SDK <code translate="no">APIConnectionError</code>, <code translate="no">APITimeoutError</code>; anything caused by one</td><td><code translate="no">TRANSPORT</code></td><td>yes</td></tr>

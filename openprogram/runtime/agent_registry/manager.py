@@ -715,6 +715,12 @@ def list_ids() -> list[str]:
 
 
 def get(agent_id: str) -> Optional[AgentSpec]:
+    """The saved Agent, or the read-only Agent a Markdown file defines
+    (``md:<name>``, ``markdown_imports``). Writes read saved records only,
+    so an imported Agent cannot be changed here."""
+    if isinstance(agent_id, str) and agent_id.startswith("md:"):
+        from openprogram.runtime.agent_registry.markdown_imports import get as imported
+        return imported(agent_id)
     with _lock:
         return _read_agent(agent_id)
 
@@ -845,7 +851,8 @@ def duplicate(agent_id: str, *, target_id: str = "", name: str = "") -> AgentSpe
             f"and contain only [a-z0-9_-], ≤40 chars."
         )
     with configuration_lock():
-        source = _read_agent(agent_id)
+        # An Agent from a Markdown file is copied into a saved one to edit it.
+        source = _read_agent(agent_id) if not agent_id.startswith("md:") else get(agent_id)
         if source is None:
             raise AgentNotFound(agent_id)
         if target_id:

@@ -61,9 +61,19 @@ app_path="$(canonicalize_app_path "${OPENPROGRAM_APP_PATH:-$default_app_path}" "
 runtime_root="$app_path/Contents/Resources/runtime"
 manifest="$runtime_root/runtime-manifest.json"
 product_runtime_config="$repo_root/scripts/release/product-runtime.json"
-installed_product_runtime="$runtime_root/product-runtime.json"
 installed_asar="$app_path/Contents/Resources/app.asar"
 uv_bin="${OPENPROGRAM_UV_BIN:-$(command -v uv || true)}"
+# `openprogram dev promote` sets OPENPROGRAM_PROMOTE_FROM to the `stable` tip
+# it read (empty when the branch does not exist yet) and runs this script in
+# a worktree at the commit to promote. The script then moves `stable` to that
+# commit, compare-and-swap, only once the new version is healthy: a failed
+# promotion leaves `stable` where it was.
+promoting=0
+promote_from="${OPENPROGRAM_PROMOTE_FROM-}"
+test "${OPENPROGRAM_PROMOTE_FROM+set}" != set || promoting=1
+# A worker started below inherits this environment; a later refresh run from
+# it must not take itself for this promotion.
+unset OPENPROGRAM_PROMOTE_FROM
 
 # Phase marks in the log: the App and the worker are down between
 # "quitting the App" and "worker healthy", so the marks say where that
@@ -71,11 +81,21 @@ uv_bin="${OPENPROGRAM_UV_BIN:-$(command -v uv || true)}"
 stamp() {
   printf '[refresh %s] %s\n' "$(date '+%H:%M:%S')" "$*"
 }
+# What the refresh is doing, for the failure message.
+refresh_step="checking and building"
+step() {
+  refresh_step="$*"
+  stamp "$*"
+}
 
 # The default App is shared by every worktree. Recheck this gate after
 # packaging and under the installation lock as another checkout may advance
 # a branch while this build is running. Ignored build outputs are not source.
 validate_default_app_source() {
+  if test "$promoting" = 1 && test "$app_path" != "$default_app_path"; then
+    printf '%s\n' "refusing to promote into $app_path: promotion installs only the default App" >&2
+    exit 1
+  fi
   test "$app_path" = "$default_app_path" || return 0
   local expected_revision="${1:-}"
   local current_revision source_status
@@ -90,11 +110,23 @@ validate_default_app_source() {
     exit 1
   fi
   # With a `stable` branch the App is the stable instance: it installs
-  # exactly that branch, which only promotion moves (`openprogram dev
-  # promote`). Day-to-day commits go to the development instance
-  # (scripts/refresh-dev-instance.sh) instead.
+  # exactly that branch, or, during a promotion, the fast-forward of it that
+  # the promotion moves `stable` to once installed. Day-to-day commits go to
+  # the development instance (scripts/refresh-dev-instance.sh) instead.
   local stable_revision
   stable_revision="$(git -C "$repo_root" rev-parse --verify --quiet 'refs/heads/stable^{commit}' || true)"
+  if test "$promoting" = 1; then
+    if test "$stable_revision" != "$promote_from"; then
+      printf '%s\n' "refusing to promote ${current_revision:0:10}: stable is ${stable_revision:-absent}, not ${promote_from:-absent} as when the promotion began" >&2
+      exit 1
+    fi
+    if test -n "$promote_from" && \
+      ! git -C "$repo_root" merge-base --is-ancestor "$promote_from" "$current_revision"; then
+      printf '%s\n' "refusing to promote ${current_revision:0:10}: it does not contain stable (${promote_from:0:10}); promotion only fast-forwards" >&2
+      exit 1
+    fi
+    return 0
+  fi
   if test -n "$stable_revision"; then
     if test "$current_revision" != "$stable_revision"; then
       printf '%s\n' "refusing to refresh the stable App from ${current_revision:0:10}: it installs only refs/heads/stable (${stable_revision:0:10}); deploy to the development instance with scripts/refresh-dev-instance.sh, then promote with \`openprogram dev promote\`" >&2
@@ -199,13 +231,14 @@ validate_stale_package_tree() {
 # forward. Sync it to the locked set a release build installs, and record
 # that set as the runtime's requirements.
 sync_runtime_to_lock() {
+  local python_executable="$1" runtime="$2"
   local requirements="$wheel_dir/product-requirements.txt"
   "$uv_bin" export --project "$repo_root" --frozen --no-dev \
     --extra all --extra search --no-emit-project \
     --output-file "$requirements" >/dev/null
-  "$uv_bin" pip install --python "$app_python" --break-system-packages \
+  "$uv_bin" pip install --python "$python_executable" --break-system-packages \
     --require-hashes --requirements "$requirements"
-  cp "$requirements" "$runtime_root/product-requirements.txt"
+  cp "$requirements" "$runtime/product-requirements.txt"
 }
 
 hydrate_wheel_dependencies() {
@@ -231,14 +264,121 @@ release_install_lock() {
     rm -f "$install_lock_file" || :
   fi
 }
+
+# The refresh is a transaction, the way the App installer
+# (apps/desktop/scripts/install-app.sh) replaces an App: the new App is
+# assembled, verified and signed in a directory beside the installed one
+# while the old worker keeps serving; only then are the App and worker
+# stopped and the two Apps swapped by rename. Until the new worker is healthy
+# the previous App waits in the same directory, and any failure puts it back
+# and starts its worker again.
+transaction_dir=""
+staged_app=""
+previous_app=""
+keep_transaction=0
+outage=0        # the App and worker were being stopped
+committed=0     # the new worker is healthy and `stable` points at it
+previous_revision="$(sed -n '1p' "$app_path/Contents/Resources/openprogram-source-revision" 2>/dev/null || :)"
+previous_revision="${previous_revision:-an unrecorded revision}"
+health_timeout=300
+
 cleanup() {
   local status=0
   rm -rf "$wheel_dir" || status=$?
+  if test -n "$transaction_dir" && test "$keep_transaction" = 0; then
+    rm -rf "$transaction_dir" || status=$?
+  fi
   release_install_lock
   return "$status"
 }
-app_verified_for_reopen=0
+
+# Start the worker of the App at $app_path. The same steps start the new
+# worker and, after a failure, the previous one.
+start_worker() {
+  if test -f "$HOME/Library/LaunchAgents/ai.openprogram.worker.plist"; then
+    "$app_python" -I -B -m openprogram worker install
+  else
+    "$app_python" -I -B -m openprogram worker stop >/dev/null 2>&1 || return
+    "$app_python" -I -B -m openprogram worker start
+  fi
+}
+
+# launchd load and detached start return before the web listener is ready.
+# Poll only; repeated start requests can race that same pending cold start.
+wait_for_health() {
+  local deadline=$((SECONDS + health_timeout)) remaining probe_timeout status=7
+  while test "$SECONDS" -lt "$deadline"; do
+    remaining=$((deadline - SECONDS))
+    test "$remaining" -gt 0 || break
+    probe_timeout=2
+    test "$remaining" -ge "$probe_timeout" || probe_timeout=$remaining
+    if curl -fsS --connect-timeout 1 --max-time "$probe_timeout" \
+      http://127.0.0.1:18100/healthz >/dev/null 2>&1; then
+      return 0
+    else
+      status=$?
+    fi
+    sleep 0.2
+  done
+  printf 'worker health did not become ready within %s seconds: http://127.0.0.1:18100/healthz (curl exit %s); logs: %s/.openprogram/worker.log\n' \
+    "$health_timeout" "$status" "$HOME" >&2
+  return "$status"
+}
+
+# A healthy endpoint or matching package revision cannot prove which Python
+# won startup. Verify the actual owner process before declaring a worker up.
+verify_worker_owner() {
+  "$app_python" -I -B - "$app_python" <<'PYTHON'
+import subprocess
+import sys
+from pathlib import Path
+from openprogram.operations.worker.lifecycle import current_worker_pid, worker_executable
+
+pid = current_worker_pid()
+if pid is None:
+    raise SystemExit("refreshed worker has no live owner")
+command = subprocess.check_output(
+    ["ps", "-p", str(pid), "-o", "command="], text=True,
+).strip()
+executable = subprocess.check_output(
+    ["ps", "-p", str(pid), "-o", "comm="], text=True,
+).strip()
+if (
+    Path(executable).resolve() != Path(worker_executable()).resolve()
+    or not command.endswith(" -I -B -u -m openprogram worker run")
+):
+    raise SystemExit(f"refreshed worker {pid} does not use the embedded App interpreter")
+print(f"verified embedded App worker PID {pid}")
+PYTHON
+}
+
+# Put the previous App back at $app_path and bring its worker up again.
+restore_step=""
+# The files say how far the switch got: a signal can land between a rename
+# and any flag recording it.
+restore_previous() {
+  if test -e "$previous_app"; then
+    if test -e "$app_path"; then
+      restore_step="stopping the new worker"
+      "$app_python" -I -B -m openprogram worker stop >/dev/null 2>&1 || :
+      restore_step="moving the new App aside"
+      mv "$app_path" "$transaction_dir/failed.app" || return 1
+    fi
+    restore_step="putting the previous App back"
+    mv "$previous_app" "$app_path" || return 1
+  fi
+  restore_step="starting the previous worker"
+  stamp "$restore_step"
+  start_worker || return 1
+  restore_step="waiting for the previous worker to answer"
+  wait_for_health || return 1
+  restore_step="checking the previous worker's interpreter"
+  verify_worker_owner || return 1
+}
+
 app_reopen_attempted=0
+# The App at $app_path is whole and its worker is up: reopen it on exit.
+app_ready_for_reopen=0
 # Whether the user was in the App when the refresh closed it. Only then does
 # it come back in front; otherwise it reopens behind what they are doing.
 app_was_front=0
@@ -246,7 +386,37 @@ finish_refresh() {
   local status=$? reopen_status=0 cleanup_status=0
   trap - EXIT
   set +e
-  if test "$app_verified_for_reopen" = 1 && test "$app_reopen_attempted" = 0; then
+  if test "$status" != 0 && test "$committed" = 0; then
+    if test "$outage" = 1; then
+      printf 'the refresh failed while %s (exit %s); restoring the previous version\n' \
+        "$refresh_step" "$status" >&2
+      # Finish putting the previous version back even when interrupted again.
+      trap '' HUP INT TERM
+      restore_previous
+      local restored=$?
+      trap 'exit 129' HUP
+      trap 'exit 130' INT
+      trap 'exit 143' TERM
+      if test "$restored" = 0; then
+        stamp "previous worker healthy"
+        app_ready_for_reopen=1
+        printf 'the refresh failed while %s; the previous version (%s) is running again\n' \
+          "$refresh_step" "${previous_revision:0:10}" >&2
+      else
+        keep_transaction=1
+        local previous_location="$app_path"
+        test ! -e "$previous_app" || previous_location="$previous_app"
+        printf 'the refresh failed while %s, and restoring the previous version failed while %s; the previous App is at %s and the stable worker is not running\n' \
+          "$refresh_step" "$restore_step" "$previous_location" >&2
+      fi
+    else
+      printf 'the refresh failed while %s; nothing was stopped or replaced, so the previous version (%s) is still running\n' \
+        "$refresh_step" "${previous_revision:0:10}" >&2
+    fi
+  elif test "$status" != 0; then
+    printf 'the new version (%s) is installed and its worker is healthy\n' "${revision:0:10}" >&2
+  fi
+  if test "$app_ready_for_reopen" = 1 && test "$app_reopen_attempted" = 0; then
     reopen_app
     reopen_status=$?
   fi
@@ -262,6 +432,8 @@ finish_refresh() {
   fi
   if test "$status" = 0; then
     printf 'refreshed %s from %s\n' "$app_path" "$revision"
+  elif test "$keep_transaction" = 1; then
+    printf 'the files of this refresh are kept at %s\n' "$transaction_dir" >&2
   fi
   exit "$status"
 }
@@ -437,8 +609,8 @@ validate_default_app_source "$build_revision"
 "$local_python" "$repo_root/scripts/release/verify-release-version.py" \
   --installed-app "$app_path" --require-source-match --allow-upgrade --wheel "$wheel"
 
-# Freeze the installer with this build before stopping the App. A new runtime
-# must not snapshot an obsolete installer on its next conversational update.
+# Freeze the installer with this build. A new runtime must not snapshot an
+# obsolete installer on its next conversational update.
 installer_stage="$attempt_dir/install-app.sh"
 test ! -L "$app_path/Contents/Resources/update" && \
   test ! -L "$app_path/Contents/Resources/update/install-app.sh" || {
@@ -447,120 +619,103 @@ test ! -L "$app_path/Contents/Resources/update" && \
 }
 cp "$repo_root/apps/desktop/scripts/install-app.sh" "$installer_stage"
 
-# Everything installed below is staged. Refuse any source/ref change since
-# packaging before quitting the App, stopping the worker or writing packages.
+# Refuse any source/ref change since packaging before writing anything.
 validate_default_app_source "$build_revision"
 
-if pgrep -f "^/Applications/OpenProgram[.]app/Contents/MacOS/OpenProgram( |$)" >/dev/null 2>&1; then
-  if lsappinfo info -only bundleid "$(lsappinfo front 2>/dev/null)" 2>/dev/null | grep -q '"ai.openprogram.desktop"'; then
-    app_was_front=1
-  fi
-  stamp "quitting the App"
-  osascript -e 'tell application id "ai.openprogram.desktop" to quit' >/dev/null 2>&1 || true
-  for _ in {1..50}; do
-    pgrep -f "^/Applications/OpenProgram[.]app/Contents/MacOS/OpenProgram( |$)" >/dev/null 2>&1 || break
-    sleep 0.2
-  done
-  if pgrep -f "^/Applications/OpenProgram[.]app/Contents/MacOS/OpenProgram( |$)" >/dev/null 2>&1; then
-    pkill -TERM -f "^/Applications/OpenProgram[.]app/Contents/MacOS/OpenProgram( |$)"
-    for _ in {1..50}; do
-      pgrep -f "^/Applications/OpenProgram[.]app/Contents/MacOS/OpenProgram( |$)" >/dev/null 2>&1 || break
-      sleep 0.2
-    done
-  fi
-  pgrep -f "^/Applications/OpenProgram[.]app/Contents/MacOS/OpenProgram( |$)" >/dev/null 2>&1 && {
-    printf 'OpenProgram did not quit before the refresh\n' >&2
-    exit 1
-  }
-fi
-"$local_python" -m openprogram worker stop >/dev/null 2>&1 || true
-stamp "worker stopped; installing runtime packages"
+# Assemble the new App beside the installed one, on the same volume so the
+# switch is a rename. Everything that can fail on the new version happens to
+# this copy while the old App and worker keep serving.
+previous_revision="$(sed -n '1p' "$app_path/Contents/Resources/openprogram-source-revision" 2>/dev/null || :)"
+previous_revision="${previous_revision:-an unrecorded revision}"
+transaction_dir="$(mktemp -d "$(dirname -- "$app_path")/.openprogram-refresh.XXXXXX")"
+staged_app="$transaction_dir/OpenProgram.app"
+previous_app="$transaction_dir/previous.app"
+staged_runtime="$staged_app/Contents/Resources/runtime"
+staged_python="$staged_runtime/$app_python_relative"
+step "assembling the new App beside the installed one"
+# A copy-on-write clone where the volume allows it; a full copy elsewhere.
+cp -cRp "$app_path" "$staged_app" 2>/dev/null || {
+  rm -rf "$staged_app"
+  ditto "$app_path" "$staged_app"
+}
 
+step "installing runtime packages into the new App"
 # A wheel reinstall does not remove files left by an older package layout.
-# Validate both runtimes before deleting either, then remove only OpenProgram's
-# validated package directories before reinstalling.
-validate_stale_package_tree "$local_python"
-validate_stale_package_tree "$app_python"
-sync_runtime_to_lock
+# Validate the runtime before deleting anything, then remove only
+# OpenProgram's validated package directories before reinstalling.
+validate_stale_package_tree "$staged_python"
+sync_runtime_to_lock "$staged_python" "$staged_runtime"
 # The embedded runtime may predate a newly declared production dependency.
 # Ask pip to resolve the wheel once before replacing the same-version package;
 # the second no-deps install below still performs the exact source refresh.
-hydrate_wheel_dependencies "$app_python"
-hydrate_wheel_dependencies "$local_python"
-remove_stale_package_tree "$local_python"
-remove_stale_package_tree "$app_python"
-"$local_python" -m pip install --disable-pip-version-check \
-  --no-deps --force-reinstall "$wheel"
-"$app_python" -I -m pip install --disable-pip-version-check \
+hydrate_wheel_dependencies "$staged_python"
+remove_stale_package_tree "$staged_python"
+"$staged_python" -I -m pip install --disable-pip-version-check \
   --break-system-packages --no-deps --force-reinstall "$wheel"
 # Programs this runtime no longer ships; an earlier refresh may have installed them.
 for retired_program in wiki-agent-harness gui-agent-harness research-agent-harness; do
-  "$local_python" -m pip uninstall --disable-pip-version-check -y \
-    "$retired_program" >/dev/null 2>&1 || true
-  "$app_python" -I -m pip uninstall --disable-pip-version-check -y \
+  "$staged_python" -I -m pip uninstall --disable-pip-version-check -y \
     --break-system-packages "$retired_program" >/dev/null 2>&1 || true
 done
 if test "$(uname -s)" = Darwin; then
-  "$app_python" -I -c \
+  "$staged_python" -I -c \
       'import AppKit, ApplicationServices, AVFoundation, EventKit, Quartz, ScreenCaptureKit'
 fi
-stamp "runtime packages installed; assembling the runtime"
+
+step "assembling the new runtime"
 if test -n "$electron_shell"; then
   # Electron's frameworks, executable, bundle metadata and locales; the
   # runtime, app.asar and installer stay this App's own. Before the runtime
   # helper build, which adds its privacy keys to this Info.plist.
-  rsync -a --delete "$electron_shell/Contents/Frameworks/" "$app_path/Contents/Frameworks/"
-  rsync -a --delete "$electron_shell/Contents/MacOS/" "$app_path/Contents/MacOS/"
-  cp "$electron_shell/Contents/Info.plist" "$app_path/Contents/Info.plist"
-  find "$app_path/Contents/Resources" -maxdepth 1 -name '*.lproj' -exec rm -rf {} +
-  rsync -a "$electron_shell/Contents/Resources/" "$app_path/Contents/Resources/" \
+  rsync -a --delete "$electron_shell/Contents/Frameworks/" "$staged_app/Contents/Frameworks/"
+  rsync -a --delete "$electron_shell/Contents/MacOS/" "$staged_app/Contents/MacOS/"
+  cp "$electron_shell/Contents/Info.plist" "$staged_app/Contents/Info.plist"
+  find "$staged_app/Contents/Resources" -maxdepth 1 -name '*.lproj' -exec rm -rf {} +
+  rsync -a "$electron_shell/Contents/Resources/" "$staged_app/Contents/Resources/" \
     --include '*.lproj/***' --exclude '*'
-  rm -f "$app_path/Contents/Resources/default_app.asar"
+  rm -f "$staged_app/Contents/Resources/default_app.asar"
 fi
-cp "$product_runtime_stage" "$installed_product_runtime"
-mkdir -p "$runtime_root/bin" "$runtime_root/assets/tui"
+cp "$product_runtime_stage" "$staged_runtime/product-runtime.json"
+mkdir -p "$staged_runtime/bin" "$staged_runtime/assets/tui"
 # Office installations live in the user cache and are preserved across App refreshes.
-rm -rf "$runtime_root/assets/office"
+rm -rf "$staged_runtime/assets/office"
 
-install -m 755 "$runtime_assets_stage/node" "$runtime_root/bin/node"
-cp "$runtime_assets_stage/index.cjs" "$runtime_root/assets/tui/index.cjs"
-cp "$runtime_assets_stage/product-uv.lock" "$runtime_root/product-uv.lock"
-cp "$runtime_assets_stage/verify-product-runtime.py" "$runtime_root/bin/verify-product-runtime.py"
-if test ! -e "$runtime_root/bin/python" && test ! -L "$runtime_root/bin/python"; then
-  ln -s "../$app_python_relative" "$runtime_root/bin/python"
+install -m 755 "$runtime_assets_stage/node" "$staged_runtime/bin/node"
+cp "$runtime_assets_stage/index.cjs" "$staged_runtime/assets/tui/index.cjs"
+cp "$runtime_assets_stage/product-uv.lock" "$staged_runtime/product-uv.lock"
+cp "$runtime_assets_stage/verify-product-runtime.py" "$staged_runtime/bin/verify-product-runtime.py"
+if test ! -e "$staged_runtime/bin/python" && test ! -L "$staged_runtime/bin/python"; then
+  ln -s "../$app_python_relative" "$staged_runtime/bin/python"
 fi
-"$app_python" -I "$runtime_assets_stage/build-macos-runtime-app.py" \
-  "$runtime_root" --python "$app_python" --icon "$runtime_assets_stage/icon.icns" --outer-app "$app_path"
-runtime_version="$("$app_python" -I -c 'from importlib.metadata import version; print(version("openprogram"))')"
-runtime_uv_version="$("$runtime_root/bin/uv" --version | awk '{print $2}')"
+"$staged_python" -I "$runtime_assets_stage/build-macos-runtime-app.py" \
+  "$staged_runtime" --python "$staged_python" --icon "$runtime_assets_stage/icon.icns" --outer-app "$staged_app"
+runtime_version="$("$staged_python" -I -c 'from importlib.metadata import version; print(version("openprogram"))')"
+runtime_uv_version="$("$staged_runtime/bin/uv" --version | awk '{print $2}')"
 # The verifier probes every capability before writing its manifest. Never
 # retain an old manifest or mark a newly required capability verified by fiat.
-"$app_python" -I "$runtime_root/bin/verify-product-runtime.py" "$runtime_root" \
-  --write --python-relative "$app_python_relative" \
+step "verifying the new runtime"
+"$staged_python" -I "$staged_runtime/bin/verify-product-runtime.py" "$staged_runtime" \
+  --write --this-machine --python-relative "$app_python_relative" \
   --openprogram-version "$runtime_version" --uv-version "$runtime_uv_version"
-# Replace the archive by rename, never by an in-place copy: an App launched
-# mid-refresh must read either the old or the new archive whole, never a
-# half-written preload (it fails as a syntax error and drops the bridge).
-stamp "runtime verified; installing App files"
-cp "$desktop_asar" "$installed_asar.incoming"
-mv -f "$installed_asar.incoming" "$installed_asar"
+step "installing the new App files"
+cp "$desktop_asar" "$staged_app/Contents/Resources/app.asar"
 if test -d "$desktop_asar.unpacked"; then
   rsync -a --delete "$desktop_asar.unpacked/" \
-    "$app_path/Contents/Resources/app.asar.unpacked/"
+    "$staged_app/Contents/Resources/app.asar.unpacked/"
 fi
-mkdir -p "$app_path/Contents/Resources/update"
-cp "$installer_stage" "$app_path/Contents/Resources/update/install-app.sh"
+mkdir -p "$staged_app/Contents/Resources/update"
+cp "$installer_stage" "$staged_app/Contents/Resources/update/install-app.sh"
 # The containing App's Dock and Finder icon ships with the source like the runtime's.
-cp "$runtime_assets_stage/icon.icns" "$app_path/Contents/Resources/icon.icns"
+cp "$runtime_assets_stage/icon.icns" "$staged_app/Contents/Resources/icon.icns"
 node "$repo_root/apps/desktop/scripts/write-reopen-protocol.cjs" \
-  --resources "$app_path/Contents/Resources"
+  --resources "$staged_app/Contents/Resources"
 
 revision="$build_revision"
 if test -n "$(git -C "$repo_root" status --porcelain --untracked-files=no)"; then
   revision="$revision-dirty"
 fi
 printf '%s\n' "$revision" > \
-  "$app_path/Contents/Resources/openprogram-source-revision"
+  "$staged_app/Contents/Resources/openprogram-source-revision"
 
 # Repair only invalid nested Framework/App bundles, deepest paths first.
 # Do not recurse into valid code or touch the separately signed runtime helper.
@@ -576,22 +731,35 @@ while IFS= read -r -d '' inner_bundle; do
       --preserve-metadata=entitlements,requirements,flags "$inner_bundle"
     codesign --verify --strict "$inner_bundle"
   fi
-done < <(find "$app_path/Contents/Frameworks" -depth -type d \
+done < <(find "$staged_app/Contents/Frameworks" -depth -type d \
   \( -name '*.framework' -o -name '*.app' \) -print0)
 
-# Resource/source-marker writes happen after packaging. Reuse the same local
-# certificate for the managed runtime and its TCC-responsible containing App.
-stamp "App files installed; signing"
-"$local_python" "$repo_root/scripts/release/local-macos-signing.py" sign --app "$app_path"
-codesign --verify --strict "$app_path"
+# Reuse the same local certificate for the managed runtime and its
+# TCC-responsible containing App, so permissions carry over to the new App.
+step "signing the new App"
+"$local_python" "$repo_root/scripts/release/local-macos-signing.py" sign --app "$staged_app"
+codesign --verify --strict "$staged_app"
 codesign --verify --strict \
-  "$runtime_root/OpenProgram.app"
-codesign --verify --deep --strict "$app_path"
-# Launch Services caches bundle icons by modification date.
-touch "$app_path"
+  "$staged_app/Contents/Resources/runtime/OpenProgram.app"
+codesign --verify --deep --strict "$staged_app"
 stamp "App signed"
 
-# Only a complete, verified App can be reopened from failure cleanup.
+# The command-line installation is not what the stable worker runs; it takes
+# the new package now, so a failure here also stops before the App does.
+step "installing the command-line package"
+validate_stale_package_tree "$local_python"
+hydrate_wheel_dependencies "$local_python"
+remove_stale_package_tree "$local_python"
+"$local_python" -m pip install --disable-pip-version-check \
+  --no-deps --force-reinstall "$wheel"
+for retired_program in wiki-agent-harness gui-agent-harness research-agent-harness; do
+  "$local_python" -m pip uninstall --disable-pip-version-check -y \
+    "$retired_program" >/dev/null 2>&1 || true
+done
+
+# Last check before the outage: no source or `stable` change since packaging.
+validate_default_app_source "$build_revision"
+
 reopen_app() {
   local open_status=0
   app_reopen_attempted=1
@@ -629,74 +797,71 @@ reopen_app() {
   printf 'OpenProgram reopened without a window; its main process likely failed to load\n' >&2
   return 1
 }
-app_verified_for_reopen=1
 
-# A KeepAlive launchd service can restart the worker while the wheel is still
-# being replaced. Stop that interim process after installation so the next
-# worker necessarily imports the refreshed runtime.
-# Rebind an existing launchd service to the same embedded interpreter used by
-# the App. A detached fallback must use it too, never the PATH installation.
+# From here a failure restores the previous App and worker (finish_refresh).
+outage=1
+if pgrep -f "^/Applications/OpenProgram[.]app/Contents/MacOS/OpenProgram( |$)" >/dev/null 2>&1; then
+  if lsappinfo info -only bundleid "$(lsappinfo front 2>/dev/null)" 2>/dev/null | grep -q '"ai.openprogram.desktop"'; then
+    app_was_front=1
+  fi
+  step "quitting the App"
+  osascript -e 'tell application id "ai.openprogram.desktop" to quit' >/dev/null 2>&1 || true
+  for _ in {1..50}; do
+    pgrep -f "^/Applications/OpenProgram[.]app/Contents/MacOS/OpenProgram( |$)" >/dev/null 2>&1 || break
+    sleep 0.2
+  done
+  if pgrep -f "^/Applications/OpenProgram[.]app/Contents/MacOS/OpenProgram( |$)" >/dev/null 2>&1; then
+    pkill -TERM -f "^/Applications/OpenProgram[.]app/Contents/MacOS/OpenProgram( |$)"
+    for _ in {1..50}; do
+      pgrep -f "^/Applications/OpenProgram[.]app/Contents/MacOS/OpenProgram( |$)" >/dev/null 2>&1 || break
+      sleep 0.2
+    done
+  fi
+  pgrep -f "^/Applications/OpenProgram[.]app/Contents/MacOS/OpenProgram( |$)" >/dev/null 2>&1 && {
+    printf 'OpenProgram did not quit before the refresh\n' >&2
+    exit 1
+  }
+fi
+# The installed App's own interpreter stops its worker and service.
+step "stopping the worker"
+"$app_python" -I -B -m openprogram worker stop >/dev/null
+
+step "switching to the new App"
+mv "$app_path" "$previous_app"
+mv "$staged_app" "$app_path"
+# Launch Services caches bundle icons by modification date.
+touch "$app_path"
+
 # Programs left in older locations (harness clones in the source tree, the
 # former workflows/ and applications/ directories) move into the owner's
 # Programs directory before the worker starts on this code.
+step "moving Programs into place"
 "$app_python" -I -B -c \
   'from openprogram.state.program_directory import migrate_user_directory; migrate_user_directory()'
 
-stamp "starting the worker"
-if test -f "$HOME/Library/LaunchAgents/ai.openprogram.worker.plist"; then
-  "$app_python" -I -B -m openprogram worker install
-else
-  "$app_python" -I -B -m openprogram worker stop >/dev/null 2>&1
-  "$app_python" -I -B -m openprogram worker start
-fi
-# launchd load and detached start return before the web listener is ready.
-# Poll only; repeated start requests can race that same pending cold start.
-health_timeout=300
-health_deadline=$((SECONDS + health_timeout))
-health_status=7
-while test "$SECONDS" -lt "$health_deadline"; do
-  remaining=$((health_deadline - SECONDS))
-  test "$remaining" -gt 0 || break
-  probe_timeout=2
-  test "$remaining" -ge "$probe_timeout" || probe_timeout=$remaining
-  if curl -fsS --connect-timeout 1 --max-time "$probe_timeout" \
-    http://127.0.0.1:18100/healthz >/dev/null 2>&1; then
-    health_status=0
-    stamp "worker healthy"
-    break
-  else
-    health_status=$?
-  fi
-  sleep 0.2
-done
-if test "$health_status" != 0; then
-  printf 'worker health did not become ready within %s seconds: http://127.0.0.1:18100/healthz (curl exit %s); logs: %s/.openprogram/worker.log\n' \
-    "$health_timeout" "$health_status" "$HOME" >&2
-  exit "$health_status"
-fi
-# A healthy endpoint or matching package revision cannot prove which Python
-# won startup. Verify the actual owner process before declaring refresh done.
-"$app_python" -I -B - "$app_python" <<'PYTHON'
-import subprocess
-import sys
-from pathlib import Path
-from openprogram.operations.worker.lifecycle import current_worker_pid, worker_executable
+# Rebind an existing launchd service to the same embedded interpreter used by
+# the App. A detached fallback must use it too, never the PATH installation.
+step "starting the worker"
+start_worker
+step "waiting for the worker to answer"
+wait_for_health
+stamp "worker healthy"
+step "checking the worker's interpreter"
+verify_worker_owner
 
-pid = current_worker_pid()
-if pid is None:
-    raise SystemExit("refreshed worker has no live owner")
-command = subprocess.check_output(
-    ["ps", "-p", str(pid), "-o", "command="], text=True,
-).strip()
-executable = subprocess.check_output(
-    ["ps", "-p", str(pid), "-o", "comm="], text=True,
-).strip()
-if (
-    Path(executable).resolve() != Path(worker_executable()).resolve()
-    or not command.endswith(" -I -B -u -m openprogram worker run")
-):
-    raise SystemExit(f"refreshed worker {pid} does not use the embedded App interpreter")
-print(f"verified embedded App worker PID {pid}")
-PYTHON
-# Reopen on success as well as on a later failure after signature verification.
+# The new version is healthy: only now does a promotion move `stable`,
+# compare-and-swap from the tip the promotion began with. A signal must not
+# land between moving `stable` and recording it, or the restore would put the
+# previous App back under a `stable` that has moved.
+trap '' HUP INT TERM
+if test "$promoting" = 1; then
+  step "moving stable to ${build_revision:0:10}"
+  git -C "$repo_root" update-ref -m "promote from dev" refs/heads/stable \
+    "$build_revision" "${promote_from:-0000000000000000000000000000000000000000}"
+fi
+committed=1
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+app_ready_for_reopen=1
 reopen_app

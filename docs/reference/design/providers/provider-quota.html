@@ -3,6 +3,8 @@
 <h1>Provider quota</h1>
 
 <p>One status per connected provider: health, quota, 30-day spend, default model and key health. Quota comes first from the replies OpenProgram already receives; an endpoint is read only on a few events, never on a timer.</p>
+<p>A provider is connected when it is enabled or holds a credential: one in OpenProgram's store, its CLI on <code translate="no">PATH</code>, the Codex CLI's auth file, or a satisfied cloud chain.</p>
+<p>A provider that signs in only through OpenProgram, such as Grok Subscription, counts once its sign-in is stored, so a fresh install lists none: the Providers page shows <strong>Connect a model provider</strong> and <code translate="no">openprogram providers status</code> prints "No connected providers".</p>
 
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">Where</th></tr></thead>
@@ -11,7 +13,7 @@
 <tr><th scope="row">Endpoint readers</th><td><code translate="no">openprogram/models/usage/quota_fetchers/</code>, one module per source</td></tr>
 <tr><th scope="row">Status</th><td><code translate="no">openprogram/models/usage/provider_status.py</code>, wire types generated to <code translate="no">apps/web/lib/settings/provider-status.generated.ts</code></td></tr>
 <tr><th scope="row">Route</th><td><code translate="no">GET /api/providers/status</code>, <code translate="no">POST /api/providers/status/refresh</code>, WebSocket frame <code translate="no">provider_quota</code></td></tr>
-<tr><th scope="row">CLI</th><td><code translate="no">openprogram providers status [--refresh] [--json]</code></td></tr>
+<tr><th scope="row">CLI</th><td><code translate="no">openprogram providers status [--refresh] [--json]</code>: asks the running Worker for the route's payload (each key's use count and last use live in its memory), and builds it itself when none answers</td></tr>
 </tbody>
 </table>
 
@@ -78,15 +80,16 @@
 <ul>
 <li>A 401 read newer than the status: <code translate="no">invalid_key</code> ("quota endpoint answered 401"), until a read answers or a call with the key succeeds.</li>
 <li>A read that answered after a <code translate="no">billing_blocked</code> stop overrules the stop; that read's balance decides.</li>
+<li>A sign-in whose refresh token the token endpoint refuses (<code translate="no">invalid_grant</code>, already used) is <code translate="no">needs_reauth</code>, read as <code translate="no">signed_out</code> with the Sign in again fix. That holds for a stored sign-in and for one delegated to the Codex CLI's file; the delegated one is not asked again until the file holds another login.</li>
 </ul>
-<p>Health is the best key's state, overridden by a spent limit: <code translate="no">ready</code>, <code translate="no">rate_limited</code> (with the reset time), <code translate="no">no_credit</code>, <code translate="no">invalid_key</code>, <code translate="no">signed_out</code> or <code translate="no">unknown</code>.</p>
+<p>Health is the best key's state, overridden by a spent limit: <code translate="no">ready</code>, <code translate="no">rate_limited</code> (with the reset time), <code translate="no">no_credit</code>, <code translate="no">invalid_key</code>, <code translate="no">signed_out</code> or <code translate="no">unknown</code>. A provider with no key reads <code translate="no">not_configured</code>; a local server that does not answer reads <code translate="no">not_running</code>. Each state that needs action carries its fix; see <a href="provider-management.html">Provider management</a>.</p>
 <p>A throttle lasts as long as its cooldown. The pool keeps a key's <code translate="no">rate_limited</code> status until its next success but picks the key again once the cooldown has passed, so health reads such a key as <code translate="no">ready</code>, not as rate limited until a time already gone.</p>
 <p>The CLI table prints only coming times (<code translate="no">until 14:05</code>, <code translate="no">resets Nov 19 02:22</code>); a time already passed is left out. It fits the terminal width: a bar gives up cells, down to 5, and then its reset time moves to a line of its own. Output to a pipe without <code translate="no">COLUMNS</code> is not wrapped.</p>
 <p>A failed reply carries a cause beside its error reason, from the provider error to the turn result, the event (<code translate="no">cause</code>) and the stored placeholder (<code translate="no">error_cause</code>):</p>
 <table class="stack fixed">
 <thead><tr><th scope="col">Cause</th><th scope="col">From</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">quota_exhausted</code></th><td>402, <code translate="no">insufficient_quota</code>, <code translate="no">usage_limit_reached</code>; names the spent limit and its reset time when known</td></tr>
+<tr><th scope="row"><code translate="no">quota_exhausted</code></th><td>402, <code translate="no">usage_limit_reached</code>, or a billing body under any status (<code translate="no">insufficient_quota</code>, 401 <code translate="no">CreditsError</code> "Insufficient balance"); names the spent limit, its reset time, the key (<code translate="no">account</code>) and that key's other windows (<code translate="no">other_limits</code>) when known</td></tr>
 <tr><th scope="row"><code translate="no">invalid_key</code></th><td>401 or a rejected key message</td></tr>
 <tr><th scope="row"><code translate="no">not_available</code></th><td>Region or plan refusal (403 JSON, model not on the plan)</td></tr>
 <tr><th scope="row"><code translate="no">unreachable</code></th><td>DNS or connection failure anywhere in the exception chain</td></tr>
@@ -110,8 +113,8 @@
 
 <h2 id="implementation-status">Implementation status</h2>
 <ul>
-<li>No web UI reads the status route yet.</li>
+<li>No web UI reads the status route yet; the pages that will are in <a href="provider-management.html">Provider management</a>.</li>
 <li>No reader for Kimi Coding (its payload is not settled), DeepSeek or Moonshot balances, or OpenRouter <code translate="no">/credits</code> (no peer documents their responses).</li>
 <li>The unverified readers above are off.</li>
-<li>Not built: a per-provider usage route, a detected-providers route, a REPL <code translate="no">/status</code>. A top-level <code translate="no">openprogram status</code> alias is not possible: that name is the background service's.</li>
+<li>Not built: a REPL <code translate="no">/status</code>. A top-level <code translate="no">openprogram status</code> alias is not possible: that name is the background service's.</li>
 </ul>

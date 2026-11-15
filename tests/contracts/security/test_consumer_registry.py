@@ -10,6 +10,7 @@ from openprogram.host.security.safe_http import (
     SDKDisposition,
 )
 from openprogram.host.security.url_policy import URLTrustClass, evaluate_url
+from openprogram.programs.applications.office_editor.install import OFFICE_DOWNLOAD_BYTES
 
 
 EXPECTED_CONSUMERS = {
@@ -201,7 +202,7 @@ def test_every_consumer_declares_finite_limits_and_mime_policy():
         assert 0 < spec.max_redirects <= 20
         if key == "office.assets":
             # The pinned optional archive streams to disk, not an in-memory API body.
-            assert spec.max_decoded_body_bytes == 732_695_641
+            assert spec.max_decoded_body_bytes == OFFICE_DOWNLOAD_BYTES
         elif key == "self_update.electron":
             # So does the pinned Electron archive a complete self-update build needs.
             assert spec.max_decoded_body_bytes == 512 * 1024 * 1024

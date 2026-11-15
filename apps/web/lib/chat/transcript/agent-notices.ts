@@ -9,7 +9,10 @@
  *    ``<agent …>`` … ``</agent>`` (runtime/jobs/agent_result.py ``render``)
  *    that notices written before it lack;
  *  - a message delivered to a branch: it starts with the receipt line
- *    ``[message|task from SID:HEAD (sender)]`` (send_message/delivery.py).
+ *    ``[message|task from SID:HEAD (sender)]`` (send_message/delivery.py);
+ *  - a stored hand-off between conversations: ``📨 Message from “Title”
+ *    (id):`` and the answer that came back, ``↩️ Reply from “Title” (id) to
+ *    the message you sent it:``.
  */
 import type { NoticeItem } from "../../session-store/types";
 
@@ -76,7 +79,7 @@ export function noticeDetail(content: string, items: NoticeItem[], index: number
 }
 
 export interface Receipt {
-  kind: "task" | "message";
+  kind: "task" | "message" | "reply";
   /** Who sent it (``main conversation``, an agent, another conversation's
    *  title); empty for a message written before senders were named. */
   from: string;
@@ -86,9 +89,22 @@ export interface Receipt {
 
 const RECEIPT = /^\[(task|message) from (\S+?)(?: \((.*?)\))?\][^\n]*\n+/;
 
+const HANDOFF = /^(📨 Message from|↩️ Reply from) “([^”\n]*)” \(([^()\s]+)\)[^\n]*:\n+/;
+/** The note a hand-off ended with, addressed to the agent that received it. */
+const HANDOFF_NOTE = /\n+\(Another of your conversations handed this to you\.[^\n]*\)\s*$/;
+
 export function readReceipt(content: string): Receipt | null {
   const m = RECEIPT.exec(content);
-  if (!m) return null;
+  if (!m) {
+    const handed = HANDOFF.exec(content);
+    if (!handed) return null;
+    return {
+      kind: handed[1].startsWith("📨") ? "message" : "reply",
+      address: handed[3],
+      from: handed[2],
+      body: content.slice(handed[0].length).replace(HANDOFF_NOTE, ""),
+    };
+  }
   return {
     kind: m[1] as Receipt["kind"],
     address: m[2],

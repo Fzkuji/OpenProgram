@@ -14,12 +14,12 @@
 <table class="stack">
 <thead><tr><th scope="col">分类</th><th scope="col">来源</th><th scope="col">边界</th></tr></thead>
 <tbody>
-<tr><th scope="row">Messages</th><td>渲染历史：可见文本、思考、工具输入与结果、记忆预取</td><td>未持久化的原始图片计入差额</td></tr>
+<tr><th scope="row">Messages</th><td>渲染历史：可见文本、思考、工具输入与结果、记忆预取。轮次进行中还包括这一轮自己的各次往返（“本轮进行中”一行）</td><td>未持久化的原始图片计入差额</td></tr>
 <tr><th scope="row">System prompt</th><td>最新记录的完整系统提示词</td><td>先算全量，再减去 Skills、常驻 Memory 和延迟目录</td></tr>
 <tr><th scope="row">Skills、Memory</th><td>注入系统提示词的索引和常驻块</td><td>属于系统提示词的组成部分，不再重复计入总量</td></tr>
 <tr><th scope="row">System tools、MCP tools</th><td>本轮冻结工具集的供应商 schema</td><td>由 <code translate="no">_mcp_server</code> 决定归入哪一类</td></tr>
 <tr><th scope="row">Deferred tools</th><td>工具名目录：对话自己的回合放在用户消息旁，自带提示词的调用写在那份提示词里</td><td>只计实际发送的名称，不计完整描述或 schema</td></tr>
-<tr><th scope="row">Other context（估算）</th><td><code translate="no">provider total - classified estimate</code></td><td>未持久化图片、供应商包装开销、临时界面提示词。显示出来，不隐藏</td></tr>
+<tr><th scope="row">Other context（估算）</th><td><code translate="no">provider total - classified estimate</code>，减去运行中轮次自己的往返</td><td>未持久化图片、供应商包装开销、临时界面提示词。显示出来，不隐藏</td></tr>
 </tbody>
 </table>
 
@@ -27,7 +27,9 @@
 <pre translate="no"><code>classified = system_other + skills + memory + tools + mcp + deferred + messages
 other = max(0, provider_total - classified)
 displayed_used = provider_total if measured else classified
-free = max(0, window - displayed_used)</code></pre>
+free = max(0, window - displayed_used) if window else none</code></pre>
+<p>运行中的轮次里实测的请求包含这一轮的回复、工具调用和结果，它们在轮次结束时才写进图。这部分按请求自己的估算（<code translate="no">request_input_estimate</code>）减去图的估算计入 Messages，最多等于全部差额；其余差额（供应商包装、估算误差）仍是 Other context。</p>
+<p>窗口取请求所用模型的窗口（<a href="occupancy-status.zh.html#window">窗口</a>）；没有窗口时不算剩余空间，也不显示百分比。</p>
 <p>优先用实测输入 token，没有实测时才用本地估算。本地估算超过实测时，保留供应商总量，显示的分类按比例缩小；响应保留原始估算和校准系数。差额不会为负。</p>
 
 <h2 id="acceptance">验收</h2>

@@ -100,13 +100,14 @@ class ScriptedTools:
     def tool(self, name: str):
         from openprogram.models.providers.types import AgentTool, AgentToolResult, TextContent
 
-        async def execute(_call_id, _args, cancel_event, _on_update):
+        async def execute(_call_id, _args, _cancel_event, _on_update):
             self.started[name].set()
             if name in self.during:
                 await asyncio.to_thread(self.during[name])
+            # A held tool does not watch the stop signal: a stop cuts it, so
+            # its call ends as stopped. Returning on the signal instead raced
+            # the cut, and a loaded machine recorded a finished call.
             while name in self.held and not self.release[name].is_set():
-                if cancel_event is not None and cancel_event.is_set():
-                    break
                 await asyncio.sleep(0.005)
             return AgentToolResult(content=[TextContent(text=f"{name}:ok")])
 
@@ -163,6 +164,8 @@ class LiveChat:
         self._read_socket = RecordingSocket(lambda _frame: None, live=self._live_frame)
         self._end_parking = lambda: None
         self.tree_updates = 0
+        # Tools whose call frame the server has sent, socket up or down.
+        self.calls_sent: set[str] = set()
         self._peer_socket = RecordingSocket(lambda _frame: None)
 
     # Delivery
@@ -188,6 +191,11 @@ class LiveChat:
 
     def broadcast(self, value: str, *, exclude: Any = None) -> None:
         """The server's fan-out, for the one socket a recording follows."""
+        if '"tool_use"' in value:
+            data = json.loads(value).get("data") or {}
+            event = data.get("event") if isinstance(data, dict) else None
+            if data.get("type") == "stream_event" and isinstance(event, dict) and event.get("type") == "tool_use":
+                self.calls_sent.add(str(event.get("tool")))
         if exclude is self.socket:
             return
         if '"tree_update"' in value:
@@ -235,7 +243,13 @@ class LiveChat:
         self.execution_id = ack.get("execution_id")
 
     def wait_tool(self, name: str) -> None:
+        """Wait until the tool runs and its call is in the stored reply.
+
+        The loop starts a tool while the stream tap may still be writing
+        the call into the reply; the tap sends the call's frame only after
+        that write, so a read after the frame shows the call."""
         wait_until(self.tools.started[name].is_set, what=f"tool {name} starting")
+        wait_until(lambda: name in self.calls_sent, what=f"the {name} call reaching the stored reply")
 
     def release_tool(self, name: str) -> None:
         self.tools.release[name].set()
@@ -256,17 +270,25 @@ class LiveChat:
 
     def wait_job_finished(self) -> None:
         """Wait for a background job's terminal status and the reload it sends."""
-        wait_until(lambda: any(s.get("frame", {}).get("type") == "job_status"
-                               and s["frame"]["data"].get("status") in {"completed", "failed", "errored"}
-                               for s in self.timeline), what="the job finishing")
+        from openprogram.runtime.jobs import get_runner
+
+        finished = wait_until(lambda: next((s["frame"]["data"] for s in list(self.timeline)
+                                            if s.get("frame", {}).get("type") == "job_status"
+                                            and s["frame"]["data"].get("status") in {"completed", "failed", "errored"}),
+                                           None), what="the job finishing")
+        # The status goes out before the runner settles the job's card and
+        # queues its notice; the runner's own wait covers both.
+        get_runner().await_job(finished["job_id"], timeout=_WAIT_SECONDS)
         self.wait_published()
         self.effects.effects.drain()
 
     def wait_published(self) -> None:
-        """Wait until the publisher has sent everything written so far."""
+        """Wait until the publisher has sent everything written so far.
+
+        A write notices the publisher before it returns, and ``idle`` counts
+        a notice from then until its update is sent, so no settling time is
+        needed after the writes this thread waited for."""
         current = publisher.current()
-        wait_until(lambda: current is None or current.idle, what="the publisher going idle")
-        threading.Event().wait(0.08)  # an observed write may still be queueing
         wait_until(lambda: current is None or current.idle, what="the publisher going idle")
 
     def _settled(self) -> bool:
@@ -469,12 +491,21 @@ def live_chat(root: Path) -> Iterator[LiveChat]:
     from openprogram.state.store.session import session_store as session_store_module
     from openprogram.state.store.session.session_store import SessionStore
 
+    # Everything the chat resolves through the state directory (the event
+    # log, session logs, project lookups) stays under ``root`` too, however
+    # this runs: a copy of a transcript test run without tests/conftest.py
+    # still has the person's real HOME, and once wrote its turns into a real
+    # ``transcript-recording`` conversation in ~/.openprogram.
+    lock_patch = pytest.MonkeyPatch()
+    lock_patch.setenv("HOME", str(root))
+    lock_patch.setenv("USERPROFILE", str(root))
+    lock_patch.delenv("OPENPROGRAM_PROFILE", raising=False)
     # This process is the worker for this home, as a running server is; the
     # sync agent tool probes the lock and must find it held.
-    lock_patch = pytest.MonkeyPatch()
     lock_patch.setattr(worker_lock_module, "lock_path", lambda: root / "worker.lock")
     worker_lock = worker_lock_module.WorkerLock()
     if not worker_lock.try_acquire():
+        lock_patch.undo()
         raise AssertionError("this home's worker lock is held")
     store = ExecutionStore(root / "execution.sqlite3")
     control = RuntimeControlService(store, AttemptStore(store), DriverRegistry())

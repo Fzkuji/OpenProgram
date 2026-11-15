@@ -23,8 +23,8 @@
 </details>
 <details><summary>Weakest: evidence</summary>
 <ul>
-<li>Present: bundled, dynamic community and custom providers, MCP client, skills, plugins, an authenticated stdio MCP server for tools and an ACP server for sessions.</li>
-<li>Unconfirmed: OpenAI-compatible endpoint, stable versioned remote-control SDK, complete public headless event protocol, maintained IDE extension. Owner-authenticated WebSocket and Python library entry points are internal or embedded and promise no external compatibility.</li>
+<li>Present: bundled, dynamic community and custom providers, MCP client, skills, plugins, an authenticated stdio MCP server for tools, an ACP server for sessions and an OpenAI-compatible <code translate="no">/v1/chat/completions</code> on the Worker.</li>
+<li>Unconfirmed: stable versioned remote-control SDK, complete public headless event protocol, maintained IDE extension. Owner-authenticated WebSocket and Python library entry points are internal or embedded and promise no external compatibility.</li>
 <li>OpenProgram and OpenClaw both keep agent guidance in agent workspaces. OpenClaw ships <code translate="no">migrate-claude</code> and <code translate="no">migrate-hermes</code>; Codex desktop and CLI import Claude Code and Cursor setup and recent work. OpenProgram has no importer for external sessions, configuration or skills.</li>
 </ul>
 <p><code translate="no">extensions/mcp/server/server.py</code> · <code translate="no">interfaces/acp/server.py</code> · <code translate="no">interfaces/cli/commands/mcp.py</code> · <code translate="no">runtime/agent_registry/workspace.py</code></p>
@@ -129,7 +129,7 @@
 <tr><th scope="row">Observability and billing</th><td>Trace export + OTel + Prometheus</td><td>Log redaction + Langfuse; provider quota retrieval</td><td>One log file</td></tr>
 </tbody></table>
 </details>
-<p class="note">OpenProgram, OpenClaw and Hermes all serve multiple entry points from persistent services. Remaining gaps: channel breadth, stable remote SDK, OpenAI-compatible endpoint, cross-worker session placement, complete versioned headless event contract. Unpinned star, fork and skill counts are not evidence.</p>
+<p class="note">OpenProgram, OpenClaw and Hermes all serve multiple entry points from persistent services. Remaining gaps: channel breadth, stable remote SDK, cross-worker session placement, complete versioned headless event contract. Unpinned star, fork and skill counts are not evidence.</p>
 
 <h2 id="more">Separate pages</h2>
 <table class="stack fixed">

@@ -1,0 +1,44 @@
+<title>OpenAI-compatible endpoint</title>
+<meta name="description" content="How an OpenProgram Agent answers as a model at /v1/chat/completions, and which peers each choice follows.">
+<meta name="covers" content="openprogram/interfaces/server/routes/openai_compatible.py">
+<h1>OpenAI-compatible endpoint</h1>
+
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Endpoint</th></tr></thead>
+<tbody>
+<tr><th scope="row">Serves</th><td>Tools that speak OpenAI Chat Completions and use an OpenProgram Agent as their model</td></tr>
+<tr><th scope="row">Routes</th><td><code translate="no">GET /v1/models</code>, <code translate="no">POST /v1/chat/completions</code> on the Worker's port</td></tr>
+<tr><th scope="row">Code</th><td><code translate="no">openprogram/interfaces/server/routes/openai_compatible.py</code>; the turn starts through <code translate="no">runtime/conversation/owner_turn.py</code>; <code translate="no">/v1</code> refusals in <code translate="no">owner_auth.py</code></td></tr>
+<tr><th scope="row">User docs</th><td><a href="../../../interfaces/openai-api.html">OpenAI-compatible API</a></td></tr>
+<tr><th scope="row">Tests</th><td><code translate="no">tests/component/webui/runtime/test_openai_compatible.py</code>: the real turn path with a scripted model, streaming, client leaving, auth refusal</td></tr>
+</tbody>
+</table>
+
+<h2 id="peers">Peers</h2>
+<p>Of the 21 harnesses compared, two serve this endpoint: Hermes Agent (<code translate="no">/v1/chat/completions</code> and <code translate="no">/v1/responses</code>) and OpenClaw (<code translate="no">/v1/chat/completions</code>, off by default). Claude Code and Codex offer their own SDK and app-server protocols instead, which OpenProgram answers with ACP and the MCP server. The choices below follow Hermes and OpenClaw where they agree, and say which one where they differ.</p>
+
+<h2 id="decisions">Decisions</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Question</th><th scope="col">Choice, followed peer and reason</th></tr></thead>
+<tbody>
+<tr><th scope="row">Port and key</th><td>The Worker's own port and its owner token as <code translate="no">Authorization: Bearer</code>; no separate key, switch or permission gate. Both peers put the endpoint behind the server's existing bearer key. The token already opens every owner API of the Worker, a chat turn included, so a second key or an off switch would add a gate without narrowing what a token holder can do.</td></tr>
+<tr><th scope="row">Model</th><td>The <code translate="no">model</code> is an Agent's id; <code translate="no">/v1/models</code> lists the Agents, the default first. OpenClaw: its model string selects the agent. Hermes advertises one fixed model because it has one agent; OpenProgram has several.</td></tr>
+<tr><th scope="row">Conversation</th><td>Each request starts a conversation of that Agent; <code translate="no">conversation_id</code> in the body continues one, and every answer names its conversation in the body and the <code translate="no">X-OpenProgram-Conversation-Id</code> header. Both peers are stateless per request with an opt-in key for continuity (Hermes a header, OpenClaw the <code translate="no">user</code> field). A body field travels through the OpenAI SDKs' <code translate="no">extra_body</code>, which most tools expose.</td></tr>
+<tr><th scope="row">Earlier messages</th><td>The last user message is the turn's message; the messages before it are folded into the same input, labelled by role, instructions first. OpenClaw builds its agent prompt this way. The conversation store holds only turns that happened, so the caller's history is not written as stored turns the Agent never gave.</td></tr>
+<tr><th scope="row">Turn</th><td>The conversation's normal turn: it takes the run slot, runs the Agent's own model, tools and permission mode, is stored and shows in the App. Source <code translate="no">api</code>, the bearer's owner authority marked non-interactive and the unattended run note, as <code translate="no">openprogram --print</code>: no one can answer an approval or a question, so such a step is refused instead of waiting. Sampling and <code translate="no">tools</code> fields are ignored, as both peers do: the Agent's settings apply.</td></tr>
+<tr><th scope="row">Streaming</th><td>The reply text as <code translate="no">chat.completion.chunk</code> deltas, a final chunk with <code translate="no">finish_reason</code>, an optional usage chunk, then <code translate="no">data: [DONE]</code>. Tool activity is not written into <code translate="no">content</code>: clients show it as the reply. A client that closes the stream cancels the turn, as OpenAI's API stops generating.</td></tr>
+<tr><th scope="row">Errors</th><td>OpenAI's <code translate="no">{"error": {message, type, param, code}}</code> for every refusal, including the auth middleware's on <code translate="no">/v1</code> paths, so OpenAI clients show the message; a <code translate="no">/v1</code> path this server does not serve is a 404 in the same shape, not the App's page. A failure after a stream began is an error event before <code translate="no">[DONE]</code>.</td></tr>
+</tbody>
+</table>
+
+<h2 id="status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">State</th></tr></thead>
+<tbody>
+<tr><th scope="row">Chat Completions, models, streaming, continuation, cancellation</th><td>Implemented</td></tr>
+<tr><th scope="row">A key that survives a Worker restart</th><td>Open: the owner token is minted per Worker process, so a tool reads the token file at call time</td></tr>
+<tr><th scope="row"><code translate="no">/v1/responses</code>, image input, caller-defined tools</th><td>Not built; Hermes serves the Responses API</td></tr>
+<tr><th scope="row">A model request resent mid-stream</th><td>Open: after a transport failure the Agent's model request is sent again and the text it had streamed is void; a client cannot take back chunks it has received, so a stream that met a resend repeats the start of the reply</td></tr>
+<tr><th scope="row">Browser callers on another origin</th><td>Not built: the owner middleware refuses a foreign Origin and there is no CORS</td></tr>
+</tbody>
+</table>

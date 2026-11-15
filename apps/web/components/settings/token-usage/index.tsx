@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { SettingsPage } from "../settings-ui";
 import local from "./usage.module.css";
@@ -8,6 +8,8 @@ import { cachedFetch } from "@/lib/prefs/settings-cache";
 import { useTranslation } from "@/lib/i18n";
 import { ChartNoAxesColumn } from "lucide-react";
 import { ManageEmptyState, ManageSubnav } from "@/components/ui/manage-page";
+import { HoverTip } from "@/components/ui/tooltip";
+import { StackedBarChart, type StackPoint } from "./stacked-bar-chart";
 
 // ── API types ───────────────────────────────────────────────────────────────
 
@@ -21,9 +23,19 @@ type ModelRow = {
   total_tokens: number;
   cost: number;
   events: number;
+  /** A subscription's calls: the cost is the API list price, not billed. */
+  included?: boolean;
+  unpriced_events?: number;
 };
 
-type KindRow = {
+/** What a source or function row's calls are billed (newer Workers). */
+type CostSplit = {
+  billed_cost?: number;
+  included_cost?: number;
+  unpriced_events?: number;
+};
+
+type KindRow = CostSplit & {
   kind: string;
   input_tokens: number;
   output_tokens: number;
@@ -39,7 +51,7 @@ type TrendPoint = {
   events: number;
 };
 
-type LabelRow = {
+type LabelRow = CostSplit & {
   label: string;
   input_tokens: number;
   output_tokens: number;
@@ -59,6 +71,12 @@ type Summary = {
     cost_known: boolean;
     unknown_cost_events: number;
     events: number;
+    /** What pay-per-token providers charge (priced calls only). */
+    billed_cost?: number;
+    /** API list price of calls a subscription already covers. */
+    included_cost?: number;
+    /** Pay-per-token calls with no known price. */
+    unpriced_events?: number;
   };
   by_model: ModelRow[];
   by_kind: KindRow[];
@@ -99,11 +117,18 @@ function fmtCost(c: number | null): string {
   return "$" + c.toFixed(2);
 }
 
-function fmtDate(ts: number): string {
-  return new Date(ts * 1000).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
+/** A source or function row's cost as it is billed: "Included" when a
+ *  subscription covers every call, else the billed sum (with unpriced calls),
+ *  the list price of the covered calls on hover. Older Workers: the raw sum. */
+function CostCell({ row, text }: { row: CostSplit & { cost: number }; text: (en: string, zh: string) => string }) {
+  if (row.billed_cost == null) return <>{fmtCost(row.cost)}</>;
+  const included = row.included_cost ?? 0;
+  const unpriced = row.unpriced_events ?? 0;
+  const tip = included > 0 ? text(`Subscriptions cover ${fmtCost(included)} at API prices`, `订阅已覆盖按 API 价约 ${fmtCost(included)}`) : "";
+  const value = included > 0 && row.billed_cost === 0 && unpriced === 0
+    ? text("Included", "套餐内")
+    : fmtCost(row.billed_cost) + (unpriced ? ` · ${text(`${unpriced} unpriced`, `${unpriced} 次无价格`)}` : "");
+  return tip ? <HoverTip label={tip}><span tabIndex={0}>{value}</span></HoverTip> : <>{value}</>;
 }
 
 // ── dimension tabs ──────────────────────────────────────────────────────────
@@ -114,196 +139,6 @@ const DIMENSIONS: { key: Dimension; labelKey: "usage.dim.kind" | "usage.dim.mode
   { key: "model_id", labelKey: "usage.dim.model" },
   { key: "call_label", labelKey: "usage.dim.label" },
 ];
-
-// ── StackedBarChart ─────────────────────────────────────────────────────────
-
-const H = 200;
-const PAD = { t: 14, r: 16, b: 26, l: 52 };
-
-function StackedBarChart({
-  series,
-  categories,
-}: {
-  series: Record<string, TrendPoint[]>;
-  categories: string[];
-}) {
-  const { text } = useTranslation();
-  const wrapRef = useRef<HTMLDivElement | null>(null);
-  const [w, setW] = useState(0);
-  const [hover, setHover] = useState<number | null>(null);
-
-  useEffect(() => {
-    const el = wrapRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver((entries) => {
-      setW(entries[0].contentRect.width);
-    });
-    ro.observe(el);
-    setW(el.clientWidth);
-    return () => ro.disconnect();
-  }, []);
-
-  const nDays = Object.values(series)[0]?.length ?? 0;
-
-  const { stacks, ticks, yTicks } = useMemo(() => {
-    if (nDays === 0 || w === 0 || categories.length === 0)
-      return { stacks: [], ticks: [], yTicks: [] };
-
-    const innerW = Math.max(w - PAD.l - PAD.r, 1);
-    const innerH = H - PAD.t - PAD.b;
-    const slot = innerW / nDays;
-    const gap = Math.min(slot * 0.25, 4);
-    const barW = Math.max(slot - gap, 1);
-
-    // compute per-day total for y-scale
-    const dayTotals = Array.from({ length: nDays }, (_, d) =>
-      categories.reduce((s, cat) => s + (series[cat]?.[d]?.total_tokens ?? 0), 0)
-    );
-    const mx = Math.max(...dayTotals, 1);
-
-    const stackList = Array.from({ length: nDays }, (_, d) => {
-      const x = PAD.l + d * slot + gap / 2;
-      const ts = series[categories[0]]?.[d]?.ts ?? 0;
-      let accH = 0;
-      const segments = categories.map((cat, ci) => {
-        const val = series[cat]?.[d]?.total_tokens ?? 0;
-        const h = (val / mx) * innerH;
-        const seg = {
-          cat,
-          color: catColor(ci),
-          x,
-          y: PAD.t + innerH - accH - h,
-          w: barW,
-          h: Math.max(h, val > 0 ? 1.5 : 0),
-          val,
-        };
-        accH += h;
-        return seg;
-      });
-      return { d, x, ts, segments, total: dayTotals[d] };
-    });
-
-    const tickCount = Math.min(nDays, 6);
-    const tickList = Array.from({ length: tickCount }, (_, i) => {
-      const idx = Math.round((i / Math.max(tickCount - 1, 1)) * (nDays - 1));
-      return {
-        x: PAD.l + idx * slot + slot / 2,
-        label: fmtDate(stackList[idx]?.ts ?? 0),
-      };
-    });
-
-    // Y-axis ticks: 3-4 evenly spaced
-    const yTickCount = 4;
-    const yTickList = Array.from({ length: yTickCount }, (_, i) => {
-      const val = (mx / (yTickCount - 1)) * i;
-      const y = PAD.t + innerH - (val / mx) * innerH;
-      return { y, val, label: fmtNum(Math.round(val)) };
-    });
-
-    return { stacks: stackList, ticks: tickList, yTicks: yTickList };
-  }, [series, categories, w, nDays]);
-
-  if (nDays === 0) {
-    return (
-      <div className={local.chartWrap} ref={wrapRef} style={{ height: H }}>
-        <div className={local.chartEmpty}>{text("No usage recorded in this period", "此时段暂无用量记录")}</div>
-      </div>
-    );
-  }
-
-  return (
-    <div className={local.chartWrap} ref={wrapRef} style={{ height: H }}>
-      {w > 0 && (
-        <svg width={w} height={H}>
-          {/* Y-axis grid lines + labels */}
-          {yTicks.map((yt, i) => (
-            <g key={`y-${i}`}>
-              {i > 0 && (
-                <line
-                  x1={PAD.l}
-                  x2={w - PAD.r}
-                  y1={yt.y}
-                  y2={yt.y}
-                  stroke="var(--border, #e5e0d8)"
-                  strokeDasharray="3,3"
-                  strokeWidth="1"
-                />
-              )}
-              <text
-                x={PAD.l - 8}
-                y={yt.y + 4}
-                textAnchor="end"
-                fontSize="10"
-                fill="var(--text-secondary)"
-              >
-                {yt.label}
-              </text>
-            </g>
-          ))}
-          {stacks.map((st) =>
-            st.segments.map((seg, si) =>
-              seg.h > 0 ? (
-                <rect
-                  key={`${st.d}-${si}`}
-                  x={seg.x}
-                  y={seg.y}
-                  width={seg.w}
-                  height={seg.h}
-                  rx={Math.min(seg.w / 2, 2)}
-                  fill={seg.color}
-                  opacity={hover === null || hover === st.d ? 1 : 0.4}
-                  onMouseEnter={() => setHover(st.d)}
-                  onMouseLeave={() => setHover(null)}
-                />
-              ) : null
-            )
-          )}
-          {/* baseline for empty days */}
-          {stacks
-            .filter((st) => st.total === 0)
-            .map((st) => (
-              <rect
-                key={`empty-${st.d}`}
-                x={st.x}
-                y={H - PAD.b - 1}
-                width={st.segments[0]?.w ?? 2}
-                height={1}
-                fill="var(--border, #e5e0d8)"
-              />
-            ))}
-          {ticks.map((t, i) => (
-            <text
-              key={i}
-              x={t.x}
-              y={H - 6}
-              textAnchor={
-                i === 0 ? "start" : i === ticks.length - 1 ? "end" : "middle"
-              }
-              fontSize="11"
-              fill="var(--text-secondary)"
-            >
-              {t.label}
-            </text>
-          ))}
-        </svg>
-      )}
-      {hover !== null && stacks[hover] && (
-        <div
-          className={local.chartTip}
-          style={{
-            left: Math.min(
-              Math.max(stacks[hover].x + (stacks[hover].segments[0]?.w ?? 0) / 2, 80),
-              w - 80
-            ),
-          }}
-        >
-          <strong>{fmtDate(stacks[hover].ts)}</strong>{" "}
-          {fmtNum(stacks[hover].total)} tok
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ── Legend ───────────────────────────────────────────────────────────────────
 
@@ -355,6 +190,28 @@ function CategoryBars({
       })}
     </div>
   );
+}
+
+// ── cost ────────────────────────────────────────────────────────────────────
+
+type Card = { label: string; value: string; note?: string; tip?: string };
+
+/** Est. cost as billed: the priced pay-per-token sum, how many such calls
+ *  have no price, and (in a tooltip) what subscriptions cover at list price.
+ *  One unpriced call never hides the total. Older Workers send only
+ *  `cost` / `cost_known`; then an unknown cost still reads "Unknown". */
+function costCard(totals: Summary["totals"], label: string, text: (en: string, zh: string) => string): Card {
+  if (totals.billed_cost == null) {
+    return { label, value: totals.cost_known ? fmtCost(totals.cost) : text("Unknown", "未知") };
+  }
+  const unpriced = totals.unpriced_events ?? 0;
+  const included = totals.included_cost ?? 0;
+  return {
+    label,
+    value: fmtCost(totals.billed_cost),
+    note: unpriced > 0 ? text(`${unpriced} calls unpriced`, `${unpriced} 次调用无价格`) : undefined,
+    tip: included > 0 ? text(`Subscriptions cover ${fmtCost(included)} at API prices`, `订阅已覆盖按 API 价约 ${fmtCost(included)}`) : undefined,
+  };
 }
 
 // ── main component ───────────────────────────────────────────────────────────
@@ -419,7 +276,7 @@ export function TokenUsageSection() {
 
   const totals = summary?.totals;
 
-  const cards = useMemo(
+  const cards = useMemo<Card[]>(
     () =>
       totals
         ? [
@@ -427,7 +284,7 @@ export function TokenUsageSection() {
             { label: t("usage.card.output"), value: fmtNum(totals.output_tokens) },
             { label: t("usage.card.cache"), value: fmtNum(totals.cache_read_tokens) },
             { label: t("usage.card.total"), value: fmtNum(totals.total_tokens) },
-            { label: t("usage.card.cost"), value: totals.cost_known ? fmtCost(totals.cost) : text("Unknown", "未知") },
+            costCard(totals, t("usage.card.cost"), text),
             { label: t("usage.card.calls"), value: fmtNum(totals.events) },
           ]
         : [],
@@ -438,6 +295,13 @@ export function TokenUsageSection() {
   const curTrend = trendData[dim];
   const series = useMemo(() => curTrend?.series ?? {}, [curTrend]);
   const categories = useMemo(() => Object.keys(series), [series]);
+  const points = useMemo<StackPoint[]>(() => {
+    const days = Object.values(series)[0]?.length ?? 0;
+    return Array.from({ length: days }, (_, d) => ({
+      ts: series[categories[0]]?.[d]?.ts ?? 0,
+      values: categories.map((cat) => series[cat]?.[d]?.total_tokens ?? 0),
+    }));
+  }, [series, categories]);
 
   // bar rows for current dimension from summary
   const barRows = useMemo(() => {
@@ -491,10 +355,12 @@ export function TokenUsageSection() {
             {/* stat cards */}
             <h3 className={local.sectionTitle}>{text("Last 30 days", "最近 30 天")}</h3>
             <div className="grid grid-cols-[repeat(auto-fit,_minmax(120px,_1fr))] gap-[12px]">
-              {cards.map((c) => (
+              {cards.map((c: Card) => (
                 <div key={c.label} className={local.card}>
-                  <div className={local.cardValue}>{c.value}</div>
-                  <div className={local.cardLabel}>{c.label}</div>
+                  {c.tip ? (
+                    <HoverTip label={c.tip}><div className={local.cardValue} tabIndex={0}>{c.value}</div></HoverTip>
+                  ) : <div className={local.cardValue}>{c.value}</div>}
+                  <div className={local.cardLabel}>{c.label}{c.note ? <span className={local.cardNote}> · {c.note}</span> : null}</div>
                 </div>
               ))}
             </div>
@@ -517,7 +383,12 @@ export function TokenUsageSection() {
               aria-labelledby={`usage-breakdown-tab-${dim}`}
             >
               <h3 className={local.sectionTitle}>{t("usage.trend")}</h3>
-              <StackedBarChart series={series} categories={categories} />
+              <StackedBarChart
+                points={points}
+                colors={categories.map((_, i) => catColor(i))}
+                format={(v) => fmtNum(Math.round(v))}
+                formatTip={(v) => `${fmtNum(v)} tok`}
+              />
               <Legend categories={categories} />
             </div>
 
@@ -550,7 +421,7 @@ export function TokenUsageSection() {
                           <td className={local.num}>{fmtNum(r.input_tokens)}</td>
                           <td className={local.num}>{fmtNum(r.output_tokens)}</td>
                           <td className={local.num}>{fmtNum(r.events)}</td>
-                          <td className={local.num}>{fmtCost(r.cost)}</td>
+                          <td className={local.num}><CostCell row={r} text={text} /></td>
                         </tr>
                       ))}
                     </tbody>
@@ -585,7 +456,13 @@ export function TokenUsageSection() {
                           <td className={local.num}>{fmtNum(r.output_tokens)}</td>
                           <td className={local.num}>{fmtNum(r.cache_read_tokens)}</td>
                           <td className={local.num}>{fmtNum(r.events)}</td>
-                          <td className={local.num}>{fmtCost(r.cost)}</td>
+                          <td className={local.num}>
+                            {r.included ? (
+                              <HoverTip label={text(`${fmtCost(r.cost)} at API prices`, `按 API 价约 ${fmtCost(r.cost)}`)}>
+                                <span tabIndex={0}>{text("Included", "套餐内")}</span>
+                              </HoverTip>
+                            ) : r.unpriced_events ? `${fmtCost(r.cost)} · ${text(`${r.unpriced_events} unpriced`, `${r.unpriced_events} 次无价格`)}` : fmtCost(r.cost)}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -616,7 +493,7 @@ export function TokenUsageSection() {
                           <td className={local.num}>{fmtNum(r.input_tokens)}</td>
                           <td className={local.num}>{fmtNum(r.output_tokens)}</td>
                           <td className={local.num}>{fmtNum(r.events)}</td>
-                          <td className={local.num}>{fmtCost(r.cost)}</td>
+                          <td className={local.num}><CostCell row={r} text={text} /></td>
                         </tr>
                       ))}
                     </tbody>

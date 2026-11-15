@@ -97,7 +97,6 @@ from .server_runtime.session_persistence import (  # noqa: F401 -- server namesp
     _emit_branch_running_task_event,
     _save_session,
     _default_agent_id,
-    _restore_sessions,
 )
 from .server_runtime.broadcasts import (  # noqa: F401 -- server namespace, read as server.<name>
     _broadcast,
@@ -145,6 +144,7 @@ from .server_runtime.context_stats import (  # noqa: F401 -- server namespace, r
     _resolve_context_window,
     _build_context_occupancy,
     _conv_context_window,
+    _conv_model,
     session_context_stats,
     refresh_context_stats,
     _broadcast_chat_response,
@@ -841,6 +841,9 @@ def create_app(*, owner_auth=None, port: int = 18100):
     _routes_chat.register(app)
     from openprogram.interfaces.server.routes import visual_frame as _routes_visual_frame
     _routes_visual_frame.register(app)
+    # /v1/models, /v1/chat/completions: an Agent as a model for other tools.
+    from openprogram.interfaces.server.routes import openai_compatible as _routes_openai
+    _routes_openai.register(app)
 
     # Retry / Edit / Checkout routes live in routes/chat_branches.py — see
     # docs/design/context/overview.md. Keeping them out of this module keeps
@@ -1039,18 +1042,9 @@ def start_server(port: int = 18100, open_browser: bool = False) -> threading.Thr
         allowed_origins=_web_cfg["allowed_origins"],
     )
 
-    # Session restore is disk-bound and can take ~200–800ms on a busy
-    # transcript dir. Defer it into a background thread so the uvicorn
-    # socket comes up first — the CLI can connect while restore is still
-    # walking files. /resume queries pull straight from disk anyway.
-    #
-    # Provider initialization is complete before either restore or warm-up
-    # threads can observe the registry.
-    threading.Thread(
-        target=_restore_sessions,
-        name="openprogram-session-restore",
-        daemon=True,
-    ).start()
+    # No conversation is read at start-up: each is read when first asked
+    # for (``_get_or_create_session``), so opening one never waits behind a
+    # walk of every other conversation's log.
 
     def _run():
         global _loop, _uvicorn_server

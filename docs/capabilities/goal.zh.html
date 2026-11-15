@@ -25,7 +25,7 @@
 </ol>
 </figure>
 <h2 id="start-and-plan">开始与规划</h2>
-<p>输入 <code translate="no">/goal &lt;目标&gt;</code>，或使用<strong>能力 → Programs → Tools → planning → goal → Use</strong>，或直接要求 agent。Rich REPL 中 <code translate="no">/goal</code> 启动 canonical chat 并显示 execution ID。</p>
+<p>输入 <code translate="no">/goal &lt;目标&gt;</code>，或使用<strong>能力 → Programs → Tools → planning → goal → Use</strong>，或直接要求 agent。目标显示为你的消息，带“目标”标签。Rich REPL 中 <code translate="no">/goal</code> 启动 canonical chat 并显示 execution ID。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">环节</th><th scope="col">规则</th></tr></thead>
 <tbody>
@@ -41,7 +41,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">命令</th><th scope="col">作用</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">/goal</code></th><td>读取当前状态</td></tr>
+<tr><th scope="row"><code translate="no">/goal</code> 或 <code translate="no">/goal status</code></th><td>读取当前状态</td></tr>
 <tr><th scope="row"><code translate="no">/goal pause</code></th><td>保存暂停并请求取消当前执行</td></tr>
 <tr><th scope="row"><code translate="no">/goal resume</code></th><td>用累计用量继续</td></tr>
 <tr><th scope="row"><code translate="no">/goal verify</code></th><td>独立验收最近完成的工作，不直接标记达成</td></tr>
@@ -61,7 +61,8 @@
 <thead><tr><th scope="col">停止或暂停</th><th scope="col">处理</th></tr></thead>
 <tbody>
 <tr><th scope="row">预算耗尽</th><td>用 <code translate="no">/goal budget</code> 提高或移除后恢复。等待时间不算活动时间。</td></tr>
-<tr><th scope="row">执行失败或取消</th><td>自动继续停止。<a href="always-on-agents.zh.html">常驻</a>唤醒可能在一轮失败后重启 Agent 自己启动的 Goal；有人停止的那一轮不会重启。</td></tr>
+<tr><th scope="row">执行失败</th><td>遇到临时失败（模型服务出错、连接断开、短时间限流）时，Goal 先等几秒、之后等得更久，然后自己继续，最多连续失败三次。马上会重复的失败（密钥被拒、余额不足、额度或预算用完）保持暂停并显示原因，等你点击继续。</td></tr>
+<tr><th scope="row">执行取消</th><td>自动继续停止；你停止的那一轮不会重启。<a href="always-on-agents.zh.html">常驻</a>唤醒可能在一轮失败后重启 Agent 自己启动的 Goal。</td></tr>
 <tr><th scope="row">连续两个空闲自动轮次（没有工具调用）</th><td><strong>Stalled</strong>。第一次会警告。任何工具调用或用户轮次清零，Resume 重新计数。</td></tr>
 <tr><th scope="row">已暂停</th><td>显示原因：轮次失败、Plan 模式、验收前提未满足、重启次数上限</td></tr>
 </tbody>

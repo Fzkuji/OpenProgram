@@ -441,7 +441,7 @@ async function checkSeed() {
   const occupied = temporaryRoot();
   fs.mkdirSync(path.join(occupied, "bin"), { recursive: true });
   await assert.rejects(seedModule.seed({ root: occupied, seedDirectory, spawnProcess: fakeInstaller(occupied, []) }),
-    /not a version store/);
+    /not a version store \(bin\)\. Move them somewhere else, then try again\./);
   // An older command-line install under cli/ is not in the way.
   const withCli = temporaryRoot();
   fs.mkdirSync(path.join(withCli, "cli"), { recursive: true });
@@ -537,11 +537,23 @@ async function checkSeedSafeguards() {
       (error) => {
         assert.ok(error instanceof seedModule.SeedError);
         assert.match(error.message, /needs about .* GB of free disk space/);
+        assert.match(error.message, / free, (\d+ MB|[\d.]+ GB|less than 1 MB) short\./);
         assert.match(error.message, /Free up some space, then try again\./);
         return true;
       },
     );
     assert.equal(fs.existsSync(root), false, "nothing was started");
+
+    // The setup window logs that failure into the root (recovery.js runSetup),
+    // and Try again, or the next launch, still gets through once there is room.
+    store.appendRecoveryLog(root, "first-run setup failed: needs about 3.3 GB of free disk space");
+    assert.equal(store.needsSeed(root), true);
+    await seedModule.seed({
+      root, seedDirectory, platform: "darwin", spawnProcess: fakeInstaller(root, []),
+      statfs: () => ({ bavail: 2 ** 30, bsize: 4096 }),
+    });
+    assert.ok(fs.existsSync(path.join(root, "versions", "v1", "version.json")), "the retry unpacked the seed");
+    assert.ok(fs.existsSync(path.join(root, "recovery.log")), "the log of the failed attempt is kept");
 
     const sized = JSON.parse(fs.readFileSync(path.join(seedDirectory, "seed.json"), "utf8"));
     sized.unpacked_bytes = 100;

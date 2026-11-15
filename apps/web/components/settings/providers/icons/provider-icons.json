@@ -149,7 +149,8 @@
   },
   "kimi-coding": {
     "file": "kimi-color.svg",
-    "mono": false
+    "mono": false,
+    "plate": "dark"
   },
   "llama": {
     "file": "meta-color.svg",
@@ -193,11 +194,13 @@
   },
   "moonshotai": {
     "file": "kimi-color.svg",
-    "mono": false
+    "mono": false,
+    "plate": "dark"
   },
   "moonshotai-cn": {
     "file": "kimi-color.svg",
-    "mono": false
+    "mono": false,
+    "plate": "dark"
   },
   "morph": {
     "file": "morph-color.svg",

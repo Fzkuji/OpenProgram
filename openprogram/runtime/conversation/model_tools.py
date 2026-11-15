@@ -261,6 +261,20 @@ def resolve_tools(
             )
         return out
 
+    def _with_loader(tool_list, disabled=()):
+        """``tool_list`` with ``tool_search`` in front when it holds a
+        deferred tool: without the loader such a tool could never be
+        called, and the catalog would name tools nothing can load."""
+        from openprogram.extensions.gating import match_any
+        tool_list = list(tool_list or [])
+        if (not any(getattr(t, "_defer", False) for t in tool_list)
+                or any(t.name == "tool_search" for t in tool_list)
+                or match_any("tool_search", list(disabled))):
+            return tool_list
+        from openprogram.programs import agent_tools as _agent_tools
+        return [*(_agent_tools(names=["tool_search"], source=source, only_available=True) or []),
+                *tool_list]
+
     profile_tools = (profile or {}).get("tools")
     wanted = override if override is not None else profile_tools
     if isinstance(wanted, dict) and wanted.get("inherit"):
@@ -277,7 +291,7 @@ def resolve_tools(
     if wanted is None:
         try:
             from openprogram.programs import agent_tools as _agent_tools
-            return _apply_profile_gates(_agent_tools(source=source, only_available=True))
+            return _apply_profile_gates(_with_loader(_agent_tools(source=source, only_available=True)))
         except RequiredMcpUnavailable:
             raise
         except Exception:
@@ -336,12 +350,7 @@ def resolve_tools(
                 resolved = agent_tools(
                     names=names, source=source, only_available=True
                 ) or []
-                if resolved and any(getattr(t, "_defer", False) for t in resolved):
-                    loaders = agent_tools(
-                        names=["tool_search"], source=source, only_available=True
-                    ) or []
-                    if loaders and not any(t.name == "tool_search" for t in resolved):
-                        resolved = [*loaders, *resolved]
+                resolved = _with_loader(resolved)
                 if disabled_patterns:
                     resolved = [
                         t for t in resolved if not match_any(t.name, disabled_patterns)
@@ -367,8 +376,8 @@ def resolve_tools(
                         and (not allowed_patterns or match_any(t.name, allowed_patterns))
                     ]
                 return _apply_profile_gates(_overlay_web_search(resolved))
-            return _apply_profile_gates(_overlay_web_search(
-                agent_tools(names=names, source=source, only_available=True)))
+            return _apply_profile_gates(_overlay_web_search(_with_loader(
+                agent_tools(names=names, source=source, only_available=True), disabled_patterns)))
 
         if isinstance(wanted, list) and wanted and isinstance(wanted[0], str):
             # A per-turn name list pins exactly these tools; without

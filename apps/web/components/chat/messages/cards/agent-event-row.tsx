@@ -4,11 +4,13 @@
  * One-line rows for what agents pass to each other (styles in
  * agent-event-row.css). A background-agent notice draws one row per
  * finished agent ("Scout 已完成，结果交回主 agent", "分支「X」回复了"),
- * and a message delivered to a branch draws one row there ("主对话发来消息").
- * Neither is something the user typed, so neither is a user bubble.
- * Opening a row shows the reply, the task, or the message it carried.
+ * a message delivered to a branch draws one row there ("主对话发来消息"),
+ * and so does a message or reply another conversation's agent sent.
+ * None is something the user typed, so none is a user bubble.
+ * Opening a row shows the reply, the task, or the message it carried; a
+ * find match inside a closed row opens it.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { ChatMsg, NoticeItem } from "@/lib/session-store";
 import { SolarIcon, type SolarIconName } from "@/components/solar-icons";
@@ -18,11 +20,15 @@ import {
   noticeDetail,
   type Receipt,
 } from "@/lib/chat/transcript/agent-notices";
+import { onFindReveal } from "@/lib/chat/transcript/conversation-find";
 
 import { renderMarkdown, useMarkdownReady } from "../bubbles/markdown";
+import { useRowSessionId } from "../list/transcript-view-scope";
 
-function AgentEventRow({ msgId, icon, label, detail, failed = false }: {
+function AgentEventRow({ msgId, findId, icon, label, detail, failed = false }: {
   msgId: string;
+  /** The stored message this row is part of, as find names it. */
+  findId: string;
   icon: SolarIconName;
   label: string;
   detail: string;
@@ -30,6 +36,7 @@ function AgentEventRow({ msgId, icon, label, detail, failed = false }: {
 }) {
   useMarkdownReady();
   const [open, setOpen] = useState(false);
+  useEffect(() => (detail ? onFindReveal(findId, () => setOpen(true)) : undefined), [findId, detail]);
   const head = (
     <>
       <SolarIcon name={icon} size={14} motionPreset="none" />
@@ -68,6 +75,7 @@ function shortAddress(address: string): string {
 
 export function AgentNoticeRows({ msg, items }: { msg: ChatMsg; items: NoticeItem[] }) {
   const { text } = useTranslation();
+  const sessionId = useRowSessionId();
   return (
     <>
       {items.map((item, i) => {
@@ -82,9 +90,17 @@ export function AgentNoticeRows({ msg, items }: { msg: ChatMsg; items: NoticeIte
             : text(`${who} finished; its report went back to the agent`, `${who} 已完成，结果交回主 agent`);
         } else if (item.kind === "reply") {
           icon = item.failed ? "danger-triangle" : "chat-round-dots";
-          label = item.failed
-            ? text(`Branch “${name}” failed to reply`, `分支「${name}」回复失败`)
-            : text(`Branch “${name}” replied`, `分支「${name}」回复了`);
+          // An address in another conversation is that conversation's agent, not a branch here.
+          const elsewhere = !!sessionId && !!item.address && item.address.split(":")[0] !== sessionId;
+          if (elsewhere) {
+            label = item.failed
+              ? text(`“${name}” failed to reply`, `「${name}」回复失败`)
+              : text(`“${name}” replied`, `「${name}」回复了`);
+          } else {
+            label = item.failed
+              ? text(`Branch “${name}” failed to reply`, `分支「${name}」回复失败`)
+              : text(`Branch “${name}” replied`, `分支「${name}」回复了`);
+          }
         } else if (item.kind === "stalled") {
           icon = "danger-triangle";
           const who = name || text("A sub-agent", "子 agent");
@@ -97,6 +113,7 @@ export function AgentNoticeRows({ msg, items }: { msg: ChatMsg; items: NoticeIte
           <AgentEventRow
             key={`${msg.id}:${i}`}
             msgId={i === 0 ? msg.id : `${msg.id}:${i}`}
+            findId={msg.id}
             icon={icon}
             label={label}
             detail={noticeDetail(msg.content || "", items, i)}
@@ -112,7 +129,11 @@ export function ReceivedMessageRow({ msg, receipt }: { msg: ChatMsg; receipt: Re
   const { text } = useTranslation();
   const task = receipt.kind === "task";
   let label: string;
-  if (receipt.from === MAIN_CONVERSATION) {
+  if (receipt.kind === "reply") {
+    label = receipt.from
+      ? text(`“${receipt.from}” replied`, `「${receipt.from}」回复了`)
+      : text("Received a reply", "收到回复");
+  } else if (receipt.from === MAIN_CONVERSATION) {
     label = task
       ? text("Task from the main conversation", "主对话派来任务")
       : text("Message from the main conversation", "主对话发来消息");
@@ -126,7 +147,8 @@ export function ReceivedMessageRow({ msg, receipt }: { msg: ChatMsg; receipt: Re
   return (
     <AgentEventRow
       msgId={msg.id}
-      icon={task ? "checklist" : "plain-2"}
+      findId={msg.id}
+      icon={task ? "checklist" : receipt.kind === "reply" ? "chat-round-dots" : "plain-2"}
       label={label}
       detail={receipt.body.trim()}
     />

@@ -16,6 +16,53 @@ pytest_plugins = ["tests.support.memory_chats"]
 
 _HOST_HOME = Path.home()
 
+# A run started from a git hook, or a shell that exported them, carries
+# GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE for the real checkout; every ``git``
+# a test runs in its own temporary repository would then act on the checkout
+# instead (``git init`` there rewrites its config). Cleared before anything
+# runs; tests/support/host_guard.py explains the rest of the guard.
+from tests.support import host_guard as _host_guard  # noqa: E402
+
+for _var in _host_guard.GIT_LOCATION_VARIABLES:
+    os.environ.pop(_var, None)
+
+
+@pytest.fixture(autouse=True)
+def _real_repository_and_state_untouched(request):
+    """Fail the test that changed the checkout or the person's real state.
+
+    First autouse fixture, so its teardown runs after every other fixture's
+    and also catches what they do. The audit hook already refused the
+    operation; this names the test even when the code under test swallowed
+    the refusal."""
+    guard = _HOST_GUARD
+    if guard is None:
+        yield
+        return
+    leftover = guard.take()
+    guard.current_test = request.node.nodeid
+    yield
+    found = leftover + guard.take()
+    guard.current_test = "<between tests>"
+    if found:
+        pytest.fail("test isolation broken — reached the real repository or state:\n  "
+                    + "\n  ".join(found), pytrace=False)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _real_repository_unchanged_by_this_run():
+    """Backstop for child processes the audit hook cannot see: the checkout's
+    config, and worktrees registered into it from this run's test home."""
+    if _HOST_GUARD is None:
+        yield
+        return
+    before = _host_guard.snapshot(_GIT_COMMON_DIR, Path(_TEST_HOME))
+    yield
+    problems = _host_guard.compare(before, _host_guard.snapshot(_GIT_COMMON_DIR, Path(_TEST_HOME)))
+    problems += _HOST_GUARD.take()
+    if problems:
+        pytest.fail("test isolation broken during this run:\n  " + "\n  ".join(problems), pytrace=False)
+
 
 @pytest.fixture(autouse=True)
 def _no_system_notifications(monkeypatch):
@@ -159,6 +206,18 @@ if os.environ.get("OPENPROGRAM_TEST_REAL_HOME") != "1":
             cache_root = _HOST_HOME / ".cache/ms-playwright"
         if cache_root is not None and cache_root.is_dir():
             os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(cache_root)
+else:
+    _TEST_HOME = str(_HOST_HOME)
+
+# Every process of the run (each xdist worker imports this file) refuses
+# changes to the checkout and, unless the run opted into the real home, to
+# ~/.openprogram*. See tests/support/host_guard.py.
+_REPO_TOPS, _GIT_COMMON_DIR = _host_guard.repository_of(ROOT)
+_HOST_GUARD = _host_guard.Guard(
+    _REPO_TOPS, _GIT_COMMON_DIR, _HOST_HOME, Path(_TEST_HOME),
+    guard_state=os.environ.get("OPENPROGRAM_TEST_REAL_HOME") != "1",
+)
+_host_guard.install(_HOST_GUARD)
 
 
 # ---------------------------------------------------------------------------

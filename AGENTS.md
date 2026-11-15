@@ -15,8 +15,8 @@
 | 数据 | `~/.openprogram` | `~/.openprogram-dev`（`dev` profile） |
 
 - 一个功能完成并提交后运行 `scripts/refresh-dev-instance.sh`（或 `openprogram dev deploy`），只更新开发版（运行时和 `OpenProgram Dev.app`）；它不碰稳定版的 App、运行时和 worker，可以在稳定版的对话里运行。
-- 稳定版只通过晋升更新：`openprogram dev promote` 要求提交正是开发版正在服务、且健康的那个，只做 fast-forward，先等稳定版没有运行中的工作（最多 10 分钟，超时拒绝并列出还在跑什么），再备份 `~/.openprogram`、移动 `stable` 并运行 `scripts/refresh-local-app.sh`。
-- `scripts/refresh-local-app.sh` 只安装 `refs/heads/stable`；从 `dev` 或其他提交运行会被拒绝。禁止手动移动 `stable` 绕过晋升。
+- 稳定版只通过晋升更新：`openprogram dev promote` 要求提交正是开发版正在服务、且健康的那个，只做 fast-forward，先等稳定版没有运行中的工作（最多 10 分钟，超时拒绝并列出还在跑什么），再备份 `~/.openprogram` 并运行 `scripts/refresh-local-app.sh`：新 App 先在旁边构建、校验、签名，再停旧 worker 改名切换；新 worker 健康后才快进 `stable`，任何一步失败都放回原来的 App 和 worker，`stable` 不动，不重试。
+- `scripts/refresh-local-app.sh` 只安装 `refs/heads/stable`（晋升时安装要晋升的那个快进提交）；从 `dev` 或其他提交运行会被拒绝。禁止手动移动 `stable` 绕过晋升。
 - 用户可见的 App 只有 `/Applications/OpenProgram.app`（稳定版）和 `/Applications/OpenProgram Dev.app`（开发版，由开发版部署安装，见 `scripts/install-dev-app.sh`）；日常测试和可视验收用开发版 App 或浏览器（`openprogram --profile dev web auth-url --base-url http://127.0.0.1:18200` 取登录链接），不占用稳定版。禁止运行 `node_modules/electron`、`npm run dev --workspace apps/desktop` 或临时 E2E Electron 作为用户可见 App。
 - 禁止在 `post-commit` 中自动刷新任一实例；禁止从旧 worktree 或旧环境单独执行 `openprogram worker restart`。
 - 本地只保留这两份可见 App；更新时覆盖现有内容，不创建按 commit 命名的 App 副本。

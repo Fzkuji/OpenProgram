@@ -79,6 +79,20 @@
 </tbody>
 </table>
 
+<h2 id="the-reference-card">引用卡片</h2>
+<p>在别的对话里运行的 agent，以及手动附加的分支，不是这一轮的步骤。它们保留一张卡片（<code translate="no">rowKind: external_reference</code>），展开前只有一行。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">部分</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">行</th><td>agent 的形象和名字、状态徽标、任务的第一行，然后是用时和花费：运行中从卡片时间起算，花费取 Job 的子树花费；结束后取 <code translate="no">attach.usage</code>。价格未知的花费不显示。整行是按钮，Enter 或空格展开。</td></tr>
+<tr><th scope="row">状态</th><td>它的执行有未回答的问题时是“等你授权”或“等你回答”（先于“正在运行”），排队时是“等待中”，此外有正在运行、正在取消、失败、已停止、已完成；没人运行过的引用是“已附加”。Activity 名单里也有的状态用同一个徽章和同样的词，花费的写法也相同。审批和失败在折叠的行上就能看到。</td></tr>
+<tr><th scope="row">悬停提示</th><td>引用的种类（已创建子任务、已附加、导入自）和来源，被限制或人停止的原因，tokens 和工具调用次数</td></tr>
+<tr><th scope="row">展开后</th><td>最终回复、改动的文件和所在分支（<code translate="no">attach.files</code>，只有自带 worktree 的 agent 才有）、自动 follow-up，然后是操作：<strong>切换</strong>（检出该 agent 的分支；别的对话是<strong>打开</strong>，已在该分支时显示“当前”）、运行中的<strong>取消运行</strong>，以及时间。</td></tr>
+<tr><th scope="row">实时</th><td>卡片原地更新：agent 结束时，已展开的卡片保持展开</td></tr>
+<tr><th scope="row">查找</th><td>命中折叠卡片里的内容时卡片展开（<code translate="no">onFindReveal</code>）</td></tr>
+</tbody>
+</table>
+
 <h2>返回路径</h2>
 <p>在子代理分支上，子代理分支横幅显示名称和<strong>返回主对话</strong>，回到派生回复之下最新的轮次；回到派生回复本身会隐藏之后的轮次。当前显示这条分支时，“创建自”卡片不出现。</p>
 <details>
@@ -99,6 +113,7 @@
 <ul>
 <li><code translate="no">apps/web/components/chat/messages/execution/execution-strip.tsx</code>（<code translate="no">SubAgentStep</code>）、<code translate="no">tool-group-summary.ts</code></li>
 <li><code translate="no">apps/web/components/chat/messages/cards/sub-agent-transcript.tsx</code></li>
+<li><code translate="no">apps/web/components/chat/messages/cards/attach-card.tsx</code>, <code translate="no">agent-event-row.tsx</code>, <code translate="no">apps/web/lib/chat/transcript/agent-card.ts</code></li>
 <li><code translate="no">apps/web/lib/chat/transcript/sub-agent-transcripts.ts</code></li>
 <li><code translate="no">apps/web/lib/runtime-bridge/session/transcript-updates.ts</code>（<code translate="no">applyTranscriptUpdate</code>）</li>
 <li><code translate="no">openprogram/runtime/conversation/production_driver/execution.py</code>（<code translate="no">_turn_event_sink</code>）</li>

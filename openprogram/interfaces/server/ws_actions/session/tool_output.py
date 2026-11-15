@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 
 from openprogram.interfaces.server.transcript.legacy import parsed_extra
+from openprogram.state.store.session.conversation_work import run_for_conversation
 
 
 # Keep ordinary tool results byte-for-byte compatible while preventing one
@@ -228,9 +229,11 @@ async def handle_get_full_tool_output(ws, cmd: dict) -> None:
         # A block names the provider's call id, and the row is named after it
         # and its reply.
         row_ids = {node_id, f"{message_id}_t_{node_id}"}
+        # The rows are read under the conversation's lock: off the loop.
+        messages = await run_for_conversation(session_id, default_db().get_messages, session_id)
         row = next(
             (
-                message for message in default_db().get_messages(session_id)
+                message for message in messages
                 if message.get("id") in row_ids
                 and message.get("role") == "tool"
                 and message.get("caller") == message_id

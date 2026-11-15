@@ -651,9 +651,6 @@ def test_non_loopback_peer_forwarded_scheme_headers_are_ignored():
 def test_create_app_enforces_owner_auth_and_public_health(monkeypatch):
     from openprogram.interfaces.server.server import create_app
 
-    monkeypatch.setattr(
-        "openprogram.interfaces.server.server._restore_sessions", lambda: None
-    )
     state = _state()
     app = create_app(owner_auth=state, port=18100)
     assert app.state.owner_auth is state

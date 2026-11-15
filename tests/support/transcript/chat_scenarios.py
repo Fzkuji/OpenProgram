@@ -153,7 +153,9 @@ def background_sub_agent(chat: LiveChat) -> str:
     chat.model.by_prompt["do the sub task"] = (ScriptedText("sub agent reply"),)
     chat.send("delegate in the background")
     chat.wait_tool("lookup")
-    chat.wait_published()
+    # The sub-agent's one scripted reply ends it while the turn's tool is
+    # held: wait for that end, or the card's state here is a race.
+    chat.wait_job_finished()
     chat.checkpoint("the background sub-agent has started")
     chat.release_tool("lookup")
     chat.wait_finished()
